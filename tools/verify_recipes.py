@@ -126,6 +126,8 @@ SPELL_EFFECTS = {
     "heal":   {"水", "心", "木", "月", "米"},
     "shield": {"金", "石", "土", "山", "王"},
     "strike": {"刀", "力", "手", "大", "风"},
+    "drain":  {"心", "月", "虫", "贝"},
+    "stun":   {"雨", "风", "雷", "石", "马"},
 }
 
 
@@ -147,12 +149,14 @@ def effect_to_rust(effect: str, power: int) -> str:
         "heal": f"SpellEffect::Heal({power})",
         "shield": "SpellEffect::Shield",
         "strike": f"SpellEffect::StrongHit({power})",
+        "drain": f"SpellEffect::Drain({power})",
+        "stun": "SpellEffect::Stun",
     }[effect]
 
 
 # Candidate characters to check — common characters likely composed of our radicals
 CANDIDATE_CHARACTERS = [
-    # 2-component candidates
+    # 2-component candidates (original)
     "明", "好", "岩", "林", "炎", "泥", "沐", "仁", "灯", "打",
     "吗", "呗", "叶", "吹", "沁", "李", "杏", "村", "枝", "松",
     "柳", "梅", "桃", "坚", "地", "场", "块", "城", "塔", "尘",
@@ -168,10 +172,88 @@ CANDIDATE_CHARACTERS = [
     "妙", "她", "妇", "如", "妖",
     "忘", "忙", "忍",
     "岛", "峰",
-    # 3-component candidates
+    # 3-component candidates (original)
     "想", "雷", "淋", "洗", "海", "湖", "溪", "涌",
     "看", "着", "盯", "睡", "睛", "瞎",
     "忍", "思", "念", "怒", "恨", "愁",
+    # NEW: double-radical compounds
+    "从", "众", "昌", "晶", "朋", "双", "多", "炎", "森",
+    # NEW: person compounds
+    "休", "仙", "伙", "付", "件", "仗", "仕", "仆", "伏", "伐",
+    "伯", "估", "体", "伸", "但", "住", "佛", "你", "何", "余",
+    "作", "位", "侠", "保", "信", "俊", "债", "值", "做",
+    # NEW: mouth compounds
+    "吕", "品", "吞", "吵", "叫", "叮", "召", "台", "右", "号",
+    "各", "合", "吃", "同", "名", "向", "呆", "呈", "吴", "告",
+    "员", "呢", "味", "命", "咬", "哈", "唱", "喊", "嗯",
+    # NEW: wood compounds
+    "杯", "板", "柏", "析", "果", "枫", "某", "架", "柴", "根",
+    "格", "桌", "梦", "棋", "植", "椅", "楼", "榜", "模", "横",
+    # NEW: water/氵 compounds
+    "汉", "汤", "没", "沉", "沟", "沿", "注", "泡", "波", "法",
+    "活", "洞", "洋", "济", "浅", "浪", "消", "深", "清", "温",
+    "港", "满", "演", "漂", "潮",
+    # NEW: fire compounds
+    "灿", "炒", "炮", "烂", "烟", "烦", "热", "焰", "煎", "熟",
+    # NEW: earth compounds
+    "圭", "坐", "坛", "坡", "坦", "垃", "垂", "型", "垫", "堆",
+    "堡", "填", "境", "墙", "壁", "压",
+    # NEW: metal/金 compounds
+    "针", "钟", "钢", "钱", "铁", "银", "链", "锁", "锅", "镜",
+    # NEW: sun/日 compounds
+    "旦", "旧", "早", "时", "旺", "昂", "昆", "昏", "星", "映",
+    "春", "昨", "是", "晒", "晚", "暗", "暖", "曝",
+    # NEW: moon/月 compounds
+    "肌", "肝", "肠", "肤", "肥", "肩", "育", "胆", "胖", "背",
+    "脑", "脸", "腿", "膀", "膝",
+    # NEW: heart/心 compounds
+    "必", "忆", "忌", "忍", "志", "忽", "怕", "怜", "思", "急",
+    "怪", "总", "恋", "恐", "恩", "悲", "惊", "惜", "愿", "慈",
+    # NEW: hand compounds
+    "拉", "拍", "拔", "招", "挑", "指", "按", "挖", "挡", "换",
+    "掌", "排", "探", "接", "推", "握", "搬", "摇", "撑",
+    # NEW: eye/目 compounds
+    "盲", "直", "省", "眉", "眠", "眼", "睁", "睹", "瞧",
+    # NEW: mountain compounds
+    "岗", "岚", "崩", "崖", "嵩",
+    # NEW: stone compounds  
+    "砍", "研", "碎", "碰", "磨",
+    # NEW: rain compounds
+    "雪", "雾", "霜", "露", "霞", "零", "震", "雳",
+    # NEW: wind compounds
+    "飘", "飞",
+    # NEW: knife/刀 compounds
+    "分", "刑", "划", "列", "刺", "剥", "剪", "割", "创",
+    # NEW: power/力 compounds
+    "办", "劣", "努", "劫", "勉", "勒", "募", "勤", "勃",
+    # NEW: field/田 compounds
+    "甲", "由", "申", "电", "画", "畜", "番", "疆",
+    # NEW: woman/女 compounds
+    "奴", "妄", "妆", "婚", "嫌", "嫩",
+    # NEW: child/子 compounds
+    "孔", "孕", "存", "孝", "孤", "学", "孩",
+    # NEW: king/王 compounds
+    "弄", "全", "主",
+    # NEW: bamboo/竹 compounds
+    "答", "策", "简", "管", "篇", "篮", "签", "簸",
+    # NEW: rice/米 compounds
+    "类", "粗", "粘", "粥", "糊", "糕", "糖",
+    # NEW: insect/虫 compounds
+    "蚊", "蛋", "蜜", "蝇", "融",
+    # NEW: shell/贝 compounds
+    "财", "败", "贡", "货", "贫", "贪", "购", "贺", "贵", "费",
+    "赌", "赏", "赔", "赚",
+    # NEW: horse/马 compounds
+    "冯", "驱", "验", "骄", "骗", "骚",
+    # NEW: bird/鸟 compounds
+    "鸠", "鸽", "鹰", "鹤", "鹊",
+    # NEW: mixed multi-component
+    "妈", "吗", "码", "蚂", "骂",  # all ma characters
+    "笃", "粮", "想", "理", "箱",  # 3-component
+    "忠", "患", "悠", "恩", "愿",  # heart combos
+    "旺", "旷", "晃", "景", "暑",  # sun combos
+    "朗", "期", "望", "腮",  # moon combos
+    "灶", "烃", "焚",  # fire combos
 ]
 
 

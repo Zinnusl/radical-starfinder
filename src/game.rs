@@ -232,6 +232,11 @@ impl GameState {
             if !self.enemies[i].is_alive() {
                 continue;
             }
+            // Stunned enemies skip their turn
+            if self.enemies[i].stunned {
+                self.enemies[i].stunned = false;
+                continue;
+            }
             // Alert if within FOV radius
             let dist_sq = (self.enemies[i].x - px).pow(2) + (self.enemies[i].y - py).pow(2);
             if dist_sq <= (FOV_RADIUS * FOV_RADIUS) {
@@ -601,7 +606,6 @@ impl GameState {
                             self.enemies[enemy_idx].hp -= dmg;
                             let e_hanzi = self.enemies[enemy_idx].hanzi;
                             if self.enemies[enemy_idx].hp <= 0 {
-                                // Drop radical on kill
                                 let available = radical::radicals_for_floor(self.floor_num);
                                 let drop_idx = self.rng_next() as usize % available.len();
                                 self.player.add_radical(available[drop_idx].ch);
@@ -619,6 +623,42 @@ impl GameState {
                                 );
                                 self.message_timer = 60;
                             }
+                        }
+                    }
+                    SpellEffect::Drain(dmg) => {
+                        if enemy_idx < self.enemies.len() {
+                            self.enemies[enemy_idx].hp -= dmg;
+                            self.player.hp = (self.player.hp + dmg).min(self.player.max_hp);
+                            let e_hanzi = self.enemies[enemy_idx].hanzi;
+                            if self.enemies[enemy_idx].hp <= 0 {
+                                let available = radical::radicals_for_floor(self.floor_num);
+                                let drop_idx = self.rng_next() as usize % available.len();
+                                self.player.add_radical(available[drop_idx].ch);
+                                self.message = format!(
+                                    "{}🩸 Drained {} HP from {}! Defeated! Got [{}]",
+                                    spell.hanzi, dmg, e_hanzi, available[drop_idx].ch
+                                );
+                                self.message_timer = 80;
+                                self.combat = CombatState::Explore;
+                                self.typing.clear();
+                            } else {
+                                self.message = format!(
+                                    "{}🩸 Drained {} HP from {}! +{} HP ({} left)",
+                                    spell.hanzi, dmg, e_hanzi, dmg, self.enemies[enemy_idx].hp
+                                );
+                                self.message_timer = 60;
+                            }
+                        }
+                    }
+                    SpellEffect::Stun => {
+                        if enemy_idx < self.enemies.len() {
+                            self.enemies[enemy_idx].stunned = true;
+                            let e_hanzi = self.enemies[enemy_idx].hanzi;
+                            self.message = format!(
+                                "{}⚡ {} is stunned! It will skip its next action.",
+                                spell.hanzi, e_hanzi
+                            );
+                            self.message_timer = 60;
                         }
                     }
                 }

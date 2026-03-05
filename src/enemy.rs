@@ -18,6 +18,8 @@ pub struct Enemy {
     pub is_boss: bool,
     /// Gold dropped on defeat
     pub gold_value: i32,
+    /// Stunned: skip next turn
+    pub stunned: bool,
 }
 
 impl Enemy {
@@ -38,6 +40,7 @@ impl Enemy {
             alert: false,
             is_boss: false,
             gold_value: gold,
+            stunned: false,
         }
     }
 
@@ -57,6 +60,7 @@ impl Enemy {
             alert: true, // bosses are always alert
             is_boss: true,
             gold_value: gold,
+            stunned: false,
         }
     }
 
