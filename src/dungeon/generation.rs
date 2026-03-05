@@ -37,11 +37,12 @@ pub enum Tile {
     Floor,
     Corridor,
     StairsDown,
+    Forge,
 }
 
 impl Tile {
     pub fn is_walkable(self) -> bool {
-        matches!(self, Tile::Floor | Tile::Corridor | Tile::StairsDown)
+        matches!(self, Tile::Floor | Tile::Corridor | Tile::StairsDown | Tile::Forge)
     }
 }
 
@@ -219,6 +220,38 @@ impl DungeonLevel {
         }
     }
 
+    /// Place forge workbenches in 1-2 middle rooms.
+    pub fn place_forges(&mut self, rng: &mut Rng) {
+        if self.rooms.len() < 3 {
+            return;
+        }
+        // Pick 1-2 rooms (not first or last)
+        let candidates: Vec<usize> = (1..self.rooms.len() - 1).collect();
+        let count = if candidates.len() >= 3 { 2 } else { 1 };
+        let mut placed = 0;
+        let mut used = Vec::new();
+        while placed < count {
+            let pick = rng.range(0, candidates.len() as i32) as usize;
+            if used.contains(&pick) {
+                // Avoid infinite loop if few candidates
+                if used.len() >= candidates.len() { break; }
+                continue;
+            }
+            used.push(pick);
+            let room = &self.rooms[candidates[pick]];
+            // Place forge at an offset from center so it doesn't overlap stairs
+            let fx = room.x + 1;
+            let fy = room.y + 1;
+            if self.in_bounds(fx, fy) {
+                let idx = self.idx(fx, fy);
+                if self.tiles[idx] == Tile::Floor {
+                    self.tiles[idx] = Tile::Forge;
+                    placed += 1;
+                }
+            }
+        }
+    }
+
     /// Get player start position (center of first room).
     pub fn start_pos(&self) -> (i32, i32) {
         self.rooms
@@ -323,6 +356,7 @@ impl DungeonLevel {
             revealed,
         };
         level.place_stairs();
+        level.place_forges(&mut rng);
         level
     }
 }

@@ -18,6 +18,7 @@ const COL_FLOOR_REVEALED: &str = "#2d2840";
 const COL_CORRIDOR: &str = "#3d3555";
 const COL_CORRIDOR_REVEALED: &str = "#272040";
 const COL_STAIRS: &str = "#8ab4ff";
+const COL_FORGE: &str = "#ff8844";
 const COL_FOG: &str = "#0d0b14";
 const COL_PLAYER: &str = "#ffcc33";
 const COL_PLAYER_OUTLINE: &str = "#bb8800";
@@ -95,6 +96,7 @@ impl Renderer {
                         Tile::Floor => COL_FLOOR,
                         Tile::Corridor => COL_CORRIDOR,
                         Tile::StairsDown => COL_STAIRS,
+                        Tile::Forge => COL_FORGE,
                     }
                 } else {
                     // revealed but not currently visible
@@ -103,6 +105,7 @@ impl Renderer {
                         Tile::Floor => COL_FLOOR_REVEALED,
                         Tile::Corridor => COL_CORRIDOR_REVEALED,
                         Tile::StairsDown => COL_FLOOR_REVEALED,
+                        Tile::Forge => COL_FLOOR_REVEALED,
                     }
                 };
 
@@ -116,6 +119,16 @@ impl Renderer {
                     self.ctx.set_text_align("center");
                     self.ctx
                         .fill_text("▼", screen_x + TILE_SIZE / 2.0, screen_y + TILE_SIZE * 0.75)
+                        .ok();
+                }
+
+                // Forge icon
+                if tile == Tile::Forge && visible {
+                    self.ctx.set_fill_style_str("#ffffff");
+                    self.ctx.set_font("16px monospace");
+                    self.ctx.set_text_align("center");
+                    self.ctx
+                        .fill_text("⚒", screen_x + TILE_SIZE / 2.0, screen_y + TILE_SIZE * 0.75)
                         .ok();
                 }
 
@@ -283,6 +296,52 @@ impl Renderer {
             )
             .ok();
 
+        // ── Radical inventory (left side) ───────────────────────────────
+        if !player.radicals.is_empty() {
+            let inv_x = 12.0;
+            let inv_y = 44.0;
+            self.ctx.set_font("11px monospace");
+            self.ctx.set_text_align("left");
+            self.ctx.set_fill_style_str("#ff8844");
+            self.ctx.fill_text("Radicals:", inv_x, inv_y).ok();
+            self.ctx.set_font("14px 'Noto Serif SC', 'SimSun', serif");
+            self.ctx.set_fill_style_str("#ffaa66");
+            let rad_str: String = player.radicals.iter().copied().collect::<Vec<_>>().join(" ");
+            self.ctx.fill_text(&rad_str, inv_x, inv_y + 16.0).ok();
+        }
+
+        // ── Spell bar (below radicals) ──────────────────────────────────
+        if !player.spells.is_empty() {
+            let sp_x = 12.0;
+            let sp_y = if player.radicals.is_empty() { 44.0 } else { 78.0 };
+            self.ctx.set_font("11px monospace");
+            self.ctx.set_text_align("left");
+            self.ctx.set_fill_style_str("#44aaff");
+            self.ctx.fill_text("Spells:", sp_x, sp_y).ok();
+            for (i, spell) in player.spells.iter().enumerate() {
+                let y = sp_y + 16.0 + i as f64 * 16.0;
+                let selected = i == player.selected_spell;
+                self.ctx.set_fill_style_str(if selected { "#ffcc33" } else { "#88bbdd" });
+                self.ctx.set_font("12px monospace");
+                let marker = if selected { "►" } else { " " };
+                self.ctx
+                    .fill_text(
+                        &format!("{}{} {}", marker, spell.hanzi, spell.effect.label()),
+                        sp_x,
+                        y,
+                    )
+                    .ok();
+            }
+        }
+
+        // Shield indicator
+        if player.shield {
+            self.ctx.set_font("12px monospace");
+            self.ctx.set_text_align("left");
+            self.ctx.set_fill_style_str("#44ddff");
+            self.ctx.fill_text("🛡 Shield Active", 12.0, 36.0).ok();
+        }
+
         // Minimap (bottom-right)
         self.draw_minimap(level, player);
 
@@ -370,12 +429,121 @@ impl Renderer {
                 self.ctx.set_font("10px monospace");
                 self.ctx
                     .fill_text(
-                        "Enter=submit  Esc=flee  Backspace=delete",
+                        "Enter=submit  Esc=flee  Tab=cycle spell  Space=cast spell",
                         self.canvas_w / 2.0,
                         box_y + box_h + 14.0,
                     )
                     .ok();
             }
+        }
+
+        // ── Forge UI overlay ─────────────────────────────────────────────
+        if let CombatState::Forging { ref selected } = combat {
+            let box_w = 380.0;
+            let rad_count = player.radicals.len();
+            let box_h = 100.0 + (rad_count as f64 / 5.0).ceil() * 36.0;
+            let box_x = (self.canvas_w - box_w) / 2.0;
+            let box_y = 40.0;
+
+            // Background
+            self.ctx.set_fill_style_str("rgba(30,15,10,0.95)");
+            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+            self.ctx.set_stroke_style_str("#ff8844");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+            // Title
+            self.ctx.set_fill_style_str("#ff8844");
+            self.ctx.set_font("18px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text("⚒ Radical Forge ⚒", self.canvas_w / 2.0, box_y + 26.0)
+                .ok();
+
+            // Show radicals in grid
+            self.ctx.set_font("11px monospace");
+            self.ctx.set_fill_style_str("#aaa");
+            self.ctx
+                .fill_text(
+                    "Press 1-9 to toggle radicals, Enter to forge",
+                    self.canvas_w / 2.0,
+                    box_y + 44.0,
+                )
+                .ok();
+
+            let grid_y = box_y + 56.0;
+            for (i, rad_ch) in player.radicals.iter().enumerate() {
+                if i >= 9 { break; } // Only show first 9 (keys 1-9)
+                let col = i % 5;
+                let row = i / 5;
+                let rx = box_x + 20.0 + col as f64 * 72.0;
+                let ry = grid_y + row as f64 * 36.0;
+
+                let is_selected = selected.contains(&i);
+
+                // Slot background
+                self.ctx.set_fill_style_str(if is_selected {
+                    "rgba(255,136,68,0.3)"
+                } else {
+                    "rgba(0,0,0,0.3)"
+                });
+                self.ctx.fill_rect(rx, ry, 64.0, 30.0);
+                self.ctx.set_stroke_style_str(if is_selected {
+                    "#ffaa66"
+                } else {
+                    "#555"
+                });
+                self.ctx.set_line_width(1.0);
+                self.ctx.stroke_rect(rx, ry, 64.0, 30.0);
+
+                // Number key
+                self.ctx.set_fill_style_str("#888");
+                self.ctx.set_font("10px monospace");
+                self.ctx.set_text_align("left");
+                self.ctx
+                    .fill_text(&format!("{}", i + 1), rx + 2.0, ry + 11.0)
+                    .ok();
+
+                // Radical character
+                self.ctx.set_fill_style_str(if is_selected { "#ffcc33" } else { "#ffaa66" });
+                self.ctx.set_font("18px 'Noto Serif SC', 'SimSun', serif");
+                self.ctx.set_text_align("center");
+                self.ctx
+                    .fill_text(rad_ch, rx + 32.0, ry + 24.0)
+                    .ok();
+            }
+
+            // Show selected combo
+            if !selected.is_empty() {
+                let combo_y = grid_y + ((rad_count.min(9) as f64 / 5.0).ceil()) * 36.0 + 8.0;
+                let combo_str: String = selected
+                    .iter()
+                    .map(|&i| player.radicals[i])
+                    .collect::<Vec<_>>()
+                    .join(" + ");
+                self.ctx.set_fill_style_str("#ffcc33");
+                self.ctx.set_font("16px 'Noto Serif SC', 'SimSun', serif");
+                self.ctx.set_text_align("center");
+                self.ctx
+                    .fill_text(
+                        &format!("Forging: {} → ?", combo_str),
+                        self.canvas_w / 2.0,
+                        combo_y,
+                    )
+                    .ok();
+            }
+
+            // Bottom hint
+            self.ctx.set_fill_style_str("#666");
+            self.ctx.set_font("10px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text(
+                    "Enter=forge  Esc=cancel",
+                    self.canvas_w / 2.0,
+                    box_y + box_h + 14.0,
+                )
+                .ok();
         }
 
         // ── Game Over overlay ───────────────────────────────────────────

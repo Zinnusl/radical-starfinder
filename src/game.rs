@@ -9,6 +9,7 @@ use web_sys::{window, HtmlCanvasElement, KeyboardEvent};
 use crate::dungeon::{compute_fov, DungeonLevel, Tile};
 use crate::enemy::Enemy;
 use crate::player::Player;
+use crate::radical::{self, Spell, SpellEffect};
 use crate::render::Renderer;
 use crate::vocab::{self, VocabEntry};
 
@@ -27,6 +28,11 @@ pub enum CombatState {
         enemy_idx: usize,
         timer_ms: f64,
     },
+    /// Player is at a forge workbench, selecting radicals
+    Forging {
+        /// Indices into player.radicals that are selected for forging
+        selected: Vec<usize>,
+    },
     /// Player is dead
     GameOver,
 }
@@ -42,6 +48,8 @@ pub struct GameState {
     pub typing: String,
     pub message: String,
     pub message_timer: u8, // frames to show message
+    /// Discovered recipe indices (persists across floors within a run)
+    pub discovered_recipes: Vec<usize>,
     rng_state: u64,
 }
 
@@ -135,6 +143,24 @@ impl GameState {
         if self.level.tile(nx, ny) == Tile::StairsDown {
             self.new_floor();
             return;
+        }
+
+        // Forge workbench
+        if self.level.tile(nx, ny) == Tile::Forge {
+            if self.player.radicals.is_empty() {
+                self.message = "Forge workbench — but you have no radicals!".to_string();
+                self.message_timer = 60;
+            } else {
+                self.combat = CombatState::Forging {
+                    selected: Vec::new(),
+                };
+                self.message = "Select radicals with 1-9, then Enter to forge. Esc to cancel.".to_string();
+                self.message_timer = 255;
+                // Don't run enemy turn when entering forge
+                let (px, py) = (self.player.x, self.player.y);
+                compute_fov(&mut self.level, px, py, FOV_RADIUS);
+                return;
+            }
         }
 
         // After player moves, enemies take a turn
@@ -233,8 +259,16 @@ impl GameState {
                 // Hit!
                 self.enemies[enemy_idx].hp -= 2;
                 if self.enemies[enemy_idx].hp <= 0 {
-                    self.message = format!("Defeated {}! ({})", e_hanzi, e_meaning);
-                    self.message_timer = 60;
+                    // Drop a random radical
+                    let available = radical::radicals_for_floor(self.floor_num);
+                    let drop_idx = self.rng_next() as usize % available.len();
+                    let dropped = available[drop_idx].ch;
+                    self.player.add_radical(dropped);
+                    self.message = format!(
+                        "Defeated {}! Got radical [{}]",
+                        e_hanzi, dropped
+                    );
+                    self.message_timer = 80;
                     self.combat = CombatState::Explore;
                 } else {
                     self.message = format!("Hit! {} HP left", self.enemies[enemy_idx].hp);
@@ -242,12 +276,24 @@ impl GameState {
                 }
             } else {
                 // Miss — enemy counter-attacks
-                self.player.hp -= e_damage;
-                self.message = format!(
-                    "Wrong! It was \"{}\". {} hits for {}!",
-                    e_pinyin, e_hanzi, e_damage
-                );
-                self.message_timer = 60;
+                let dmg = if self.player.shield {
+                    self.player.shield = false;
+                    self.message = format!(
+                        "Wrong! (was \"{}\") — Shield absorbed the blow!",
+                        e_pinyin
+                    );
+                    self.message_timer = 60;
+                    0
+                } else {
+                    self.player.hp -= e_damage;
+                    self.message = format!(
+                        "Wrong! It was \"{}\". {} hits for {}!",
+                        e_pinyin, e_hanzi, e_damage
+                    );
+                    self.message_timer = 60;
+                    e_damage
+                };
+                let _ = dmg;
                 if self.player.hp <= 0 {
                     self.player.hp = 0;
                     self.combat = CombatState::GameOver;
@@ -262,12 +308,165 @@ impl GameState {
         self.typing.pop();
     }
 
+    /// Toggle a radical index in forge selection.
+    fn forge_toggle(&mut self, radical_idx: usize) {
+        if let CombatState::Forging { ref mut selected } = self.combat {
+            if radical_idx >= self.player.radicals.len() {
+                return;
+            }
+            if let Some(pos) = selected.iter().position(|&i| i == radical_idx) {
+                selected.remove(pos);
+            } else if selected.len() < 3 {
+                selected.push(radical_idx);
+            }
+        }
+    }
+
+    /// Attempt to forge with selected radicals.
+    fn forge_submit(&mut self) {
+        let selected = if let CombatState::Forging { ref selected } = self.combat {
+            selected.clone()
+        } else {
+            return;
+        };
+
+        if selected.is_empty() {
+            self.message = "Select radicals first!".to_string();
+            self.message_timer = 40;
+            return;
+        }
+
+        let rad_chars: Vec<&str> = selected
+            .iter()
+            .map(|&i| self.player.radicals[i])
+            .collect();
+
+        if let Some(recipe) = radical::try_forge(&rad_chars) {
+            let spell = Spell {
+                hanzi: recipe.output_hanzi,
+                pinyin: recipe.output_pinyin,
+                meaning: recipe.output_meaning,
+                effect: recipe.effect,
+            };
+            // Track discovery
+            let recipe_idx = radical::RECIPES
+                .iter()
+                .position(|r| r.output_hanzi == recipe.output_hanzi);
+            if let Some(idx) = recipe_idx {
+                if !self.discovered_recipes.contains(&idx) {
+                    self.discovered_recipes.push(idx);
+                }
+            }
+            self.message = format!(
+                "Forged {} ({}) — {}! [{}]",
+                recipe.output_hanzi,
+                recipe.output_pinyin,
+                recipe.output_meaning,
+                recipe.effect.label()
+            );
+            self.message_timer = 80;
+            self.player.add_spell(spell);
+            // Consume radicals (remove in reverse order to avoid index shifting)
+            let mut to_remove: Vec<usize> = selected.clone();
+            to_remove.sort_unstable_by(|a, b| b.cmp(a));
+            for idx in to_remove {
+                self.player.radicals.remove(idx);
+            }
+            self.combat = CombatState::Explore;
+        } else {
+            self.message = "No recipe found for that combination...".to_string();
+            self.message_timer = 60;
+        }
+    }
+
+    /// Use a spell during combat (Tab to cycle, Space to cast).
+    fn use_spell(&mut self) {
+        if let CombatState::Fighting { enemy_idx, .. } = self.combat {
+            if let Some(spell) = self.player.use_spell() {
+                match spell.effect {
+                    SpellEffect::FireAoe(dmg) => {
+                        // Damage all visible enemies
+                        let mut killed = 0;
+                        for e in &mut self.enemies {
+                            if e.is_alive() {
+                                let eidx = self.level.idx(e.x, e.y);
+                                if self.level.visible[eidx] {
+                                    e.hp -= dmg;
+                                    if e.hp <= 0 { killed += 1; }
+                                }
+                            }
+                        }
+                        self.message = format!(
+                            "{}🔥 {} deals {} damage to all! ({} defeated)",
+                            spell.hanzi, spell.meaning, dmg, killed
+                        );
+                        self.message_timer = 80;
+                        // If the fought enemy died, return to explore
+                        if enemy_idx < self.enemies.len() && !self.enemies[enemy_idx].is_alive() {
+                            self.combat = CombatState::Explore;
+                            self.typing.clear();
+                        }
+                    }
+                    SpellEffect::Heal(amount) => {
+                        self.player.hp = (self.player.hp + amount).min(self.player.max_hp);
+                        self.message = format!(
+                            "{} heals {} HP! (now {}/{})",
+                            spell.hanzi, amount, self.player.hp, self.player.max_hp
+                        );
+                        self.message_timer = 60;
+                    }
+                    SpellEffect::Shield => {
+                        self.player.shield = true;
+                        self.message = format!(
+                            "{} — Shield active! Next hit will be blocked.",
+                            spell.hanzi
+                        );
+                        self.message_timer = 60;
+                    }
+                    SpellEffect::StrongHit(dmg) => {
+                        if enemy_idx < self.enemies.len() {
+                            self.enemies[enemy_idx].hp -= dmg;
+                            let e_hanzi = self.enemies[enemy_idx].hanzi;
+                            if self.enemies[enemy_idx].hp <= 0 {
+                                // Drop radical on kill
+                                let available = radical::radicals_for_floor(self.floor_num);
+                                let drop_idx = self.rng_next() as usize % available.len();
+                                self.player.add_radical(available[drop_idx].ch);
+                                self.message = format!(
+                                    "{}⚔ Devastating {} damage! Defeated {}! Got [{}]",
+                                    spell.hanzi, dmg, e_hanzi, available[drop_idx].ch
+                                );
+                                self.message_timer = 80;
+                                self.combat = CombatState::Explore;
+                                self.typing.clear();
+                            } else {
+                                self.message = format!(
+                                    "{}⚔ {} damage to {}! ({} HP left)",
+                                    spell.hanzi, dmg, e_hanzi, self.enemies[enemy_idx].hp
+                                );
+                                self.message_timer = 60;
+                            }
+                        }
+                    }
+                }
+            } else {
+                self.message = "No spells available!".to_string();
+                self.message_timer = 40;
+            }
+        }
+    }
+
     /// Restart after game over.
     fn restart(&mut self) {
         self.player.hp = self.player.max_hp;
+        self.player.radicals.clear();
+        self.player.spells.clear();
+        self.player.selected_spell = 0;
+        self.player.shield = false;
         self.floor_num = 0;
         self.enemies.clear();
         self.typing.clear();
+        self.discovered_recipes.clear();
         self.combat = CombatState::Explore;
         self.new_floor();
     }
@@ -332,6 +531,7 @@ pub fn init_game() -> Result<(), JsValue> {
         typing: String::new(),
         message: String::new(),
         message_timer: 0,
+        discovered_recipes: Vec::new(),
         rng_state: seed,
     }));
 
@@ -373,13 +573,19 @@ pub fn init_game() -> Result<(), JsValue> {
                         s.render();
                     }
                     "Escape" => {
-                        // Flee — enemy gets a free hit
+                        // Flee — enemy gets a free hit (shield can block)
                         if let CombatState::Fighting { enemy_idx, .. } = s.combat {
                             if enemy_idx < s.enemies.len() && s.enemies[enemy_idx].is_alive() {
-                                let dmg = s.enemies[enemy_idx].damage;
-                                s.player.hp -= dmg;
-                                s.message = format!("Fled! {} hits for {}!", s.enemies[enemy_idx].hanzi, dmg);
-                                s.message_timer = 40;
+                                if s.player.shield {
+                                    s.player.shield = false;
+                                    s.message = "Fled! Shield absorbed the blow!".to_string();
+                                    s.message_timer = 40;
+                                } else {
+                                    let dmg = s.enemies[enemy_idx].damage;
+                                    s.player.hp -= dmg;
+                                    s.message = format!("Fled! {} hits for {}!", s.enemies[enemy_idx].hanzi, dmg);
+                                    s.message_timer = 40;
+                                }
                                 if s.player.hp <= 0 {
                                     s.player.hp = 0;
                                     s.combat = CombatState::GameOver;
@@ -393,6 +599,16 @@ pub fn init_game() -> Result<(), JsValue> {
                         s.typing.clear();
                         s.render();
                     }
+                    "Tab" => {
+                        // Cycle selected spell
+                        s.player.cycle_spell();
+                        s.render();
+                    }
+                    " " => {
+                        // Cast selected spell
+                        s.use_spell();
+                        s.render();
+                    }
                     _ => {
                         if let Some(ch) = key.chars().next() {
                             if key.len() == 1 && (ch.is_ascii_alphanumeric()) {
@@ -401,6 +617,30 @@ pub fn init_game() -> Result<(), JsValue> {
                             }
                         }
                     }
+                }
+                return;
+            }
+
+            // Forge mode
+            if matches!(s.combat, CombatState::Forging { .. }) {
+                event.prevent_default();
+                match key.as_str() {
+                    "Escape" => {
+                        s.combat = CombatState::Explore;
+                        s.message.clear();
+                        s.message_timer = 0;
+                        s.render();
+                    }
+                    "Enter" => {
+                        s.forge_submit();
+                        s.render();
+                    }
+                    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => {
+                        let idx = key.parse::<usize>().unwrap_or(1) - 1;
+                        s.forge_toggle(idx);
+                        s.render();
+                    }
+                    _ => {}
                 }
                 return;
             }

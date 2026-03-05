@@ -6,6 +6,7 @@ mod dungeon;
 mod enemy;
 mod game;
 mod player;
+mod radical;
 mod render;
 mod vocab;
 
