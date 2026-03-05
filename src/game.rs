@@ -176,16 +176,18 @@ impl GameState {
                 continue;
             }
 
-            // If enemy walks into player → attack!
+            // If enemy walks into player → start combat (same as player bumping enemy)
             if nx == px && ny == py {
-                let dmg = self.enemies[i].damage;
-                self.player.hp -= dmg;
-                self.message = format!("{} hits you for {} damage!", self.enemies[i].hanzi, dmg);
-                self.message_timer = 60;
-                if self.player.hp <= 0 {
-                    self.player.hp = 0;
-                    self.combat = CombatState::GameOver;
-                    self.message = "You have been defeated...".to_string();
+                if !matches!(self.combat, CombatState::Fighting { .. }) {
+                    self.combat = CombatState::Fighting {
+                        enemy_idx: i,
+                        timer_ms: 0.0,
+                    };
+                    self.typing.clear();
+                    self.message = format!(
+                        "{} attacks! Type pinyin for {} ({})",
+                        self.enemies[i].hanzi, self.enemies[i].hanzi, self.enemies[i].meaning
+                    );
                     self.message_timer = 255;
                 }
                 continue;
