@@ -62,6 +62,10 @@ impl Renderer {
         message: &str,
         floor_num: i32,
         best_floor: i32,
+        total_kills: u32,
+        total_runs: u32,
+        recipes_found: usize,
+        srs: &crate::srs::SrsTracker,
     ) {
         // Camera: center on player
         let cam_x = player.x as f64 * TILE_SIZE - self.canvas_w / 2.0 + TILE_SIZE / 2.0;
@@ -688,46 +692,61 @@ impl Renderer {
 
         // ── Game Over overlay ───────────────────────────────────────────
         if matches!(combat, CombatState::GameOver) {
-            self.ctx.set_fill_style_str("rgba(0,0,0,0.7)");
+            self.ctx.set_fill_style_str("rgba(0,0,0,0.75)");
             self.ctx
                 .fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
+
+            let cx = self.canvas_w / 2.0;
+            let mut y = self.canvas_h / 2.0 - 80.0;
 
             self.ctx.set_fill_style_str("#ff4444");
             self.ctx.set_font("48px monospace");
             self.ctx.set_text_align("center");
-            self.ctx
-                .fill_text("GAME OVER", self.canvas_w / 2.0, self.canvas_h / 2.0 - 20.0)
-                .ok();
+            self.ctx.fill_text("GAME OVER", cx, y).ok();
+            y += 40.0;
 
             self.ctx.set_fill_style_str("#aaa");
             self.ctx.set_font("16px monospace");
-            self.ctx
-                .fill_text(
-                    &format!("Reached floor {}  (Best: {})", floor_num, best_floor),
-                    self.canvas_w / 2.0,
-                    self.canvas_h / 2.0 + 20.0,
-                )
-                .ok();
+            self.ctx.fill_text(
+                &format!("Floor {} reached  (Best: {})", floor_num, best_floor),
+                cx, y,
+            ).ok();
+            y += 28.0;
 
+            // Stats box
             self.ctx.set_fill_style_str("#ffdd44");
-            self.ctx.set_font("14px monospace");
-            self.ctx
-                .fill_text(
-                    &format!("Gold earned: {}", player.gold),
-                    self.canvas_w / 2.0,
-                    self.canvas_h / 2.0 + 44.0,
-                )
-                .ok();
+            self.ctx.set_font("13px monospace");
+            self.ctx.fill_text(
+                &format!("Gold: {}  |  Spells: {}  |  Recipes: {}/{}",
+                    player.gold, player.spells.len(), recipes_found, crate::radical::RECIPES.len()),
+                cx, y,
+            ).ok();
+            y += 22.0;
+
+            self.ctx.set_fill_style_str("#88bbff");
+            self.ctx.fill_text(
+                &format!("Total runs: {}  |  Total kills: {}",
+                    total_runs + 1, total_kills),
+                cx, y,
+            ).ok();
+            y += 22.0;
+
+            // SRS accuracy summary
+            let total_attempts: u32 = srs.stats.values().map(|(_, t)| t).sum();
+            let total_correct: u32 = srs.stats.values().map(|(c, _)| c).sum();
+            let pct = if total_attempts > 0 {
+                (total_correct as f64 / total_attempts as f64 * 100.0) as u32
+            } else { 0 };
+            self.ctx.set_fill_style_str("#aaddaa");
+            self.ctx.fill_text(
+                &format!("Pinyin accuracy: {}% ({}/{})", pct, total_correct, total_attempts),
+                cx, y,
+            ).ok();
+            y += 30.0;
 
             self.ctx.set_fill_style_str("#ffcc33");
             self.ctx.set_font("14px monospace");
-            self.ctx
-                .fill_text(
-                    "Press R to restart",
-                    self.canvas_w / 2.0,
-                    self.canvas_h / 2.0 + 70.0,
-                )
-                .ok();
+            self.ctx.fill_text("Press R to restart", cx, y).ok();
         }
     }
 

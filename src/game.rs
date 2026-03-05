@@ -6,11 +6,13 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{window, HtmlCanvasElement, KeyboardEvent};
 
+use crate::audio::Audio;
 use crate::dungeon::{compute_fov, DungeonLevel, Tile};
 use crate::enemy::Enemy;
 use crate::player::{Player, EQUIPMENT_POOL};
 use crate::radical::{self, Spell, SpellEffect};
 use crate::render::Renderer;
+use crate::srs::SrsTracker;
 use crate::vocab::{self, VocabEntry};
 
 const MAP_W: i32 = 48;
@@ -61,6 +63,7 @@ pub struct GameState {
     pub level: DungeonLevel,
     pub player: Player,
     pub renderer: Renderer,
+    pub audio: Option<Audio>,
     pub floor_num: i32,
     pub seed: u64,
     pub enemies: Vec<Enemy>,
@@ -70,6 +73,9 @@ pub struct GameState {
     pub message_timer: u8,
     pub discovered_recipes: Vec<usize>,
     pub best_floor: i32,
+    pub srs: SrsTracker,
+    pub total_kills: u32,
+    pub total_runs: u32,
     rng_state: u64,
 }
 
@@ -105,7 +111,8 @@ impl GameState {
                 continue;
             }
             for _ in 0..enemies_per_room.min(ENEMIES_PER_ROOM as i32 + self.floor_num / 3) {
-                let entry_idx = self.rng_next() as usize % pool.len();
+                let rand_val = self.rng_next();
+                let entry_idx = self.srs.weighted_pick(&pool, rand_val);
                 let entry: &'static VocabEntry = pool[entry_idx];
                 let ex = room.x + 1 + (self.rng_next() % (room.w - 2).max(1) as u64) as i32;
                 let ey = room.y + 1 + (self.rng_next() % (room.h - 2).max(1) as u64) as i32;
@@ -117,6 +124,8 @@ impl GameState {
     }
 
     fn new_floor(&mut self) {
+        if let Some(ref audio) = self.audio { audio.play_descend(); }
+        crate::srs::save_srs(&self.srs);
         self.floor_num += 1;
         if self.floor_num > self.best_floor {
             self.best_floor = self.floor_num;
@@ -170,6 +179,7 @@ impl GameState {
         }
 
         self.player.move_to(nx, ny);
+        if let Some(ref audio) = self.audio { audio.play_step(); }
 
         // Stairs
         if self.level.tile(nx, ny) == Tile::StairsDown {
@@ -300,10 +310,13 @@ impl GameState {
                 },
                 &self.typing,
             ) {
+                self.srs.record(e_hanzi, true);
                 // Hit with bonus damage from equipment
                 let hit_dmg = 2 + self.player.bonus_damage();
                 self.enemies[enemy_idx].hp -= hit_dmg;
                 if self.enemies[enemy_idx].hp <= 0 {
+                    self.total_kills += 1;
+                    if let Some(ref audio) = self.audio { audio.play_kill(); }
                     // Rewards
                     self.player.gold += e_gold;
                     let available = radical::radicals_for_floor(self.floor_num);
@@ -341,13 +354,24 @@ impl GameState {
                         );
                     }
                     self.message_timer = 80;
+                    // Tutorial hint: first radical collected
+                    if self.total_runs == 0 && self.player.radicals.len() == 1 {
+                        self.message = format!(
+                            "Defeated {}! +{}g [{}] — Walk to an ⚒ anvil to forge spells!",
+                            e_hanzi, e_gold, dropped
+                        );
+                        self.message_timer = 160;
+                    }
                     self.combat = CombatState::Explore;
                 } else {
+                    if let Some(ref audio) = self.audio { audio.play_hit(); }
                     self.message = format!("Hit for {}! {} HP left", hit_dmg, self.enemies[enemy_idx].hp);
                     self.message_timer = 40;
                 }
             } else {
                 // Miss — enemy counter-attacks
+                self.srs.record(e_hanzi, false);
+                if let Some(ref audio) = self.audio { audio.play_miss(); }
                 if self.player.shield {
                     self.player.shield = false;
                     self.message = format!(
@@ -357,6 +381,7 @@ impl GameState {
                     self.message_timer = 60;
                 } else {
                     self.player.hp -= e_damage;
+                    if let Some(ref audio) = self.audio { audio.play_damage(); }
                     self.message = format!(
                         "Wrong! It was \"{}\". {} hits for {}!",
                         e_pinyin, e_hanzi, e_damage
@@ -366,6 +391,7 @@ impl GameState {
                 if self.player.hp <= 0 {
                     self.player.hp = 0;
                     self.combat = CombatState::GameOver;
+                    if let Some(ref audio) = self.audio { audio.play_death(); }
                     self.save_high_score();
                 }
             }
@@ -412,6 +438,7 @@ impl GameState {
             .collect();
 
         if let Some(recipe) = radical::try_forge(&rad_chars) {
+            if let Some(ref audio) = self.audio { audio.play_forge(); }
             let spell = Spell {
                 hanzi: recipe.output_hanzi,
                 pinyin: recipe.output_pinyin,
@@ -436,6 +463,14 @@ impl GameState {
             );
             self.message_timer = 80;
             self.player.add_spell(spell);
+            // Tutorial hint: first spell forged
+            if self.total_runs == 0 && self.player.spells.len() == 1 {
+                self.message = format!(
+                    "Forged {}! In combat: Tab to select spell, Space to cast!",
+                    recipe.output_hanzi
+                );
+                self.message_timer = 160;
+            }
             // Consume radicals (remove in reverse order to avoid index shifting)
             let mut to_remove: Vec<usize> = selected.clone();
             to_remove.sort_unstable_by(|a, b| b.cmp(a));
@@ -444,6 +479,7 @@ impl GameState {
             }
             self.combat = CombatState::Explore;
         } else {
+            if let Some(ref audio) = self.audio { audio.play_forge_fail(); }
             self.message = "No recipe found for that combination...".to_string();
             self.message_timer = 60;
         }
@@ -495,6 +531,7 @@ impl GameState {
                 return;
             }
             self.player.gold -= item.cost;
+            if let Some(ref audio) = self.audio { audio.play_buy(); }
             match &item.kind {
                 ShopItemKind::Radical(ch) => {
                     self.player.add_radical(ch);
@@ -518,6 +555,7 @@ impl GameState {
     fn use_spell(&mut self) {
         if let CombatState::Fighting { enemy_idx, .. } = self.combat {
             if let Some(spell) = self.player.use_spell() {
+                if let Some(ref audio) = self.audio { audio.play_spell(); }
                 match spell.effect {
                     SpellEffect::FireAoe(dmg) => {
                         // Damage all visible enemies
@@ -593,17 +631,22 @@ impl GameState {
 
     /// Restart after game over.
     fn restart(&mut self) {
+        self.total_runs += 1;
         self.save_high_score();
+        self.save_stats();
+        self.srs = crate::srs::load_srs();
         self.player = Player::new(0, 0);
         self.floor_num = 0;
         self.enemies.clear();
         self.typing.clear();
-        self.discovered_recipes.clear();
+        // Keep discovered recipes across runs (loaded from localStorage)
         self.combat = CombatState::Explore;
         self.new_floor();
     }
 
     fn save_high_score(&self) {
+        crate::srs::save_srs(&self.srs);
+        self.save_stats();
         let storage: Option<web_sys::Storage> = window()
             .and_then(|w: web_sys::Window| w.local_storage().ok().flatten());
         if let Some(storage) = storage {
@@ -616,6 +659,12 @@ impl GameState {
             if self.best_floor > prev {
                 let _ = storage.set_item("radical_roguelike_best", &self.best_floor.to_string());
             }
+            // Save discovered recipes
+            let recipe_str: String = self.discovered_recipes.iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            let _ = storage.set_item("radical_roguelike_recipes", &recipe_str);
         }
     }
 
@@ -626,6 +675,38 @@ impl GameState {
             .and_then(|s: web_sys::Storage| s.get_item("radical_roguelike_best").ok().flatten())
             .and_then(|s: String| s.parse::<i32>().ok())
             .unwrap_or(0)
+    }
+
+    fn load_recipes() -> Vec<usize> {
+        let storage: Option<web_sys::Storage> = window()
+            .and_then(|w: web_sys::Window| w.local_storage().ok().flatten());
+        storage
+            .and_then(|s: web_sys::Storage| s.get_item("radical_roguelike_recipes").ok().flatten())
+            .map(|s: String| {
+                s.split(',')
+                    .filter_map(|v| v.parse::<usize>().ok())
+                    .filter(|&i| i < radical::RECIPES.len())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn load_stat(key: &str) -> u32 {
+        let storage: Option<web_sys::Storage> = window()
+            .and_then(|w: web_sys::Window| w.local_storage().ok().flatten());
+        storage
+            .and_then(|s: web_sys::Storage| s.get_item(key).ok().flatten())
+            .and_then(|s: String| s.parse::<u32>().ok())
+            .unwrap_or(0)
+    }
+
+    fn save_stats(&self) {
+        let storage: Option<web_sys::Storage> = window()
+            .and_then(|w: web_sys::Window| w.local_storage().ok().flatten());
+        if let Some(storage) = storage {
+            let _ = storage.set_item("radical_roguelike_runs", &self.total_runs.to_string());
+            let _ = storage.set_item("radical_roguelike_kills", &self.total_kills.to_string());
+        }
     }
 
     fn tick_message(&mut self) {
@@ -647,6 +728,10 @@ impl GameState {
             &self.message,
             self.floor_num,
             self.best_floor,
+            self.total_kills,
+            self.total_runs,
+            self.discovered_recipes.len(),
+            &self.srs,
         );
     }
 }
@@ -679,11 +764,16 @@ pub fn init_game() -> Result<(), JsValue> {
     let player = Player::new(sx, sy);
 
     let best_floor = GameState::load_high_score();
+    let srs = crate::srs::load_srs();
+    let audio = Audio::new();
+    let total_runs = GameState::load_stat("radical_roguelike_runs");
+    let total_kills = GameState::load_stat("radical_roguelike_kills");
 
     let state = Rc::new(RefCell::new(GameState {
         level,
         player,
         renderer,
+        audio,
         floor_num: 1,
         seed,
         enemies: Vec::new(),
@@ -691,8 +781,11 @@ pub fn init_game() -> Result<(), JsValue> {
         typing: String::new(),
         message: String::new(),
         message_timer: 0,
-        discovered_recipes: Vec::new(),
+        discovered_recipes: GameState::load_recipes(),
         best_floor,
+        srs,
+        total_kills,
+        total_runs,
         rng_state: seed,
     }));
 
@@ -702,6 +795,11 @@ pub fn init_game() -> Result<(), JsValue> {
         s.spawn_enemies();
         let (px, py) = (s.player.x, s.player.y);
         compute_fov(&mut s.level, px, py, FOV_RADIUS);
+        // Tutorial hint on first run
+        if s.total_runs == 0 && s.best_floor == 0 {
+            s.message = "Welcome! Arrow keys to move. Bump enemies to fight — type their pinyin!".to_string();
+            s.message_timer = 200;
+        }
     }
 
     // Keyboard input
@@ -710,6 +808,9 @@ pub fn init_game() -> Result<(), JsValue> {
         let closure = Closure::<dyn FnMut(KeyboardEvent)>::new(move |event: KeyboardEvent| {
             let key = event.key();
             let mut s = state.borrow_mut();
+
+            // Resume audio context on first interaction (browser requirement)
+            if let Some(ref audio) = s.audio { audio.resume(); }
 
             // Game over: press R to restart
             if matches!(s.combat, CombatState::GameOver) {

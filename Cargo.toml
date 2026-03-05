@@ -28,6 +28,14 @@ web-sys = { version = "0.3", features = [
     "Element",
     "Storage",
     "console",
+    "AudioContext",
+    "AudioDestinationNode",
+    "OscillatorNode",
+    "OscillatorType",
+    "GainNode",
+    "AudioParam",
+    "AudioNode",
+    "AudioScheduledSourceNode",
 ] }
 console_error_panic_hook = { version = "0.1", optional = true }
 

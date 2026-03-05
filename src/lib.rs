@@ -2,12 +2,14 @@
 
 use wasm_bindgen::prelude::*;
 
+mod audio;
 mod dungeon;
 mod enemy;
 mod game;
 mod player;
 mod radical;
 mod render;
+mod srs;
 mod vocab;
 
 #[cfg(feature = "console_error_panic_hook")]
