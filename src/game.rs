@@ -8,7 +8,7 @@ use web_sys::{window, HtmlCanvasElement, KeyboardEvent};
 
 use crate::dungeon::{compute_fov, DungeonLevel, Tile};
 use crate::enemy::Enemy;
-use crate::player::Player;
+use crate::player::{Player, EQUIPMENT_POOL};
 use crate::radical::{self, Spell, SpellEffect};
 use crate::render::Renderer;
 use crate::vocab::{self, VocabEntry};
@@ -30,11 +30,30 @@ pub enum CombatState {
     },
     /// Player is at a forge workbench, selecting radicals
     Forging {
-        /// Indices into player.radicals that are selected for forging
         selected: Vec<usize>,
+    },
+    /// Player is at a shop, browsing items
+    Shopping {
+        /// Items for sale: (description, cost, action)
+        items: Vec<ShopItem>,
+        cursor: usize,
     },
     /// Player is dead
     GameOver,
+}
+
+#[derive(Clone, Debug)]
+pub struct ShopItem {
+    pub label: String,
+    pub cost: i32,
+    pub kind: ShopItemKind,
+}
+
+#[derive(Clone, Debug)]
+pub enum ShopItemKind {
+    Radical(&'static str),
+    HealFull,
+    Equipment(usize), // index into EQUIPMENT_POOL
 }
 
 pub struct GameState {
@@ -47,9 +66,9 @@ pub struct GameState {
     pub combat: CombatState,
     pub typing: String,
     pub message: String,
-    pub message_timer: u8, // frames to show message
-    /// Discovered recipe indices (persists across floors within a run)
+    pub message_timer: u8,
     pub discovered_recipes: Vec<usize>,
+    pub best_floor: i32,
     rng_state: u64,
 }
 
@@ -68,20 +87,29 @@ impl GameState {
         if pool.is_empty() {
             return;
         }
-        // Skip first room (player start) and last room (stairs)
         let rooms = self.level.rooms.clone();
+        let is_boss_floor = self.floor_num % 5 == 0 && self.floor_num > 0;
+        let enemies_per_room = 1 + self.floor_num / 4; // more enemies on deeper floors
+
         for (i, room) in rooms.iter().enumerate() {
             if i == 0 || i == rooms.len() - 1 {
                 continue;
             }
-            for _ in 0..ENEMIES_PER_ROOM {
+            // Boss in second-to-last room on boss floors
+            if is_boss_floor && i == rooms.len() - 2 {
                 let entry_idx = self.rng_next() as usize % pool.len();
                 let entry: &'static VocabEntry = pool[entry_idx];
-                // Random position inside room
+                let (cx, cy) = room.center();
+                self.enemies.push(Enemy::boss_from_vocab(entry, cx, cy, self.floor_num));
+                continue;
+            }
+            for _ in 0..enemies_per_room.min(ENEMIES_PER_ROOM as i32 + self.floor_num / 3) {
+                let entry_idx = self.rng_next() as usize % pool.len();
+                let entry: &'static VocabEntry = pool[entry_idx];
                 let ex = room.x + 1 + (self.rng_next() % (room.w - 2).max(1) as u64) as i32;
                 let ey = room.y + 1 + (self.rng_next() % (room.h - 2).max(1) as u64) as i32;
                 if self.level.is_walkable(ex, ey) {
-                    self.enemies.push(Enemy::from_vocab(entry, ex, ey));
+                    self.enemies.push(Enemy::from_vocab(entry, ex, ey, self.floor_num));
                 }
             }
         }
@@ -89,6 +117,9 @@ impl GameState {
 
     fn new_floor(&mut self) {
         self.floor_num += 1;
+        if self.floor_num > self.best_floor {
+            self.best_floor = self.floor_num;
+        }
         self.seed = self.seed.wrapping_mul(6364136223846793005).wrapping_add(1);
         self.rng_state = self.seed;
         self.level = DungeonLevel::generate(MAP_W, MAP_H, self.seed);
@@ -156,11 +187,21 @@ impl GameState {
                 };
                 self.message = "Select radicals with 1-9, then Enter to forge. Esc to cancel.".to_string();
                 self.message_timer = 255;
-                // Don't run enemy turn when entering forge
                 let (px, py) = (self.player.x, self.player.y);
                 compute_fov(&mut self.level, px, py, FOV_RADIUS);
                 return;
             }
+        }
+
+        // Shop
+        if self.level.tile(nx, ny) == Tile::Shop {
+            let items = self.generate_shop_items();
+            self.combat = CombatState::Shopping { items, cursor: 0 };
+            self.message = "Welcome to the shop! ↑↓ to browse, Enter to buy, Esc to leave.".to_string();
+            self.message_timer = 255;
+            let (px, py) = (self.player.x, self.player.y);
+            compute_fov(&mut self.level, px, py, FOV_RADIUS);
+            return;
         }
 
         // After player moves, enemies take a turn
@@ -241,11 +282,12 @@ impl GameState {
                 self.combat = CombatState::Explore;
                 return;
             }
-            // Copy enemy data to avoid borrow conflict
             let e_hanzi = self.enemies[enemy_idx].hanzi;
             let e_pinyin = self.enemies[enemy_idx].pinyin;
             let e_meaning = self.enemies[enemy_idx].meaning;
-            let e_damage = self.enemies[enemy_idx].damage;
+            let e_damage = (self.enemies[enemy_idx].damage - self.player.damage_reduction()).max(1);
+            let e_gold = self.enemies[enemy_idx].gold_value + self.player.gold_bonus();
+            let e_is_boss = self.enemies[enemy_idx].is_boss;
 
             if vocab::check_pinyin(
                 &vocab::VocabEntry {
@@ -256,34 +298,61 @@ impl GameState {
                 },
                 &self.typing,
             ) {
-                // Hit!
-                self.enemies[enemy_idx].hp -= 2;
+                // Hit with bonus damage from equipment
+                let hit_dmg = 2 + self.player.bonus_damage();
+                self.enemies[enemy_idx].hp -= hit_dmg;
                 if self.enemies[enemy_idx].hp <= 0 {
-                    // Drop a random radical
+                    // Rewards
+                    self.player.gold += e_gold;
                     let available = radical::radicals_for_floor(self.floor_num);
                     let drop_idx = self.rng_next() as usize % available.len();
                     let dropped = available[drop_idx].ch;
                     self.player.add_radical(dropped);
-                    self.message = format!(
-                        "Defeated {}! Got radical [{}]",
-                        e_hanzi, dropped
-                    );
+
+                    // Extra radical from charm
+                    let extra_chance = self.player.extra_radical_chance();
+                    if extra_chance > 0 && (self.rng_next() % 100) < extra_chance as u64 {
+                        let drop2 = self.rng_next() as usize % available.len();
+                        self.player.add_radical(available[drop2].ch);
+                    }
+
+                    // Heal on kill from charm
+                    let heal = self.player.heal_on_kill();
+                    if heal > 0 {
+                        self.player.hp = (self.player.hp + heal).min(self.player.max_hp);
+                    }
+
+                    // Random equipment drop (10% chance, higher for bosses)
+                    let equip_chance = if e_is_boss { 60 } else { 10 };
+                    if (self.rng_next() % 100) < equip_chance {
+                        let eq_idx = self.rng_next() as usize % EQUIPMENT_POOL.len();
+                        let eq = &EQUIPMENT_POOL[eq_idx];
+                        self.player.equip(eq);
+                        self.message = format!(
+                            "Defeated {}! +{}g [{}] + {}!",
+                            e_hanzi, e_gold, dropped, eq.name
+                        );
+                    } else {
+                        self.message = format!(
+                            "Defeated {}! +{}g [{}]",
+                            e_hanzi, e_gold, dropped
+                        );
+                    }
                     self.message_timer = 80;
                     self.combat = CombatState::Explore;
                 } else {
-                    self.message = format!("Hit! {} HP left", self.enemies[enemy_idx].hp);
+                    self.message = format!("Hit for {}! {} HP left", hit_dmg, self.enemies[enemy_idx].hp);
                     self.message_timer = 40;
                 }
             } else {
                 // Miss — enemy counter-attacks
-                let dmg = if self.player.shield {
+                if self.player.shield {
                     self.player.shield = false;
                     self.message = format!(
                         "Wrong! (was \"{}\") — Shield absorbed the blow!",
                         e_pinyin
                     );
                     self.message_timer = 60;
-                    0
                 } else {
                     self.player.hp -= e_damage;
                     self.message = format!(
@@ -291,12 +360,11 @@ impl GameState {
                         e_pinyin, e_hanzi, e_damage
                     );
                     self.message_timer = 60;
-                    e_damage
-                };
-                let _ = dmg;
+                }
                 if self.player.hp <= 0 {
                     self.player.hp = 0;
                     self.combat = CombatState::GameOver;
+                    self.save_high_score();
                 }
             }
             self.typing.clear();
@@ -375,6 +443,71 @@ impl GameState {
             self.combat = CombatState::Explore;
         } else {
             self.message = "No recipe found for that combination...".to_string();
+            self.message_timer = 60;
+        }
+    }
+
+    /// Generate shop items for current floor.
+    fn generate_shop_items(&mut self) -> Vec<ShopItem> {
+        let mut items = Vec::new();
+
+        // Always offer heal
+        items.push(ShopItem {
+            label: "Full Heal".to_string(),
+            cost: 15 + self.floor_num * 3,
+            kind: ShopItemKind::HealFull,
+        });
+
+        // Offer 2 random radicals
+        let available = radical::radicals_for_floor(self.floor_num);
+        for _ in 0..2 {
+            let idx = self.rng_next() as usize % available.len();
+            let rad = available[idx];
+            items.push(ShopItem {
+                label: format!("Radical [{}] ({})", rad.ch, rad.meaning),
+                cost: 10 + self.floor_num,
+                kind: ShopItemKind::Radical(rad.ch),
+            });
+        }
+
+        // Offer 1 random equipment
+        let eq_idx = self.rng_next() as usize % EQUIPMENT_POOL.len();
+        let eq = &EQUIPMENT_POOL[eq_idx];
+        items.push(ShopItem {
+            label: format!("{} ({:?})", eq.name, eq.slot),
+            cost: 25 + self.floor_num * 5,
+            kind: ShopItemKind::Equipment(eq_idx),
+        });
+
+        items
+    }
+
+    /// Buy item from shop.
+    fn shop_buy(&mut self) {
+        if let CombatState::Shopping { ref items, cursor } = self.combat.clone() {
+            if cursor >= items.len() { return; }
+            let item = &items[cursor];
+            if self.player.gold < item.cost {
+                self.message = format!("Not enough gold! Need {} (have {})", item.cost, self.player.gold);
+                self.message_timer = 40;
+                return;
+            }
+            self.player.gold -= item.cost;
+            match &item.kind {
+                ShopItemKind::Radical(ch) => {
+                    self.player.add_radical(ch);
+                    self.message = format!("Bought radical [{}]!", ch);
+                }
+                ShopItemKind::HealFull => {
+                    self.player.hp = self.player.max_hp;
+                    self.message = "Fully healed!".to_string();
+                }
+                ShopItemKind::Equipment(idx) => {
+                    let eq = &EQUIPMENT_POOL[*idx];
+                    self.player.equip(eq);
+                    self.message = format!("Equipped {}!", eq.name);
+                }
+            }
             self.message_timer = 60;
         }
     }
@@ -458,17 +591,39 @@ impl GameState {
 
     /// Restart after game over.
     fn restart(&mut self) {
-        self.player.hp = self.player.max_hp;
-        self.player.radicals.clear();
-        self.player.spells.clear();
-        self.player.selected_spell = 0;
-        self.player.shield = false;
+        self.save_high_score();
+        self.player = Player::new(0, 0);
         self.floor_num = 0;
         self.enemies.clear();
         self.typing.clear();
         self.discovered_recipes.clear();
         self.combat = CombatState::Explore;
         self.new_floor();
+    }
+
+    fn save_high_score(&self) {
+        let storage: Option<web_sys::Storage> = window()
+            .and_then(|w: web_sys::Window| w.local_storage().ok().flatten());
+        if let Some(storage) = storage {
+            let prev: i32 = storage
+                .get_item("radical_roguelike_best")
+                .ok()
+                .flatten()
+                .and_then(|s: String| s.parse::<i32>().ok())
+                .unwrap_or(0);
+            if self.best_floor > prev {
+                let _ = storage.set_item("radical_roguelike_best", &self.best_floor.to_string());
+            }
+        }
+    }
+
+    fn load_high_score() -> i32 {
+        let storage: Option<web_sys::Storage> = window()
+            .and_then(|w: web_sys::Window| w.local_storage().ok().flatten());
+        storage
+            .and_then(|s: web_sys::Storage| s.get_item("radical_roguelike_best").ok().flatten())
+            .and_then(|s: String| s.parse::<i32>().ok())
+            .unwrap_or(0)
     }
 
     fn tick_message(&mut self) {
@@ -489,6 +644,7 @@ impl GameState {
             &self.typing,
             &self.message,
             self.floor_num,
+            self.best_floor,
         );
     }
 }
@@ -520,6 +676,8 @@ pub fn init_game() -> Result<(), JsValue> {
     let (sx, sy) = level.start_pos();
     let player = Player::new(sx, sy);
 
+    let best_floor = GameState::load_high_score();
+
     let state = Rc::new(RefCell::new(GameState {
         level,
         player,
@@ -532,6 +690,7 @@ pub fn init_game() -> Result<(), JsValue> {
         message: String::new(),
         message_timer: 0,
         discovered_recipes: Vec::new(),
+        best_floor,
         rng_state: seed,
     }));
 
@@ -638,6 +797,38 @@ pub fn init_game() -> Result<(), JsValue> {
                     "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => {
                         let idx = key.parse::<usize>().unwrap_or(1) - 1;
                         s.forge_toggle(idx);
+                        s.render();
+                    }
+                    _ => {}
+                }
+                return;
+            }
+
+            // Shop mode
+            if matches!(s.combat, CombatState::Shopping { .. }) {
+                event.prevent_default();
+                match key.as_str() {
+                    "Escape" => {
+                        s.combat = CombatState::Explore;
+                        s.message.clear();
+                        s.message_timer = 0;
+                        s.render();
+                    }
+                    "ArrowUp" | "w" | "W" => {
+                        if let CombatState::Shopping { ref items, ref mut cursor } = s.combat {
+                            if *cursor > 0 { *cursor -= 1; }
+                            let _ = items;
+                        }
+                        s.render();
+                    }
+                    "ArrowDown" | "s" | "S" => {
+                        if let CombatState::Shopping { ref items, ref mut cursor } = s.combat {
+                            if *cursor + 1 < items.len() { *cursor += 1; }
+                        }
+                        s.render();
+                    }
+                    "Enter" => {
+                        s.shop_buy();
                         s.render();
                     }
                     _ => {}

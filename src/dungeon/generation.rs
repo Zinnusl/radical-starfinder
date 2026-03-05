@@ -38,11 +38,12 @@ pub enum Tile {
     Corridor,
     StairsDown,
     Forge,
+    Shop,
 }
 
 impl Tile {
     pub fn is_walkable(self) -> bool {
-        matches!(self, Tile::Floor | Tile::Corridor | Tile::StairsDown | Tile::Forge)
+        matches!(self, Tile::Floor | Tile::Corridor | Tile::StairsDown | Tile::Forge | Tile::Shop)
     }
 }
 
@@ -252,6 +253,27 @@ impl DungeonLevel {
         }
     }
 
+    /// Place a shop in one middle room (if enough rooms).
+    pub fn place_shop(&mut self, rng: &mut Rng) {
+        if self.rooms.len() < 4 {
+            return;
+        }
+        // Pick a room that isn't first, last, or already has a forge
+        for _ in 0..10 {
+            let pick = rng.range(1, self.rooms.len() as i32 - 1) as usize;
+            let room = &self.rooms[pick];
+            let fx = room.x + room.w - 2;
+            let fy = room.y + 1;
+            if self.in_bounds(fx, fy) {
+                let idx = self.idx(fx, fy);
+                if self.tiles[idx] == Tile::Floor {
+                    self.tiles[idx] = Tile::Shop;
+                    return;
+                }
+            }
+        }
+    }
+
     /// Get player start position (center of first room).
     pub fn start_pos(&self) -> (i32, i32) {
         self.rooms
@@ -357,6 +379,7 @@ impl DungeonLevel {
         };
         level.place_stairs();
         level.place_forges(&mut rng);
+        level.place_shop(&mut rng);
         level
     }
 }

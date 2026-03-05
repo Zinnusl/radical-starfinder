@@ -19,6 +19,7 @@ const COL_CORRIDOR: &str = "#3d3555";
 const COL_CORRIDOR_REVEALED: &str = "#272040";
 const COL_STAIRS: &str = "#8ab4ff";
 const COL_FORGE: &str = "#ff8844";
+const COL_SHOP: &str = "#44dd88";
 const COL_FOG: &str = "#0d0b14";
 const COL_PLAYER: &str = "#ffcc33";
 const COL_PLAYER_OUTLINE: &str = "#bb8800";
@@ -60,6 +61,7 @@ impl Renderer {
         typing: &str,
         message: &str,
         floor_num: i32,
+        best_floor: i32,
     ) {
         // Camera: center on player
         let cam_x = player.x as f64 * TILE_SIZE - self.canvas_w / 2.0 + TILE_SIZE / 2.0;
@@ -97,15 +99,14 @@ impl Renderer {
                         Tile::Corridor => COL_CORRIDOR,
                         Tile::StairsDown => COL_STAIRS,
                         Tile::Forge => COL_FORGE,
+                        Tile::Shop => COL_SHOP,
                     }
                 } else {
                     // revealed but not currently visible
                     match tile {
                         Tile::Wall => COL_WALL_REVEALED,
-                        Tile::Floor => COL_FLOOR_REVEALED,
+                        Tile::Floor | Tile::StairsDown | Tile::Forge | Tile::Shop => COL_FLOOR_REVEALED,
                         Tile::Corridor => COL_CORRIDOR_REVEALED,
-                        Tile::StairsDown => COL_FLOOR_REVEALED,
-                        Tile::Forge => COL_FLOOR_REVEALED,
                     }
                 };
 
@@ -129,6 +130,16 @@ impl Renderer {
                     self.ctx.set_text_align("center");
                     self.ctx
                         .fill_text("⚒", screen_x + TILE_SIZE / 2.0, screen_y + TILE_SIZE * 0.75)
+                        .ok();
+                }
+
+                // Shop icon
+                if tile == Tile::Shop && visible {
+                    self.ctx.set_fill_style_str("#ffffff");
+                    self.ctx.set_font("16px monospace");
+                    self.ctx.set_text_align("center");
+                    self.ctx
+                        .fill_text("$", screen_x + TILE_SIZE / 2.0, screen_y + TILE_SIZE * 0.75)
                         .ok();
                 }
 
@@ -221,8 +232,11 @@ impl Renderer {
             let ex = enemy.x as f64 * TILE_SIZE - cam_x;
             let ey = enemy.y as f64 * TILE_SIZE - cam_y;
 
-            // Red glow for alerted enemies
-            if enemy.alert {
+            // Red/purple glow for alerted/boss enemies
+            if enemy.is_boss {
+                self.ctx.set_shadow_color("rgba(200,50,255,0.8)");
+                self.ctx.set_shadow_blur(14.0);
+            } else if enemy.alert {
                 self.ctx.set_shadow_color("rgba(255,60,60,0.6)");
                 self.ctx.set_shadow_blur(10.0);
             }
@@ -236,9 +250,17 @@ impl Renderer {
                     .stroke_rect(ex + 1.0, ey + 1.0, TILE_SIZE - 2.0, TILE_SIZE - 2.0);
             }
 
-            // Draw Hanzi character
-            self.ctx.set_fill_style_str(if enemy.alert { "#ff6666" } else { "#cc8888" });
-            self.ctx.set_font("18px 'Noto Serif SC', 'SimSun', serif");
+            // Draw Hanzi character (bosses are larger and purple)
+            let font_size = if enemy.is_boss { "22px" } else { "18px" };
+            let color = if enemy.is_boss {
+                "#cc66ff"
+            } else if enemy.alert {
+                "#ff6666"
+            } else {
+                "#cc8888"
+            };
+            self.ctx.set_fill_style_str(color);
+            self.ctx.set_font(&format!("{} 'Noto Serif SC', 'SimSun', serif", font_size));
             self.ctx.set_text_align("center");
             self.ctx
                 .fill_text(enemy.hanzi, ex + TILE_SIZE / 2.0, ey + TILE_SIZE * 0.72)
@@ -284,17 +306,43 @@ impl Renderer {
             )
             .ok();
 
-        // Floor indicator (top-right)
+        // Floor indicator + gold (top-right)
         self.ctx.set_text_align("right");
         self.ctx.set_font("14px monospace");
         self.ctx.set_fill_style_str("#aaa");
         self.ctx
             .fill_text(
-                &format!("Floor {}", floor_num),
+                &format!("Floor {}  Best: {}", floor_num, best_floor),
                 self.canvas_w - 12.0,
                 24.0,
             )
             .ok();
+        self.ctx.set_fill_style_str("#ffdd44");
+        self.ctx
+            .fill_text(
+                &format!("{}g", player.gold),
+                self.canvas_w - 12.0,
+                42.0,
+            )
+            .ok();
+
+        // Equipment display (top-right, below gold)
+        let mut eq_y = 58.0;
+        self.ctx.set_font("10px monospace");
+        if let Some(w) = player.weapon {
+            self.ctx.set_fill_style_str("#ff8866");
+            self.ctx.fill_text(&format!("⚔ {}", w.name), self.canvas_w - 12.0, eq_y).ok();
+            eq_y += 14.0;
+        }
+        if let Some(a) = player.armor {
+            self.ctx.set_fill_style_str("#6688ff");
+            self.ctx.fill_text(&format!("🛡 {}", a.name), self.canvas_w - 12.0, eq_y).ok();
+            eq_y += 14.0;
+        }
+        if let Some(c) = player.charm {
+            self.ctx.set_fill_style_str("#88ddaa");
+            self.ctx.fill_text(&format!("✧ {}", c.name), self.canvas_w - 12.0, eq_y).ok();
+        }
 
         // ── Radical inventory (left side) ───────────────────────────────
         if !player.radicals.is_empty() {
@@ -546,6 +594,77 @@ impl Renderer {
                 .ok();
         }
 
+        // ── Shop UI overlay ─────────────────────────────────────────────
+        if let CombatState::Shopping { ref items, cursor } = combat {
+            let box_w = 350.0;
+            let box_h = 60.0 + items.len() as f64 * 28.0;
+            let box_x = (self.canvas_w - box_w) / 2.0;
+            let box_y = 50.0;
+
+            // Background
+            self.ctx.set_fill_style_str("rgba(10,30,20,0.95)");
+            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+            self.ctx.set_stroke_style_str("#44dd88");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+            // Title
+            self.ctx.set_fill_style_str("#44dd88");
+            self.ctx.set_font("18px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text("$ Shop $", self.canvas_w / 2.0, box_y + 26.0)
+                .ok();
+
+            // Gold display
+            self.ctx.set_fill_style_str("#ffdd44");
+            self.ctx.set_font("12px monospace");
+            self.ctx
+                .fill_text(
+                    &format!("Your gold: {}", player.gold),
+                    self.canvas_w / 2.0,
+                    box_y + 42.0,
+                )
+                .ok();
+
+            // Items
+            for (i, item) in items.iter().enumerate() {
+                let y = box_y + 60.0 + i as f64 * 28.0;
+                let selected = i == *cursor;
+
+                // Selection highlight
+                if selected {
+                    self.ctx.set_fill_style_str("rgba(68,221,136,0.15)");
+                    self.ctx.fill_rect(box_x + 10.0, y - 6.0, box_w - 20.0, 24.0);
+                }
+
+                let marker = if selected { "►" } else { " " };
+                let can_afford = player.gold >= item.cost;
+                self.ctx.set_fill_style_str(if can_afford { "#ccffcc" } else { "#666" });
+                self.ctx.set_font("13px monospace");
+                self.ctx.set_text_align("left");
+                self.ctx
+                    .fill_text(
+                        &format!("{} {} — {}g", marker, item.label, item.cost),
+                        box_x + 15.0,
+                        y + 10.0,
+                    )
+                    .ok();
+            }
+
+            // Hint
+            self.ctx.set_fill_style_str("#555");
+            self.ctx.set_font("10px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text(
+                    "↑↓=browse  Enter=buy  Esc=leave",
+                    self.canvas_w / 2.0,
+                    box_y + box_h + 14.0,
+                )
+                .ok();
+        }
+
         // ── Game Over overlay ───────────────────────────────────────────
         if matches!(combat, CombatState::GameOver) {
             self.ctx.set_fill_style_str("rgba(0,0,0,0.7)");
@@ -563,9 +682,19 @@ impl Renderer {
             self.ctx.set_font("16px monospace");
             self.ctx
                 .fill_text(
-                    &format!("Reached floor {}", floor_num),
+                    &format!("Reached floor {}  (Best: {})", floor_num, best_floor),
                     self.canvas_w / 2.0,
                     self.canvas_h / 2.0 + 20.0,
+                )
+                .ok();
+
+            self.ctx.set_fill_style_str("#ffdd44");
+            self.ctx.set_font("14px monospace");
+            self.ctx
+                .fill_text(
+                    &format!("Gold earned: {}", player.gold),
+                    self.canvas_w / 2.0,
+                    self.canvas_h / 2.0 + 44.0,
                 )
                 .ok();
 
@@ -575,7 +704,7 @@ impl Renderer {
                 .fill_text(
                     "Press R to restart",
                     self.canvas_w / 2.0,
-                    self.canvas_h / 2.0 + 50.0,
+                    self.canvas_h / 2.0 + 70.0,
                 )
                 .ok();
         }
