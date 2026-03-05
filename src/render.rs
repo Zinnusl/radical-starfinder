@@ -4,6 +4,8 @@ use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
 use crate::dungeon::{DungeonLevel, Tile};
+use crate::enemy::Enemy;
+use crate::game::CombatState;
 use crate::player::Player;
 
 const TILE_SIZE: f64 = 24.0;
@@ -48,7 +50,16 @@ impl Renderer {
     }
 
     /// Render the full game frame.
-    pub fn draw(&self, level: &DungeonLevel, player: &Player, floor_num: i32) {
+    pub fn draw(
+        &self,
+        level: &DungeonLevel,
+        player: &Player,
+        enemies: &[Enemy],
+        combat: &CombatState,
+        typing: &str,
+        message: &str,
+        floor_num: i32,
+    ) {
         // Camera: center on player
         let cam_x = player.x as f64 * TILE_SIZE - self.canvas_w / 2.0 + TILE_SIZE / 2.0;
         let cam_y = player.y as f64 * TILE_SIZE - self.canvas_h / 2.0 + TILE_SIZE / 2.0;
@@ -185,6 +196,54 @@ impl Renderer {
         self.ctx.set_shadow_blur(0.0);
         self.ctx.set_shadow_color("transparent");
 
+        // ── Enemies ─────────────────────────────────────────────────────
+        for (i, enemy) in enemies.iter().enumerate() {
+            if !enemy.is_alive() {
+                continue;
+            }
+            let eidx = level.idx(enemy.x, enemy.y);
+            if !level.visible[eidx] {
+                continue;
+            }
+            let ex = enemy.x as f64 * TILE_SIZE - cam_x;
+            let ey = enemy.y as f64 * TILE_SIZE - cam_y;
+
+            // Red glow for alerted enemies
+            if enemy.alert {
+                self.ctx.set_shadow_color("rgba(255,60,60,0.6)");
+                self.ctx.set_shadow_blur(10.0);
+            }
+
+            // Highlight the enemy being fought
+            let is_fighting = matches!(combat, CombatState::Fighting { enemy_idx, .. } if *enemy_idx == i);
+            if is_fighting {
+                self.ctx.set_stroke_style_str("#ff4444");
+                self.ctx.set_line_width(2.0);
+                self.ctx
+                    .stroke_rect(ex + 1.0, ey + 1.0, TILE_SIZE - 2.0, TILE_SIZE - 2.0);
+            }
+
+            // Draw Hanzi character
+            self.ctx.set_fill_style_str(if enemy.alert { "#ff6666" } else { "#cc8888" });
+            self.ctx.set_font("18px 'Noto Serif SC', 'SimSun', serif");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text(enemy.hanzi, ex + TILE_SIZE / 2.0, ey + TILE_SIZE * 0.72)
+                .ok();
+
+            // Small HP bar below
+            if enemy.hp < enemy.max_hp {
+                let hp_frac = enemy.hp as f64 / enemy.max_hp as f64;
+                self.ctx.set_fill_style_str("#440000");
+                self.ctx.fill_rect(ex + 2.0, ey + TILE_SIZE - 4.0, TILE_SIZE - 4.0, 3.0);
+                self.ctx.set_fill_style_str("#ff4444");
+                self.ctx.fill_rect(ex + 2.0, ey + TILE_SIZE - 4.0, (TILE_SIZE - 4.0) * hp_frac, 3.0);
+            }
+
+            self.ctx.set_shadow_blur(0.0);
+            self.ctx.set_shadow_color("transparent");
+        }
+
         // ── HUD ─────────────────────────────────────────────────────────
         // HP bar (top-left)
         let bar_x = 12.0;
@@ -226,6 +285,132 @@ impl Renderer {
 
         // Minimap (bottom-right)
         self.draw_minimap(level, player);
+
+        // ── Message bar (bottom-center) ─────────────────────────────────
+        if !message.is_empty() {
+            self.ctx.set_font("14px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx.set_fill_style_str("rgba(0,0,0,0.7)");
+            self.ctx.fill_rect(
+                self.canvas_w * 0.15,
+                self.canvas_h - 36.0,
+                self.canvas_w * 0.7,
+                28.0,
+            );
+            self.ctx.set_fill_style_str("#ffdd88");
+            self.ctx
+                .fill_text(message, self.canvas_w / 2.0, self.canvas_h - 16.0)
+                .ok();
+        }
+
+        // ── Combat UI (center overlay when fighting) ────────────────────
+        if let CombatState::Fighting { enemy_idx, .. } = combat {
+            let enemy_idx = *enemy_idx;
+            if enemy_idx < enemies.len() {
+                let enemy = &enemies[enemy_idx];
+                let box_w = 320.0;
+                let box_h = 140.0;
+                let box_x = (self.canvas_w - box_w) / 2.0;
+                let box_y = 50.0;
+
+                // Background
+                self.ctx.set_fill_style_str("rgba(20,10,30,0.92)");
+                self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+                self.ctx.set_stroke_style_str("#ff6666");
+                self.ctx.set_line_width(2.0);
+                self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+                // Enemy hanzi (large)
+                self.ctx.set_fill_style_str("#ff6666");
+                self.ctx.set_font("48px 'Noto Serif SC', 'SimSun', serif");
+                self.ctx.set_text_align("center");
+                self.ctx
+                    .fill_text(enemy.hanzi, self.canvas_w / 2.0, box_y + 52.0)
+                    .ok();
+
+                // Meaning hint
+                self.ctx.set_fill_style_str("#999");
+                self.ctx.set_font("12px monospace");
+                self.ctx
+                    .fill_text(
+                        &format!("({})", enemy.meaning),
+                        self.canvas_w / 2.0,
+                        box_y + 72.0,
+                    )
+                    .ok();
+
+                // Typing input box
+                let input_y = box_y + 90.0;
+                self.ctx.set_fill_style_str("rgba(0,0,0,0.5)");
+                self.ctx.fill_rect(box_x + 30.0, input_y, box_w - 60.0, 28.0);
+                self.ctx.set_stroke_style_str("#555");
+                self.ctx.set_line_width(1.0);
+                self.ctx
+                    .stroke_rect(box_x + 30.0, input_y, box_w - 60.0, 28.0);
+
+                // Typed text
+                let display = if typing.is_empty() {
+                    "type pinyin…"
+                } else {
+                    typing
+                };
+                self.ctx.set_fill_style_str(if typing.is_empty() {
+                    "#555"
+                } else {
+                    "#ffcc33"
+                });
+                self.ctx.set_font("16px monospace");
+                self.ctx.set_text_align("center");
+                self.ctx
+                    .fill_text(display, self.canvas_w / 2.0, input_y + 20.0)
+                    .ok();
+
+                // Hint text
+                self.ctx.set_fill_style_str("#555");
+                self.ctx.set_font("10px monospace");
+                self.ctx
+                    .fill_text(
+                        "Enter=submit  Esc=flee  Backspace=delete",
+                        self.canvas_w / 2.0,
+                        box_y + box_h + 14.0,
+                    )
+                    .ok();
+            }
+        }
+
+        // ── Game Over overlay ───────────────────────────────────────────
+        if matches!(combat, CombatState::GameOver) {
+            self.ctx.set_fill_style_str("rgba(0,0,0,0.7)");
+            self.ctx
+                .fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
+
+            self.ctx.set_fill_style_str("#ff4444");
+            self.ctx.set_font("48px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text("GAME OVER", self.canvas_w / 2.0, self.canvas_h / 2.0 - 20.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#aaa");
+            self.ctx.set_font("16px monospace");
+            self.ctx
+                .fill_text(
+                    &format!("Reached floor {}", floor_num),
+                    self.canvas_w / 2.0,
+                    self.canvas_h / 2.0 + 20.0,
+                )
+                .ok();
+
+            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_font("14px monospace");
+            self.ctx
+                .fill_text(
+                    "Press R to restart",
+                    self.canvas_w / 2.0,
+                    self.canvas_h / 2.0 + 50.0,
+                )
+                .ok();
+        }
     }
 
     fn draw_minimap(&self, level: &DungeonLevel, player: &Player) {

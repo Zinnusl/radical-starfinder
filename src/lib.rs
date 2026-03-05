@@ -3,9 +3,11 @@
 use wasm_bindgen::prelude::*;
 
 mod dungeon;
+mod enemy;
 mod game;
 mod player;
 mod render;
+mod vocab;
 
 #[cfg(feature = "console_error_panic_hook")]
 fn set_panic_hook() {
