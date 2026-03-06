@@ -88,6 +88,17 @@ pub const EQUIPMENT_POOL: &[Equipment] = &[
     Equipment { name: "Phoenix Feather", slot: EquipSlot::Charm, effect: EquipEffect::HealOnKill(3) },
 ];
 
+/// Player class specialization chosen at game start.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PlayerClass {
+    /// Balanced: no bonuses
+    Scholar,
+    /// +3 HP, +1 damage, -1 item slot
+    Warrior,
+    /// 2x item effectiveness, +1 item slot
+    Alchemist,
+}
+
 #[derive(Clone)]
 pub struct Player {
     pub x: i32,
@@ -95,6 +106,8 @@ pub struct Player {
     pub hp: i32,
     pub max_hp: i32,
     pub gold: i32,
+    /// Player class
+    pub class: PlayerClass,
     /// Collected radicals (stored as their &str character)
     pub radicals: Vec<&'static str>,
     /// Forged spells ready to use in combat
@@ -116,13 +129,18 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn new(x: i32, y: i32) -> Self {
+    pub fn new(x: i32, y: i32, class: PlayerClass) -> Self {
+        let (hp, max_hp) = match class {
+            PlayerClass::Warrior => (13, 13),
+            _ => (10, 10),
+        };
         Self {
             x,
             y,
-            hp: 10,
-            max_hp: 10,
+            hp,
+            max_hp,
             gold: 0,
+            class,
             radicals: Vec::new(),
             spells: Vec::new(),
             selected_spell: 0,
@@ -133,6 +151,15 @@ impl Player {
             armor: None,
             charm: None,
             enchantments: [None; 3],
+        }
+    }
+
+    /// Max items depends on class
+    pub fn max_items(&self) -> usize {
+        match self.class {
+            PlayerClass::Alchemist => 7,
+            PlayerClass::Warrior => 4,
+            PlayerClass::Scholar => 5,
         }
     }
 
@@ -147,7 +174,7 @@ impl Player {
     }
 
     pub fn add_item(&mut self, item: Item) -> bool {
-        if self.items.len() < MAX_ITEMS {
+        if self.items.len() < self.max_items() {
             self.items.push(item);
             true
         } else {

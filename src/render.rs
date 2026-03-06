@@ -73,6 +73,7 @@ impl Renderer {
         flash: Option<(u8, u8, u8, f64)>,
         achievement_popup: Option<(&str, &str)>,
         room_modifier: Option<crate::dungeon::RoomModifier>,
+        listening_mode: bool,
     ) {
         // Screen shake offset
         let shake_x = if shake_timer > 0 { ((shake_timer as f64 * 1.7).sin() * 4.0) } else { 0.0 };
@@ -407,6 +408,12 @@ impl Renderer {
             };
             self.ctx.set_fill_style_str(color);
             self.ctx.fill_text(label, self.canvas_w - 12.0, eq_y).ok();
+            eq_y += 14.0;
+        }
+        // Listening mode indicator
+        if listening_mode {
+            self.ctx.set_fill_style_str("#aa66ff");
+            self.ctx.fill_text("🎧 Listening", self.canvas_w - 12.0, eq_y).ok();
         }
 
         // ── Radical inventory (left side) ───────────────────────────────
@@ -552,24 +559,41 @@ impl Renderer {
                 self.ctx.set_line_width(2.0);
                 self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
 
-                // Enemy hanzi (large)
-                self.ctx.set_fill_style_str("#ff6666");
+                // Enemy hanzi (large) — hidden in listening mode for non-elite
+                let show_hanzi = !listening_mode || enemy.is_elite;
+                self.ctx.set_fill_style_str(if listening_mode && !enemy.is_elite { "#aa66ff" } else { "#ff6666" });
                 self.ctx.set_font("48px 'Noto Serif SC', 'SimSun', serif");
                 self.ctx.set_text_align("center");
                 self.ctx
-                    .fill_text(enemy.hanzi, self.canvas_w / 2.0, box_y + 52.0)
-                    .ok();
-
-                // Meaning hint
-                self.ctx.set_fill_style_str("#999");
-                self.ctx.set_font("12px monospace");
-                self.ctx
                     .fill_text(
-                        &format!("({})", enemy.meaning),
+                        if show_hanzi { enemy.hanzi } else { "🎧 ???" },
                         self.canvas_w / 2.0,
-                        box_y + 72.0,
+                        box_y + 52.0,
                     )
                     .ok();
+
+                // Meaning hint (hidden in listening mode)
+                if show_hanzi {
+                    self.ctx.set_fill_style_str("#999");
+                    self.ctx.set_font("12px monospace");
+                    self.ctx
+                        .fill_text(
+                            &format!("({})", enemy.meaning),
+                            self.canvas_w / 2.0,
+                            box_y + 72.0,
+                        )
+                        .ok();
+                } else {
+                    self.ctx.set_fill_style_str("#aa66ff");
+                    self.ctx.set_font("12px monospace");
+                    self.ctx
+                        .fill_text(
+                            "(listen carefully...)",
+                            self.canvas_w / 2.0,
+                            box_y + 72.0,
+                        )
+                        .ok();
+                }
 
                 // Typing input box
                 let input_y = box_y + 90.0;
@@ -600,6 +624,18 @@ impl Renderer {
                 // Hint text
                 self.ctx.set_fill_style_str("#555");
                 self.ctx.set_font("10px monospace");
+                // Show example sentence if available
+                let example = crate::vocab::VOCAB.iter()
+                    .find(|v| v.hanzi == enemy.hanzi)
+                    .map(|v| v.example)
+                    .unwrap_or("");
+                if !example.is_empty() && show_hanzi {
+                    self.ctx.set_fill_style_str("#667788");
+                    self.ctx.set_font("11px 'Noto Serif SC', monospace");
+                    self.ctx.fill_text(example, self.canvas_w / 2.0, box_y + box_h - 8.0).ok();
+                    self.ctx.set_fill_style_str("#555");
+                    self.ctx.set_font("10px monospace");
+                }
                 self.ctx
                     .fill_text(
                         "Enter=submit  Esc=flee  Tab=cycle spell  Space=cast spell",
@@ -893,6 +929,48 @@ impl Renderer {
                     box_y + box_h + 14.0,
                 )
                 .ok();
+        }
+
+        // ── Game Over overlay ───────────────────────────────────────────
+        // ── Class selection screen ──────────────────────────────────────
+        if matches!(combat, CombatState::ClassSelect) {
+            self.ctx.set_fill_style_str("rgba(0,0,0,0.85)");
+            self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
+
+            let cx = self.canvas_w / 2.0;
+            let mut y = 60.0;
+
+            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_font("32px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx.fill_text("选择你的道路", cx, y).ok();
+            y += 30.0;
+            self.ctx.set_fill_style_str("#888");
+            self.ctx.set_font("14px monospace");
+            self.ctx.fill_text("Choose Your Path", cx, y).ok();
+            y += 50.0;
+
+            let classes = [
+                ("1", "📚 Scholar", "#44aaff", "Balanced. Hints show meaning in combat."),
+                ("2", "⚔ Warrior", "#ff6644", "+3 HP, +1 damage, 4 item slots."),
+                ("3", "⚗ Alchemist", "#44dd88", "7 item slots, 2x potion healing."),
+            ];
+
+            for (key, name, color, desc) in &classes {
+                self.ctx.set_fill_style_str(color);
+                self.ctx.set_font("22px monospace");
+                self.ctx.fill_text(&format!("[{}] {}", key, name), cx, y).ok();
+                y += 22.0;
+                self.ctx.set_fill_style_str("#999");
+                self.ctx.set_font("12px monospace");
+                self.ctx.fill_text(desc, cx, y).ok();
+                y += 36.0;
+            }
+
+            y += 10.0;
+            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_font("14px monospace");
+            self.ctx.fill_text("[D] Daily Challenge (fixed seed)", cx, y).ok();
         }
 
         // ── Game Over overlay ───────────────────────────────────────────

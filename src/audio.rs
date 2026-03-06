@@ -215,4 +215,55 @@ impl Audio {
     pub fn play_step(&self) {
         self.tone(80.0, 0.04, 0.04, OscillatorType::Triangle);
     }
+
+    /// Play a Chinese tone contour for listening mode.
+    /// tone_num: 1-4 (Chinese tones), base_freq ~300 Hz for a natural voice range.
+    pub fn play_chinese_tone(&self, tone_num: u8) {
+        let osc = match self.ctx.create_oscillator() {
+            Ok(o) => o,
+            Err(_) => return,
+        };
+        let gain = match self.ctx.create_gain() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        osc.set_type(OscillatorType::Sine);
+        let now = self.ctx.current_time();
+        let dur = 0.5;
+        gain.gain().set_value(0.12);
+        gain.gain().linear_ramp_to_value_at_time(0.12, now + dur - 0.1).ok();
+        gain.gain().linear_ramp_to_value_at_time(0.0, now + dur).ok();
+
+        match tone_num {
+            1 => {
+                // Tone 1: high flat (350 Hz)
+                osc.frequency().set_value(350.0);
+            }
+            2 => {
+                // Tone 2: rising (250 → 380 Hz)
+                osc.frequency().set_value(250.0);
+                osc.frequency().linear_ramp_to_value_at_time(380.0, now + dur).ok();
+            }
+            3 => {
+                // Tone 3: dipping (280 → 220 → 300 Hz)
+                osc.frequency().set_value(280.0);
+                osc.frequency().linear_ramp_to_value_at_time(220.0, now + dur * 0.5).ok();
+                osc.frequency().linear_ramp_to_value_at_time(300.0, now + dur).ok();
+            }
+            4 => {
+                // Tone 4: falling (380 → 200 Hz)
+                osc.frequency().set_value(380.0);
+                osc.frequency().linear_ramp_to_value_at_time(200.0, now + dur).ok();
+            }
+            _ => {
+                // Neutral/light (for 5th tone)
+                osc.frequency().set_value(280.0);
+            }
+        }
+
+        let _ = osc.connect_with_audio_node(&gain);
+        let _ = gain.connect_with_audio_node(&self.ctx.destination());
+        let _ = osc.start();
+        let _ = osc.stop_with_when(now + dur);
+    }
 }

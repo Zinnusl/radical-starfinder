@@ -12,7 +12,7 @@ use crate::codex::Codex;
 use crate::dungeon::{compute_fov, DungeonLevel, RoomModifier, Tile};
 use crate::enemy::Enemy;
 use crate::particle::ParticleSystem;
-use crate::player::{Player, EQUIPMENT_POOL};
+use crate::player::{Player, PlayerClass, EQUIPMENT_POOL};
 use crate::radical::{self, Spell, SpellEffect};
 use crate::render::Renderer;
 use crate::srs::SrsTracker;
@@ -54,6 +54,8 @@ pub enum CombatState {
     },
     /// Player is dead
     GameOver,
+    /// Class selection screen at game start
+    ClassSelect,
 }
 
 #[derive(Clone, Debug)]
@@ -108,6 +110,12 @@ pub struct GameState {
     pub last_spell: Option<SpellEffect>,
     /// Turns since last spell (combo window)
     pub spell_combo_timer: u8,
+    /// Listening mode: enemies play tonal audio instead of showing hanzi
+    pub listening_mode: bool,
+    /// Daily challenge mode (fixed seed)
+    pub daily_mode: bool,
+    /// Endless mode (continue past floor 20)
+    pub endless_mode: bool,
     rng_state: u64,
 }
 
@@ -280,10 +288,20 @@ impl GameState {
                 timer_ms: 0.0,
             };
             self.typing.clear();
-            self.message = format!(
-                "Type pinyin for {} ({})",
-                self.enemies[idx].hanzi, self.enemies[idx].meaning
-            );
+            if self.listening_mode && !self.enemies[idx].is_elite {
+                // Listening mode: play tone, hide character
+                let pinyin = self.enemies[idx].pinyin;
+                let tone_num = pinyin.chars().last()
+                    .and_then(|c| c.to_digit(10))
+                    .unwrap_or(1) as u8;
+                if let Some(ref audio) = self.audio { audio.play_chinese_tone(tone_num); }
+                self.message = format!("🎧 Listen! Type the pinyin you hear...");
+            } else {
+                self.message = format!(
+                    "Type pinyin for {} ({})",
+                    self.enemies[idx].hanzi, self.enemies[idx].meaning
+                );
+            }
             self.message_timer = 255;
             return;
         }
@@ -436,6 +454,7 @@ impl GameState {
                     pinyin: e_pinyin,
                     meaning: e_meaning,
                     hsk: 1,
+                    example: "",
                 },
                 &self.typing,
             ) {
@@ -443,7 +462,8 @@ impl GameState {
                 self.codex.record(e_hanzi, e_pinyin, e_meaning, true);
                 // Hit with bonus damage from equipment + room modifiers
                 let cursed_bonus = if self.current_room_modifier() == Some(RoomModifier::Cursed) { 1 } else { 0 };
-                let hit_dmg = 2 + self.player.bonus_damage() + self.player.enchant_bonus_damage() + cursed_bonus;
+                let warrior_bonus = if self.player.class == PlayerClass::Warrior { 1 } else { 0 };
+                let hit_dmg = 2 + self.player.bonus_damage() + self.player.enchant_bonus_damage() + cursed_bonus + warrior_bonus;
                 self.enemies[enemy_idx].hp -= hit_dmg;
                 if self.enemies[enemy_idx].hp <= 0 {
                     self.total_kills += 1;
@@ -454,6 +474,9 @@ impl GameState {
                     self.flash = Some((255, 255, 255, 0.3));
                     // Rewards
                     self.player.gold += e_gold;
+                    // Listening mode bonus gold
+                    let listen_bonus = if self.listening_mode && !self.enemies[enemy_idx].is_elite { 5 } else { 0 };
+                    self.player.gold += listen_bonus;
                     let available = radical::radicals_for_floor(self.floor_num);
                     let drop_idx = self.rng_next() as usize % available.len();
                     let dropped = available[drop_idx].ch;
@@ -1054,6 +1077,7 @@ impl GameState {
 
         match item {
             crate::player::Item::HealthPotion(heal) => {
+                let heal = if self.player.class == PlayerClass::Alchemist { heal * 2 } else { heal };
                 self.player.hp = (self.player.hp + heal).min(self.player.max_hp);
                 self.message = format!("💚 Healed {} HP! ({}/{})", heal, self.player.hp, self.player.max_hp);
                 self.message_timer = 60;
@@ -1131,12 +1155,12 @@ impl GameState {
         self.save_high_score();
         self.save_stats();
         self.srs = crate::srs::load_srs();
-        self.player = Player::new(0, 0);
+        self.player = Player::new(0, 0, PlayerClass::Scholar);
         self.floor_num = 0;
         self.enemies.clear();
         self.typing.clear();
         // Keep discovered recipes across runs (loaded from localStorage)
-        self.combat = CombatState::Explore;
+        self.combat = CombatState::ClassSelect;
         self.new_floor();
     }
 
@@ -1161,7 +1185,26 @@ impl GameState {
                 .collect::<Vec<_>>()
                 .join(",");
             let _ = storage.set_item("radical_roguelike_recipes", &recipe_str);
+
+            // Save daily best
+            if self.daily_mode {
+                let score = self.daily_score();
+                let prev_daily: i32 = storage
+                    .get_item("radical_roguelike_daily_best")
+                    .ok()
+                    .flatten()
+                    .and_then(|s: String| s.parse::<i32>().ok())
+                    .unwrap_or(0);
+                if score > prev_daily {
+                    let _ = storage.set_item("radical_roguelike_daily_best", &score.to_string());
+                }
+            }
         }
+    }
+
+    /// Calculate daily challenge score.
+    fn daily_score(&self) -> i32 {
+        self.floor_num * 100 + self.player.gold + self.total_kills as i32 * 10
     }
 
     fn load_high_score() -> i32 {
@@ -1235,6 +1278,7 @@ impl GameState {
             self.flash,
             popup,
             room_mod,
+            self.listening_mode,
         );
         if self.show_codex {
             let entries = self.codex.sorted_entries();
@@ -1300,7 +1344,7 @@ pub fn init_game() -> Result<(), JsValue> {
     let seed = win.performance().map(|p| p.now() as u64).unwrap_or(42);
     let level = DungeonLevel::generate(MAP_W, MAP_H, seed);
     let (sx, sy) = level.start_pos();
-    let player = Player::new(sx, sy);
+    let player = Player::new(sx, sy, PlayerClass::Scholar);
 
     let best_floor = GameState::load_high_score();
     let srs = crate::srs::load_srs();
@@ -1316,7 +1360,7 @@ pub fn init_game() -> Result<(), JsValue> {
         floor_num: 1,
         seed,
         enemies: Vec::new(),
-        combat: CombatState::Explore,
+        combat: CombatState::ClassSelect,
         typing: String::new(),
         message: String::new(),
         message_timer: 0,
@@ -1335,20 +1379,17 @@ pub fn init_game() -> Result<(), JsValue> {
         show_codex: false,
         last_spell: None,
         spell_combo_timer: 0,
+        listening_mode: false,
+        daily_mode: false,
+        endless_mode: false,
         rng_state: seed,
     }));
 
     // Initial setup
     {
         let mut s = state.borrow_mut();
-        s.spawn_enemies();
-        let (px, py) = (s.player.x, s.player.y);
-        compute_fov(&mut s.level, px, py, FOV_RADIUS);
-        // Tutorial hint on first run
-        if s.total_runs == 0 && s.best_floor == 0 {
-            s.message = "Welcome! Arrow keys to move. Bump enemies to fight — type their pinyin!".to_string();
-            s.message_timer = 200;
-        }
+        // Don't spawn enemies yet — class selection first
+        s.render();
     }
 
     // Keyboard input
@@ -1365,6 +1406,57 @@ pub fn init_game() -> Result<(), JsValue> {
             if matches!(s.combat, CombatState::GameOver) {
                 if key == "r" || key == "R" {
                     s.restart();
+                    s.render();
+                }
+                return;
+            }
+
+            // Class selection screen
+            if matches!(s.combat, CombatState::ClassSelect) {
+                event.prevent_default();
+                // Daily challenge
+                if key == "d" || key == "D" {
+                    // Seed from date: year * 10000 + month * 100 + day
+                    let date_seed = js_sys::Date::new_0();
+                    let daily_seed = (date_seed.get_full_year() as u64) * 10000
+                        + (date_seed.get_month() as u64 + 1) * 100
+                        + date_seed.get_date() as u64;
+                    s.seed = daily_seed;
+                    s.rng_state = daily_seed;
+                    s.daily_mode = true;
+                    s.level = DungeonLevel::generate(MAP_W, MAP_H, daily_seed);
+                    let (sx, sy) = s.level.start_pos();
+                    s.player = Player::new(sx, sy, PlayerClass::Scholar);
+                    s.combat = CombatState::Explore;
+                    s.message = "🏆 Daily Challenge! Fixed seed — compete for high score!".to_string();
+                    s.message_timer = 150;
+                    s.spawn_enemies();
+                    let (px, py) = (s.player.x, s.player.y);
+                    compute_fov(&mut s.level, px, py, FOV_RADIUS);
+                    s.render();
+                    return;
+                }
+                let class = match key.as_str() {
+                    "1" => Some(PlayerClass::Scholar),
+                    "2" => Some(PlayerClass::Warrior),
+                    "3" => Some(PlayerClass::Alchemist),
+                    _ => None,
+                };
+                if let Some(chosen_class) = class {
+                    s.daily_mode = false;
+                    let (sx, sy) = s.level.start_pos();
+                    s.player = Player::new(sx, sy, chosen_class);
+                    s.combat = CombatState::Explore;
+                    let class_name = match chosen_class {
+                        PlayerClass::Scholar => "Scholar",
+                        PlayerClass::Warrior => "Warrior",
+                        PlayerClass::Alchemist => "Alchemist",
+                    };
+                    s.message = format!("You chose {}! Explore the dungeon...", class_name);
+                    s.message_timer = 120;
+                    s.spawn_enemies();
+                    let (px, py) = (s.player.x, s.player.y);
+                    compute_fov(&mut s.level, px, py, FOV_RADIUS);
                     s.render();
                 }
                 return;
@@ -1419,6 +1511,23 @@ pub fn init_game() -> Result<(), JsValue> {
                         // Cast selected spell
                         s.use_spell();
                         s.render();
+                    }
+                    "r" | "R" => {
+                        // Replay tone in listening mode
+                        if s.listening_mode {
+                            if let CombatState::Fighting { enemy_idx, .. } = s.combat {
+                                if enemy_idx < s.enemies.len() {
+                                    let pinyin = s.enemies[enemy_idx].pinyin;
+                                    let tone_num = pinyin.chars().last()
+                                        .and_then(|c| c.to_digit(10))
+                                        .unwrap_or(1) as u8;
+                                    if let Some(ref audio) = s.audio { audio.play_chinese_tone(tone_num); }
+                                }
+                            }
+                        } else {
+                            s.type_char(key.chars().next().unwrap_or('r'));
+                            s.render();
+                        }
                     }
                     _ => {
                         if let Some(ch) = key.chars().next() {
@@ -1615,6 +1724,18 @@ pub fn init_game() -> Result<(), JsValue> {
             // Toggle codex with 'c'
             if key == "c" || key == "C" {
                 s.show_codex = !s.show_codex;
+                s.render();
+                return;
+            }
+            // Toggle listening mode with 'l'
+            if key == "l" || key == "L" {
+                s.listening_mode = !s.listening_mode;
+                if s.listening_mode {
+                    s.message = "🎧 Listening mode ON — some enemies play audio only!".to_string();
+                } else {
+                    s.message = "🎧 Listening mode OFF".to_string();
+                }
+                s.message_timer = 90;
                 s.render();
                 return;
             }
