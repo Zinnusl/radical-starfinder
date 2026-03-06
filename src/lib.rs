@@ -6,6 +6,7 @@ mod audio;
 mod dungeon;
 mod enemy;
 mod game;
+mod particle;
 mod player;
 mod radical;
 mod render;

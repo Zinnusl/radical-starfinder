@@ -4,18 +4,121 @@
 use wasm_bindgen::JsCast;
 use web_sys::{AudioContext, GainNode, OscillatorNode, OscillatorType};
 
+/// Current music mood.
+#[derive(Clone, Copy, PartialEq)]
+pub enum MusicMood {
+    Explore,
+    Combat,
+    Boss,
+    Silent,
+}
+
 pub struct Audio {
     ctx: AudioContext,
+    /// Time when next ambient phrase should play.
+    music_next: f64,
+    /// Current music mood.
+    music_mood: MusicMood,
 }
 
 impl Audio {
     pub fn new() -> Option<Self> {
-        AudioContext::new().ok().map(|ctx| Self { ctx })
+        AudioContext::new().ok().map(|ctx| Self {
+            music_next: 0.0,
+            music_mood: MusicMood::Explore,
+            ctx,
+        })
     }
 
     /// Resume audio context (required after user interaction on some browsers).
     pub fn resume(&self) {
         let _ = self.ctx.resume();
+    }
+
+    /// Set the music mood (changes ambient music character).
+    pub fn set_mood(&mut self, mood: MusicMood) {
+        if self.music_mood != mood {
+            self.music_mood = mood;
+            self.music_next = 0.0; // trigger immediate phrase
+        }
+    }
+
+    /// Called from animation loop — plays ambient music phrases.
+    pub fn tick_music(&mut self) {
+        let now = self.ctx.current_time();
+        if now < self.music_next || self.music_mood == MusicMood::Silent {
+            return;
+        }
+        match self.music_mood {
+            MusicMood::Explore => {
+                // Calm ambient drone: two detuned sine pads
+                self.pad(130.81, 4.0, 0.03); // C3
+                self.pad(196.00, 4.0, 0.025); // G3
+                self.pad(261.63, 3.5, 0.02); // C4
+                self.music_next = now + 3.5;
+            }
+            MusicMood::Combat => {
+                // Tense: minor chord pads + low pulse
+                self.pad(146.83, 2.5, 0.04); // D3
+                self.pad(174.61, 2.5, 0.035); // F3
+                self.pad(220.00, 2.0, 0.03); // A3
+                self.pulse(73.42, 0.15, 0.05); // D2 pulse
+                self.music_next = now + 2.0;
+            }
+            MusicMood::Boss => {
+                // Dramatic: low drone + dissonant overtone
+                self.pad(98.00, 3.0, 0.05); // G2
+                self.pad(116.54, 3.0, 0.04); // Bb2
+                self.pad(146.83, 2.5, 0.035); // D3
+                self.pulse(49.00, 0.2, 0.06); // G1 pulse
+                self.music_next = now + 1.8;
+            }
+            MusicMood::Silent => {}
+        }
+    }
+
+    /// Soft ambient pad tone with fade-in and fade-out.
+    fn pad(&self, freq: f32, duration: f64, volume: f32) {
+        let osc = match self.ctx.create_oscillator() {
+            Ok(o) => o,
+            Err(_) => return,
+        };
+        let gain = match self.ctx.create_gain() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        osc.set_type(OscillatorType::Sine);
+        osc.frequency().set_value(freq);
+        let now = self.ctx.current_time();
+        gain.gain().set_value(0.0);
+        gain.gain().linear_ramp_to_value_at_time(volume, now + 0.3).ok();
+        gain.gain().linear_ramp_to_value_at_time(volume, now + duration - 0.5).ok();
+        gain.gain().linear_ramp_to_value_at_time(0.0, now + duration).ok();
+        let _ = osc.connect_with_audio_node(&gain);
+        let _ = gain.connect_with_audio_node(&self.ctx.destination());
+        let _ = osc.start();
+        let _ = osc.stop_with_when(now + duration);
+    }
+
+    /// Low rhythmic pulse.
+    fn pulse(&self, freq: f32, duration: f64, volume: f32) {
+        let osc = match self.ctx.create_oscillator() {
+            Ok(o) => o,
+            Err(_) => return,
+        };
+        let gain = match self.ctx.create_gain() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        osc.set_type(OscillatorType::Triangle);
+        osc.frequency().set_value(freq);
+        let now = self.ctx.current_time();
+        gain.gain().set_value(volume);
+        gain.gain().linear_ramp_to_value_at_time(0.0, now + duration).ok();
+        let _ = osc.connect_with_audio_node(&gain);
+        let _ = gain.connect_with_audio_node(&self.ctx.destination());
+        let _ = osc.start();
+        let _ = osc.stop_with_when(now + duration);
     }
 
     fn tone(&self, freq: f32, duration: f64, volume: f32, wave: OscillatorType) {

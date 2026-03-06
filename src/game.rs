@@ -9,6 +9,7 @@ use web_sys::{window, HtmlCanvasElement, KeyboardEvent};
 use crate::audio::Audio;
 use crate::dungeon::{compute_fov, DungeonLevel, Tile};
 use crate::enemy::Enemy;
+use crate::particle::ParticleSystem;
 use crate::player::{Player, EQUIPMENT_POOL};
 use crate::radical::{self, Spell, SpellEffect};
 use crate::render::Renderer;
@@ -80,10 +81,23 @@ pub struct GameState {
     pub total_runs: u32,
     /// Move counter for haste effect
     pub move_count: u32,
+    /// Particle effects
+    pub particles: ParticleSystem,
+    /// Screen shake remaining frames
+    pub shake_timer: u8,
+    /// Flash overlay (r, g, b, alpha 0.0..1.0)
+    pub flash: Option<(u8, u8, u8, f64)>,
     rng_state: u64,
 }
 
 impl GameState {
+    /// Convert tile position to screen coordinates for particles.
+    fn tile_to_screen(&self, tx: i32, ty: i32) -> (f64, f64) {
+        let cam_x = self.player.x as f64 * 24.0 - self.renderer.canvas_w / 2.0 + 12.0;
+        let cam_y = self.player.y as f64 * 24.0 - self.renderer.canvas_h / 2.0 + 12.0;
+        (tx as f64 * 24.0 - cam_x + 12.0, ty as f64 * 24.0 - cam_y + 12.0)
+    }
+
     fn rng_next(&mut self) -> u64 {
         let mut x = self.rng_state;
         x ^= x << 13;
@@ -316,6 +330,8 @@ impl GameState {
             // If enemy walks into player → start combat (same as player bumping enemy)
             if nx == px && ny == py {
                 if !matches!(self.combat, CombatState::Fighting { .. }) {
+                    // Shake on enemy engagement
+                    self.shake_timer = 4;
                     self.combat = CombatState::Fighting {
                         enemy_idx: i,
                         timer_ms: 0.0,
@@ -358,6 +374,8 @@ impl GameState {
             let e_damage = (self.enemies[enemy_idx].damage - self.player.damage_reduction()).max(1);
             let e_gold = self.enemies[enemy_idx].gold_value + self.player.gold_bonus();
             let e_is_boss = self.enemies[enemy_idx].is_boss;
+            let e_x = self.enemies[enemy_idx].x;
+            let e_y = self.enemies[enemy_idx].y;
 
             if vocab::check_pinyin(
                 &vocab::VocabEntry {
@@ -375,6 +393,10 @@ impl GameState {
                 if self.enemies[enemy_idx].hp <= 0 {
                     self.total_kills += 1;
                     if let Some(ref audio) = self.audio { audio.play_kill(); }
+                    // Kill particles
+                    let (sx, sy) = self.tile_to_screen(e_x, e_y);
+                    self.particles.spawn_kill(sx, sy, &mut self.rng_state);
+                    self.flash = Some((255, 255, 255, 0.3));
                     // Rewards
                     self.player.gold += e_gold;
                     let available = radical::radicals_for_floor(self.floor_num);
@@ -447,6 +469,11 @@ impl GameState {
                 } else {
                     self.player.hp -= e_damage;
                     if let Some(ref audio) = self.audio { audio.play_damage(); }
+                    // Damage particles + shake
+                    let (sx, sy) = self.tile_to_screen(self.player.x, self.player.y);
+                    self.particles.spawn_damage(sx, sy, &mut self.rng_state);
+                    self.shake_timer = 8;
+                    self.flash = Some((255, 50, 50, 0.25));
                     self.message = format!(
                         "Wrong! It was \"{}\". {} hits for {}!",
                         e_pinyin, e_hanzi, e_damage
@@ -637,10 +664,20 @@ impl GameState {
     /// Use a spell during combat (Tab to cycle, Space to cast).
     fn use_spell(&mut self) {
         if let CombatState::Fighting { enemy_idx, .. } = self.combat {
+            // Copy enemy position for particles before spell takes effect
+            let e_screen = if enemy_idx < self.enemies.len() {
+                Some(self.tile_to_screen(self.enemies[enemy_idx].x, self.enemies[enemy_idx].y))
+            } else {
+                None
+            };
+            let p_screen = self.tile_to_screen(self.player.x, self.player.y);
+
             if let Some(spell) = self.player.use_spell() {
                 if let Some(ref audio) = self.audio { audio.play_spell(); }
                 match spell.effect {
                     SpellEffect::FireAoe(dmg) => {
+                        // Fire particles at player position (AoE emanates from player)
+                        self.particles.spawn_fire(p_screen.0, p_screen.1, &mut self.rng_state);
                         // Damage all visible enemies
                         let mut killed = 0;
                         for e in &mut self.enemies {
@@ -665,6 +702,8 @@ impl GameState {
                     }
                     SpellEffect::Heal(amount) => {
                         self.player.hp = (self.player.hp + amount).min(self.player.max_hp);
+                        self.particles.spawn_heal(p_screen.0, p_screen.1, &mut self.rng_state);
+                        self.flash = Some((60, 220, 80, 0.2));
                         self.message = format!(
                             "{} heals {} HP! (now {}/{})",
                             spell.hanzi, amount, self.player.hp, self.player.max_hp
@@ -673,6 +712,7 @@ impl GameState {
                     }
                     SpellEffect::Shield => {
                         self.player.shield = true;
+                        self.particles.spawn_shield(p_screen.0, p_screen.1, &mut self.rng_state);
                         self.message = format!(
                             "{} — Shield active! Next hit will be blocked.",
                             spell.hanzi
@@ -681,6 +721,9 @@ impl GameState {
                     }
                     SpellEffect::StrongHit(dmg) => {
                         if enemy_idx < self.enemies.len() {
+                            if let Some((ex, ey)) = e_screen {
+                                self.particles.spawn_kill(ex, ey, &mut self.rng_state);
+                            }
                             self.enemies[enemy_idx].hp -= dmg;
                             let e_hanzi = self.enemies[enemy_idx].hanzi;
                             if self.enemies[enemy_idx].hp <= 0 {
@@ -705,6 +748,9 @@ impl GameState {
                     }
                     SpellEffect::Drain(dmg) => {
                         if enemy_idx < self.enemies.len() {
+                            if let Some((ex, ey)) = e_screen {
+                                self.particles.spawn_drain(ex, ey, &mut self.rng_state);
+                            }
                             self.enemies[enemy_idx].hp -= dmg;
                             self.player.hp = (self.player.hp + dmg).min(self.player.max_hp);
                             let e_hanzi = self.enemies[enemy_idx].hanzi;
@@ -730,6 +776,9 @@ impl GameState {
                     }
                     SpellEffect::Stun => {
                         if enemy_idx < self.enemies.len() {
+                            if let Some((ex, ey)) = e_screen {
+                                self.particles.spawn_stun(ex, ey, &mut self.rng_state);
+                            }
                             self.enemies[enemy_idx].stunned = true;
                             let e_hanzi = self.enemies[enemy_idx].hanzi;
                             self.message = format!(
@@ -749,6 +798,10 @@ impl GameState {
 
     /// Open a treasure chest tile.
     fn open_chest(&mut self, cx: i32, cy: i32) {
+        // Chest open particles
+        let (sx, sy) = self.tile_to_screen(cx, cy);
+        self.particles.spawn_chest(sx, sy, &mut self.rng_state);
+
         // Remove chest tile
         let idx = self.level.idx(cx, cy);
         self.level.tiles[idx] = Tile::Floor;
@@ -1027,6 +1080,9 @@ impl GameState {
             self.total_runs,
             self.discovered_recipes.len(),
             &self.srs,
+            &self.particles,
+            self.shake_timer,
+            self.flash,
         );
     }
 }
@@ -1082,6 +1138,9 @@ pub fn init_game() -> Result<(), JsValue> {
         total_kills,
         total_runs,
         move_count: 0,
+        particles: ParticleSystem::new(),
+        shake_timer: 0,
+        flash: None,
         rng_state: seed,
     }));
 
@@ -1279,6 +1338,58 @@ pub fn init_game() -> Result<(), JsValue> {
 
     // Initial render
     state.borrow().render();
+
+    // Animation loop for particles, screen shake, and flash effects
+    {
+        let state = Rc::clone(&state);
+        let f: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
+        let g = Rc::clone(&f);
+        *g.borrow_mut() = Some(Closure::new(move || {
+            {
+                let mut s = state.borrow_mut();
+                // Tick music
+                let mood = match s.combat {
+                    CombatState::Fighting { enemy_idx, .. } => {
+                        if enemy_idx < s.enemies.len() && s.enemies[enemy_idx].is_boss {
+                            crate::audio::MusicMood::Boss
+                        } else {
+                            crate::audio::MusicMood::Combat
+                        }
+                    }
+                    CombatState::GameOver => crate::audio::MusicMood::Silent,
+                    _ => crate::audio::MusicMood::Explore,
+                };
+                if let Some(ref mut audio) = s.audio {
+                    audio.set_mood(mood);
+                    audio.tick_music();
+                }
+
+                let needs_anim = s.particles.is_active() || s.shake_timer > 0 || s.flash.is_some();
+                if needs_anim {
+                    s.particles.tick();
+                    if s.shake_timer > 0 {
+                        s.shake_timer -= 1;
+                    }
+                    if let Some((_, _, _, ref mut a)) = s.flash {
+                        *a -= 0.05;
+                        if *a <= 0.0 {
+                            s.flash = None;
+                        }
+                    }
+                    // Render is called inside the borrow_mut scope
+                    s.render();
+                }
+            }
+            // Schedule next frame
+            if let Some(win) = window() {
+                let _ = win.request_animation_frame(
+                    f.borrow().as_ref().unwrap().as_ref().unchecked_ref(),
+                );
+            }
+        }));
+        let win = window().ok_or("no window")?;
+        let _ = win.request_animation_frame(g.borrow().as_ref().unwrap().as_ref().unchecked_ref());
+    }
 
     Ok(())
 }

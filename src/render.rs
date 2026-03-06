@@ -6,6 +6,7 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 use crate::dungeon::{DungeonLevel, Tile};
 use crate::enemy::Enemy;
 use crate::game::CombatState;
+use crate::particle::ParticleSystem;
 use crate::player::Player;
 
 const TILE_SIZE: f64 = 24.0;
@@ -67,10 +68,17 @@ impl Renderer {
         total_runs: u32,
         recipes_found: usize,
         srs: &crate::srs::SrsTracker,
+        particles: &ParticleSystem,
+        shake_timer: u8,
+        flash: Option<(u8, u8, u8, f64)>,
     ) {
+        // Screen shake offset
+        let shake_x = if shake_timer > 0 { ((shake_timer as f64 * 1.7).sin() * 4.0) } else { 0.0 };
+        let shake_y = if shake_timer > 0 { ((shake_timer as f64 * 2.3).cos() * 3.0) } else { 0.0 };
+
         // Camera: center on player
-        let cam_x = player.x as f64 * TILE_SIZE - self.canvas_w / 2.0 + TILE_SIZE / 2.0;
-        let cam_y = player.y as f64 * TILE_SIZE - self.canvas_h / 2.0 + TILE_SIZE / 2.0;
+        let cam_x = player.x as f64 * TILE_SIZE - self.canvas_w / 2.0 + TILE_SIZE / 2.0 - shake_x;
+        let cam_y = player.y as f64 * TILE_SIZE - self.canvas_h / 2.0 + TILE_SIZE / 2.0 - shake_y;
 
         // Clear
         self.ctx.set_fill_style_str(COL_FOG);
@@ -451,6 +459,23 @@ impl Renderer {
             self.ctx.set_text_align("left");
             self.ctx.set_fill_style_str("#44ddff");
             self.ctx.fill_text("🛡 Shield Active", 12.0, 36.0).ok();
+        }
+
+        // ── Particles ────────────────────────────────────────────────────
+        for p in &particles.particles {
+            let alpha = p.life.max(0.0).min(1.0);
+            self.ctx.set_fill_style_str(&format!(
+                "rgba({},{},{},{})",
+                p.r, p.g, p.b, alpha
+            ));
+            let half = p.size * alpha / 2.0;
+            self.ctx.fill_rect(p.x - half, p.y - half, p.size * alpha, p.size * alpha);
+        }
+
+        // ── Flash overlay ───────────────────────────────────────────────
+        if let Some((r, g, b, a)) = flash {
+            self.ctx.set_fill_style_str(&format!("rgba({},{},{},{})", r, g, b, a));
+            self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
         }
 
         // Minimap (bottom-right)
