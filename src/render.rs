@@ -6,7 +6,7 @@ use js_sys::Date;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
-use crate::dungeon::{AltarKind, DungeonLevel, Tile};
+use crate::dungeon::{AltarKind, DungeonLevel, SealKind, Tile};
 use crate::enemy::Enemy;
 use crate::game::{CombatState, GameSettings, TalentTree};
 use crate::particle::ParticleSystem;
@@ -127,181 +127,13 @@ impl Renderer {
                 }
 
                 let tile = level.tiles[idx];
-                let color = if visible {
-                    match tile {
-                        Tile::Wall => COL_WALL,
-                        Tile::Floor => COL_FLOOR,
-                        Tile::Corridor => COL_CORRIDOR,
-                        Tile::StairsDown => COL_STAIRS,
-                        Tile::Forge => COL_FORGE,
-                        Tile::Shop => COL_SHOP,
-                        Tile::Chest => COL_CHEST,
-                        Tile::Crate => "#7b5232",
-                        Tile::Spikes => "#884444",
-                        Tile::Oil => "#5a4722",
-                        Tile::Water => "#3355aa",
-                        Tile::Npc(_) => "#55aacc",
-                        Tile::Shrine => "#ddaa55",
-                        Tile::Altar(AltarKind::Jade) => "#30563f",
-                        Tile::Altar(AltarKind::Gale) => "#334d74",
-                        Tile::Altar(AltarKind::Mirror) => "#5a456e",
-                        Tile::Sign(_) => "#8a6b47",
-                    }
-                } else {
-                    // revealed but not currently visible
-                    match tile {
-                        Tile::Wall => COL_WALL_REVEALED,
-                        Tile::Floor
-                        | Tile::StairsDown
-                        | Tile::Forge
-                        | Tile::Shop
-                        | Tile::Chest
-                        | Tile::Crate
-                        | Tile::Spikes
-                        | Tile::Oil
-                        | Tile::Water
-                        | Tile::Npc(_)
-                        | Tile::Shrine
-                        | Tile::Altar(_)
-                        | Tile::Sign(_) => COL_FLOOR_REVEALED,
-                        Tile::Corridor => COL_CORRIDOR_REVEALED,
-                    }
-                };
+                let palette = tile_palette(tile, visible);
 
-                self.ctx.set_fill_style_str(color);
+                self.ctx.set_fill_style_str(palette.fill);
                 self.ctx.fill_rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE);
 
-                // Stairs icon
-                if tile == Tile::StairsDown && visible {
-                    self.ctx.set_fill_style_str("#ffffff");
-                    self.ctx.set_font("16px monospace");
-                    self.ctx.set_text_align("center");
-                    self.ctx
-                        .fill_text("▼", screen_x + TILE_SIZE / 2.0, screen_y + TILE_SIZE * 0.75)
-                        .ok();
-                }
-
-                // Forge icon
-                if tile == Tile::Forge && visible {
-                    self.ctx.set_fill_style_str("#ffffff");
-                    self.ctx.set_font("16px monospace");
-                    self.ctx.set_text_align("center");
-                    self.ctx
-                        .fill_text("⚒", screen_x + TILE_SIZE / 2.0, screen_y + TILE_SIZE * 0.75)
-                        .ok();
-                }
-
-                // Shop icon
-                if tile == Tile::Shop && visible {
-                    self.ctx.set_fill_style_str("#ffffff");
-                    self.ctx.set_font("16px monospace");
-                    self.ctx.set_text_align("center");
-                    self.ctx
-                        .fill_text("$", screen_x + TILE_SIZE / 2.0, screen_y + TILE_SIZE * 0.75)
-                        .ok();
-                }
-
-                // Chest icon
-                if tile == Tile::Chest && visible {
-                    self.ctx.set_fill_style_str("#ffffff");
-                    self.ctx.set_font("16px monospace");
-                    self.ctx.set_text_align("center");
-                    self.ctx
-                        .fill_text("◆", screen_x + TILE_SIZE / 2.0, screen_y + TILE_SIZE * 0.75)
-                        .ok();
-                }
-
-                if tile == Tile::Crate && visible {
-                    self.ctx.set_fill_style_str("#ffffff");
-                    self.ctx.set_font("15px monospace");
-                    self.ctx.set_text_align("center");
-                    self.ctx
-                        .fill_text("▣", screen_x + TILE_SIZE / 2.0, screen_y + TILE_SIZE * 0.75)
-                        .ok();
-                }
-
-                if tile == Tile::Spikes && visible {
-                    self.ctx.set_fill_style_str("#ffffff");
-                    self.ctx.set_font("14px monospace");
-                    self.ctx.set_text_align("center");
-                    self.ctx
-                        .fill_text("^", screen_x + TILE_SIZE / 2.0, screen_y + TILE_SIZE * 0.75)
-                        .ok();
-                }
-
-                if tile == Tile::Oil && visible {
-                    self.ctx.set_fill_style_str("#ffdd88");
-                    self.ctx.set_font("14px monospace");
-                    self.ctx.set_text_align("center");
-                    self.ctx
-                        .fill_text("~", screen_x + TILE_SIZE / 2.0, screen_y + TILE_SIZE * 0.75)
-                        .ok();
-                }
-
-                if tile == Tile::Water && visible {
-                    self.ctx.set_fill_style_str("#ccddff");
-                    self.ctx.set_font("14px monospace");
-                    self.ctx.set_text_align("center");
-                    self.ctx
-                        .fill_text("≈", screen_x + TILE_SIZE / 2.0, screen_y + TILE_SIZE * 0.75)
-                        .ok();
-                }
-
-                // NPC icon
-                if let Tile::Npc(npc_type) = tile {
-                    if visible {
-                        let icon = match npc_type {
-                            0 => "📚",
-                            1 => "🧘",
-                            2 => "💰",
-                            _ => "🛡",
-                        };
-                        self.ctx.set_font("16px monospace");
-                        self.ctx.set_text_align("center");
-                        self.ctx
-                            .fill_text(icon, screen_x + TILE_SIZE / 2.0, screen_y + TILE_SIZE * 0.75)
-                            .ok();
-                    }
-                }
-
-                // Shrine icon
-                if tile == Tile::Shrine && visible {
-                    self.ctx.set_fill_style_str("#ffffff");
-                    self.ctx.set_font("16px monospace");
-                    self.ctx.set_text_align("center");
-                    self.ctx
-                        .fill_text("🔔", screen_x + TILE_SIZE / 2.0, screen_y + TILE_SIZE * 0.75)
-                        .ok();
-                }
-
-                if let Tile::Altar(kind) = tile {
-                    if visible {
-                        self.ctx.set_fill_style_str(kind.color());
-                        self.ctx.set_font("16px monospace");
-                        self.ctx.set_text_align("center");
-                        self.ctx
-                            .fill_text(kind.icon(), screen_x + TILE_SIZE / 2.0, screen_y + TILE_SIZE * 0.75)
-                            .ok();
-                    }
-                }
-
-                if let Tile::Sign(_) = tile {
-                    if visible {
-                        self.ctx.set_fill_style_str("#ffffff");
-                        self.ctx.set_font("16px monospace");
-                        self.ctx.set_text_align("center");
-                        self.ctx
-                            .fill_text("?", screen_x + TILE_SIZE / 2.0, screen_y + TILE_SIZE * 0.75)
-                            .ok();
-                    }
-                }
-
-                // Subtle grid lines for floors
-                if visible && tile.is_walkable() {
-                    self.ctx.set_stroke_style_str("rgba(255,255,255,0.04)");
-                    self.ctx.set_line_width(0.5);
-                    self.ctx
-                        .stroke_rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE);
+                if visible {
+                    self.draw_tile_surface(tile, palette, tx, ty, screen_x, screen_y, anim_t);
                 }
             }
         }
@@ -1643,6 +1475,138 @@ impl Renderer {
         }
     }
 
+    fn draw_tile_surface(
+        &self,
+        tile: Tile,
+        palette: TilePalette,
+        tx: i32,
+        ty: i32,
+        screen_x: f64,
+        screen_y: f64,
+        anim_t: f64,
+    ) {
+        let pattern = tile_pattern_seed(tx, ty);
+        let (highlight, shadow) = if tile == Tile::Wall {
+            ("rgba(255,255,255,0.08)", "rgba(0,0,0,0.32)")
+        } else {
+            ("rgba(255,255,255,0.06)", "rgba(0,0,0,0.24)")
+        };
+
+        self.ctx.set_fill_style_str(highlight);
+        self.ctx.fill_rect(screen_x + 0.5, screen_y + 0.5, TILE_SIZE - 1.0, 1.0);
+        self.ctx.fill_rect(screen_x + 0.5, screen_y + 1.5, 1.0, TILE_SIZE - 2.0);
+        self.ctx.set_fill_style_str(shadow);
+        self.ctx
+            .fill_rect(screen_x + TILE_SIZE - 1.5, screen_y + 1.5, 1.0, TILE_SIZE - 2.0);
+        self.ctx
+            .fill_rect(screen_x + 1.5, screen_y + TILE_SIZE - 1.5, TILE_SIZE - 2.0, 1.0);
+
+        match tile {
+            Tile::Floor | Tile::Corridor => {
+                self.ctx.set_fill_style_str(if tile == Tile::Corridor {
+                    "rgba(215,225,255,0.06)"
+                } else {
+                    "rgba(255,255,255,0.05)"
+                });
+                let spark_x = screen_x + 4.0 + (pattern % 11) as f64;
+                let spark_y = screen_y + 4.0 + ((pattern / 11) % 9) as f64;
+                self.ctx.fill_rect(spark_x, spark_y, 2.0, 2.0);
+                if tile == Tile::Corridor {
+                    self.ctx.set_fill_style_str("rgba(170,190,255,0.05)");
+                    self.ctx
+                        .fill_rect(screen_x + 4.0, screen_y + TILE_SIZE / 2.0 - 0.5, TILE_SIZE - 8.0, 1.0);
+                }
+            }
+            Tile::Wall => {
+                self.ctx.set_fill_style_str("rgba(0,0,0,0.14)");
+                self.ctx
+                    .fill_rect(screen_x + 3.0, screen_y + 3.0, TILE_SIZE - 6.0, TILE_SIZE - 6.0);
+                self.ctx.set_fill_style_str("rgba(255,255,255,0.07)");
+                let seam_y = screen_y + 7.0 + (pattern % 6) as f64;
+                self.ctx.fill_rect(screen_x + 3.0, seam_y, TILE_SIZE - 6.0, 1.0);
+                let seam_x = screen_x + 7.0 + ((pattern / 5) % 8) as f64;
+                self.ctx.fill_rect(seam_x, screen_y + 3.0, 1.0, TILE_SIZE / 2.0 - 1.0);
+            }
+            Tile::Water => {
+                let wave_shift = (anim_t * 3.2 + tx as f64 * 0.7 + ty as f64 * 0.4).sin() * 2.0;
+                self.ctx.set_fill_style_str("rgba(210,230,255,0.11)");
+                self.ctx
+                    .fill_rect(screen_x + 3.0 + wave_shift, screen_y + 7.0, TILE_SIZE - 8.0, 1.5);
+                self.ctx
+                    .fill_rect(screen_x + 5.0 - wave_shift, screen_y + 14.0, TILE_SIZE - 10.0, 1.5);
+            }
+            Tile::Oil => {
+                self.ctx.set_fill_style_str("rgba(255,224,154,0.10)");
+                self.ctx
+                    .fill_rect(screen_x + 4.0, screen_y + TILE_SIZE - 8.0, TILE_SIZE - 8.0, 2.0);
+                self.ctx.set_fill_style_str("rgba(255,255,255,0.06)");
+                self.ctx
+                    .fill_rect(screen_x + 6.0, screen_y + 6.0, TILE_SIZE - 14.0, 1.5);
+            }
+            Tile::Crate => {
+                self.ctx.set_fill_style_str("rgba(255,225,180,0.08)");
+                self.ctx
+                    .fill_rect(screen_x + 4.0, screen_y + 4.0, TILE_SIZE - 8.0, TILE_SIZE - 8.0);
+                self.ctx.set_fill_style_str("rgba(62,33,14,0.45)");
+                self.ctx
+                    .fill_rect(screen_x + 8.0, screen_y + 4.0, 1.5, TILE_SIZE - 8.0);
+                self.ctx
+                    .fill_rect(screen_x + 14.5, screen_y + 4.0, 1.5, TILE_SIZE - 8.0);
+            }
+            Tile::Spikes => {
+                self.ctx.set_fill_style_str("rgba(255,220,220,0.08)");
+                self.ctx
+                    .fill_rect(screen_x + 4.0, screen_y + TILE_SIZE - 7.0, TILE_SIZE - 8.0, 2.0);
+            }
+            Tile::StairsDown
+            | Tile::Forge
+            | Tile::Shop
+            | Tile::Chest
+            | Tile::Npc(_)
+            | Tile::Shrine
+            | Tile::Altar(_)
+            | Tile::Seal(_)
+            | Tile::Sign(_) => {
+                if let Some(plate_fill) = tile_plate_fill(tile) {
+                    self.ctx.set_fill_style_str(plate_fill);
+                    self.ctx
+                        .fill_rect(screen_x + 3.0, screen_y + 3.0, TILE_SIZE - 6.0, TILE_SIZE - 6.0);
+                }
+            }
+        }
+
+        if let Some(accent) = palette.accent {
+            self.ctx.set_stroke_style_str(accent);
+            self.ctx.set_line_width(1.0);
+            self.ctx
+                .stroke_rect(screen_x + 1.5, screen_y + 1.5, TILE_SIZE - 3.0, TILE_SIZE - 3.0);
+        }
+
+        if let Some(glyph) = palette.glyph {
+            self.ctx.set_shadow_color(palette.accent.unwrap_or("transparent"));
+            self.ctx.set_shadow_blur(if palette.accent.is_some() { 8.0 } else { 0.0 });
+            self.ctx.set_fill_style_str(palette.glyph_color);
+            self.ctx.set_font(tile_glyph_font(tile));
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text(
+                    glyph,
+                    screen_x + TILE_SIZE / 2.0,
+                    tile_glyph_y(tile, screen_y, anim_t, tx, ty),
+                )
+                .ok();
+            self.ctx.set_shadow_color("transparent");
+            self.ctx.set_shadow_blur(0.0);
+        }
+
+        if tile.is_walkable() {
+            self.ctx.set_stroke_style_str("rgba(255,255,255,0.05)");
+            self.ctx.set_line_width(0.5);
+            self.ctx
+                .stroke_rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE);
+        }
+    }
+
     fn draw_help_overlay(&self, combat: &CombatState, listening_mode: bool) {
         let mut lines = vec![
             "Explore: WASD/Arrows move  1-5 use items".to_string(),
@@ -1692,7 +1656,10 @@ impl Renderer {
                 lines.push("Game over: R restart  T talents  I inventory".to_string());
                 "Game Over Controls"
             }
-            CombatState::Explore => "Quick Reference",
+            CombatState::Explore => {
+                lines.push("Script seals can flood rooms, raise spikes, or summon ambushes.".to_string());
+                "Quick Reference"
+            }
         };
 
         let box_w = 350.0;
@@ -2295,6 +2262,328 @@ fn equipment_name(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TilePalette {
+    fill: &'static str,
+    accent: Option<&'static str>,
+    glyph: Option<&'static str>,
+    glyph_color: &'static str,
+}
+
+fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
+    if visible {
+        match tile {
+            Tile::Wall => TilePalette {
+                fill: COL_WALL,
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Floor => TilePalette {
+                fill: COL_FLOOR,
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Corridor => TilePalette {
+                fill: COL_CORRIDOR,
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::StairsDown => TilePalette {
+                fill: COL_STAIRS,
+                accent: Some("#d7e7ff"),
+                glyph: Some("▼"),
+                glyph_color: "#ffffff",
+            },
+            Tile::Forge => TilePalette {
+                fill: COL_FORGE,
+                accent: Some("#ffd1aa"),
+                glyph: Some("⚒"),
+                glyph_color: "#ffffff",
+            },
+            Tile::Shop => TilePalette {
+                fill: COL_SHOP,
+                accent: Some("#bfffd4"),
+                glyph: Some("$"),
+                glyph_color: "#ffffff",
+            },
+            Tile::Chest => TilePalette {
+                fill: COL_CHEST,
+                accent: Some("#ffe29e"),
+                glyph: Some("◆"),
+                glyph_color: "#fff7dc",
+            },
+            Tile::Crate => TilePalette {
+                fill: "#6a4527",
+                accent: Some("#a77b52"),
+                glyph: Some("▣"),
+                glyph_color: "#fff0d8",
+            },
+            Tile::Spikes => TilePalette {
+                fill: "#7e434a",
+                accent: Some("#d9a0a0"),
+                glyph: Some("^"),
+                glyph_color: "#fff1f1",
+            },
+            Tile::Oil => TilePalette {
+                fill: "#4f3a1c",
+                accent: Some("#e7c56d"),
+                glyph: Some("~"),
+                glyph_color: "#ffdd88",
+            },
+            Tile::Water => TilePalette {
+                fill: "#4466cc",
+                accent: Some("#9fc4ff"),
+                glyph: Some("≈"),
+                glyph_color: "#e5efff",
+            },
+            Tile::Npc(0) => TilePalette {
+                fill: "#3b5876",
+                accent: Some("#7fccff"),
+                glyph: Some("📚"),
+                glyph_color: "#ffffff",
+            },
+            Tile::Npc(1) => TilePalette {
+                fill: "#2f6c5d",
+                accent: Some("#96ffd8"),
+                glyph: Some("🧘"),
+                glyph_color: "#ffffff",
+            },
+            Tile::Npc(2) => TilePalette {
+                fill: "#5e5331",
+                accent: Some("#ffd588"),
+                glyph: Some("💰"),
+                glyph_color: "#ffffff",
+            },
+            Tile::Npc(_) => TilePalette {
+                fill: "#4e476a",
+                accent: Some("#d2c4ff"),
+                glyph: Some("🛡"),
+                glyph_color: "#ffffff",
+            },
+            Tile::Shrine => TilePalette {
+                fill: "#7d5d2a",
+                accent: Some("#ffd07a"),
+                glyph: Some("🔔"),
+                glyph_color: "#fff8e2",
+            },
+            Tile::Altar(kind) => TilePalette {
+                fill: altar_fill(kind),
+                accent: Some(kind.color()),
+                glyph: Some(kind.icon()),
+                glyph_color: kind.color(),
+            },
+            Tile::Seal(kind) => TilePalette {
+                fill: seal_fill(kind),
+                accent: Some(kind.color()),
+                glyph: Some(kind.icon()),
+                glyph_color: kind.color(),
+            },
+            Tile::Sign(_) => TilePalette {
+                fill: "#8a6b47",
+                accent: Some("#d7b07b"),
+                glyph: Some("?"),
+                glyph_color: "#ffffff",
+            },
+        }
+    } else {
+        match tile {
+            Tile::Wall => TilePalette {
+                fill: COL_WALL_REVEALED,
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Floor => TilePalette {
+                fill: COL_FLOOR_REVEALED,
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Corridor => TilePalette {
+                fill: COL_CORRIDOR_REVEALED,
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::StairsDown => TilePalette {
+                fill: "#243857",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Forge => TilePalette {
+                fill: "#4b2b1d",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Shop => TilePalette {
+                fill: "#1e4a33",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Chest => TilePalette {
+                fill: "#5a441b",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Crate => TilePalette {
+                fill: "#3f2c1c",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Spikes => TilePalette {
+                fill: "#4a2d32",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Oil => TilePalette {
+                fill: "#3a2f1b",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Water => TilePalette {
+                fill: "#213f6b",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Npc(_) => TilePalette {
+                fill: "#27465c",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Shrine => TilePalette {
+                fill: "#4f3d20",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Altar(kind) => TilePalette {
+                fill: altar_revealed_fill(kind),
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Seal(kind) => TilePalette {
+                fill: seal_revealed_fill(kind),
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Sign(_) => TilePalette {
+                fill: "#4b3a26",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+        }
+    }
+}
+
+fn tile_plate_fill(tile: Tile) -> Option<&'static str> {
+    match tile {
+        Tile::StairsDown => Some("rgba(255,255,255,0.14)"),
+        Tile::Forge => Some("rgba(255,226,194,0.16)"),
+        Tile::Shop => Some("rgba(207,255,224,0.15)"),
+        Tile::Chest => Some("rgba(255,231,173,0.16)"),
+        Tile::Npc(_) => Some("rgba(225,245,255,0.12)"),
+        Tile::Shrine => Some("rgba(255,224,156,0.16)"),
+        Tile::Altar(kind) => Some(altar_plate_fill(kind)),
+        Tile::Seal(kind) => Some(seal_plate_fill(kind)),
+        Tile::Sign(_) => Some("rgba(255,236,200,0.10)"),
+        _ => None,
+    }
+}
+
+fn altar_fill(kind: AltarKind) -> &'static str {
+    match kind {
+        AltarKind::Jade => "#30563f",
+        AltarKind::Gale => "#334d74",
+        AltarKind::Mirror => "#5a456e",
+    }
+}
+
+fn altar_revealed_fill(kind: AltarKind) -> &'static str {
+    match kind {
+        AltarKind::Jade => "#214231",
+        AltarKind::Gale => "#243b56",
+        AltarKind::Mirror => "#443255",
+    }
+}
+
+fn altar_plate_fill(kind: AltarKind) -> &'static str {
+    match kind {
+        AltarKind::Jade => "rgba(102,221,153,0.14)",
+        AltarKind::Gale => "rgba(136,204,255,0.14)",
+        AltarKind::Mirror => "rgba(221,184,255,0.14)",
+    }
+}
+
+fn seal_fill(kind: SealKind) -> &'static str {
+    match kind {
+        SealKind::Ember => "#6a3529",
+        SealKind::Tide => "#264d79",
+        SealKind::Thorn => "#5f3144",
+        SealKind::Echo => "#4f3a68",
+    }
+}
+
+fn seal_revealed_fill(kind: SealKind) -> &'static str {
+    match kind {
+        SealKind::Ember => "#44251d",
+        SealKind::Tide => "#1b3652",
+        SealKind::Thorn => "#412230",
+        SealKind::Echo => "#352646",
+    }
+}
+
+fn seal_plate_fill(kind: SealKind) -> &'static str {
+    match kind {
+        SealKind::Ember => "rgba(255,155,115,0.16)",
+        SealKind::Tide => "rgba(144,201,255,0.16)",
+        SealKind::Thorn => "rgba(255,158,184,0.14)",
+        SealKind::Echo => "rgba(212,164,255,0.16)",
+    }
+}
+
+fn tile_glyph_font(tile: Tile) -> &'static str {
+    match tile {
+        Tile::Seal(_) => "bold 14px 'Noto Serif SC', 'SimSun', serif",
+        Tile::Crate | Tile::Spikes | Tile::Oil | Tile::Water => "15px monospace",
+        _ => "16px monospace",
+    }
+}
+
+fn tile_glyph_y(tile: Tile, screen_y: f64, anim_t: f64, tx: i32, ty: i32) -> f64 {
+    let base = screen_y + TILE_SIZE * 0.75;
+    match tile {
+        Tile::Water => base + (anim_t * 3.5 + tx as f64 * 0.6 + ty as f64 * 0.35).sin() * 1.4,
+        Tile::Oil => base + (anim_t * 2.0 + tx as f64 * 0.4).sin() * 0.6,
+        Tile::Shrine => base + (anim_t * 2.5).sin() * 0.9,
+        Tile::Altar(_) => base + (anim_t * 2.8 + ty as f64 * 0.4).sin() * 0.8,
+        Tile::Seal(_) => base + (anim_t * 3.1 + tx as f64 * 0.35 + ty as f64 * 0.2).sin() * 0.7,
+        Tile::StairsDown => base + (anim_t * 1.8).sin() * 0.4,
+        _ => base,
+    }
+}
+
+fn tile_pattern_seed(tx: i32, ty: i32) -> u32 {
+    (tx as u32)
+        .wrapping_mul(73_856_093)
+        .wrapping_add((ty as u32).wrapping_mul(19_349_663))
+        ^ 0x9e37_79b9
+}
+
 fn radical_stack_counts(radicals: &[&'static str]) -> BTreeMap<&'static str, usize> {
     let mut counts = BTreeMap::new();
     for radical in radicals {
@@ -2305,7 +2594,8 @@ fn radical_stack_counts(radicals: &[&'static str]) -> BTreeMap<&'static str, usi
 
 #[cfg(test)]
 mod tests {
-    use super::radical_stack_counts;
+    use super::{radical_stack_counts, tile_palette, TilePalette};
+    use crate::dungeon::{AltarKind, Tile};
 
     #[test]
     fn radical_stack_counts_groups_duplicate_radicals() {
@@ -2321,5 +2611,31 @@ mod tests {
         let counts = radical_stack_counts(&[]);
 
         assert!(counts.is_empty());
+    }
+
+    #[test]
+    fn tile_palette_highlights_interactive_tiles_when_visible() {
+        let stairs = tile_palette(Tile::StairsDown, true);
+
+        assert_eq!(
+            stairs,
+            TilePalette {
+                fill: "#8ab4ff",
+                accent: Some("#d7e7ff"),
+                glyph: Some("▼"),
+                glyph_color: "#ffffff",
+            }
+        );
+    }
+
+    #[test]
+    fn tile_palette_keeps_special_tiles_distinct_when_revealed() {
+        let revealed_chest = tile_palette(Tile::Chest, false);
+        let revealed_floor = tile_palette(Tile::Floor, false);
+        let revealed_altar = tile_palette(Tile::Altar(AltarKind::Jade), false);
+
+        assert_eq!(revealed_chest.fill, "#5a441b");
+        assert_ne!(revealed_chest.fill, revealed_floor.fill);
+        assert_eq!(revealed_altar.fill, "#214231");
     }
 }

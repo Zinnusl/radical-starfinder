@@ -65,6 +65,52 @@ impl AltarKind {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SealKind {
+    Ember,
+    Tide,
+    Thorn,
+    Echo,
+}
+
+impl SealKind {
+    pub fn icon(self) -> &'static str {
+        match self {
+            Self::Ember => "火",
+            Self::Tide => "水",
+            Self::Thorn => "刃",
+            Self::Echo => "回",
+        }
+    }
+
+    pub fn color(self) -> &'static str {
+        match self {
+            Self::Ember => "#ff9b73",
+            Self::Tide => "#90c9ff",
+            Self::Thorn => "#ff9eb8",
+            Self::Echo => "#d4a4ff",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Ember => "Ember seal",
+            Self::Tide => "Tide seal",
+            Self::Thorn => "Thorn seal",
+            Self::Echo => "Echo seal",
+        }
+    }
+
+    fn random(rng: &mut Rng) -> Self {
+        match rng.next_u64() % 4 {
+            0 => Self::Ember,
+            1 => Self::Tide,
+            2 => Self::Thorn,
+            _ => Self::Echo,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tile {
     Wall,
     Floor,
@@ -87,6 +133,8 @@ pub enum Tile {
     Shrine,
     /// One-shot altar that grants a blessing
     Altar(AltarKind),
+    /// One-shot script seal that reshapes the room when stepped on
+    Seal(SealKind),
     /// Tutorial signpost with a scripted message
     Sign(u8),
 }
@@ -107,6 +155,7 @@ impl Tile {
                 | Tile::Npc(_)
                 | Tile::Shrine
                 | Tile::Altar(_)
+                | Tile::Seal(_)
                 | Tile::Sign(_)
         )
     }
@@ -415,6 +464,7 @@ impl DungeonLevel {
                                     | Tile::Npc(_)
                                     | Tile::Shrine
                                     | Tile::Altar(_)
+                                    | Tile::Seal(_)
                                     | Tile::Sign(_)
                             )
                         } else {
@@ -479,6 +529,7 @@ impl DungeonLevel {
                                     | Tile::Npc(_)
                                     | Tile::Shrine
                                     | Tile::Altar(_)
+                                    | Tile::Seal(_)
                                     | Tile::Sign(_)
                             )
                         } else {
@@ -686,6 +737,7 @@ impl DungeonLevel {
         level.place_npcs(&mut rng);
         level.place_shrines(&mut rng);
         level.place_altars(&mut rng);
+        level.place_seals(&mut rng);
         level.place_hazards(&mut rng);
         level.place_crates(&mut rng);
         level
@@ -763,6 +815,7 @@ impl DungeonLevel {
                                 | Tile::Npc(_)
                                 | Tile::Shrine
                                 | Tile::Altar(_)
+                                | Tile::Seal(_)
                                 | Tile::Sign(_)
                         )
                     } else {
@@ -786,12 +839,73 @@ impl DungeonLevel {
             }
         }
     }
+
+    /// Place 1-2 script seals that reshape rooms when stepped on.
+    fn place_seals(&mut self, rng: &mut Rng) {
+        let n = self.rooms.len();
+        if n <= 3 {
+            return;
+        }
+
+        let seal_count = 1 + (rng.next_u64() % 2) as usize;
+        let mut used_rooms = Vec::new();
+        let mut placed = 0;
+        for _ in 0..20 {
+            if placed >= seal_count {
+                break;
+            }
+
+            let room_idx = 1 + (rng.next_u64() as usize % (n - 2));
+            if used_rooms.contains(&room_idx) {
+                continue;
+            }
+            let room = &self.rooms[room_idx];
+            let has_special = (room.y..room.y + room.h).any(|ry| {
+                (room.x..room.x + room.w).any(|rx| {
+                    if rx >= 0 && ry >= 0 && rx < self.width && ry < self.height {
+                        let idx = (ry * self.width + rx) as usize;
+                        matches!(
+                            self.tiles[idx],
+                            Tile::Forge
+                                | Tile::Shop
+                                | Tile::StairsDown
+                                | Tile::Chest
+                                | Tile::Npc(_)
+                                | Tile::Shrine
+                                | Tile::Altar(_)
+                                | Tile::Seal(_)
+                                | Tile::Sign(_)
+                        )
+                    } else {
+                        false
+                    }
+                })
+            });
+            if has_special {
+                continue;
+            }
+
+            let sx = room.x + room.w / 2;
+            let sy = room.y + room.h / 2;
+            if !self.in_bounds(sx, sy) {
+                continue;
+            }
+            let idx = self.idx(sx, sy);
+            if self.tiles[idx] != Tile::Floor {
+                continue;
+            }
+
+            self.tiles[idx] = Tile::Seal(SealKind::random(rng));
+            used_rooms.push(room_idx);
+            placed += 1;
+        }
+    }
 }
 
 
 #[cfg(test)]
 mod tests {
-    use super::{AltarKind, DungeonLevel, Room, Rng, Tile};
+    use super::{AltarKind, DungeonLevel, Room, Rng, SealKind, Tile};
 
     fn make_clean_test_level() -> DungeonLevel {
         let width = 24;
@@ -827,6 +941,7 @@ mod tests {
         assert!(Tile::Oil.is_walkable());
         assert!(Tile::Water.is_walkable());
         assert!(Tile::Altar(AltarKind::Jade).is_walkable());
+        assert!(Tile::Seal(SealKind::Ember).is_walkable());
         assert!(!Tile::Crate.is_walkable());
     }
 
@@ -838,6 +953,16 @@ mod tests {
         level.place_altars(&mut rng);
 
         assert!(level.tiles.iter().any(|tile| matches!(tile, Tile::Altar(_))));
+    }
+
+    #[test]
+    fn place_seals_adds_script_seals_to_clean_levels() {
+        let mut level = make_clean_test_level();
+        let mut rng = Rng::new(7);
+
+        level.place_seals(&mut rng);
+
+        assert!(level.tiles.iter().any(|tile| matches!(tile, Tile::Seal(_))));
     }
 
     #[test]

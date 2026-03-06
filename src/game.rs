@@ -9,7 +9,7 @@ use web_sys::{window, HtmlCanvasElement, KeyboardEvent};
 use crate::achievement::AchievementTracker;
 use crate::audio::Audio;
 use crate::codex::Codex;
-use crate::dungeon::{compute_fov, AltarKind, DungeonLevel, RoomModifier, Tile};
+use crate::dungeon::{compute_fov, AltarKind, DungeonLevel, RoomModifier, SealKind, Tile};
 use crate::enemy::{BossKind, Enemy};
 use crate::particle::ParticleSystem;
 use crate::player::{
@@ -888,6 +888,190 @@ impl GameState {
         })
     }
 
+    fn paint_seal_cross(&mut self, x: i32, y: i32, tile: Tile) -> usize {
+        let mut changed = 0;
+        for (tx, ty) in seal_cross_positions(x, y) {
+            if !self.level.in_bounds(tx, ty) {
+                continue;
+            }
+            let idx = self.level.idx(tx, ty);
+            if can_be_reshaped_by_seal(self.level.tiles[idx]) {
+                self.level.tiles[idx] = tile;
+                changed += 1;
+            }
+        }
+        changed
+    }
+
+    fn stun_enemies_on_tiles(&mut self, targets: &[(i32, i32)]) -> usize {
+        let mut stunned = 0;
+        for idx in 0..self.enemies.len() {
+            if !self.enemies[idx].is_alive() {
+                continue;
+            }
+            if targets
+                .iter()
+                .any(|(tx, ty)| self.enemies[idx].x == *tx && self.enemies[idx].y == *ty)
+            {
+                self.enemies[idx].stunned = true;
+                let (sx, sy) = self.tile_to_screen(self.enemies[idx].x, self.enemies[idx].y);
+                self.particles.spawn_stun(sx, sy, &mut self.rng_state);
+                stunned += 1;
+            }
+        }
+        stunned
+    }
+
+    fn damage_enemies_on_tiles(&mut self, targets: &[(i32, i32)]) -> usize {
+        let mut pricked = 0;
+        for idx in 0..self.enemies.len() {
+            if !self.enemies[idx].is_alive() {
+                continue;
+            }
+            if targets
+                .iter()
+                .any(|(tx, ty)| self.enemies[idx].x == *tx && self.enemies[idx].y == *ty)
+            {
+                let hp_before = self.enemies[idx].hp;
+                self.apply_enemy_tile_effect(idx);
+                if self.enemies[idx].hp < hp_before {
+                    pricked += 1;
+                }
+            }
+        }
+        pricked
+    }
+
+    fn spawn_seal_ambusher(&mut self, x: i32, y: i32) -> Option<&'static str> {
+        let (sx, sy) = self
+            .find_free_adjacent_tile(x, y)
+            .or_else(|| self.find_free_adjacent_tile(self.player.x, self.player.y))?;
+        let pool = vocab::vocab_for_floor(self.floor_num.max(1));
+        if pool.is_empty() {
+            return None;
+        }
+        let rand_val = self.rng_next();
+        let entry = pool[self.srs.weighted_pick(&pool, rand_val)];
+        let mut enemy = Enemy::from_vocab(entry, sx, sy, self.floor_num.max(1));
+        enemy.alert = true;
+        let hanzi = enemy.hanzi;
+        self.enemies.push(enemy);
+        Some(hanzi)
+    }
+
+    fn trigger_seal(&mut self, x: i32, y: i32, kind: SealKind, triggerer: Option<&'static str>) {
+        if !self.level.in_bounds(x, y) {
+            return;
+        }
+        let idx = self.level.idx(x, y);
+        if !matches!(self.level.tiles[idx], Tile::Seal(current) if current == kind) {
+            return;
+        }
+        self.level.tiles[idx] = Tile::Floor;
+
+        let visible = self.level.visible[idx] || triggerer.is_none();
+        let (sx, sy) = self.tile_to_screen(x, y);
+        let affected_tiles = seal_cross_positions(x, y);
+        match kind {
+            SealKind::Ember => {
+                let changed = self.paint_seal_cross(x, y, Tile::Oil);
+                if visible {
+                    self.particles.spawn_fire(sx, sy, &mut self.rng_state);
+                    self.flash = Some((255, 128, 80, 0.16));
+                    self.message = match triggerer {
+                        Some(name) => format!(
+                            "🔥 {} triggers an {} — oil spills across {} tiles!",
+                            name,
+                            kind.label(),
+                            changed
+                        ),
+                        None => format!(
+                            "🔥 {} bursts open — oil spills across {} nearby tiles!",
+                            kind.label(),
+                            changed
+                        ),
+                    };
+                    self.message_timer = 90;
+                }
+            }
+            SealKind::Tide => {
+                let changed = self.paint_seal_cross(x, y, Tile::Water);
+                let stunned = self.stun_enemies_on_tiles(&affected_tiles);
+                if visible {
+                    self.particles.spawn_shield(sx, sy, &mut self.rng_state);
+                    self.flash = Some((110, 180, 255, 0.14));
+                    self.message = match triggerer {
+                        Some(name) => format!(
+                            "≈ {} releases a {} — {} tiles flood and {} foes stagger!",
+                            name,
+                            kind.label(),
+                            changed,
+                            stunned
+                        ),
+                        None => format!(
+                            "≈ {} floods the room — {} tiles turn to water and {} foes stagger!",
+                            kind.label(),
+                            changed,
+                            stunned
+                        ),
+                    };
+                    self.message_timer = 90;
+                }
+            }
+            SealKind::Thorn => {
+                let changed = self.paint_seal_cross(x, y, Tile::Spikes);
+                let pricked = self.damage_enemies_on_tiles(&affected_tiles);
+                if visible {
+                    self.particles.spawn_damage(sx, sy, &mut self.rng_state);
+                    self.flash = Some((255, 100, 140, 0.14));
+                    self.message = match triggerer {
+                        Some(name) => format!(
+                            "🗡 {} snaps a {} — {} spike tiles rise and prick {} foes!",
+                            name,
+                            kind.label(),
+                            changed,
+                            pricked
+                        ),
+                        None => format!(
+                            "🗡 {} flares — {} spike tiles rise and prick {} foes!",
+                            kind.label(),
+                            changed,
+                            pricked
+                        ),
+                    };
+                    self.message_timer = 90;
+                }
+            }
+            SealKind::Echo => {
+                let ambusher = self.spawn_seal_ambusher(x, y);
+                if visible {
+                    self.particles.spawn_drain(sx, sy, &mut self.rng_state);
+                    self.flash = Some((190, 100, 255, 0.16));
+                    self.message = match (triggerer, ambusher) {
+                        (Some(name), Some(enemy)) => format!(
+                            "📣 {} cracks an {} — {} answers the call!",
+                            name,
+                            kind.label(),
+                            enemy
+                        ),
+                        (None, Some(enemy)) => format!(
+                            "📣 {} echoes through the hall — {} answers the call!",
+                            kind.label(),
+                            enemy
+                        ),
+                        (Some(name), None) => {
+                            format!("📣 {} stirs an {}, but nothing answers.", name, kind.label())
+                        }
+                        (None, None) => {
+                            format!("📣 {} hums softly, but nothing answers.", kind.label())
+                        }
+                    };
+                    self.message_timer = 90;
+                }
+            }
+        }
+    }
+
     fn apply_player_tile_effect(&mut self, tile: Tile) {
         match tile {
             Tile::Spikes => {
@@ -924,16 +1108,27 @@ impl GameState {
             return;
         }
         let tile = self.level.tile(self.enemies[enemy_idx].x, self.enemies[enemy_idx].y);
-        if tile == Tile::Spikes {
-            self.enemies[enemy_idx].hp -= 1;
-            if self.enemies[enemy_idx].hp <= 0 {
-                let e_hanzi = self.enemies[enemy_idx].hanzi;
-                let idx = self.level.idx(self.enemies[enemy_idx].x, self.enemies[enemy_idx].y);
-                if self.level.visible[idx] {
-                    self.message = format!("🪤 {} stumbles into spikes and falls!", e_hanzi);
-                    self.message_timer = 60;
+        match tile {
+            Tile::Spikes => {
+                self.enemies[enemy_idx].hp -= 1;
+                if self.enemies[enemy_idx].hp <= 0 {
+                    let e_hanzi = self.enemies[enemy_idx].hanzi;
+                    let idx = self.level.idx(self.enemies[enemy_idx].x, self.enemies[enemy_idx].y);
+                    if self.level.visible[idx] {
+                        self.message = format!("🪤 {} stumbles into spikes and falls!", e_hanzi);
+                        self.message_timer = 60;
+                    }
                 }
             }
+            Tile::Seal(kind) => {
+                let (x, y, name) = (
+                    self.enemies[enemy_idx].x,
+                    self.enemies[enemy_idx].y,
+                    self.enemies[enemy_idx].hanzi,
+                );
+                self.trigger_seal(x, y, kind, Some(name));
+            }
+            _ => {}
         }
     }
 
@@ -1249,6 +1444,10 @@ impl GameState {
 
         if let Tile::Sign(sign_id) = target_tile {
             self.show_tutorial_sign(sign_id);
+        }
+
+        if let Tile::Seal(kind) = target_tile {
+            self.trigger_seal(nx, ny, kind, None);
         }
 
         // Stairs
@@ -3054,13 +3253,31 @@ fn tutorial_exit_blocker_for(tutorial: Option<&TutorialState>) -> Option<&'stati
     }
 }
 
+fn can_be_reshaped_by_seal(tile: Tile) -> bool {
+    matches!(tile, Tile::Floor | Tile::Corridor | Tile::Oil | Tile::Water | Tile::Spikes)
+}
+
+fn seal_cross_positions(x: i32, y: i32) -> [(i32, i32); 8] {
+    [
+        (x + 1, y),
+        (x - 1, y),
+        (x + 2, y),
+        (x - 2, y),
+        (x, y + 1),
+        (x, y - 1),
+        (x, y + 2),
+        (x, y - 2),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        combat_prompt_for, detect_combo, elite_chain_damage, elite_remaining_hp,
-        spell_category, tutorial_exit_blocker_for, GameState, TalentTree, TextSpeed,
-        TutorialState,
+        can_be_reshaped_by_seal, combat_prompt_for, detect_combo, elite_chain_damage,
+        elite_remaining_hp, seal_cross_positions, spell_category, tutorial_exit_blocker_for,
+        GameState, TalentTree, TextSpeed, TutorialState,
     };
+    use crate::dungeon::Tile;
     use crate::enemy::Enemy;
     use crate::player::ITEM_KIND_COUNT;
     use crate::radical::SpellEffect;
@@ -3154,6 +3371,31 @@ mod tests {
     fn elite_remaining_hp_stays_above_zero_until_chain_finishes() {
         assert_eq!(elite_remaining_hp(2, 3, false), 1);
         assert_eq!(elite_remaining_hp(2, 3, true), -1);
+    }
+
+    #[test]
+    fn seal_cross_positions_extend_two_tiles_cardinally() {
+        assert_eq!(
+            seal_cross_positions(10, 8),
+            [
+                (11, 8),
+                (9, 8),
+                (12, 8),
+                (8, 8),
+                (10, 9),
+                (10, 7),
+                (10, 10),
+                (10, 6),
+            ]
+        );
+    }
+
+    #[test]
+    fn only_mutable_ground_can_be_reshaped_by_seals() {
+        assert!(can_be_reshaped_by_seal(Tile::Floor));
+        assert!(can_be_reshaped_by_seal(Tile::Water));
+        assert!(!can_be_reshaped_by_seal(Tile::Forge));
+        assert!(!can_be_reshaped_by_seal(Tile::Chest));
     }
 
     #[test]
