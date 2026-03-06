@@ -3,5 +3,5 @@
 mod generation;
 mod fov;
 
-pub use generation::{DungeonLevel, Tile, Room};
+pub use generation::{DungeonLevel, Tile, Room, RoomModifier};
 pub use fov::compute_fov;

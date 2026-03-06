@@ -72,6 +72,7 @@ impl Renderer {
         shake_timer: u8,
         flash: Option<(u8, u8, u8, f64)>,
         achievement_popup: Option<(&str, &str)>,
+        room_modifier: Option<crate::dungeon::RoomModifier>,
     ) {
         // Screen shake offset
         let shake_x = if shake_timer > 0 { ((shake_timer as f64 * 1.7).sin() * 4.0) } else { 0.0 };
@@ -391,6 +392,18 @@ impl Renderer {
         if let Some(c) = player.charm {
             self.ctx.set_fill_style_str("#88ddaa");
             self.ctx.fill_text(&format!("✧ {}", c.name), self.canvas_w - 12.0, eq_y).ok();
+            eq_y += 14.0;
+        }
+
+        // Room modifier indicator
+        if let Some(modifier) = room_modifier {
+            let (label, color) = match modifier {
+                crate::dungeon::RoomModifier::Dark => ("🌑 Dark Room", "#8888bb"),
+                crate::dungeon::RoomModifier::Arcane => ("✨ Arcane Room", "#aa66ff"),
+                crate::dungeon::RoomModifier::Cursed => ("💀 Cursed Room", "#ff6666"),
+            };
+            self.ctx.set_fill_style_str(color);
+            self.ctx.fill_text(label, self.canvas_w - 12.0, eq_y).ok();
         }
 
         // ── Radical inventory (left side) ───────────────────────────────

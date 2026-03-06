@@ -50,12 +50,24 @@ impl Tile {
 
 // ── Room descriptor ─────────────────────────────────────────────────────────
 
-#[derive(Clone, Debug)]
+/// Room environment modifier affecting gameplay.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum RoomModifier {
+    /// Reduced FOV to 2 tiles
+    Dark,
+    /// Spells deal 2x damage
+    Arcane,
+    /// Enemies take 1 extra damage per hit
+    Cursed,
+}
+
+#[derive(Clone)]
 pub struct Room {
     pub x: i32,
     pub y: i32,
     pub w: i32,
     pub h: i32,
+    pub modifier: Option<RoomModifier>,
 }
 
 impl Room {
@@ -149,7 +161,7 @@ impl BspNode {
             let h = rng.range(MIN_ROOM, self.h - 1);
             let x = self.x + rng.range(1, self.w - w);
             let y = self.y + rng.range(1, self.h - h);
-            self.room = Some(Room { x, y, w, h });
+            self.room = Some(Room { x, y, w, h, modifier: None });
         }
     }
 
@@ -422,6 +434,23 @@ impl DungeonLevel {
         level.place_forges(&mut rng);
         level.place_shop(&mut rng);
         level.place_chests(&mut rng);
+        level.assign_room_modifiers(&mut rng);
         level
+    }
+
+    /// Assign random modifiers to some rooms (not first or last).
+    fn assign_room_modifiers(&mut self, rng: &mut Rng) {
+        let n = self.rooms.len();
+        if n <= 2 { return; }
+        // ~30% of middle rooms get a modifier
+        for i in 1..n - 1 {
+            if rng.next_u64() % 100 < 30 {
+                self.rooms[i].modifier = Some(match rng.next_u64() % 3 {
+                    0 => RoomModifier::Dark,
+                    1 => RoomModifier::Arcane,
+                    _ => RoomModifier::Cursed,
+                });
+            }
+        }
     }
 }

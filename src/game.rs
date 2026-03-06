@@ -9,7 +9,7 @@ use web_sys::{window, HtmlCanvasElement, KeyboardEvent};
 use crate::achievement::AchievementTracker;
 use crate::audio::Audio;
 use crate::codex::Codex;
-use crate::dungeon::{compute_fov, DungeonLevel, Tile};
+use crate::dungeon::{compute_fov, DungeonLevel, RoomModifier, Tile};
 use crate::enemy::Enemy;
 use crate::particle::ParticleSystem;
 use crate::player::{Player, EQUIPMENT_POOL};
@@ -97,6 +97,10 @@ pub struct GameState {
     pub codex: Codex,
     /// Whether codex overlay is showing
     pub show_codex: bool,
+    /// Last spell effect used (for combos)
+    pub last_spell: Option<SpellEffect>,
+    /// Turns since last spell (combo window)
+    pub spell_combo_timer: u8,
     rng_state: u64,
 }
 
@@ -178,6 +182,27 @@ impl GameState {
         self.enemies.iter().position(|e| e.is_alive() && e.x == x && e.y == y)
     }
 
+    /// Get the room modifier at the player's current position.
+    fn current_room_modifier(&self) -> Option<RoomModifier> {
+        let px = self.player.x;
+        let py = self.player.y;
+        for room in &self.level.rooms {
+            if px >= room.x && px < room.x + room.w && py >= room.y && py < room.y + room.h {
+                return room.modifier;
+            }
+        }
+        None
+    }
+
+    /// Effective FOV radius (reduced in Dark rooms).
+    fn effective_fov(&self) -> i32 {
+        if self.current_room_modifier() == Some(RoomModifier::Dark) {
+            2
+        } else {
+            FOV_RADIUS
+        }
+    }
+
     /// Try to move player. Bumping into an enemy starts combat.
     fn try_move(&mut self, dx: i32, dy: i32) {
         if matches!(self.combat, CombatState::GameOver) {
@@ -189,6 +214,13 @@ impl GameState {
         }
 
         // Tick player statuses
+        // Decrement combo timer
+        if self.spell_combo_timer > 0 {
+            self.spell_combo_timer -= 1;
+            if self.spell_combo_timer == 0 {
+                self.last_spell = None;
+            }
+        }
         let (pdmg, pheal) = status::tick_statuses(&mut self.player.statuses);
         if pdmg > 0 {
             self.player.hp -= pdmg;
@@ -299,7 +331,8 @@ impl GameState {
         }
 
         let (px, py) = (self.player.x, self.player.y);
-        compute_fov(&mut self.level, px, py, FOV_RADIUS);
+        let fov = self.effective_fov();
+        compute_fov(&mut self.level, px, py, fov);
     }
 
     /// All enemies take one step toward the player if alerted.
@@ -400,8 +433,9 @@ impl GameState {
             ) {
                 self.srs.record(e_hanzi, true);
                 self.codex.record(e_hanzi, e_pinyin, e_meaning, true);
-                // Hit with bonus damage from equipment
-                let hit_dmg = 2 + self.player.bonus_damage();
+                // Hit with bonus damage from equipment + room modifiers
+                let cursed_bonus = if self.current_room_modifier() == Some(RoomModifier::Cursed) { 1 } else { 0 };
+                let hit_dmg = 2 + self.player.bonus_damage() + cursed_bonus;
                 self.enemies[enemy_idx].hp -= hit_dmg;
                 if self.enemies[enemy_idx].hp <= 0 {
                     self.total_kills += 1;
@@ -814,10 +848,83 @@ impl GameState {
                         }
                     }
                 }
+
+                // ── Combo detection ─────────────────────────────────────
+                let current_effect = spell.effect;
+                if let Some(prev) = self.last_spell.take() {
+                    let combo = detect_combo(&prev, &current_effect);
+                    if let Some((combo_name, combo_effect)) = combo {
+                        self.apply_combo(enemy_idx, &combo_name, combo_effect, p_screen, e_screen);
+                    }
+                }
+                self.last_spell = Some(current_effect);
+                self.spell_combo_timer = 3;
             } else {
                 self.message = "No spells available!".to_string();
                 self.message_timer = 40;
             }
+        }
+    }
+
+    /// Apply a spell combo bonus.
+    fn apply_combo(
+        &mut self,
+        enemy_idx: usize,
+        name: &str,
+        effect: ComboEffect,
+        p_screen: (f64, f64),
+        e_screen: Option<(f64, f64)>,
+    ) {
+        // Flash gold for combo
+        self.flash = Some((255, 200, 50, 0.3));
+        match effect {
+            ComboEffect::Steam => {
+                // AoE stun all visible enemies
+                for e in &mut self.enemies {
+                    if e.is_alive() {
+                        e.stunned = true;
+                    }
+                }
+                self.particles.spawn_fire(p_screen.0, p_screen.1 - 10.0, &mut self.rng_state);
+                self.particles.spawn_shield(p_screen.0, p_screen.1 + 10.0, &mut self.rng_state);
+                self.message = format!("💥 COMBO: {}! All enemies stunned!", name);
+            }
+            ComboEffect::Counter(dmg) => {
+                // Reflect damage + shield
+                if enemy_idx < self.enemies.len() {
+                    self.enemies[enemy_idx].hp -= dmg;
+                    self.player.shield = true;
+                    if let Some((ex, ey)) = e_screen {
+                        self.particles.spawn_kill(ex, ey, &mut self.rng_state);
+                    }
+                }
+                self.message = format!("💥 COMBO: {}! {} reflected + Shield!", name, dmg);
+            }
+            ComboEffect::Barrier(amount) => {
+                // Strong shield + heal
+                self.player.shield = true;
+                self.player.hp = (self.player.hp + amount).min(self.player.max_hp);
+                self.particles.spawn_heal(p_screen.0, p_screen.1, &mut self.rng_state);
+                self.particles.spawn_shield(p_screen.0, p_screen.1, &mut self.rng_state);
+                self.message = format!("💥 COMBO: {}! Shield + {} HP!", name, amount);
+            }
+            ComboEffect::Flurry(dmg) => {
+                // Triple hit
+                if enemy_idx < self.enemies.len() {
+                    self.enemies[enemy_idx].hp -= dmg;
+                    if let Some((ex, ey)) = e_screen {
+                        self.particles.spawn_kill(ex, ey, &mut self.rng_state);
+                        self.particles.spawn_fire(ex, ey, &mut self.rng_state);
+                    }
+                }
+                self.message = format!("💥 COMBO: {}! {} damage flurry!", name, dmg);
+            }
+        }
+        self.message_timer = 100;
+        // Check if fought enemy died from combo
+        if enemy_idx < self.enemies.len() && !self.enemies[enemy_idx].is_alive() {
+            self.combat = CombatState::Explore;
+            self.typing.clear();
         }
     }
 
@@ -1095,6 +1202,7 @@ impl GameState {
 
     fn render(&self) {
         let popup = self.achievement_popup.map(|(n, d, _)| (n, d));
+        let room_mod = self.current_room_modifier();
         self.renderer.draw(
             &self.level,
             &self.player,
@@ -1112,11 +1220,44 @@ impl GameState {
             self.shake_timer,
             self.flash,
             popup,
+            room_mod,
         );
         if self.show_codex {
             let entries = self.codex.sorted_entries();
             self.renderer.draw_codex(&entries);
         }
+    }
+}
+
+/// Combo effects from spell combinations.
+enum ComboEffect {
+    Steam,         // Fire + Shield: AoE stun
+    Counter(i32),  // Shield + Strike: reflect damage
+    Barrier(i32),  // Heal + Shield: shield + heal
+    Flurry(i32),   // Strike + Fire: triple damage
+}
+
+/// Detect if two spell effects form a combo.
+fn detect_combo(prev: &SpellEffect, current: &SpellEffect) -> Option<(&'static str, ComboEffect)> {
+    match (spell_category(prev), spell_category(current)) {
+        ("fire", "shield") | ("shield", "fire") => Some(("Steam Burst", ComboEffect::Steam)),
+        ("shield", "strike") | ("strike", "shield") => Some(("Counter Strike", ComboEffect::Counter(6))),
+        ("heal", "shield") | ("shield", "heal") => Some(("Barrier", ComboEffect::Barrier(4))),
+        ("strike", "fire") | ("fire", "strike") => Some(("Flurry", ComboEffect::Flurry(8))),
+        ("drain", "heal") | ("heal", "drain") => Some(("Life Surge", ComboEffect::Barrier(6))),
+        ("stun", "strike") | ("strike", "stun") => Some(("Crippling Blow", ComboEffect::Flurry(10))),
+        _ => None,
+    }
+}
+
+fn spell_category(effect: &SpellEffect) -> &'static str {
+    match effect {
+        SpellEffect::FireAoe(_) => "fire",
+        SpellEffect::Heal(_) => "heal",
+        SpellEffect::Shield => "shield",
+        SpellEffect::StrongHit(_) => "strike",
+        SpellEffect::Drain(_) => "drain",
+        SpellEffect::Stun => "stun",
     }
 }
 
@@ -1178,6 +1319,8 @@ pub fn init_game() -> Result<(), JsValue> {
         achievement_popup: None,
         codex: Codex::load(&vocab::VOCAB),
         show_codex: false,
+        last_spell: None,
+        spell_combo_timer: 0,
         rng_state: seed,
     }));
 
