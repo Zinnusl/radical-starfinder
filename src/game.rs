@@ -45,6 +45,13 @@ pub enum CombatState {
         items: Vec<ShopItem>,
         cursor: usize,
     },
+    /// Player is enchanting equipment at a forge
+    Enchanting {
+        /// 0=weapon, 1=armor, 2=charm
+        slot: usize,
+        /// Which page of radicals to show
+        page: usize,
+    },
     /// Player is dead
     GameOver,
 }
@@ -196,11 +203,12 @@ impl GameState {
 
     /// Effective FOV radius (reduced in Dark rooms).
     fn effective_fov(&self) -> i32 {
-        if self.current_room_modifier() == Some(RoomModifier::Dark) {
+        let base = if self.current_room_modifier() == Some(RoomModifier::Dark) {
             2
         } else {
             FOV_RADIUS
-        }
+        };
+        base + self.player.enchant_fov_bonus()
     }
 
     /// Try to move player. Bumping into an enemy starts combat.
@@ -299,7 +307,7 @@ impl GameState {
                     selected: Vec::new(),
                     page: 0,
                 };
-                self.message = "Select radicals with 1-9, ←/→ to page. Enter to forge.".to_string();
+                self.message = "Select radicals with 1-9, ←/→ to page. Enter to forge. E to enchant.".to_string();
                 self.message_timer = 255;
                 let (px, py) = (self.player.x, self.player.y);
                 compute_fov(&mut self.level, px, py, FOV_RADIUS);
@@ -416,8 +424,8 @@ impl GameState {
             let e_hanzi = self.enemies[enemy_idx].hanzi;
             let e_pinyin = self.enemies[enemy_idx].pinyin;
             let e_meaning = self.enemies[enemy_idx].meaning;
-            let e_damage = (self.enemies[enemy_idx].damage - self.player.damage_reduction()).max(1);
-            let e_gold = self.enemies[enemy_idx].gold_value + self.player.gold_bonus();
+            let e_damage = (self.enemies[enemy_idx].damage - self.player.damage_reduction() - self.player.enchant_damage_reduction()).max(1);
+            let e_gold = self.enemies[enemy_idx].gold_value + self.player.gold_bonus() + self.player.enchant_gold_bonus();
             let e_is_boss = self.enemies[enemy_idx].is_boss;
             let e_x = self.enemies[enemy_idx].x;
             let e_y = self.enemies[enemy_idx].y;
@@ -435,7 +443,7 @@ impl GameState {
                 self.codex.record(e_hanzi, e_pinyin, e_meaning, true);
                 // Hit with bonus damage from equipment + room modifiers
                 let cursed_bonus = if self.current_room_modifier() == Some(RoomModifier::Cursed) { 1 } else { 0 };
-                let hit_dmg = 2 + self.player.bonus_damage() + cursed_bonus;
+                let hit_dmg = 2 + self.player.bonus_damage() + self.player.enchant_bonus_damage() + cursed_bonus;
                 self.enemies[enemy_idx].hp -= hit_dmg;
                 if self.enemies[enemy_idx].hp <= 0 {
                     self.total_kills += 1;
@@ -733,8 +741,11 @@ impl GameState {
 
             if let Some(spell) = self.player.use_spell() {
                 if let Some(ref audio) = self.audio { audio.play_spell(); }
+                // Arcane room doubles spell damage
+                let arcane_mult = if self.current_room_modifier() == Some(RoomModifier::Arcane) { 2 } else { 1 };
                 match spell.effect {
                     SpellEffect::FireAoe(dmg) => {
+                        let dmg = dmg * arcane_mult;
                         // Fire particles at player position (AoE emanates from player)
                         self.particles.spawn_fire(p_screen.0, p_screen.1, &mut self.rng_state);
                         // Damage all visible enemies
@@ -760,6 +771,7 @@ impl GameState {
                         }
                     }
                     SpellEffect::Heal(amount) => {
+                        let amount = amount * arcane_mult;
                         self.player.hp = (self.player.hp + amount).min(self.player.max_hp);
                         self.particles.spawn_heal(p_screen.0, p_screen.1, &mut self.rng_state);
                         self.flash = Some((60, 220, 80, 0.2));
@@ -779,6 +791,7 @@ impl GameState {
                         self.message_timer = 60;
                     }
                     SpellEffect::StrongHit(dmg) => {
+                        let dmg = dmg * arcane_mult;
                         if enemy_idx < self.enemies.len() {
                             if let Some((ex, ey)) = e_screen {
                                 self.particles.spawn_kill(ex, ey, &mut self.rng_state);
@@ -806,6 +819,7 @@ impl GameState {
                         }
                     }
                     SpellEffect::Drain(dmg) => {
+                        let dmg = dmg * arcane_mult;
                         if enemy_idx < self.enemies.len() {
                             if let Some((ex, ey)) = e_screen {
                                 self.particles.spawn_drain(ex, ey, &mut self.rng_state);
@@ -1450,6 +1464,114 @@ pub fn init_game() -> Result<(), JsValue> {
                         let page = if let CombatState::Forging { page, .. } = s.combat { page } else { 0 };
                         let idx = page * 9 + slot;
                         s.forge_toggle(idx);
+                        s.render();
+                    }
+                    "e" | "E" => {
+                        // Enter enchant mode — pick a slot first
+                        let has_equip = s.player.weapon.is_some() || s.player.armor.is_some() || s.player.charm.is_some();
+                        if !has_equip {
+                            s.message = "No equipment to enchant!".to_string();
+                            s.message_timer = 90;
+                        } else if s.player.radicals.is_empty() {
+                            s.message = "No radicals to enchant with!".to_string();
+                            s.message_timer = 90;
+                        } else {
+                            s.combat = CombatState::Enchanting { slot: 0, page: 0 };
+                            s.message = "Enchant: 1=Weapon 2=Armor 3=Charm. Pick slot, then radical.".to_string();
+                            s.message_timer = 255;
+                        }
+                        s.render();
+                    }
+                    _ => {}
+                }
+                return;
+            }
+
+            // Enchanting mode
+            if matches!(s.combat, CombatState::Enchanting { .. }) {
+                event.prevent_default();
+                match key.as_str() {
+                    "Escape" => {
+                        s.combat = CombatState::Explore;
+                        s.message.clear();
+                        s.message_timer = 0;
+                        s.render();
+                    }
+                    "1" | "2" | "3" => {
+                        let slot_idx = key.parse::<usize>().unwrap_or(1) - 1;
+                        let has_slot = match slot_idx {
+                            0 => s.player.weapon.is_some(),
+                            1 => s.player.armor.is_some(),
+                            2 => s.player.charm.is_some(),
+                            _ => false,
+                        };
+                        if has_slot {
+                            if let CombatState::Enchanting { ref mut slot, .. } = s.combat {
+                                *slot = slot_idx;
+                            }
+                            let slot_name = match slot_idx { 0 => "Weapon", 1 => "Armor", _ => "Charm" };
+                            s.message = format!("Enchanting {}. Pick radical 4-9 or ←/→ to page.", slot_name);
+                            s.message_timer = 255;
+                        } else {
+                            let slot_name = match slot_idx { 0 => "Weapon", 1 => "Armor", _ => "Charm" };
+                            s.message = format!("No {} equipped!", slot_name);
+                            s.message_timer = 90;
+                        }
+                        s.render();
+                    }
+                    "ArrowLeft" => {
+                        if let CombatState::Enchanting { ref mut page, .. } = s.combat {
+                            if *page > 0 { *page -= 1; }
+                        }
+                        s.render();
+                    }
+                    "ArrowRight" => {
+                        let max_page = s.player.radicals.len().saturating_sub(1) / 9;
+                        if let CombatState::Enchanting { ref mut page, .. } = s.combat {
+                            if *page < max_page { *page += 1; }
+                        }
+                        s.render();
+                    }
+                    "4" | "5" | "6" | "7" | "8" | "9" => {
+                        let rad_slot = key.parse::<usize>().unwrap_or(4) - 1;
+                        let page = if let CombatState::Enchanting { page, .. } = s.combat { page } else { 0 };
+                        let idx = page * 9 + rad_slot;
+                        let slot = if let CombatState::Enchanting { slot, .. } = s.combat { slot } else { 0 };
+                        if idx < s.player.radicals.len() {
+                            let radical = s.player.radicals[idx];
+                            s.player.enchantments[slot] = Some(radical);
+                            // Consume the radical
+                            s.player.radicals.remove(idx);
+                            let slot_name = match slot { 0 => "Weapon", 1 => "Armor", _ => "Charm" };
+                            let bonus = match radical {
+                                "力" | "火" => "+1 damage",
+                                "水" | "土" => "+1 defense",
+                                "心" => "+2 max HP",
+                                "金" => "+3 gold/kill",
+                                "目" => "+1 FOV",
+                                _ => "+1 damage",
+                            };
+                            // Apply max HP bonus immediately
+                            if radical == "心" {
+                                s.player.max_hp += 2;
+                                s.player.hp = s.player.hp.min(s.player.max_hp);
+                            }
+                            if let Some(ref audio) = s.audio { audio.play_forge(); }
+                            let cam_x = s.player.x as f64 * 24.0 - s.renderer.canvas_w / 2.0 + 12.0;
+                            let cam_y = s.player.y as f64 * 24.0 - s.renderer.canvas_h / 2.0 + 12.0;
+                            let sx = s.player.x as f64 * 24.0 - cam_x + 12.0;
+                            let sy = s.player.y as f64 * 24.0 - cam_y + 12.0;
+                            let gs = &mut *s;
+                            gs.particles.spawn_heal(sx, sy, &mut gs.rng_state);
+                            s.message = format!("Enchanted {} with {} ({})!", slot_name, radical, bonus);
+                            s.message_timer = 120;
+                            s.combat = CombatState::Explore;
+                            let recipe_count = s.discovered_recipes.len();
+                            s.achievements.check_recipes(recipe_count);
+                        } else {
+                            s.message = "No radical at that slot.".to_string();
+                            s.message_timer = 60;
+                        }
                         s.render();
                     }
                     _ => {}

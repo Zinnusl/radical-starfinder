@@ -380,18 +380,21 @@ impl Renderer {
         let mut eq_y = 58.0;
         self.ctx.set_font("10px monospace");
         if let Some(w) = player.weapon {
+            let ench = player.enchantments[0].map(|e| format!(" [{}]", e)).unwrap_or_default();
             self.ctx.set_fill_style_str("#ff8866");
-            self.ctx.fill_text(&format!("⚔ {}", w.name), self.canvas_w - 12.0, eq_y).ok();
+            self.ctx.fill_text(&format!("⚔ {}{}", w.name, ench), self.canvas_w - 12.0, eq_y).ok();
             eq_y += 14.0;
         }
         if let Some(a) = player.armor {
+            let ench = player.enchantments[1].map(|e| format!(" [{}]", e)).unwrap_or_default();
             self.ctx.set_fill_style_str("#6688ff");
-            self.ctx.fill_text(&format!("🛡 {}", a.name), self.canvas_w - 12.0, eq_y).ok();
+            self.ctx.fill_text(&format!("🛡 {}{}", a.name, ench), self.canvas_w - 12.0, eq_y).ok();
             eq_y += 14.0;
         }
         if let Some(c) = player.charm {
+            let ench = player.enchantments[2].map(|e| format!(" [{}]", e)).unwrap_or_default();
             self.ctx.set_fill_style_str("#88ddaa");
-            self.ctx.fill_text(&format!("✧ {}", c.name), self.canvas_w - 12.0, eq_y).ok();
+            self.ctx.fill_text(&format!("✧ {}{}", c.name, ench), self.canvas_w - 12.0, eq_y).ok();
             eq_y += 14.0;
         }
 
@@ -735,6 +738,90 @@ impl Renderer {
                     box_y + box_h + 14.0,
                 )
                 .ok();
+        }
+
+        // ── Enchanting UI overlay ───────────────────────────────────────
+        if let CombatState::Enchanting { slot, page } = combat {
+            let rad_count = player.radicals.len();
+            let page_size = 9;
+            let max_page = rad_count.saturating_sub(1) / page_size;
+            let page_start = page * page_size;
+            let page_end = (page_start + page_size).min(rad_count);
+            let page_count = page_end - page_start;
+
+            let box_w = 380.0;
+            let box_h = 160.0 + (page_count as f64 / 5.0).ceil() * 36.0;
+            let box_x = (self.canvas_w - box_w) / 2.0;
+            let box_y = 40.0;
+
+            self.ctx.set_fill_style_str("rgba(15,10,30,0.95)");
+            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+            self.ctx.set_stroke_style_str("#aa66ff");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+            // Title
+            self.ctx.set_fill_style_str("#aa66ff");
+            self.ctx.set_font("18px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx.fill_text("✦ Enchant Equipment ✦", self.canvas_w / 2.0, box_y + 26.0).ok();
+
+            // Equipment slots
+            let slots = [
+                (0, "1:Weapon", player.weapon.map(|e| e.name).unwrap_or("—"), player.enchantments[0]),
+                (1, "2:Armor", player.armor.map(|e| e.name).unwrap_or("—"), player.enchantments[1]),
+                (2, "3:Charm", player.charm.map(|e| e.name).unwrap_or("—"), player.enchantments[2]),
+            ];
+            let slot_y = box_y + 46.0;
+            for (i, &(slot_idx, label, name, ench)) in slots.iter().enumerate() {
+                let color = if slot_idx == *slot { "#ffcc33" } else { "#888" };
+                self.ctx.set_fill_style_str(color);
+                self.ctx.set_font("12px monospace");
+                self.ctx.set_text_align("left");
+                let ench_str = ench.map(|e| format!(" [{}]", e)).unwrap_or_default();
+                self.ctx.fill_text(
+                    &format!("{} {}{}", label, name, ench_str),
+                    box_x + 20.0,
+                    slot_y + i as f64 * 20.0,
+                ).ok();
+            }
+
+            // Radical grid
+            self.ctx.set_fill_style_str("#aaa");
+            self.ctx.set_font("11px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx.fill_text("Pick radical (4-9):", self.canvas_w / 2.0, slot_y + 72.0).ok();
+
+            let grid_y = slot_y + 84.0;
+            for (i, abs_idx) in (page_start..page_end).enumerate() {
+                let rad_ch = player.radicals[abs_idx];
+                let col = i % 5;
+                let row = i / 5;
+                let rx = box_x + 20.0 + col as f64 * 72.0;
+                let ry = grid_y + row as f64 * 36.0;
+
+                self.ctx.set_fill_style_str("rgba(0,0,0,0.3)");
+                self.ctx.fill_rect(rx, ry, 64.0, 30.0);
+                self.ctx.set_stroke_style_str("#aa66ff");
+                self.ctx.set_line_width(1.0);
+                self.ctx.stroke_rect(rx, ry, 64.0, 30.0);
+
+                self.ctx.set_fill_style_str("#888");
+                self.ctx.set_font("10px monospace");
+                self.ctx.set_text_align("left");
+                self.ctx.fill_text(&format!("{}", i + 1), rx + 2.0, ry + 11.0).ok();
+
+                self.ctx.set_fill_style_str("#cc99ff");
+                self.ctx.set_font("18px 'Noto Serif SC', 'SimSun', serif");
+                self.ctx.set_text_align("center");
+                self.ctx.fill_text(rad_ch, rx + 32.0, ry + 24.0).ok();
+            }
+
+            // Bottom hint
+            self.ctx.set_fill_style_str("#666");
+            self.ctx.set_font("10px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx.fill_text("1-3=slot  4-9=radical  Esc=cancel", self.canvas_w / 2.0, box_y + box_h + 14.0).ok();
         }
 
         // ── Shop UI overlay ─────────────────────────────────────────────

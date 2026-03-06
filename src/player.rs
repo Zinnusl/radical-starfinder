@@ -111,6 +111,8 @@ pub struct Player {
     pub weapon: Option<&'static Equipment>,
     pub armor: Option<&'static Equipment>,
     pub charm: Option<&'static Equipment>,
+    /// Enchantments on equipment slots: [weapon, armor, charm]
+    pub enchantments: [Option<&'static str>; 3],
 }
 
 impl Player {
@@ -130,6 +132,7 @@ impl Player {
             weapon: None,
             armor: None,
             charm: None,
+            enchantments: [None; 3],
         }
     }
 
@@ -249,5 +252,45 @@ impl Player {
             EquipSlot::Armor => self.armor = Some(equipment),
             EquipSlot::Charm => self.charm = Some(equipment),
         }
+    }
+
+    /// Bonus damage from enchantments (力=+1, 火=+1)
+    pub fn enchant_bonus_damage(&self) -> i32 {
+        self.enchantments.iter().filter_map(|e| *e).map(|r| match r {
+            "力" | "火" => 1,
+            _ => 0,
+        }).sum()
+    }
+
+    /// Bonus damage reduction from enchantments (水=+1, 土=+1)
+    pub fn enchant_damage_reduction(&self) -> i32 {
+        self.enchantments.iter().filter_map(|e| *e).map(|r| match r {
+            "水" | "土" => 1,
+            _ => 0,
+        }).sum()
+    }
+
+    /// Bonus max HP from enchantments (心=+2)
+    pub fn enchant_max_hp_bonus(&self) -> i32 {
+        self.enchantments.iter().filter_map(|e| *e).map(|r| match r {
+            "心" => 2,
+            _ => 0,
+        }).sum()
+    }
+
+    /// Bonus gold from enchantments (金=+3)
+    pub fn enchant_gold_bonus(&self) -> i32 {
+        self.enchantments.iter().filter_map(|e| *e).map(|r| match r {
+            "金" => 3,
+            _ => 0,
+        }).sum()
+    }
+
+    /// Bonus FOV from enchantments (目=+1)
+    pub fn enchant_fov_bonus(&self) -> i32 {
+        self.enchantments.iter().filter_map(|e| *e).map(|r| match r {
+            "目" => 1,
+            _ => 0,
+        }).sum()
     }
 }
