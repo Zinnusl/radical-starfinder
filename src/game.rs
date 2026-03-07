@@ -25,6 +25,7 @@ const MAP_W: i32 = 48;
 const MAP_H: i32 = 48;
 const FOV_RADIUS: i32 = 8;
 const ENEMIES_PER_ROOM: i32 = 1;
+const LOOK_RANGE: i32 = 3;
 
 /// Combat phase when the player is adjacent to / engages an enemy.
 /// Companion NPC that follows the player.
@@ -154,14 +155,14 @@ impl TextSpeed {
         match self {
             Self::Slow => 1,
             Self::Normal => 1,
-            Self::Fast => 2,
+            Self::Fast => 1,
         }
     }
 
     fn timer_delay(self) -> u8 {
         match self {
-            Self::Slow => 2,
-            Self::Normal => 1,
+            Self::Slow => 3,
+            Self::Normal => 2,
             Self::Fast => 1,
         }
     }
@@ -299,6 +300,11 @@ pub enum SentenceChallengeMode {
 pub enum CombatState {
     /// Normal exploration — no active fight
     Explore,
+    /// Cursor-based inspection mode
+    Looking {
+        x: i32,
+        y: i32,
+    },
     /// Fighting an enemy: index into `enemies` vec
     Fighting {
         enemy_idx: usize,
@@ -504,6 +510,20 @@ impl GameState {
 
     fn close_inventory(&mut self) {
         self.show_inventory = false;
+    }
+
+    fn start_look_mode(&mut self) {
+        self.combat = CombatState::Looking {
+            x: self.player.x,
+            y: self.player.y,
+        };
+        self.update_look_message(self.player.x, self.player.y);
+    }
+
+    fn stop_look_mode(&mut self) {
+        self.combat = CombatState::Explore;
+        self.message.clear();
+        self.message_timer = 0;
     }
 
     fn move_settings_cursor(&mut self, delta: i32) {
@@ -1289,6 +1309,60 @@ impl GameState {
         base + self.player.enchant_fov_bonus()
     }
 
+    fn look_text(&self, x: i32, y: i32) -> String {
+        if !self.level.in_bounds(x, y) || !in_look_range(self.player.x, self.player.y, x, y) {
+            return format!("Look range is {} tiles.", LOOK_RANGE);
+        }
+
+        let idx = self.level.idx(x, y);
+        if x == self.player.x && y == self.player.y {
+            return format!(
+                "You are here — {} form, HP {}/{}.",
+                self.player.form.name(),
+                self.player.hp,
+                self.player.max_hp
+            );
+        }
+
+        if !self.level.revealed[idx] {
+            return "Unseen darkness.".to_string();
+        }
+
+        if self.level.visible[idx] {
+            if let Some(enemy_idx) = self.enemy_at(x, y) {
+                return enemy_look_text(&self.enemies[enemy_idx]);
+            }
+        }
+
+        let mut text = tile_look_text(self.level.tile(x, y));
+        if !self.level.visible[idx] {
+            text.push_str(" (remembered)");
+        }
+        text
+    }
+
+    fn update_look_message(&mut self, x: i32, y: i32) {
+        self.message = self.look_text(x, y);
+        self.message_timer = 255;
+    }
+
+    fn move_look_cursor(&mut self, dx: i32, dy: i32) {
+        let CombatState::Looking { x, y } = self.combat.clone() else {
+            return;
+        };
+        let min_x = (self.player.x - LOOK_RANGE).max(0);
+        let max_x = (self.player.x + LOOK_RANGE).min(self.level.width - 1);
+        let min_y = (self.player.y - LOOK_RANGE).max(0);
+        let max_y = (self.player.y + LOOK_RANGE).min(self.level.height - 1);
+        let next_x = (x + dx).clamp(min_x, max_x);
+        let next_y = (y + dy).clamp(min_y, max_y);
+        self.combat = CombatState::Looking {
+            x: next_x,
+            y: next_y,
+        };
+        self.update_look_message(next_x, next_y);
+    }
+
     /// Try to move player. Bumping into an enemy starts combat.
     fn try_move(&mut self, dx: i32, dy: i32) {
         if matches!(self.combat, CombatState::GameOver) {
@@ -1370,46 +1444,29 @@ impl GameState {
             let enemy_behind = self.enemy_at(px, py).is_some();
 
             if can_push && !enemy_behind {
-                 if push_target_tile == Tile::Water {
-                     self.level.tiles[push_target_idx] = Tile::Bridge;
-                     self.message = "The crate forms a bridge!".to_string();
-                 } else {
-                     self.level.tiles[push_target_idx] = Tile::Crate;
-                     self.message = "You push the crate.".to_string();
-                 }
-                 let current_idx = self.level.idx(nx, ny);
-                 self.level.tiles[current_idx] = Tile::Floor;
-                 
-                 // Player moves into the spot
-                 self.player.x = nx;
-                 self.player.y = ny;
-                 self.move_count += 1;
-                 
-                 let skip_enemy = status::has_haste(&self.player.statuses) && self.move_count % 2 == 0;
-                 if !skip_enemy {
-                     self.enemy_turn();
-                 }
-                 let (px, py) = (self.player.x, self.player.y);
-                 let fov = self.effective_fov();
-                 compute_fov(&mut self.level, px, py, fov);
-                 return;
-            } else {
-                 self.message = "It won't budge.".to_string();
-                 self.message_timer = 30;
-                 return;
-            }
-        }
-        
-        if target_tile == Tile::Wall {
-            // Check for digging using weapon effect
-            let can_dig = self.player.weapon.map_or(false, |eq| matches!(eq.effect, EquipEffect::Digging));
-            
-            if can_dig {
-                let idx = self.level.idx(nx, ny);
-                self.level.tiles[idx] = Tile::Floor;
-                self.message = "You dig through the wall.".to_string();
+                if push_target_tile == Tile::Water {
+                    self.level.tiles[push_target_idx] = Tile::Bridge;
+                    self.message = "The crate splashes into place, forming a bridge!".to_string();
+                    self.message_timer = 80;
+                    let (sx, sy) = self.tile_to_screen(px, py);
+                    self.particles.spawn_bridge(sx, sy, &mut self.rng_state);
+                    self.trigger_shake(4);
+                    if let Some(ref audio) = self.audio {
+                        audio.play_bridge();
+                    }
+                } else {
+                    self.level.tiles[push_target_idx] = Tile::Crate;
+                    self.message = "You shove the crate aside.".to_string();
+                    self.message_timer = 40;
+                }
+                let current_idx = self.level.idx(nx, ny);
+                self.level.tiles[current_idx] = Tile::Floor;
+
+                // Player moves into the spot
+                self.player.x = nx;
+                self.player.y = ny;
                 self.move_count += 1;
-                
+
                 let skip_enemy = status::has_haste(&self.player.statuses) && self.move_count % 2 == 0;
                 if !skip_enemy {
                     self.enemy_turn();
@@ -1418,6 +1475,52 @@ impl GameState {
                 let fov = self.effective_fov();
                 compute_fov(&mut self.level, px, py, fov);
                 return;
+            } else {
+                self.message = "It won't budge.".to_string();
+                self.message_timer = 30;
+                return;
+            }
+        }
+
+        if matches!(target_tile, Tile::Wall | Tile::CrackedWall) {
+            // Check for digging using weapon effect
+            let can_dig = self
+                .player
+                .weapon
+                .map_or(false, |eq| matches!(eq.effect, EquipEffect::Digging))
+                || self.player.form == PlayerForm::Stone;
+
+            if can_dig {
+                let cracked_wall = target_tile == Tile::CrackedWall;
+                let idx = self.level.idx(nx, ny);
+                self.level.tiles[idx] = Tile::Floor;
+                let (sx, sy) = self.tile_to_screen(nx, ny);
+                self.particles.spawn_dig(sx, sy, &mut self.rng_state);
+                self.trigger_shake(if cracked_wall { 6 } else { 4 });
+                if let Some(ref audio) = self.audio {
+                    audio.play_dig();
+                }
+                self.message = if cracked_wall {
+                    "You smash through the cracked wall and uncover a hidden chamber!".to_string()
+                } else {
+                    "Stone chips fly as you dig a rough tunnel.".to_string()
+                };
+                self.message_timer = if cracked_wall { 120 } else { 75 };
+                self.move_count += 1;
+
+                let skip_enemy = status::has_haste(&self.player.statuses) && self.move_count % 2 == 0;
+                if !skip_enemy {
+                    self.enemy_turn();
+                }
+                let (px, py) = (self.player.x, self.player.y);
+                let fov = self.effective_fov();
+                compute_fov(&mut self.level, px, py, fov);
+                return;
+            }
+
+            if target_tile == Tile::CrackedWall {
+                self.message = "The wall is cracked. A digging tool could break through.".to_string();
+                self.message_timer = 90;
             }
         }
 
@@ -3288,18 +3391,14 @@ impl GameState {
     }
 
     fn tick_message(&mut self) {
-        if self.message_timer > 0 {
-            if self.message_tick_delay > 0 {
-                self.message_tick_delay -= 1;
-                return;
-            }
-            self.message_tick_delay = self.settings.text_speed.timer_delay().saturating_sub(1);
-            self.message_timer = self
-                .message_timer
-                .saturating_sub(self.settings.text_speed.timer_step());
-            if self.message_timer == 0 {
-                self.message.clear();
-            }
+        if self.message_timer > 0
+            && advance_message_decay(
+                &mut self.message_timer,
+                &mut self.message_tick_delay,
+                self.settings.text_speed,
+            )
+        {
+            self.message.clear();
         }
     }
 
@@ -3431,6 +3530,62 @@ fn combat_prompt_for(enemy: &Enemy, listening_mode: bool) -> String {
     }
 }
 
+fn in_look_range(origin_x: i32, origin_y: i32, target_x: i32, target_y: i32) -> bool {
+    (target_x - origin_x).abs().max((target_y - origin_y).abs()) <= LOOK_RANGE
+}
+
+fn tile_look_text(tile: Tile) -> String {
+    match tile {
+        Tile::Wall => "Solid wall.".to_string(),
+        Tile::CrackedWall => "Cracked wall — a digging tool could break into a hidden room.".to_string(),
+        Tile::Floor => "Open floor.".to_string(),
+        Tile::Corridor => "Corridor passage.".to_string(),
+        Tile::StairsDown => "Stairs down to the next floor.".to_string(),
+        Tile::Forge => "Forge — combine radicals or enchant gear here.".to_string(),
+        Tile::Shop => "Shop — buy gear, radicals, and consumables.".to_string(),
+        Tile::Chest => "Treasure chest — step onto it to open it.".to_string(),
+        Tile::Crate => "Crate — push it, or shove it into water to make a bridge.".to_string(),
+        Tile::Spikes => "Spike trap — hurts anything that steps on it.".to_string(),
+        Tile::Oil => "Oil slick — fire can ignite it.".to_string(),
+        Tile::Water => "Shallow water — lightning arcs through it; crates can bridge it.".to_string(),
+        Tile::Npc(0) => format!("{} — offers meaning hints.", Companion::Teacher.name()),
+        Tile::Npc(1) => format!("{} — heals you between floors.", Companion::Monk.name()),
+        Tile::Npc(2) => format!("{} — discounts goods and may offer quests.", Companion::Merchant.name()),
+        Tile::Npc(_) => format!("{} — can block the first hit in a fight.", Companion::Guard.name()),
+        Tile::Shrine => "Tone shrine — complete a tone challenge for bonus damage.".to_string(),
+        Tile::Altar(kind) => format!("{} — offer items here, or pray with 20 favor.", kind.name()),
+        Tile::Seal(kind) => format!("{} — one-shot script seal that reshapes the room.", kind.label()),
+        Tile::Sign(_) => "Tutorial sign — step onto it to read the guidance.".to_string(),
+        Tile::Bridge => "Bridge — safe footing laid over water.".to_string(),
+    }
+}
+
+fn enemy_look_text(enemy: &Enemy) -> String {
+    let role = if enemy.is_boss {
+        "Boss"
+    } else if enemy.is_elite {
+        "Elite"
+    } else {
+        "Enemy"
+    };
+
+    let mut text = format!(
+        "{} {} ({}) HP {}/{}",
+        role, enemy.hanzi, enemy.meaning, enemy.hp, enemy.max_hp
+    );
+    if !enemy.components.is_empty() {
+        text.push_str(&format!(" — shield {}.", enemy.components.join("→")));
+    } else if enemy.is_elite {
+        if let Some(next) = enemy.elite_expected_syllable() {
+            text.push_str(&format!(" — next {}.", next));
+        }
+    }
+    if let Some(trait_text) = enemy.boss_trait_text() {
+        text.push_str(&format!(" {}", trait_text));
+    }
+    text
+}
+
 fn elite_chain_damage(base_hit: i32, total_syllables: usize, completing_cycle: bool) -> i32 {
     if completing_cycle {
         base_hit + total_syllables.saturating_sub(1) as i32
@@ -3445,6 +3600,25 @@ fn elite_remaining_hp(current_hp: i32, damage: i32, completing_cycle: bool) -> i
     } else {
         (current_hp - damage).max(1)
     }
+}
+
+fn advance_message_decay(
+    message_timer: &mut u8,
+    message_tick_delay: &mut u8,
+    text_speed: TextSpeed,
+) -> bool {
+    if *message_timer == 0 {
+        return true;
+    }
+
+    if *message_tick_delay > 0 {
+        *message_tick_delay -= 1;
+        return false;
+    }
+
+    *message_tick_delay = text_speed.timer_delay().saturating_sub(1);
+    *message_timer = message_timer.saturating_sub(text_speed.timer_step());
+    *message_timer == 0
 }
 
 fn tutorial_exit_blocker_for(tutorial: Option<&TutorialState>) -> Option<&'static str> {
@@ -3478,8 +3652,9 @@ fn seal_cross_positions(x: i32, y: i32) -> [(i32, i32); 8] {
 #[cfg(test)]
 mod tests {
     use super::{
-        can_be_reshaped_by_seal, combat_prompt_for, detect_combo, elite_chain_damage,
-        elite_remaining_hp, seal_cross_positions, spell_category, tutorial_exit_blocker_for,
+        advance_message_decay, can_be_reshaped_by_seal, combat_prompt_for, detect_combo,
+        elite_chain_damage, elite_remaining_hp, enemy_look_text, in_look_range,
+        seal_cross_positions, spell_category, tile_look_text, tutorial_exit_blocker_for,
         GameState, TalentTree, TextSpeed, TutorialState,
     };
     use crate::dungeon::Tile;
@@ -3492,12 +3667,61 @@ mod tests {
         VOCAB.iter().find(|entry| entry.hanzi == "朋友").unwrap()
     }
 
+    fn shielded_entry() -> &'static crate::vocab::VocabEntry {
+        VOCAB.iter().find(|entry| entry.hanzi == "好").unwrap()
+    }
+
+    fn message_frames_until_clear(start_timer: u8, speed: TextSpeed) -> u32 {
+        let mut timer = start_timer;
+        let mut delay = 0;
+        let mut frames = 0;
+        while timer > 0 && frames < 10_000 {
+            let _ = advance_message_decay(&mut timer, &mut delay, speed);
+            frames += 1;
+        }
+        frames
+    }
+
     #[test]
     fn text_speed_storage_round_trip() {
         assert_eq!(TextSpeed::from_storage("slow"), TextSpeed::Slow);
         assert_eq!(TextSpeed::from_storage("normal"), TextSpeed::Normal);
         assert_eq!(TextSpeed::from_storage("fast"), TextSpeed::Fast);
         assert_eq!(TextSpeed::Fast.storage_key(), "fast");
+    }
+
+    #[test]
+    fn normal_text_speed_stretches_a_ten_tick_message_to_nineteen_frames() {
+        assert_eq!(message_frames_until_clear(10, TextSpeed::Normal), 19);
+    }
+
+    #[test]
+    fn slower_text_speeds_hold_messages_longer_than_faster_ones() {
+        let slow_frames = message_frames_until_clear(10, TextSpeed::Slow);
+        let normal_frames = message_frames_until_clear(10, TextSpeed::Normal);
+        let fast_frames = message_frames_until_clear(10, TextSpeed::Fast);
+
+        assert!(slow_frames > normal_frames);
+        assert!(normal_frames > fast_frames);
+    }
+
+    #[test]
+    fn look_range_reaches_three_tiles_but_not_four() {
+        assert!(in_look_range(10, 10, 13, 10));
+        assert!(in_look_range(10, 10, 12, 13));
+        assert!(!in_look_range(10, 10, 14, 10));
+    }
+
+    #[test]
+    fn cracked_wall_look_text_mentions_hidden_room() {
+        assert!(tile_look_text(Tile::CrackedWall).contains("hidden room"));
+    }
+
+    #[test]
+    fn enemy_look_text_reports_component_shields() {
+        let enemy = Enemy::from_vocab(shielded_entry(), 0, 0, 3);
+
+        assert!(enemy_look_text(&enemy).contains("shield 女→子"));
     }
 
     #[test]
@@ -4443,6 +4667,20 @@ pub fn init_game() -> Result<(), JsValue> {
                 return;
             }
 
+            if matches!(s.combat, CombatState::Looking { .. }) {
+                event.prevent_default();
+                match key.as_str() {
+                    "Escape" | "v" | "V" | "Enter" | " " => s.stop_look_mode(),
+                    "ArrowUp" | "w" | "W" => s.move_look_cursor(0, -1),
+                    "ArrowDown" | "s" | "S" => s.move_look_cursor(0, 1),
+                    "ArrowLeft" | "a" | "A" => s.move_look_cursor(-1, 0),
+                    "ArrowRight" | "d" | "D" => s.move_look_cursor(1, 0),
+                    _ => {}
+                }
+                s.render();
+                return;
+            }
+
             // Exploration movement + item usage
             // Toggle codex with 'c'
             if key == "c" || key == "C" {
@@ -4480,6 +4718,14 @@ pub fn init_game() -> Result<(), JsValue> {
                 "x" | "X" => {
                     event.prevent_default();
                     s.descend_floor(true);
+                    s.render();
+                    return;
+                }
+                "v" | "V" => {
+                    event.prevent_default();
+                    if matches!(s.combat, CombatState::Explore) {
+                        s.start_look_mode();
+                    }
                     s.render();
                     return;
                 }

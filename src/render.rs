@@ -303,6 +303,37 @@ impl Renderer {
             self.ctx.set_shadow_color("transparent");
         }
 
+        if let CombatState::Looking { x, y } = combat {
+            let min_x = (player.x - 3).max(0);
+            let max_x = (player.x + 3).min(level.width - 1);
+            let min_y = (player.y - 3).max(0);
+            let max_y = (player.y + 3).min(level.height - 1);
+            let left = min_x as f64 * TILE_SIZE - cam_x;
+            let top = min_y as f64 * TILE_SIZE - cam_y;
+            let width = (max_x - min_x + 1) as f64 * TILE_SIZE;
+            let height = (max_y - min_y + 1) as f64 * TILE_SIZE;
+
+            self.ctx.set_stroke_style_str("rgba(143,168,255,0.45)");
+            self.ctx.set_line_width(1.5);
+            self.ctx
+                .stroke_rect(left + 0.5, top + 0.5, width - 1.0, height - 1.0);
+
+            let look_x = *x as f64 * TILE_SIZE - cam_x;
+            let look_y = *y as f64 * TILE_SIZE - cam_y;
+            self.ctx.set_fill_style_str("rgba(143,168,255,0.16)");
+            self.ctx.fill_rect(look_x, look_y, TILE_SIZE, TILE_SIZE);
+            self.ctx.set_stroke_style_str("#dbe7ff");
+            self.ctx.set_line_width(2.0);
+            self.ctx
+                .stroke_rect(look_x + 1.5, look_y + 1.5, TILE_SIZE - 3.0, TILE_SIZE - 3.0);
+            self.ctx.set_font("10px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx.set_fill_style_str("#dbe7ff");
+            self.ctx
+                .fill_text("LOOK", look_x + TILE_SIZE / 2.0, look_y - 4.0)
+                .ok();
+        }
+
         // ── HUD ─────────────────────────────────────────────────────────
         // HP bar (top-left)
         let bar_x = 12.0;
@@ -412,6 +443,9 @@ impl Renderer {
             eq_y += 14.0;
         }
 
+        self.ctx.set_fill_style_str("#9cb7ff");
+        self.ctx.fill_text("[V] Look", self.canvas_w - 12.0, eq_y).ok();
+        eq_y += 14.0;
         self.ctx.set_fill_style_str("#7e8dbb");
         self.ctx.fill_text("[X] Skip floor", self.canvas_w - 12.0, eq_y).ok();
         eq_y += 14.0;
@@ -1524,7 +1558,7 @@ impl Renderer {
         anim_t: f64,
     ) {
         let pattern = tile_pattern_seed(tx, ty);
-        let (highlight, shadow) = if tile == Tile::Wall {
+        let (highlight, shadow) = if matches!(tile, Tile::Wall | Tile::CrackedWall) {
             ("rgba(255,255,255,0.08)", "rgba(0,0,0,0.32)")
         } else {
             ("rgba(255,255,255,0.06)", "rgba(0,0,0,0.24)")
@@ -1555,7 +1589,7 @@ impl Renderer {
                         .fill_rect(screen_x + 4.0, screen_y + TILE_SIZE / 2.0 - 0.5, TILE_SIZE - 8.0, 1.0);
                 }
             }
-            Tile::Wall => {
+            Tile::Wall | Tile::CrackedWall => {
                 self.ctx.set_fill_style_str("rgba(0,0,0,0.14)");
                 self.ctx
                     .fill_rect(screen_x + 3.0, screen_y + 3.0, TILE_SIZE - 6.0, TILE_SIZE - 6.0);
@@ -1564,6 +1598,26 @@ impl Renderer {
                 self.ctx.fill_rect(screen_x + 3.0, seam_y, TILE_SIZE - 6.0, 1.0);
                 let seam_x = screen_x + 7.0 + ((pattern / 5) % 8) as f64;
                 self.ctx.fill_rect(seam_x, screen_y + 3.0, 1.0, TILE_SIZE / 2.0 - 1.0);
+                if tile == Tile::CrackedWall {
+                    self.ctx.set_stroke_style_str("rgba(255,180,120,0.65)");
+                    self.ctx.set_line_width(1.2);
+                    self.ctx.begin_path();
+                    self.ctx.move_to(screen_x + 12.0, screen_y + 3.0);
+                    self.ctx.line_to(screen_x + 10.0, screen_y + 9.0);
+                    self.ctx.line_to(screen_x + 14.0, screen_y + 14.0);
+                    self.ctx.line_to(screen_x + 9.0, screen_y + 21.0);
+                    self.ctx.stroke();
+
+                    self.ctx.begin_path();
+                    self.ctx.move_to(screen_x + 10.0, screen_y + 9.0);
+                    self.ctx.line_to(screen_x + 6.0, screen_y + 12.0);
+                    self.ctx.stroke();
+
+                    self.ctx.begin_path();
+                    self.ctx.move_to(screen_x + 14.0, screen_y + 14.0);
+                    self.ctx.line_to(screen_x + 18.0, screen_y + 17.0);
+                    self.ctx.stroke();
+                }
             }
             Tile::Water => {
                 let wave_shift = (anim_t * 3.2 + tx as f64 * 0.7 + ty as f64 * 0.4).sin() * 2.0;
@@ -1880,8 +1934,11 @@ impl Renderer {
     fn draw_help_overlay(&self, combat: &CombatState, listening_mode: bool) {
         let mut lines = vec![
             "Explore: WASD/Arrows move  1-5 use items".to_string(),
-            "I inventory  C codex  O options  X skip floor".to_string(),
-            format!("L listening ({})  ? toggle help", if listening_mode { "on" } else { "off" }),
+            "I inventory  C codex  V look  O options".to_string(),
+            format!(
+                "L listening ({})  X skip floor  ? toggle help",
+                if listening_mode { "on" } else { "off" }
+            ),
         ];
 
         let mode_title = match combat {
@@ -1916,6 +1973,11 @@ impl Renderer {
                 lines.push("Tone battle: 1-4 answer tones".to_string());
                 lines.push("Listen for the contour, not just the vowel".to_string());
                 "Tone Controls"
+            }
+            CombatState::Looking { .. } => {
+                lines.push("Look: WASD/Arrows move the cursor up to 3 tiles".to_string());
+                lines.push("Enter, V, or Esc close  inspect enemies and terrain".to_string());
+                "Look Controls"
             }
             CombatState::ClassSelect => {
                 lines.push("Class select: 1 Scholar  2 Warrior  3 Alchemist".to_string());
@@ -2562,6 +2624,12 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
                 glyph: None,
                 glyph_color: "#ffffff",
             },
+            Tile::CrackedWall => TilePalette {
+                fill: "#47324f",
+                accent: Some("#d89c74"),
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
             Tile::Floor => TilePalette {
                 fill: COL_FLOOR,
                 accent: None,
@@ -2682,6 +2750,12 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
             Tile::Wall => TilePalette {
                 fill: COL_WALL_REVEALED,
                 accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::CrackedWall => TilePalette {
+                fill: "#2d2338",
+                accent: Some("#805d48"),
                 glyph: None,
                 glyph_color: "#ffffff",
             },

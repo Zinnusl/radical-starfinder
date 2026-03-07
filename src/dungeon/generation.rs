@@ -143,6 +143,7 @@ impl SealKind {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tile {
     Wall,
+    CrackedWall,
     Floor,
     Corridor,
     StairsDown,
@@ -372,6 +373,318 @@ impl DungeonLevel {
         self.in_bounds(x, y) && self.tiles[self.idx(x, y)].is_walkable()
     }
 
+    fn area_is_solid_wall(&self, x: i32, y: i32, w: i32, h: i32) -> bool {
+        if x < 1 || y < 1 || x + w >= self.width - 1 || y + h >= self.height - 1 {
+            return false;
+        }
+
+        for ty in y..y + h {
+            for tx in x..x + w {
+                if self.tile(tx, ty) != Tile::Wall {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
+    fn carve_rect(&mut self, x: i32, y: i32, w: i32, h: i32, tile: Tile) {
+        for ty in y..y + h {
+            for tx in x..x + w {
+                let idx = self.idx(tx, ty);
+                self.tiles[idx] = tile;
+            }
+        }
+    }
+
+    fn place_secret_room_feature(&mut self, room_x: i32, room_y: i32, room_w: i32, room_h: i32, rng: &mut Rng) {
+        let cx = room_x + room_w / 2;
+        let cy = room_y + room_h / 2;
+
+        match rng.next_u64() % 4 {
+            0 => {
+                for &(dx, dy) in &[(0, 0), (-1, 0), (1, 0)] {
+                    let tx = cx + dx;
+                    let ty = cy + dy;
+                    if self.in_bounds(tx, ty) && self.tile(tx, ty) == Tile::Floor {
+                        let idx = self.idx(tx, ty);
+                        self.tiles[idx] = Tile::Chest;
+                    }
+                }
+            }
+            1 => {
+                let idx = self.idx(cx, cy);
+                self.tiles[idx] = Tile::Altar(AltarKind::random(rng));
+            }
+            2 => {
+                let idx = self.idx(cx, cy);
+                self.tiles[idx] = Tile::Shrine;
+            }
+            _ => {
+                let idx = self.idx(cx, cy);
+                self.tiles[idx] = Tile::Forge;
+            }
+        }
+    }
+
+    fn try_place_secret_room_candidate(
+        &mut self,
+        secret_x: i32,
+        secret_y: i32,
+        secret_w: i32,
+        secret_h: i32,
+        door_x: i32,
+        door_y: i32,
+        rng: &mut Rng,
+    ) -> bool {
+        if secret_x < 1
+            || secret_y < 1
+            || secret_x + secret_w >= self.width - 1
+            || secret_y + secret_h >= self.height - 1
+        {
+            return false;
+        }
+
+        if !self.area_is_solid_wall(secret_x - 1, secret_y - 1, secret_w + 2, secret_h + 2) {
+            return false;
+        }
+
+        self.carve_rect(secret_x, secret_y, secret_w, secret_h, Tile::Floor);
+        let door_idx = self.idx(door_x, door_y);
+        self.tiles[door_idx] = Tile::CrackedWall;
+        self.place_secret_room_feature(secret_x, secret_y, secret_w, secret_h, rng);
+        true
+    }
+
+    fn place_secret_room(&mut self, rng: &mut Rng) {
+        if self.rooms.len() < 4 {
+            return;
+        }
+
+        for _ in 0..24 {
+            let room_idx = 1 + (rng.next_u64() as usize % (self.rooms.len() - 2));
+            let room = self.rooms[room_idx].clone();
+            let start_dir = (rng.next_u64() % 4) as usize;
+
+            for dir_offset in 0..4 {
+                let secret_w = 4 + (rng.next_u64() % 3) as i32;
+                let secret_h = 4 + (rng.next_u64() % 3) as i32;
+                let max_x = (self.width - secret_w - 1).max(1);
+                let max_y = (self.height - secret_h - 1).max(1);
+                let dir = (start_dir + dir_offset) % 4;
+
+                let candidate = match dir {
+                    0 => {
+                        let door_x = rng.range(room.x + 1, room.x + room.w - 1);
+                        let door_y = room.y - 1;
+                        let secret_x = (door_x - secret_w / 2).clamp(1, max_x);
+                        let secret_y = door_y - secret_h;
+                        if secret_y < 1 || door_x < secret_x || door_x >= secret_x + secret_w {
+                            None
+                        } else {
+                            Some((secret_x, secret_y, door_x, door_y))
+                        }
+                    }
+                    1 => {
+                        let door_x = rng.range(room.x + 1, room.x + room.w - 1);
+                        let door_y = room.y + room.h;
+                        let secret_x = (door_x - secret_w / 2).clamp(1, max_x);
+                        let secret_y = door_y + 1;
+                        if secret_y + secret_h >= self.height - 1
+                            || door_x < secret_x
+                            || door_x >= secret_x + secret_w
+                        {
+                            None
+                        } else {
+                            Some((secret_x, secret_y, door_x, door_y))
+                        }
+                    }
+                    2 => {
+                        let door_x = room.x - 1;
+                        let door_y = rng.range(room.y + 1, room.y + room.h - 1);
+                        let secret_x = door_x - secret_w;
+                        let secret_y = (door_y - secret_h / 2).clamp(1, max_y);
+                        if secret_x < 1 || door_y < secret_y || door_y >= secret_y + secret_h {
+                            None
+                        } else {
+                            Some((secret_x, secret_y, door_x, door_y))
+                        }
+                    }
+                    _ => {
+                        let door_x = room.x + room.w;
+                        let door_y = rng.range(room.y + 1, room.y + room.h - 1);
+                        let secret_x = door_x + 1;
+                        let secret_y = (door_y - secret_h / 2).clamp(1, max_y);
+                        if secret_x + secret_w >= self.width - 1
+                            || door_y < secret_y
+                            || door_y >= secret_y + secret_h
+                        {
+                            None
+                        } else {
+                            Some((secret_x, secret_y, door_x, door_y))
+                        }
+                    }
+                };
+
+                let Some((secret_x, secret_y, door_x, door_y)) = candidate else {
+                    continue;
+                };
+
+                if self.try_place_secret_room_candidate(
+                    secret_x, secret_y, secret_w, secret_h, door_x, door_y, rng,
+                ) {
+                    return;
+                }
+            }
+        }
+
+        for room_idx in 1..self.rooms.len() - 1 {
+            let room = self.rooms[room_idx].clone();
+            for &(secret_w, secret_h) in &[(4, 4), (5, 4), (4, 5), (5, 5)] {
+                for door_x in room.x + 1..room.x + room.w - 1 {
+                    let secret_x = door_x - secret_w / 2;
+                    let top_y = room.y - 1 - secret_h;
+                    if door_x >= secret_x
+                        && door_x < secret_x + secret_w
+                        && self.try_place_secret_room_candidate(
+                            secret_x,
+                            top_y,
+                            secret_w,
+                            secret_h,
+                            door_x,
+                            room.y - 1,
+                            rng,
+                        )
+                    {
+                        return;
+                    }
+
+                    let bottom_y = room.y + room.h + 1;
+                    if door_x >= secret_x
+                        && door_x < secret_x + secret_w
+                        && self.try_place_secret_room_candidate(
+                            secret_x,
+                            bottom_y,
+                            secret_w,
+                            secret_h,
+                            door_x,
+                            room.y + room.h,
+                            rng,
+                        )
+                    {
+                        return;
+                    }
+                }
+
+                for door_y in room.y + 1..room.y + room.h - 1 {
+                    let secret_y = door_y - secret_h / 2;
+                    let left_x = room.x - 1 - secret_w;
+                    if door_y >= secret_y
+                        && door_y < secret_y + secret_h
+                        && self.try_place_secret_room_candidate(
+                            left_x,
+                            secret_y,
+                            secret_w,
+                            secret_h,
+                            room.x - 1,
+                            door_y,
+                            rng,
+                        )
+                    {
+                        return;
+                    }
+
+                    let right_x = room.x + room.w + 1;
+                    if door_y >= secret_y
+                        && door_y < secret_y + secret_h
+                        && self.try_place_secret_room_candidate(
+                            right_x,
+                            secret_y,
+                            secret_w,
+                            secret_h,
+                            room.x + room.w,
+                            door_y,
+                            rng,
+                        )
+                    {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    fn place_bridge_setup_in_room(&mut self, room: &Room, rng: &mut Rng) -> bool {
+        let mut water_tiles = Vec::new();
+        for y in room.y + 1..room.y + room.h - 1 {
+            for x in room.x + 1..room.x + room.w - 1 {
+                if self.tile(x, y) == Tile::Water {
+                    water_tiles.push((x, y));
+                }
+            }
+        }
+
+        if water_tiles.is_empty() {
+            return false;
+        }
+
+        let water_start = (rng.next_u64() as usize) % water_tiles.len();
+        let dirs = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+        for water_offset in 0..water_tiles.len() {
+            let (wx, wy) = water_tiles[(water_start + water_offset) % water_tiles.len()];
+            let dir_start = (rng.next_u64() % 4) as usize;
+            for dir_offset in 0..4 {
+                let (dx, dy) = dirs[(dir_start + dir_offset) % 4];
+                let crate_x = wx - dx;
+                let crate_y = wy - dy;
+                let stand_x = crate_x - dx;
+                let stand_y = crate_y - dy;
+
+                if !self.in_bounds(crate_x, crate_y) || !self.in_bounds(stand_x, stand_y) {
+                    continue;
+                }
+
+                if self.tile(crate_x, crate_y) != Tile::Floor {
+                    continue;
+                }
+
+                let stand_tile = self.tile(stand_x, stand_y);
+                if !stand_tile.is_walkable() || stand_tile == Tile::Water {
+                    continue;
+                }
+
+                let idx = self.idx(crate_x, crate_y);
+                self.tiles[idx] = Tile::Crate;
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn place_bridge_setup(&mut self, rng: &mut Rng) -> bool {
+        if self.rooms.len() < 4 {
+            return false;
+        }
+
+        let room_count = self.rooms.len().saturating_sub(2);
+        if room_count == 0 {
+            return false;
+        }
+
+        let start = (rng.next_u64() as usize) % room_count;
+        for offset in 0..room_count {
+            let room_idx = 1 + (start + offset) % room_count;
+            let room = self.rooms[room_idx].clone();
+            if self.place_bridge_setup_in_room(&room, rng) {
+                return true;
+            }
+        }
+
+        false
+    }
+
     /// Place stairs down in the last room.
     pub fn place_stairs(&mut self) {
         if let Some(room) = self.rooms.last() {
@@ -481,6 +794,7 @@ impl DungeonLevel {
         }
 
         let hazard_rooms = 1 + (rng.next_u64() % 2) as usize;
+        let mut guaranteed_water = false;
         for _ in 0..hazard_rooms {
             for _ in 0..20 {
                 let pick = rng.range(1, self.rooms.len() as i32 - 1) as usize;
@@ -522,10 +836,15 @@ impl DungeonLevel {
                     if self.tiles[idx] != Tile::Floor {
                         continue;
                     }
-                    self.tiles[idx] = match rng.next_u64() % 3 {
-                        0 => Tile::Spikes,
-                        1 => Tile::Oil,
-                        _ => Tile::Water,
+                    self.tiles[idx] = if !guaranteed_water {
+                        guaranteed_water = true;
+                        Tile::Water
+                    } else {
+                        match rng.next_u64() % 3 {
+                            0 => Tile::Spikes,
+                            1 => Tile::Oil,
+                            _ => Tile::Water,
+                        }
                     };
                     placed += 1;
                     if placed >= hazard_count {
@@ -545,6 +864,7 @@ impl DungeonLevel {
             return;
         }
 
+        let _ = self.place_bridge_setup(rng);
         let crate_rooms = 1 + (rng.next_u64() % 2) as usize;
         for _ in 0..crate_rooms {
             for _ in 0..20 {
@@ -774,6 +1094,7 @@ impl DungeonLevel {
         level.place_seals(&mut rng);
         level.place_hazards(&mut rng);
         level.place_crates(&mut rng);
+        level.place_secret_room(&mut rng);
         level
     }
 
@@ -969,6 +1290,36 @@ mod tests {
         level
     }
 
+    fn has_pushable_bridge_setup(level: &DungeonLevel) -> bool {
+        let dirs = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+        for y in 0..level.height {
+            for x in 0..level.width {
+                if level.tile(x, y) != Tile::Water {
+                    continue;
+                }
+
+                for (dx, dy) in dirs {
+                    let crate_x = x - dx;
+                    let crate_y = y - dy;
+                    let stand_x = crate_x - dx;
+                    let stand_y = crate_y - dy;
+                    if !level.in_bounds(crate_x, crate_y) || !level.in_bounds(stand_x, stand_y) {
+                        continue;
+                    }
+
+                    if level.tile(crate_x, crate_y) == Tile::Crate {
+                        let stand_tile = level.tile(stand_x, stand_y);
+                        if stand_tile.is_walkable() && stand_tile != Tile::Water {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
     #[test]
     fn hazards_and_altars_are_walkable_but_crates_block() {
         assert!(Tile::Spikes.is_walkable());
@@ -977,6 +1328,7 @@ mod tests {
         assert!(Tile::Altar(AltarKind::Jade).is_walkable());
         assert!(Tile::Seal(SealKind::Ember).is_walkable());
         assert!(!Tile::Crate.is_walkable());
+        assert!(!Tile::CrackedWall.is_walkable());
     }
 
     #[test]
@@ -997,6 +1349,63 @@ mod tests {
         level.place_seals(&mut rng);
 
         assert!(level.tiles.iter().any(|tile| matches!(tile, Tile::Seal(_))));
+    }
+
+    #[test]
+    fn place_secret_room_carves_hidden_chamber_with_cracked_entrance() {
+        let mut level = make_clean_test_level();
+        let mut rng = Rng::new(11);
+        let original_open_tiles = level.tiles.iter().filter(|tile| !matches!(tile, Tile::Wall)).count();
+
+        level.place_secret_room(&mut rng);
+
+        let new_open_tiles = level.tiles.iter().filter(|tile| !matches!(tile, Tile::Wall)).count();
+        assert!(level.tiles.iter().any(|tile| matches!(tile, Tile::CrackedWall)));
+        assert!(new_open_tiles > original_open_tiles);
+    }
+
+    #[test]
+    fn place_secret_room_adds_hidden_point_of_interest() {
+        let mut level = make_clean_test_level();
+        let mut rng = Rng::new(11);
+
+        level.place_secret_room(&mut rng);
+
+        assert!(level.tiles.iter().any(|tile| {
+            matches!(tile, Tile::Chest | Tile::Forge | Tile::Shrine | Tile::Altar(_))
+        }));
+    }
+
+    #[test]
+    fn generated_levels_hide_secret_rooms_on_most_runs() {
+        let mut secret_count = 0;
+        for seed in 1..=24 {
+            let level = DungeonLevel::generate(48, 48, seed);
+            if level.tiles.iter().any(|tile| matches!(tile, Tile::CrackedWall)) {
+                secret_count += 1;
+            }
+        }
+
+        assert!(
+            secret_count >= 18,
+            "expected secret-room entrances on most sample floors, found {secret_count}"
+        );
+    }
+
+    #[test]
+    fn generated_levels_regularly_offer_bridge_building_setups() {
+        let mut bridge_count = 0;
+        for seed in 1..=24 {
+            let level = DungeonLevel::generate(48, 48, seed);
+            if has_pushable_bridge_setup(&level) {
+                bridge_count += 1;
+            }
+        }
+
+        assert!(
+            bridge_count >= 10,
+            "expected bridge setups across the sample set, found {bridge_count}"
+        );
     }
 
     #[test]

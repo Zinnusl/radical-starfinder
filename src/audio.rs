@@ -241,6 +241,20 @@ impl Audio {
         self.tone(80.0, 0.04, 0.04, OscillatorType::Triangle);
     }
 
+    /// Digging through stone
+    pub fn play_dig(&self) {
+        self.tone(120.0, 0.06, 0.10, OscillatorType::Sawtooth);
+        self.tone(92.0, 0.10, 0.09, OscillatorType::Triangle);
+        self.tone(180.0, 0.08, 0.06, OscillatorType::Square);
+    }
+
+    /// Crate splashing into place as a bridge
+    pub fn play_bridge(&self) {
+        self.tone(220.0, 0.06, 0.09, OscillatorType::Triangle);
+        self.tone(330.0, 0.10, 0.08, OscillatorType::Sine);
+        self.tone(180.0, 0.12, 0.05, OscillatorType::Sawtooth);
+    }
+
     /// Play a Chinese tone contour for listening mode.
     /// tone_num: 1-4 (Chinese tones), base_freq ~300 Hz for a natural voice range.
     pub fn play_chinese_tone(&self, tone_num: u8) {

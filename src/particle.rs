@@ -135,6 +135,18 @@ impl ParticleSystem {
     pub fn spawn_teleport(&mut self, x: f64, y: f64, rng: &mut u64) {
         self.burst(x, y, 20, 100, 220, 255, 4.0, rng);
     }
+
+    /// Digging debris (stone and dust)
+    pub fn spawn_dig(&mut self, x: f64, y: f64, rng: &mut u64) {
+        self.burst(x, y, 18, 140, 120, 100, 2.6, rng);
+        self.burst(x, y, 10, 96, 86, 82, 1.8, rng);
+    }
+
+    /// Splash and splinters when a bridge is formed.
+    pub fn spawn_bridge(&mut self, x: f64, y: f64, rng: &mut u64) {
+        self.burst(x, y, 14, 120, 180, 255, 2.2, rng);
+        self.burst(x, y, 10, 156, 102, 58, 1.9, rng);
+    }
 }
 
 /// Simple xorshift rng returning f64 in [0,1).
