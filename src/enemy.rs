@@ -29,6 +29,29 @@ impl BossKind {
     }
 }
 
+fn get_components(hanzi: &str) -> Vec<&'static str> {
+    match hanzi {
+        "明" => vec!["日", "月"],
+        "好" => vec!["女", "子"],
+        "林" => vec!["木", "木"],
+        "休" => vec!["人", "木"],
+        "看" => vec!["手", "目"],
+        "体" => vec!["人", "本"],
+        "男" => vec!["田", "力"],
+        "思" => vec!["田", "心"],
+        "李" => vec!["木", "子"],
+        "早" => vec!["日", "十"],
+        "香" => vec!["禾", "日"],
+        "杏" => vec!["木", "口"],
+        "呆" => vec!["口", "木"],
+        "森" => vec!["木", "林"],
+        "晶" => vec!["日", "日", "日"],
+        "众" => vec!["人", "人", "人"],
+        "品" => vec!["口", "口", "口"],
+        _ => vec![],
+    }
+}
+
 #[derive(Clone)]
 pub struct Enemy {
     pub x: i32,
@@ -61,6 +84,8 @@ pub struct Enemy {
     pub resisted_spell: Option<&'static str>,
     /// Elite compounds are dismantled syllable by syllable
     pub elite_chain: usize,
+    /// Defensive components (shields) that must be broken first
+    pub components: Vec<&'static str>,
 }
 
 impl Enemy {
@@ -69,6 +94,9 @@ impl Enemy {
         let hp = if is_elite { 4 + floor } else { 2 + floor / 2 };
         let damage = if is_elite { 2 + floor / 2 } else { 1 + floor / 3 };
         let gold = if is_elite { 15 + floor * 3 } else { 5 + floor * 2 };
+        
+        let components = get_components(entry.hanzi);
+        
         Self {
             x,
             y,
@@ -89,6 +117,7 @@ impl Enemy {
             summon_cooldown: 0,
             resisted_spell: None,
             elite_chain: 0,
+            components,
         }
     }
 
@@ -120,6 +149,7 @@ impl Enemy {
             summon_cooldown: cooldown,
             resisted_spell: None,
             elite_chain: 0,
+            components: Vec::new(), // Bosses don't use standard components yet
         }
     }
 

@@ -78,6 +78,9 @@ pub static VOCAB: &[VocabEntry] = &[
     VocabEntry { hanzi: "竹", pinyin: "zhu2", meaning: "bamboo", hsk: 2, example: "" },
     VocabEntry { hanzi: "耳", pinyin: "er3", meaning: "ear", hsk: 2, example: "" },
     VocabEntry { hanzi: "足", pinyin: "zu2", meaning: "foot", hsk: 2, example: "" },
+    VocabEntry { hanzi: "田", pinyin: "tian2", meaning: "field", hsk: 2, example: "" },
+    VocabEntry { hanzi: "本", pinyin: "ben3", meaning: "root/book", hsk: 2, example: "" },
+    VocabEntry { hanzi: "禾", pinyin: "he2", meaning: "grain", hsk: 2, example: "" },
 
     // HSK 3 — tougher
     VocabEntry { hanzi: "电", pinyin: "dian4", meaning: "electric", hsk: 3, example: "" },
@@ -126,6 +129,11 @@ pub fn vocab_for_floor(floor: i32) -> Vec<&'static VocabEntry> {
         _ => 4,
     };
     VOCAB.iter().filter(|v| v.hsk <= max_hsk).collect()
+}
+
+/// Find a vocab entry by its Hanzi character(s).
+pub fn vocab_entry_by_hanzi(hanzi: &str) -> Option<&'static VocabEntry> {
+    VOCAB.iter().find(|v| v.hanzi == hanzi)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

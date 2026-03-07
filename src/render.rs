@@ -1595,6 +1595,21 @@ impl Renderer {
                 self.ctx
                     .fill_rect(screen_x + 4.0, screen_y + TILE_SIZE - 7.0, TILE_SIZE - 8.0, 2.0);
             }
+            Tile::Bridge => {
+                // Planks
+                self.ctx.set_fill_style_str("rgba(160,110,60,0.4)");
+                self.ctx.fill_rect(screen_x + 2.0, screen_y + 4.0, TILE_SIZE - 4.0, 4.0);
+                self.ctx.fill_rect(screen_x + 2.0, screen_y + 11.0, TILE_SIZE - 4.0, 4.0);
+                self.ctx.fill_rect(screen_x + 2.0, screen_y + 18.0, TILE_SIZE - 4.0, 4.0);
+                // Nails
+                self.ctx.set_fill_style_str("rgba(100,100,100,0.5)");
+                self.ctx.fill_rect(screen_x + 4.0, screen_y + 5.0, 1.0, 1.0);
+                self.ctx.fill_rect(screen_x + TILE_SIZE - 5.0, screen_y + 5.0, 1.0, 1.0);
+                self.ctx.fill_rect(screen_x + 4.0, screen_y + 12.0, 1.0, 1.0);
+                self.ctx.fill_rect(screen_x + TILE_SIZE - 5.0, screen_y + 12.0, 1.0, 1.0);
+                self.ctx.fill_rect(screen_x + 4.0, screen_y + 19.0, 1.0, 1.0);
+                self.ctx.fill_rect(screen_x + TILE_SIZE - 5.0, screen_y + 19.0, 1.0, 1.0);
+            }
             Tile::StairsDown
             | Tile::Forge
             | Tile::Shop
@@ -2654,6 +2669,12 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
                 glyph: Some("?"),
                 glyph_color: "#ffffff",
             },
+            Tile::Bridge => TilePalette {
+                fill: "#8b4513",
+                accent: Some("#a0522d"),
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
         }
     } else {
         match tile {
@@ -2749,6 +2770,12 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
             },
             Tile::Sign(_) => TilePalette {
                 fill: "#4b3a26",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Bridge => TilePalette {
+                fill: "#5c4033",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",

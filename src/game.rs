@@ -13,7 +13,7 @@ use crate::dungeon::{compute_fov, AltarKind, DungeonLevel, RoomModifier, SealKin
 use crate::enemy::{BossKind, Enemy};
 use crate::particle::ParticleSystem;
 use crate::player::{
-    Deity, ItemKind, Player, PlayerClass, PlayerForm, ITEM_KIND_COUNT, MYSTERY_ITEM_APPEARANCES, EQUIPMENT_POOL,
+    Deity, EquipEffect, ItemKind, Player, PlayerClass, PlayerForm, ITEM_KIND_COUNT, MYSTERY_ITEM_APPEARANCES, EQUIPMENT_POOL,
 };
 use crate::radical::{self, Spell, SpellEffect};
 use crate::render::Renderer;
@@ -1401,20 +1401,77 @@ impl GameState {
         let (nx, ny) = self.player.intended_move(dx, dy);
         let target_tile = self.level.tile(nx, ny);
         if target_tile == Tile::Crate {
-            self.smash_crate(nx, ny);
-            if matches!(self.combat, CombatState::GameOver) {
+            let pdx = nx - self.player.x;
+            let pdy = ny - self.player.y;
+            let px = nx + pdx;
+            let py = ny + pdy;
+            
+            // Check bounds
+            if !self.level.in_bounds(px, py) {
+                self.message = "It's jammed against the wall.".to_string();
+                self.message_timer = 30;
                 return;
             }
-            self.move_count += 1;
-            let skip_enemy = status::has_haste(&self.player.statuses) && self.move_count % 2 == 0;
-            if !skip_enemy {
-                self.enemy_turn();
+
+            let push_target_idx = self.level.idx(px, py);
+            let push_target_tile = self.level.tiles[push_target_idx];
+            
+            // Allow pushing into open space or liquids
+            let can_push = matches!(push_target_tile, Tile::Floor | Tile::Corridor | Tile::Water | Tile::Oil | Tile::Spikes | Tile::Bridge);
+            let enemy_behind = self.enemy_at(px, py).is_some();
+
+            if can_push && !enemy_behind {
+                 if push_target_tile == Tile::Water {
+                     self.level.tiles[push_target_idx] = Tile::Bridge;
+                     self.message = "The crate forms a bridge!".to_string();
+                 } else {
+                     self.level.tiles[push_target_idx] = Tile::Crate;
+                     self.message = "You push the crate.".to_string();
+                 }
+                 let current_idx = self.level.idx(nx, ny);
+                 self.level.tiles[current_idx] = Tile::Floor;
+                 
+                 // Player moves into the spot
+                 self.player.x = nx;
+                 self.player.y = ny;
+                 self.move_count += 1;
+                 
+                 let skip_enemy = status::has_haste(&self.player.statuses) && self.move_count % 2 == 0;
+                 if !skip_enemy {
+                     self.enemy_turn();
+                 }
+                 let (px, py) = (self.player.x, self.player.y);
+                 let fov = self.effective_fov();
+                 compute_fov(&mut self.level, px, py, fov);
+                 return;
+            } else {
+                 self.message = "It won't budge.".to_string();
+                 self.message_timer = 30;
+                 return;
             }
-            let (px, py) = (self.player.x, self.player.y);
-            let fov = self.effective_fov();
-            compute_fov(&mut self.level, px, py, fov);
-            return;
         }
+        
+        if target_tile == Tile::Wall {
+            // Check for digging using weapon effect
+            let can_dig = self.player.weapon.map_or(false, |eq| matches!(eq.effect, EquipEffect::Digging));
+            
+            if can_dig {
+                let idx = self.level.idx(nx, ny);
+                self.level.tiles[idx] = Tile::Floor;
+                self.message = "You dig through the wall.".to_string();
+                self.move_count += 1;
+                
+                let skip_enemy = status::has_haste(&self.player.statuses) && self.move_count % 2 == 0;
+                if !skip_enemy {
+                    self.enemy_turn();
+                }
+                let (px, py) = (self.player.x, self.player.y);
+                let fov = self.effective_fov();
+                compute_fov(&mut self.level, px, py, fov);
+                return;
+            }
+        }
+
         if !target_tile.is_walkable() {
             return;
         }
@@ -1680,6 +1737,41 @@ impl GameState {
                 self.combat = CombatState::Explore;
                 return;
             }
+
+            // Component (Shield) Logic
+            if !self.enemies[enemy_idx].components.is_empty() {
+                let comp_hanzi = self.enemies[enemy_idx].components[0];
+                let comp_pinyin = vocab::vocab_entry_by_hanzi(comp_hanzi)
+                    .map(|e| e.pinyin)
+                    .unwrap_or("???");
+                
+                let matches = if let Some(entry) = vocab::vocab_entry_by_hanzi(comp_hanzi) {
+                    vocab::check_pinyin(entry, &self.typing)
+                } else {
+                    self.typing == comp_pinyin 
+                };
+
+                if matches {
+                    self.enemies[enemy_idx].components.remove(0);
+                    self.typing.clear();
+                    self.trigger_shake(2);
+                    if let Some(ref audio) = self.audio { audio.play_hit(); }
+                    
+                    if self.enemies[enemy_idx].components.is_empty() {
+                         self.message = format!("The {} is exposed!", self.enemies[enemy_idx].hanzi);
+                    } else {
+                         self.message = format!("Shattered {} shield!", comp_hanzi);
+                    }
+                    self.message_timer = 60;
+                    return;
+                } else {
+                    self.message = format!("Shield holds! Need {}", comp_pinyin);
+                    self.message_timer = 60;
+                    self.typing.clear();
+                    return;
+                }
+            }
+
             let e_hanzi = self.enemies[enemy_idx].hanzi;
             let e_pinyin = self.enemies[enemy_idx].pinyin;
             let e_meaning = self.enemies[enemy_idx].meaning;
@@ -3364,6 +3456,14 @@ fn spell_category(effect: &SpellEffect) -> &'static str {
 }
 
 fn combat_prompt_for(enemy: &Enemy, listening_mode: bool) -> String {
+    if !enemy.components.is_empty() {
+        let comp = enemy.components[0];
+        let pinyin = vocab::vocab_entry_by_hanzi(comp)
+            .map(|e| e.pinyin)
+            .unwrap_or("???");
+        return format!("Shielded by {}! Type {} to break.", comp, pinyin);
+    }
+
     if listening_mode && !enemy.is_elite {
         "🎧 Listen! Type the pinyin you hear...".to_string()
     } else if enemy.is_elite {

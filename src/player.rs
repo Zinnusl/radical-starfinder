@@ -30,6 +30,8 @@ pub enum EquipEffect {
     HealOnKill(i32),
     /// Extra gold on kill
     GoldBonus(i32),
+    /// Allows digging through walls
+    Digging,
 }
 
 pub const MAX_ITEMS: usize = 5;
@@ -137,6 +139,7 @@ pub const EQUIPMENT_POOL: &[Equipment] = &[
     Equipment { name: "Life Jade", slot: EquipSlot::Charm, effect: EquipEffect::HealOnKill(2) },
     Equipment { name: "Gold Toad", slot: EquipSlot::Charm, effect: EquipEffect::GoldBonus(10) },
     Equipment { name: "Phoenix Feather", slot: EquipSlot::Charm, effect: EquipEffect::HealOnKill(3) },
+    Equipment { name: "Iron Pickaxe", slot: EquipSlot::Weapon, effect: EquipEffect::Digging },
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

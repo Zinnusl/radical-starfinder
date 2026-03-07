@@ -13,6 +13,12 @@ pub enum StatusKind {
     Confused,
     /// Entire map revealed
     Revealed,
+    /// Weapon coated in poison: attacks apply Poison
+    Envenomed,
+    /// Weapon coated in flame/magic: bonus damage
+    Empowered { amount: i32 },
+    /// Burn damage over time
+    Burn { damage: i32 },
 }
 
 /// An active status effect with remaining duration.
@@ -30,20 +36,26 @@ impl StatusInstance {
     pub fn label(&self) -> &'static str {
         match self.kind {
             StatusKind::Poison { .. } => "☠Psn",
+            StatusKind::Burn { .. } => "🔥Brn",
             StatusKind::Regen { .. } => "♥Rgn",
             StatusKind::Haste => "⚡Hst",
             StatusKind::Confused => "?Cnf",
             StatusKind::Revealed => "👁Map",
+            StatusKind::Envenomed => "☠Wep",
+            StatusKind::Empowered { .. } => "💪Pow",
         }
     }
 
     pub fn color(&self) -> &'static str {
         match self.kind {
             StatusKind::Poison { .. } => "#88ff44",
+            StatusKind::Burn { .. } => "#ff5500",
             StatusKind::Regen { .. } => "#ff88cc",
             StatusKind::Haste => "#ffff44",
             StatusKind::Confused => "#cc44ff",
             StatusKind::Revealed => "#44ccff",
+            StatusKind::Envenomed => "#00ff00",
+            StatusKind::Empowered { .. } => "#ff4400",
         }
     }
 }
@@ -56,6 +68,7 @@ pub fn tick_statuses(statuses: &mut Vec<StatusInstance>) -> (i32, i32) {
     for s in statuses.iter_mut() {
         match s.kind {
             StatusKind::Poison { damage: d } => damage += d,
+            StatusKind::Burn { damage: d } => damage += d,
             StatusKind::Regen { heal: h } => heal += h,
             _ => {}
         }
@@ -80,6 +93,17 @@ pub fn has_confused(statuses: &[StatusInstance]) -> bool {
 
 pub fn has_revealed(statuses: &[StatusInstance]) -> bool {
     statuses.iter().any(|s| matches!(s.kind, StatusKind::Revealed))
+}
+
+pub fn has_envenomed(statuses: &[StatusInstance]) -> bool {
+    statuses.iter().any(|s| matches!(s.kind, StatusKind::Envenomed))
+}
+
+pub fn empowered_amount(statuses: &[StatusInstance]) -> i32 {
+    statuses.iter().filter_map(|s| match s.kind {
+        StatusKind::Empowered { amount } => Some(amount),
+        _ => None,
+    }).sum()
 }
 
 #[cfg(test)]

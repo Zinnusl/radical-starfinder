@@ -167,6 +167,8 @@ pub enum Tile {
     Seal(SealKind),
     /// Tutorial signpost with a scripted message
     Sign(u8),
+    /// Bridge created by pushing a crate into water
+    Bridge,
 }
 
 impl Tile {
@@ -187,6 +189,7 @@ impl Tile {
                 | Tile::Altar(_)
                 | Tile::Seal(_)
                 | Tile::Sign(_)
+                | Tile::Bridge
         )
     }
 }
