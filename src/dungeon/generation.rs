@@ -221,6 +221,7 @@ impl Room {
         (self.x + self.w / 2, self.y + self.h / 2)
     }
 
+    #[allow(dead_code)]
     pub fn intersects(&self, other: &Room) -> bool {
         self.x < other.x + other.w
             && self.x + self.w > other.x

@@ -5,6 +5,7 @@ pub struct AchievementDef {
     pub id: &'static str,
     pub name: &'static str,
     pub desc: &'static str,
+    #[allow(dead_code)]
     pub icon: &'static str,
 }
 

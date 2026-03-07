@@ -34,6 +34,7 @@ pub enum EquipEffect {
     Digging,
 }
 
+#[allow(dead_code)]
 pub const MAX_ITEMS: usize = 5;
 pub const ITEM_KIND_COUNT: usize = 6;
 pub const MYSTERY_ITEM_APPEARANCES: [&str; ITEM_KIND_COUNT] = [
@@ -108,6 +109,7 @@ impl Item {
         }
     }
 
+    #[allow(dead_code)]
     pub fn short_name(&self) -> &'static str {
         match self {
             Item::HealthPotion(_) => "HP Pot",
@@ -167,12 +169,14 @@ impl Deity {
 pub enum PlayerForm {
     Human,
     Flame,  // Immune to fire, burn on touch
+    #[allow(dead_code)]
     Stone,  // High Def, slow
     Mist,   // High Evasion, weak atk
     Tiger,  // High Atk, fast
 }
 
 impl PlayerForm {
+    #[allow(dead_code)]
     pub fn name(&self) -> &'static str {
         match self {
             PlayerForm::Human => "Human",
@@ -356,6 +360,7 @@ impl Player {
         }
     }
 
+    #[allow(dead_code)]
     pub fn take_item(&mut self, idx: usize) -> Option<Item> {
         if idx < self.items.len() {
             Some(self.items.remove(idx))
@@ -472,6 +477,7 @@ impl Player {
     }
 
     /// Bonus max HP from enchantments (心=+2)
+    #[allow(dead_code)]
     pub fn enchant_max_hp_bonus(&self) -> i32 {
         self.enchantments.iter().filter_map(|e| *e).map(|r| match r {
             "心" => 2,

@@ -82,6 +82,7 @@ pub struct Quest {
 }
 
 impl Quest {
+    #[allow(dead_code)]
     fn check_complete(&mut self) -> bool {
         if self.completed { return false; }
         let done = match &self.goal {
@@ -301,6 +302,7 @@ pub enum CombatState {
     /// Fighting an enemy: index into `enemies` vec
     Fighting {
         enemy_idx: usize,
+        #[allow(dead_code)]
         timer_ms: f64,
     },
     /// Player is at a forge workbench, selecting radicals
@@ -457,6 +459,7 @@ pub struct GameState {
     /// Daily challenge mode (fixed seed)
     pub daily_mode: bool,
     /// Endless mode (continue past floor 20)
+    #[allow(dead_code)]
     pub endless_mode: bool,
     /// Active scripted tutorial state for first-time players
     tutorial: Option<TutorialState>,
@@ -790,7 +793,7 @@ impl GameState {
         ((base_gold + 1) / 2).max(4) + spell_power.max(0)
     }
 
-    fn invoke_altar(&mut self, x: i32, y: i32, kind: AltarKind) {
+    fn invoke_altar(&mut self, _x: i32, _y: i32, kind: AltarKind) {
         // Player is already on the tile (x, y) because move_to was called before this.
         
         // Find existing piety for this god, if any
@@ -1221,60 +1224,6 @@ impl GameState {
         }
 
         (water_tiles.len(), shocked, kills)
-    }
-
-    fn smash_crate(&mut self, cx: i32, cy: i32) {
-        let idx = self.level.idx(cx, cy);
-        if self.level.tiles[idx] != Tile::Crate {
-            return;
-        }
-
-        let (sx, sy) = self.tile_to_screen(cx, cy);
-        self.particles.spawn_chest(sx, sy, &mut self.rng_state);
-        self.level.tiles[idx] = Tile::Floor;
-
-        let roll = self.rng_next() % 100;
-        if roll < 50 {
-            match self.rng_next() % 3 {
-                0 => {
-                    let item = self.random_item();
-                    let name = self.item_display_name(&item);
-                    if self.player.add_item(item) {
-                        self.message = format!("▣ Crate smashed open — found {}!", name);
-                        self.achievements.check_items(self.player.items.len());
-                    } else {
-                        self.message = "▣ Crate held supplies, but your item pack is full.".to_string();
-                    }
-                }
-                1 => {
-                    let gold = 6 + (self.rng_next() % 10) as i32 + self.floor_num.max(1);
-                    self.player.gold += gold;
-                    self.message = format!("▣ Hidden stash! +{}g", gold);
-                }
-                _ => {
-                    let available = radical::radicals_for_floor(self.floor_num.max(1));
-                    let drop_idx = self.rng_next() as usize % available.len();
-                    let dropped = available[drop_idx].ch;
-                    self.player.add_radical(dropped);
-                    self.message = format!("▣ Splinters reveal radical [{}]!", dropped);
-                }
-            }
-        } else if roll < 75 {
-            self.message = "▣ The crate bursts into splinters. Nothing useful inside.".to_string();
-        } else if self.rng_next() % 2 == 0 {
-            self.player.statuses.push(status::StatusInstance::new(
-                status::StatusKind::Poison { damage: 1 },
-                4,
-            ));
-            self.message = "▣ Poison gas! You cough and feel sick.".to_string();
-        } else {
-            self.player.statuses.push(status::StatusInstance::new(
-                status::StatusKind::Confused,
-                4,
-            ));
-            self.message = "▣ Strange glyph-dust swirls around you. Movement becomes scrambled!".to_string();
-        }
-        self.message_timer = 80;
     }
 
     fn new_floor(&mut self) {
@@ -3018,18 +2967,17 @@ impl GameState {
         if idx >= self.player.items.len() { return; }
         let item = self.player.items.remove(idx);
         let deity = altar.deity();
-        let mut piety_gain = 0;
         
         // Basic offering logic
-        match (deity, item.kind()) {
-             (Deity::Jade, ItemKind::HealthPotion) => piety_gain = 5,
-             (Deity::Jade, _) => piety_gain = 1,
-             (Deity::Gale, ItemKind::HastePotion | ItemKind::TeleportScroll) => piety_gain = 5,
-             (Deity::Mirror, ItemKind::RevealScroll) => piety_gain = 5,
-             (Deity::Iron, ItemKind::StunBomb | ItemKind::PoisonFlask) => piety_gain = 5,
-             (Deity::Gold, _) => piety_gain = 2,
-             _ => piety_gain = 1,
-        }
+        let piety_gain = match (deity, item.kind()) {
+             (Deity::Jade, ItemKind::HealthPotion) => 5,
+             (Deity::Jade, _) => 1,
+             (Deity::Gale, ItemKind::HastePotion | ItemKind::TeleportScroll) => 5,
+             (Deity::Mirror, ItemKind::RevealScroll) => 5,
+             (Deity::Iron, ItemKind::StunBomb | ItemKind::PoisonFlask) => 5,
+             (Deity::Gold, _) => 2,
+             _ => 1,
+        };
         
         self.player.add_piety(deity, piety_gain);
         self.message = format!("Offered {} to {}. (+{} favor).", item.name(), deity.name(), piety_gain);
@@ -3887,7 +3835,7 @@ pub fn init_game() -> Result<(), JsValue> {
             // Tone Battle input
             if matches!(s.combat, CombatState::ToneBattle { .. }) {
                 event.prevent_default();
-                if let CombatState::ToneBattle { round, hanzi, correct_tone, score, last_result } = s.combat.clone() {
+                if let CombatState::ToneBattle { round, hanzi: _, correct_tone, score, last_result: _ } = s.combat.clone() {
                     let chosen = match key.as_str() {
                         "1" => Some(1u8),
                         "2" => Some(2u8),

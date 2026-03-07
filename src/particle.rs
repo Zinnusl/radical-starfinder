@@ -126,6 +126,7 @@ impl ParticleSystem {
     }
 
     /// Poison cloud (green)
+    #[allow(dead_code)]
     pub fn spawn_poison(&mut self, x: f64, y: f64, rng: &mut u64) {
         self.burst(x, y, 10, 80, 200, 60, 1.5, rng);
     }

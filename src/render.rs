@@ -32,6 +32,7 @@ const COL_HP_BAR: &str = "#44cc55";
 const COL_HP_BG: &str = "#442222";
 
 pub struct Renderer {
+    #[allow(dead_code)]
     pub canvas: HtmlCanvasElement,
     pub ctx: CanvasRenderingContext2d,
     pub canvas_w: f64,
@@ -940,7 +941,7 @@ impl Renderer {
         if let CombatState::Enchanting { slot, page } = combat {
             let rad_count = player.radicals.len();
             let page_size = 9;
-            let max_page = rad_count.saturating_sub(1) / page_size;
+            let _max_page = rad_count.saturating_sub(1) / page_size;
             let page_start = page * page_size;
             let page_end = (page_start + page_size).min(rad_count);
             let page_count = page_end - page_start;
@@ -1186,7 +1187,7 @@ impl Renderer {
         }
 
         // ── Tone Battle overlay ─────────────────────────────────────────
-        if let CombatState::ToneBattle { round, hanzi, correct_tone, score, last_result } = combat {
+        if let CombatState::ToneBattle { round, hanzi, correct_tone: _, score, last_result } = combat {
             let box_w = 320.0;
             let box_h = 180.0;
             let box_x = (self.canvas_w - box_w) / 2.0;

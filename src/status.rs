@@ -6,12 +6,15 @@ pub enum StatusKind {
     /// Damage per turn for N turns
     Poison { damage: i32 },
     /// Heal per turn for N turns
+    #[allow(dead_code)]
     Regen { heal: i32 },
     /// Player gets extra actions (enemy_turn skipped on even ticks)
     Haste,
     /// Player movement is randomized
+    #[allow(dead_code)]
     Confused,
     /// Entire map revealed
+    #[allow(dead_code)]
     Revealed,
     /// Weapon coated in poison: attacks apply Poison
     Envenomed,
@@ -79,6 +82,7 @@ pub fn tick_statuses(statuses: &mut Vec<StatusInstance>) -> (i32, i32) {
 }
 
 /// Check if a specific status kind is active.
+#[allow(dead_code)]
 pub fn has_status(statuses: &[StatusInstance], check: &str) -> bool {
     statuses.iter().any(|s| s.label().contains(check))
 }
@@ -87,10 +91,12 @@ pub fn has_haste(statuses: &[StatusInstance]) -> bool {
     statuses.iter().any(|s| matches!(s.kind, StatusKind::Haste))
 }
 
+#[allow(dead_code)]
 pub fn has_confused(statuses: &[StatusInstance]) -> bool {
     statuses.iter().any(|s| matches!(s.kind, StatusKind::Confused))
 }
 
+#[allow(dead_code)]
 pub fn has_revealed(statuses: &[StatusInstance]) -> bool {
     statuses.iter().any(|s| matches!(s.kind, StatusKind::Revealed))
 }
