@@ -711,7 +711,7 @@ impl GameState {
                 let entry: &'static VocabEntry = pool[entry_idx];
                 let ex = room.x + 1 + (self.rng_next() % (room.w - 2).max(1) as u64) as i32;
                 let ey = room.y + 1 + (self.rng_next() % (room.h - 2).max(1) as u64) as i32;
-                if self.level.is_walkable(ex, ey) {
+                if tile_allows_enemy_spawn(self.level.tile(ex, ey)) {
                     self.enemies.push(Enemy::from_vocab(entry, ex, ey, self.floor_num));
                 }
             }
@@ -1212,7 +1212,9 @@ impl GameState {
         for y in 0..self.level.height {
             for x in 0..self.level.width {
                 let idx = self.level.idx(x, y);
-                if self.level.visible[idx] && self.level.tiles[idx] == Tile::Water {
+                if self.level.visible[idx]
+                    && matches!(self.level.tiles[idx], Tile::Water | Tile::DeepWater)
+                {
                     water_tiles.push((x, y));
                     water_screens.push(self.tile_to_screen(x, y));
                 }
@@ -1440,13 +1442,26 @@ impl GameState {
             let push_target_tile = self.level.tiles[push_target_idx];
             
             // Allow pushing into open space or liquids
-            let can_push = matches!(push_target_tile, Tile::Floor | Tile::Corridor | Tile::Water | Tile::Oil | Tile::Spikes | Tile::Bridge);
+            let can_push = matches!(
+                push_target_tile,
+                Tile::Floor
+                    | Tile::Corridor
+                    | Tile::Water
+                    | Tile::DeepWater
+                    | Tile::Oil
+                    | Tile::Spikes
+                    | Tile::Bridge
+            );
             let enemy_behind = self.enemy_at(px, py).is_some();
 
             if can_push && !enemy_behind {
-                if push_target_tile == Tile::Water {
+                if matches!(push_target_tile, Tile::Water | Tile::DeepWater) {
                     self.level.tiles[push_target_idx] = Tile::Bridge;
-                    self.message = "The crate splashes into place, forming a bridge!".to_string();
+                    self.message = if push_target_tile == Tile::DeepWater {
+                        "The crate drops into the pool, forming a rough bridge!".to_string()
+                    } else {
+                        "The crate splashes into place, forming a bridge!".to_string()
+                    };
                     self.message_timer = 80;
                     let (sx, sy) = self.tile_to_screen(px, py);
                     self.particles.spawn_bridge(sx, sy, &mut self.rng_state);
@@ -1482,7 +1497,7 @@ impl GameState {
             }
         }
 
-        if matches!(target_tile, Tile::Wall | Tile::CrackedWall) {
+        if matches!(target_tile, Tile::Wall | Tile::CrackedWall | Tile::BrittleWall) {
             // Check for digging using weapon effect
             let can_dig = self
                 .player
@@ -1492,20 +1507,23 @@ impl GameState {
 
             if can_dig {
                 let cracked_wall = target_tile == Tile::CrackedWall;
+                let brittle_wall = target_tile == Tile::BrittleWall;
                 let idx = self.level.idx(nx, ny);
                 self.level.tiles[idx] = Tile::Floor;
                 let (sx, sy) = self.tile_to_screen(nx, ny);
                 self.particles.spawn_dig(sx, sy, &mut self.rng_state);
-                self.trigger_shake(if cracked_wall { 6 } else { 4 });
+                self.trigger_shake(if cracked_wall { 6 } else if brittle_wall { 5 } else { 4 });
                 if let Some(ref audio) = self.audio {
                     audio.play_dig();
                 }
                 self.message = if cracked_wall {
                     "You smash through the cracked wall and uncover a hidden chamber!".to_string()
+                } else if brittle_wall {
+                    "You break through the brittle wall and crack open the cache!".to_string()
                 } else {
                     "Stone chips fly as you dig a rough tunnel.".to_string()
                 };
-                self.message_timer = if cracked_wall { 120 } else { 75 };
+                self.message_timer = if cracked_wall { 120 } else if brittle_wall { 100 } else { 75 };
                 self.move_count += 1;
 
                 let skip_enemy = status::has_haste(&self.player.statuses) && self.move_count % 2 == 0;
@@ -1520,6 +1538,9 @@ impl GameState {
 
             if target_tile == Tile::CrackedWall {
                 self.message = "The wall is cracked. A digging tool could break through.".to_string();
+                self.message_timer = 90;
+            } else if target_tile == Tile::BrittleWall {
+                self.message = "The brittle wall could be smashed open with a digging tool.".to_string();
                 self.message_timer = 90;
             }
         }
@@ -3538,16 +3559,18 @@ fn tile_look_text(tile: Tile) -> String {
     match tile {
         Tile::Wall => "Solid wall.".to_string(),
         Tile::CrackedWall => "Cracked wall — a digging tool could break into a hidden room.".to_string(),
+        Tile::BrittleWall => "Brittle wall — a digging tool could break into the cache behind it.".to_string(),
         Tile::Floor => "Open floor.".to_string(),
         Tile::Corridor => "Corridor passage.".to_string(),
         Tile::StairsDown => "Stairs down to the next floor.".to_string(),
         Tile::Forge => "Forge — combine radicals or enchant gear here.".to_string(),
         Tile::Shop => "Shop — buy gear, radicals, and consumables.".to_string(),
         Tile::Chest => "Treasure chest — step onto it to open it.".to_string(),
-        Tile::Crate => "Crate — push it, or shove it into water to make a bridge.".to_string(),
+        Tile::Crate => "Crate — push it, or shove it into deep water to make a bridge.".to_string(),
         Tile::Spikes => "Spike trap — hurts anything that steps on it.".to_string(),
         Tile::Oil => "Oil slick — fire can ignite it.".to_string(),
-        Tile::Water => "Shallow water — lightning arcs through it; crates can bridge it.".to_string(),
+        Tile::Water => "Shallow water — you can wade through it, and lightning arcs through it.".to_string(),
+        Tile::DeepWater => "Deep water — too deep to cross on foot; a crate could bridge it.".to_string(),
         Tile::Npc(0) => format!("{} — offers meaning hints.", Companion::Teacher.name()),
         Tile::Npc(1) => format!("{} — heals you between floors.", Companion::Monk.name()),
         Tile::Npc(2) => format!("{} — discounts goods and may offer quests.", Companion::Merchant.name()),
@@ -3558,6 +3581,13 @@ fn tile_look_text(tile: Tile) -> String {
         Tile::Sign(_) => "Tutorial sign — step onto it to read the guidance.".to_string(),
         Tile::Bridge => "Bridge — safe footing laid over water.".to_string(),
     }
+}
+
+fn tile_allows_enemy_spawn(tile: Tile) -> bool {
+    matches!(
+        tile,
+        Tile::Floor | Tile::Corridor | Tile::Oil | Tile::Water | Tile::Spikes | Tile::Bridge
+    )
 }
 
 fn enemy_look_text(enemy: &Enemy) -> String {
@@ -3715,6 +3745,11 @@ mod tests {
     #[test]
     fn cracked_wall_look_text_mentions_hidden_room() {
         assert!(tile_look_text(Tile::CrackedWall).contains("hidden room"));
+    }
+
+    #[test]
+    fn deep_water_look_text_mentions_bridge() {
+        assert!(tile_look_text(Tile::DeepWater).contains("bridge"));
     }
 
     #[test]

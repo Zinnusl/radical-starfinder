@@ -144,6 +144,8 @@ impl SealKind {
 pub enum Tile {
     Wall,
     CrackedWall,
+    /// A visible weak barrier for optional vault-style puzzle niches
+    BrittleWall,
     Floor,
     Corridor,
     StairsDown,
@@ -158,6 +160,8 @@ pub enum Tile {
     Oil,
     /// Water that conducts stunning spells
     Water,
+    /// Too deep to wade through, but a crate can span it
+    DeepWater,
     /// NPC companion (0=Teacher, 1=Monk, 2=Merchant, 3=Guard)
     Npc(u8),
     /// Tone shrine for tone battle mini-game
@@ -685,6 +689,191 @@ impl DungeonLevel {
         false
     }
 
+    fn room_is_plain(&self, room: &Room) -> bool {
+        for y in room.y..room.y + room.h {
+            for x in room.x..room.x + room.w {
+                if !self.in_bounds(x, y) {
+                    return false;
+                }
+                if !matches!(self.tile(x, y), Tile::Floor | Tile::Corridor) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    fn try_place_puzzle_niche(
+        &mut self,
+        barrier_x: i32,
+        barrier_y: i32,
+        dx: i32,
+        dy: i32,
+        barrier_tile: Tile,
+        with_crate: bool,
+    ) -> bool {
+        let reward_x = barrier_x + dx;
+        let reward_y = barrier_y + dy;
+        let back_x = reward_x + dx;
+        let back_y = reward_y + dy;
+        let approach_x = barrier_x - dx;
+        let approach_y = barrier_y - dy;
+        let stand_x = approach_x - dx;
+        let stand_y = approach_y - dy;
+        let side_a = (-dy, dx);
+        let side_b = (dy, -dx);
+
+        let mut floor_positions = vec![
+            (barrier_x, barrier_y),
+            (reward_x, reward_y),
+            (back_x, back_y),
+            (approach_x, approach_y),
+            (barrier_x + side_a.0, barrier_y + side_a.1),
+            (reward_x + side_a.0, reward_y + side_a.1),
+            (back_x + side_a.0, back_y + side_a.1),
+            (barrier_x + side_b.0, barrier_y + side_b.1),
+            (reward_x + side_b.0, reward_y + side_b.1),
+            (back_x + side_b.0, back_y + side_b.1),
+        ];
+        if with_crate {
+            floor_positions.push((stand_x, stand_y));
+        }
+
+        if floor_positions
+            .iter()
+            .any(|&(x, y)| !self.in_bounds(x, y) || self.tile(x, y) != Tile::Floor)
+        {
+            return false;
+        }
+
+        let wall_positions = [
+            (back_x, back_y),
+            (barrier_x + side_a.0, barrier_y + side_a.1),
+            (reward_x + side_a.0, reward_y + side_a.1),
+            (back_x + side_a.0, back_y + side_a.1),
+            (barrier_x + side_b.0, barrier_y + side_b.1),
+            (reward_x + side_b.0, reward_y + side_b.1),
+            (back_x + side_b.0, back_y + side_b.1),
+        ];
+
+        for (x, y) in wall_positions {
+            let idx = self.idx(x, y);
+            self.tiles[idx] = Tile::Wall;
+        }
+
+        let barrier_idx = self.idx(barrier_x, barrier_y);
+        self.tiles[barrier_idx] = barrier_tile;
+
+        let reward_idx = self.idx(reward_x, reward_y);
+        self.tiles[reward_idx] = Tile::Chest;
+
+        if with_crate {
+            let crate_idx = self.idx(approach_x, approach_y);
+            self.tiles[crate_idx] = Tile::Crate;
+        }
+
+        true
+    }
+
+    fn try_place_brittle_vault(&mut self, room: &Room, rng: &mut Rng) -> bool {
+        let mut candidates = Vec::new();
+        if room.w >= 6 && room.h >= 5 {
+            let y = rng.range(room.y + 2, room.y + room.h - 2);
+            candidates.push((room.x + room.w - 4, y, 1, 0));
+            candidates.push((room.x + 3, y, -1, 0));
+        }
+        if room.h >= 6 && room.w >= 5 {
+            let x = rng.range(room.x + 2, room.x + room.w - 2);
+            candidates.push((x, room.y + room.h - 4, 0, 1));
+            candidates.push((x, room.y + 3, 0, -1));
+        }
+
+        if candidates.is_empty() {
+            return false;
+        }
+
+        let start = (rng.next_u64() as usize) % candidates.len();
+        for offset in 0..candidates.len() {
+            let (x, y, dx, dy) = candidates[(start + offset) % candidates.len()];
+            if self.try_place_puzzle_niche(x, y, dx, dy, Tile::BrittleWall, false) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn try_place_deep_water_cache(&mut self, room: &Room, rng: &mut Rng) -> bool {
+        let mut candidates = Vec::new();
+        if room.w >= 7 && room.h >= 5 {
+            let y = rng.range(room.y + 2, room.y + room.h - 2);
+            candidates.push((room.x + room.w - 4, y, 1, 0));
+            candidates.push((room.x + 3, y, -1, 0));
+        }
+        if room.h >= 7 && room.w >= 5 {
+            let x = rng.range(room.x + 2, room.x + room.w - 2);
+            candidates.push((x, room.y + room.h - 4, 0, 1));
+            candidates.push((x, room.y + 3, 0, -1));
+        }
+
+        if candidates.is_empty() {
+            return false;
+        }
+
+        let start = (rng.next_u64() as usize) % candidates.len();
+        for offset in 0..candidates.len() {
+            let (x, y, dx, dy) = candidates[(start + offset) % candidates.len()];
+            if self.try_place_puzzle_niche(x, y, dx, dy, Tile::DeepWater, true) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn place_puzzle_room_in_room(&mut self, room: &Room, rng: &mut Rng) -> bool {
+        let start = (rng.next_u64() % 2) as usize;
+        for offset in 0..2 {
+            let placed = match (start + offset) % 2 {
+                0 => self.try_place_brittle_vault(room, rng),
+                _ => self.try_place_deep_water_cache(room, rng),
+            };
+            if placed {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub fn place_puzzle_rooms(&mut self, rng: &mut Rng) {
+        if self.rooms.len() < 4 {
+            return;
+        }
+
+        let room_count = self.rooms.len().saturating_sub(2);
+        if room_count == 0 {
+            return;
+        }
+
+        let desired = if room_count >= 4 && rng.next_u64() % 100 < 50 { 2 } else { 1 };
+        let start = (rng.next_u64() as usize) % room_count;
+        let mut placed = 0;
+        for offset in 0..room_count {
+            let room_idx = 1 + (start + offset) % room_count;
+            let room = self.rooms[room_idx].clone();
+            if !self.room_is_plain(&room) {
+                continue;
+            }
+            if self.place_puzzle_room_in_room(&room, rng) {
+                placed += 1;
+                if placed >= desired {
+                    break;
+                }
+            }
+        }
+    }
+
     /// Place stairs down in the last room.
     pub fn place_stairs(&mut self) {
         if let Some(room) = self.rooms.last() {
@@ -1095,6 +1284,7 @@ impl DungeonLevel {
         level.place_hazards(&mut rng);
         level.place_crates(&mut rng);
         level.place_secret_room(&mut rng);
+        level.place_puzzle_rooms(&mut rng);
         level
     }
 
@@ -1290,6 +1480,34 @@ mod tests {
         level
     }
 
+    fn make_spacious_test_level() -> DungeonLevel {
+        let width = 40;
+        let height = 28;
+        let mut level = DungeonLevel {
+            width,
+            height,
+            tiles: vec![Tile::Wall; (width * height) as usize],
+            rooms: vec![
+                Room { x: 1, y: 1, w: 8, h: 8, modifier: None },
+                Room { x: 11, y: 1, w: 8, h: 8, modifier: None },
+                Room { x: 21, y: 1, w: 8, h: 8, modifier: None },
+                Room { x: 1, y: 12, w: 8, h: 8, modifier: None },
+                Room { x: 11, y: 12, w: 8, h: 8, modifier: None },
+            ],
+            visible: vec![false; (width * height) as usize],
+            revealed: vec![false; (width * height) as usize],
+        };
+        for room in level.rooms.clone() {
+            for y in room.y..room.y + room.h {
+                for x in room.x..room.x + room.w {
+                    let idx = level.idx(x, y);
+                    level.tiles[idx] = Tile::Floor;
+                }
+            }
+        }
+        level
+    }
+
     fn has_pushable_bridge_setup(level: &DungeonLevel) -> bool {
         let dirs = [(1, 0), (-1, 0), (0, 1), (0, -1)];
         for y in 0..level.height {
@@ -1320,6 +1538,86 @@ mod tests {
         false
     }
 
+    fn has_brittle_vault(level: &DungeonLevel) -> bool {
+        let dirs = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+        for y in 0..level.height {
+            for x in 0..level.width {
+                if level.tile(x, y) != Tile::BrittleWall {
+                    continue;
+                }
+
+                for (dx, dy) in dirs {
+                    let chest_x = x + dx;
+                    let chest_y = y + dy;
+                    let back_x = chest_x + dx;
+                    let back_y = chest_y + dy;
+                    let side_a = (-dy, dx);
+                    let side_b = (dy, -dx);
+                    if !level.in_bounds(chest_x, chest_y) || !level.in_bounds(back_x, back_y) {
+                        continue;
+                    }
+
+                    if level.tile(chest_x, chest_y) == Tile::Chest
+                        && level.tile(back_x, back_y) == Tile::Wall
+                        && level.tile(x + side_a.0, y + side_a.1) == Tile::Wall
+                        && level.tile(chest_x + side_a.0, chest_y + side_a.1) == Tile::Wall
+                        && level.tile(x + side_b.0, y + side_b.1) == Tile::Wall
+                        && level.tile(chest_x + side_b.0, chest_y + side_b.1) == Tile::Wall
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    fn has_deep_water_cache(level: &DungeonLevel) -> bool {
+        let dirs = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+        for y in 0..level.height {
+            for x in 0..level.width {
+                if level.tile(x, y) != Tile::DeepWater {
+                    continue;
+                }
+
+                for (dx, dy) in dirs {
+                    let crate_x = x - dx;
+                    let crate_y = y - dy;
+                    let stand_x = crate_x - dx;
+                    let stand_y = crate_y - dy;
+                    let chest_x = x + dx;
+                    let chest_y = y + dy;
+                    let back_x = chest_x + dx;
+                    let back_y = chest_y + dy;
+                    let side_a = (-dy, dx);
+                    let side_b = (dy, -dx);
+                    if !level.in_bounds(crate_x, crate_y)
+                        || !level.in_bounds(stand_x, stand_y)
+                        || !level.in_bounds(chest_x, chest_y)
+                        || !level.in_bounds(back_x, back_y)
+                    {
+                        continue;
+                    }
+
+                    if level.tile(crate_x, crate_y) == Tile::Crate
+                        && level.tile(stand_x, stand_y) == Tile::Floor
+                        && level.tile(chest_x, chest_y) == Tile::Chest
+                        && level.tile(back_x, back_y) == Tile::Wall
+                        && level.tile(x + side_a.0, y + side_a.1) == Tile::Wall
+                        && level.tile(chest_x + side_a.0, chest_y + side_a.1) == Tile::Wall
+                        && level.tile(x + side_b.0, y + side_b.1) == Tile::Wall
+                        && level.tile(chest_x + side_b.0, chest_y + side_b.1) == Tile::Wall
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
     #[test]
     fn hazards_and_altars_are_walkable_but_crates_block() {
         assert!(Tile::Spikes.is_walkable());
@@ -1329,6 +1627,8 @@ mod tests {
         assert!(Tile::Seal(SealKind::Ember).is_walkable());
         assert!(!Tile::Crate.is_walkable());
         assert!(!Tile::CrackedWall.is_walkable());
+        assert!(!Tile::BrittleWall.is_walkable());
+        assert!(!Tile::DeepWater.is_walkable());
     }
 
     #[test]
@@ -1406,6 +1706,44 @@ mod tests {
             bridge_count >= 10,
             "expected bridge setups across the sample set, found {bridge_count}"
         );
+    }
+
+    #[test]
+    fn place_puzzle_rooms_adds_visible_environmental_niches() {
+        let mut level = make_spacious_test_level();
+        let mut rng = Rng::new(19);
+
+        level.place_puzzle_rooms(&mut rng);
+
+        assert!(has_brittle_vault(&level) || has_deep_water_cache(&level));
+    }
+
+    #[test]
+    fn generated_levels_regularly_offer_puzzle_rooms() {
+        let mut puzzle_count = 0;
+        let mut brittle_count = 0;
+        let mut deep_water_count = 0;
+        for seed in 1..=24 {
+            let level = DungeonLevel::generate(48, 48, seed);
+            let has_brittle = has_brittle_vault(&level);
+            let has_deep = has_deep_water_cache(&level);
+            if has_brittle || has_deep {
+                puzzle_count += 1;
+            }
+            if has_brittle {
+                brittle_count += 1;
+            }
+            if has_deep {
+                deep_water_count += 1;
+            }
+        }
+
+        assert!(
+            puzzle_count >= 16,
+            "expected puzzle rooms on most sample floors, found {puzzle_count}"
+        );
+        assert!(brittle_count > 0, "expected at least one brittle-wall vault in the sample set");
+        assert!(deep_water_count > 0, "expected at least one deep-water cache in the sample set");
     }
 
     #[test]

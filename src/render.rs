@@ -1558,7 +1558,7 @@ impl Renderer {
         anim_t: f64,
     ) {
         let pattern = tile_pattern_seed(tx, ty);
-        let (highlight, shadow) = if matches!(tile, Tile::Wall | Tile::CrackedWall) {
+        let (highlight, shadow) = if matches!(tile, Tile::Wall | Tile::CrackedWall | Tile::BrittleWall) {
             ("rgba(255,255,255,0.08)", "rgba(0,0,0,0.32)")
         } else {
             ("rgba(255,255,255,0.06)", "rgba(0,0,0,0.24)")
@@ -1589,7 +1589,7 @@ impl Renderer {
                         .fill_rect(screen_x + 4.0, screen_y + TILE_SIZE / 2.0 - 0.5, TILE_SIZE - 8.0, 1.0);
                 }
             }
-            Tile::Wall | Tile::CrackedWall => {
+            Tile::Wall | Tile::CrackedWall | Tile::BrittleWall => {
                 self.ctx.set_fill_style_str("rgba(0,0,0,0.14)");
                 self.ctx
                     .fill_rect(screen_x + 3.0, screen_y + 3.0, TILE_SIZE - 6.0, TILE_SIZE - 6.0);
@@ -1617,15 +1617,38 @@ impl Renderer {
                     self.ctx.move_to(screen_x + 14.0, screen_y + 14.0);
                     self.ctx.line_to(screen_x + 18.0, screen_y + 17.0);
                     self.ctx.stroke();
+                } else if tile == Tile::BrittleWall {
+                    self.ctx.set_stroke_style_str("rgba(255,221,170,0.58)");
+                    self.ctx.set_line_width(1.0);
+                    self.ctx.begin_path();
+                    self.ctx.move_to(screen_x + 7.0, screen_y + 6.0);
+                    self.ctx.line_to(screen_x + 12.0, screen_y + 11.0);
+                    self.ctx.line_to(screen_x + 9.0, screen_y + 17.0);
+                    self.ctx.line_to(screen_x + 15.0, screen_y + 21.0);
+                    self.ctx.stroke();
+
+                    self.ctx.begin_path();
+                    self.ctx.move_to(screen_x + 12.0, screen_y + 11.0);
+                    self.ctx.line_to(screen_x + 18.0, screen_y + 9.0);
+                    self.ctx.stroke();
                 }
             }
-            Tile::Water => {
+            Tile::Water | Tile::DeepWater => {
                 let wave_shift = (anim_t * 3.2 + tx as f64 * 0.7 + ty as f64 * 0.4).sin() * 2.0;
-                self.ctx.set_fill_style_str("rgba(210,230,255,0.11)");
+                self.ctx.set_fill_style_str(if tile == Tile::DeepWater {
+                    "rgba(160,200,255,0.14)"
+                } else {
+                    "rgba(210,230,255,0.11)"
+                });
                 self.ctx
                     .fill_rect(screen_x + 3.0 + wave_shift, screen_y + 7.0, TILE_SIZE - 8.0, 1.5);
                 self.ctx
                     .fill_rect(screen_x + 5.0 - wave_shift, screen_y + 14.0, TILE_SIZE - 10.0, 1.5);
+                if tile == Tile::DeepWater {
+                    self.ctx.set_fill_style_str("rgba(26,48,89,0.28)");
+                    self.ctx
+                        .fill_rect(screen_x + 4.0, screen_y + 18.0, TILE_SIZE - 8.0, 3.0);
+                }
             }
             Tile::Oil => {
                 self.ctx.set_fill_style_str("rgba(255,224,154,0.10)");
@@ -2630,6 +2653,12 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
                 glyph: None,
                 glyph_color: "#ffffff",
             },
+            Tile::BrittleWall => TilePalette {
+                fill: "#5b473a",
+                accent: Some("#f2d29e"),
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
             Tile::Floor => TilePalette {
                 fill: COL_FLOOR,
                 accent: None,
@@ -2687,6 +2716,12 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
             Tile::Water => TilePalette {
                 fill: "#4466cc",
                 accent: Some("#9fc4ff"),
+                glyph: Some("≈"),
+                glyph_color: "#e5efff",
+            },
+            Tile::DeepWater => TilePalette {
+                fill: "#16386d",
+                accent: Some("#7fb4ff"),
                 glyph: Some("≈"),
                 glyph_color: "#e5efff",
             },
@@ -2759,6 +2794,12 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
                 glyph: None,
                 glyph_color: "#ffffff",
             },
+            Tile::BrittleWall => TilePalette {
+                fill: "#342c26",
+                accent: Some("#7d6a57"),
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
             Tile::Floor => TilePalette {
                 fill: COL_FLOOR_REVEALED,
                 accent: None,
@@ -2815,6 +2856,12 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
             },
             Tile::Water => TilePalette {
                 fill: "#213f6b",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::DeepWater => TilePalette {
+                fill: "#132846",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
@@ -2934,7 +2981,7 @@ fn seal_plate_fill(kind: SealKind) -> &'static str {
 fn tile_glyph_font(tile: Tile) -> &'static str {
     match tile {
         Tile::Seal(_) => "bold 14px 'Noto Serif SC', 'SimSun', serif",
-        Tile::Crate | Tile::Spikes | Tile::Oil | Tile::Water => "15px monospace",
+        Tile::Crate | Tile::Spikes | Tile::Oil | Tile::Water | Tile::DeepWater => "15px monospace",
         _ => "16px monospace",
     }
 }
@@ -2942,7 +2989,9 @@ fn tile_glyph_font(tile: Tile) -> &'static str {
 fn tile_glyph_y(tile: Tile, screen_y: f64, anim_t: f64, tx: i32, ty: i32) -> f64 {
     let base = screen_y + TILE_SIZE * 0.75;
     match tile {
-        Tile::Water => base + (anim_t * 3.5 + tx as f64 * 0.6 + ty as f64 * 0.35).sin() * 1.4,
+        Tile::Water | Tile::DeepWater => {
+            base + (anim_t * 3.5 + tx as f64 * 0.6 + ty as f64 * 0.35).sin() * 1.4
+        }
         Tile::Oil => base + (anim_t * 2.0 + tx as f64 * 0.4).sin() * 0.6,
         Tile::Shrine => base + (anim_t * 2.5).sin() * 0.9,
         Tile::Altar(_) => base + (anim_t * 2.8 + ty as f64 * 0.4).sin() * 0.8,
