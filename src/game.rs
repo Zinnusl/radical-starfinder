@@ -32,13 +32,9 @@ const LOOK_RANGE: i32 = 3;
 /// Companion NPC that follows the player.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Companion {
-    /// Shows meaning hints in combat
     Teacher,
-    /// Heals 1 HP per floor
     Monk,
-    /// 10% shop discount
     Merchant,
-    /// Blocks 1 damage per fight
     Guard,
 }
 
@@ -60,12 +56,89 @@ impl Companion {
         }
     }
 
+    pub fn xp_for_level(level: u8) -> u32 {
+        match level {
+            0 | 1 => 0,
+            2 => 30,
+            _ => 80,
+        }
+    }
+
+    pub fn level_from_xp(xp: u32) -> u8 {
+        if xp >= 80 {
+            3
+        } else if xp >= 30 {
+            2
+        } else {
+            1
+        }
+    }
+
+    pub fn max_level() -> u8 {
+        3
+    }
+
+    pub fn shop_discount_pct(&self, level: u8) -> i32 {
+        match self {
+            Companion::Merchant => {
+                if level >= 2 {
+                    25
+                } else {
+                    20
+                }
+            }
+            _ => 0,
+        }
+    }
+
+    pub fn heal_per_floor(&self, level: u8) -> i32 {
+        match self {
+            Companion::Monk => {
+                if level >= 2 {
+                    2
+                } else {
+                    1
+                }
+            }
+            _ => 0,
+        }
+    }
+
+    pub fn guard_max_blocks(&self, level: u8) -> u8 {
+        match self {
+            Companion::Guard => {
+                if level >= 3 {
+                    2
+                } else {
+                    1
+                }
+            }
+            _ => 0,
+        }
+    }
+
+    pub fn guard_second_block_chance(&self, level: u8) -> u64 {
+        match self {
+            Companion::Guard => {
+                if level >= 3 {
+                    100
+                } else if level >= 2 {
+                    50
+                } else {
+                    0
+                }
+            }
+            _ => 0,
+        }
+    }
+
     pub fn contextual_hint(
         &self,
         enemy: &crate::enemy::Enemy,
         player_hp: i32,
         player_max_hp: i32,
         guard_used: bool,
+        level: u8,
     ) -> Option<String> {
         match self {
             Companion::Teacher => {
@@ -74,11 +147,26 @@ impl Companion {
                     .split_whitespace()
                     .next()
                     .unwrap_or(enemy.meaning);
-                Some(format!("📚 Hint: {} means \"{}\"", enemy.hanzi, first_char))
+                let mut hint = format!("📚 Hint: {} means \"{}\"", enemy.hanzi, first_char);
+                if level >= 2 {
+                    hint.push_str(&format!(" ({})", enemy.pinyin));
+                }
+                if level >= 3 {
+                    let radicals: Vec<String> =
+                        enemy.hanzi.chars().map(|c| c.to_string()).collect();
+                    if radicals.len() > 1 {
+                        hint.push_str(&format!(" [{}]", radicals.join("+")));
+                    }
+                }
+                Some(hint)
             }
             Companion::Monk => {
                 if player_hp <= player_max_hp / 3 {
-                    Some("🧘 Stay focused. I'll mend your wounds next floor.".to_string())
+                    let heal = self.heal_per_floor(level);
+                    Some(format!(
+                        "🧘 Stay focused. I'll mend {} HP next floor.",
+                        heal
+                    ))
                 } else {
                     None
                 }
@@ -92,7 +180,12 @@ impl Companion {
             }
             Companion::Guard => {
                 if !guard_used {
-                    Some("🛡 I'll block the first hit for you.".to_string())
+                    let blocks = self.guard_max_blocks(level);
+                    if blocks > 1 {
+                        Some(format!("🛡 I'll block up to {} hits for you.", blocks))
+                    } else {
+                        Some("🛡 I'll block the first hit for you.".to_string())
+                    }
                 } else {
                     None
                 }
@@ -914,6 +1007,9 @@ pub struct GameState {
     pub companion: Option<Companion>,
     /// Guard companion: used block this fight?
     pub guard_used_this_fight: bool,
+    pub guard_blocks_used: u8,
+    pub companion_xp: u32,
+    pub merchant_reroll_used: bool,
     /// Active quests
     pub quests: Vec<Quest>,
     /// Daily challenge mode (fixed seed)
@@ -1098,12 +1194,171 @@ impl GameState {
         player
     }
 
+    fn companion_level(&self) -> u8 {
+        if self.companion.is_some() {
+            Companion::level_from_xp(self.companion_xp)
+        } else {
+            0
+        }
+    }
+
+    fn add_companion_xp(&mut self, amount: u32) {
+        if self.companion.is_some() {
+            let old_level = self.companion_level();
+            self.companion_xp = self.companion_xp.saturating_add(amount);
+            let new_level = self.companion_level();
+            if new_level > old_level {
+                if let Some(ref comp) = self.companion {
+                    self.message = format!(
+                        "{} {} reached level {}!",
+                        comp.icon(),
+                        comp.name(),
+                        new_level
+                    );
+                    self.message_timer = 90;
+                }
+            }
+        }
+    }
+
     fn effective_shop_discount_pct(&self) -> i32 {
         let mut discount = self.player.shop_discount_pct;
-        if self.companion == Some(Companion::Merchant) {
-            discount += 20;
+        if let Some(ref comp) = self.companion {
+            discount += comp.shop_discount_pct(self.companion_level());
         }
         discount.clamp(0, 50)
+    }
+
+    fn companion_exploration_hint(&mut self) {
+        let comp = match self.companion {
+            Some(c) => c,
+            None => return,
+        };
+        if self.message_timer > 20 {
+            return;
+        }
+        if !matches!(self.combat, CombatState::Explore) {
+            return;
+        }
+
+        let w = self.level.width;
+        let h = self.level.height;
+        let level = self.companion_level();
+
+        let hint: Option<String> = match comp {
+            Companion::Teacher => {
+                let mut forge_visible = false;
+                for y in 0..h {
+                    for x in 0..w {
+                        let idx = y * w + x;
+                        if self.level.visible[idx as usize]
+                            && self.level.tiles[idx as usize] == Tile::Forge
+                        {
+                            forge_visible = true;
+                            break;
+                        }
+                    }
+                    if forge_visible {
+                        break;
+                    }
+                }
+                if forge_visible && !self.player.radicals.is_empty() {
+                    Some("📚 I see a forge! You have radicals to combine.".to_string())
+                } else {
+                    None
+                }
+            }
+            Companion::Monk => {
+                if self.player.hp <= self.player.max_hp / 3 {
+                    let mut shrine_visible = false;
+                    for y in 0..h {
+                        for x in 0..w {
+                            let idx = y * w + x;
+                            if self.level.visible[idx as usize] {
+                                let t = self.level.tiles[idx as usize];
+                                if t == Tile::Shrine
+                                    || matches!(t, Tile::Altar(_))
+                                    || t == Tile::AncestorShrine
+                                {
+                                    shrine_visible = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if shrine_visible {
+                            break;
+                        }
+                    }
+                    if shrine_visible {
+                        let heal = Companion::Monk.heal_per_floor(level);
+                        Some(format!(
+                            "🧘 A shrine nearby — rest may help. I'll mend {} HP next floor.",
+                            heal
+                        ))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            Companion::Merchant => {
+                if self.floor_profile.radical_drop_bonus() {
+                    let mut chest_visible = false;
+                    for y in 0..h {
+                        for x in 0..w {
+                            let idx = y * w + x;
+                            if self.level.visible[idx as usize]
+                                && self.level.tiles[idx as usize] == Tile::Chest
+                            {
+                                chest_visible = true;
+                                break;
+                            }
+                        }
+                        if chest_visible {
+                            break;
+                        }
+                    }
+                    if chest_visible {
+                        Some("💰 Chest spotted on a rich floor — extra loot likely!".to_string())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            Companion::Guard => {
+                let px = self.player.x;
+                let py = self.player.y;
+                let alert_count = self
+                    .enemies
+                    .iter()
+                    .filter(|e| {
+                        e.is_alive()
+                            && e.alert
+                            && (e.x - px).abs() <= FOV_RADIUS
+                            && (e.y - py).abs() <= FOV_RADIUS
+                    })
+                    .count();
+                if alert_count >= 3 {
+                    let blocks = Companion::Guard.guard_max_blocks(level);
+                    Some(format!(
+                        "🛡 {} enemies closing in! I can block {} hit{}.",
+                        alert_count,
+                        blocks,
+                        if blocks > 1 { "s" } else { "" }
+                    ))
+                } else {
+                    None
+                }
+            }
+        };
+
+        if let Some(text) = hint {
+            self.message = text;
+            self.message_timer = 70;
+        }
     }
 
     fn discounted_cost(&self, base_cost: i32) -> i32 {
@@ -1777,6 +2032,7 @@ impl GameState {
         self.floor_num += 1;
         self.srs.current_floor = self.floor_num;
         self.tutorial = None;
+        self.merchant_reroll_used = false;
         if self.floor_num > self.best_floor {
             self.best_floor = self.floor_num;
         }
@@ -1794,13 +2050,21 @@ impl GameState {
         compute_fov(&mut self.level, px, py, FOV_RADIUS);
         self.achievements.check_floor(self.floor_num);
 
-        // Monk companion: heal 1 HP per floor
         if self.companion == Some(Companion::Monk) {
+            let lvl = self.companion_level();
+            let heal = Companion::Monk.heal_per_floor(lvl);
             let max_hp = self.player.max_hp;
-            if self.player.hp < max_hp {
-                self.player.hp = (self.player.hp + 1).min(max_hp);
-                self.message = "🧘 Monk heals you for 1 HP.".to_string();
+            if self.player.hp < max_hp && heal > 0 {
+                self.player.hp = (self.player.hp + heal).min(max_hp);
+                self.message = format!("🧘 Monk heals you for {} HP.", heal);
                 self.message_timer = 60;
+                if lvl >= 3 {
+                    if let Some(idx) = self.player.statuses.iter().position(|s| s.is_negative()) {
+                        let removed = self.player.statuses.remove(idx);
+                        self.message
+                            .push_str(&format!(" Cured {}.", removed.label()));
+                    }
+                }
             }
         }
 
@@ -2157,6 +2421,7 @@ impl GameState {
             };
             self.typing.clear();
             self.guard_used_this_fight = false;
+            self.guard_blocks_used = 0;
             if self.listening_mode.is_active() && !self.enemies[idx].is_elite {
                 let pinyin = self.enemies[idx].pinyin;
                 let tone_num = pinyin
@@ -2174,11 +2439,13 @@ impl GameState {
                     combat_prompt_for(&self.enemies[idx], self.listening_mode, self.mirror_hint);
             }
             if let Some(ref comp) = self.companion {
+                let lvl = self.companion_level();
                 if let Some(hint) = comp.contextual_hint(
                     &self.enemies[idx],
                     self.player.hp,
                     self.player.max_hp,
                     self.guard_used_this_fight,
+                    lvl,
                 ) {
                     self.message.push_str(&format!("\n{}", hint));
                 }
@@ -2287,6 +2554,8 @@ impl GameState {
                 }
             } else {
                 self.companion = Some(comp);
+                self.companion_xp = 0;
+                self.merchant_reroll_used = false;
                 self.message = format!("{} {} joins your party!", comp.icon(), comp.name());
             }
             self.message_timer = 100;
@@ -2421,6 +2690,7 @@ impl GameState {
         let (px, py) = (self.player.x, self.player.y);
         let fov = self.effective_fov();
         compute_fov(&mut self.level, px, py, fov);
+        self.companion_exploration_hint();
     }
 
     /// All enemies take one step toward the player if alerted.
@@ -2558,11 +2828,13 @@ impl GameState {
                         combat_prompt_for(&self.enemies[i], self.listening_mode, self.mirror_hint)
                     );
                     if let Some(ref comp) = self.companion {
+                        let lvl = self.companion_level();
                         if let Some(hint) = comp.contextual_hint(
                             &self.enemies[i],
                             self.player.hp,
                             self.player.max_hp,
                             self.guard_used_this_fight,
+                            lvl,
                         ) {
                             self.message.push_str(&format!("\n{}", hint));
                         }
@@ -2959,6 +3231,15 @@ impl GameState {
                     }
                     self.combat = CombatState::Explore;
 
+                    let kill_xp = if e_is_boss {
+                        5
+                    } else if e_is_elite {
+                        3
+                    } else {
+                        2
+                    };
+                    self.add_companion_xp(kill_xp);
+
                     // Achievement checks
                     self.achievements.record_correct();
                     self.achievements.check_kills(self.total_kills);
@@ -3067,7 +3348,17 @@ impl GameState {
                     };
                     self.message_timer = if e_is_elite { 70 } else { 60 };
                 } else if self.companion == Some(Companion::Guard) && !self.guard_used_this_fight {
-                    self.guard_used_this_fight = true;
+                    let lvl = self.companion_level();
+                    let max_blocks = Companion::Guard.guard_max_blocks(lvl);
+                    self.guard_blocks_used += 1;
+                    if self.guard_blocks_used >= max_blocks {
+                        self.guard_used_this_fight = true;
+                    } else {
+                        let second_chance = Companion::Guard.guard_second_block_chance(lvl);
+                        if (self.rng_next() % 100) >= second_chance {
+                            self.guard_used_this_fight = true;
+                        }
+                    }
                     self.message = if e_is_elite {
                         format!(
                             "✗ Wrong chain! Needed \"{}\" — 🛡 Guard blocks the attack!",
@@ -3335,9 +3626,11 @@ impl GameState {
     /// Collect rewards from completed quests.
     fn collect_quest_rewards(&mut self) {
         let mut chain_follow_ups: Vec<(u8, u32)> = Vec::new();
+        let mut quest_xp: u32 = 0;
         for q in &mut self.quests {
             if q.completed && q.gold_reward > 0 {
                 self.player.gold += q.gold_reward;
+                quest_xp += 10;
                 if q.is_chain() && q.chain_step < 4 {
                     self.message = format!(
                         "⛓ Chain quest step complete: {}! +{}g — Next step incoming!",
@@ -3357,6 +3650,9 @@ impl GameState {
                 self.message_timer = 100;
                 q.gold_reward = 0;
             }
+        }
+        if quest_xp > 0 {
+            self.add_companion_xp(quest_xp);
         }
         for (step, cid) in chain_follow_ups {
             self.quests.retain(|q| !(q.chain_id == cid && q.completed));
@@ -4112,6 +4408,73 @@ impl GameState {
             }
             self.message_timer = 60;
         }
+    }
+
+    /// Merchant L3 perk: reroll one shop item per floor.
+    fn shop_reroll(&mut self) {
+        if self.merchant_reroll_used {
+            self.message = "Already rerolled this floor!".to_string();
+            self.message_timer = 40;
+            return;
+        }
+        let has_merchant_l3 =
+            self.companion == Some(Companion::Merchant) && self.companion_level() >= 3;
+        if !has_merchant_l3 {
+            return;
+        }
+        // Phase 1: Extract cursor and old item kind (immutable borrow, then drop)
+        let (cursor, old_kind) = if let CombatState::Shopping { ref items, cursor } = self.combat {
+            if cursor < items.len() {
+                (cursor, items[cursor].kind.clone())
+            } else {
+                return;
+            }
+        } else {
+            return;
+        };
+        // Phase 2: Generate new item (free to use &mut self)
+        let new_item = match old_kind {
+            ShopItemKind::HealFull => ShopItem {
+                label: "Full Heal".to_string(),
+                cost: 20 + self.floor_num * 4,
+                kind: ShopItemKind::HealFull,
+            },
+            ShopItemKind::Radical(_) => {
+                let available = radical::radicals_for_floor(self.floor_num);
+                let idx = self.rng_next() as usize % available.len();
+                let rad = available[idx];
+                ShopItem {
+                    label: format!("Radical [{}] ({})", rad.ch, rad.meaning),
+                    cost: 12 + self.floor_num * 2,
+                    kind: ShopItemKind::Radical(rad.ch),
+                }
+            }
+            ShopItemKind::Equipment(_) => {
+                let eq_idx = self.rng_next() as usize % EQUIPMENT_POOL.len();
+                let eq = &EQUIPMENT_POOL[eq_idx];
+                ShopItem {
+                    label: format!("{} ({:?})", eq.name, eq.slot),
+                    cost: 30 + self.floor_num * 6,
+                    kind: ShopItemKind::Equipment(eq_idx),
+                }
+            }
+            ShopItemKind::Consumable(_) => {
+                let consumable = self.random_item();
+                let cname = self.item_display_name(&consumable);
+                ShopItem {
+                    label: cname,
+                    cost: 15 + self.floor_num * 3,
+                    kind: ShopItemKind::Consumable(consumable),
+                }
+            }
+        };
+        // Phase 3: Replace item in shop
+        if let CombatState::Shopping { ref mut items, .. } = self.combat {
+            items[cursor] = new_item;
+        }
+        self.merchant_reroll_used = true;
+        self.message = "💰 Merchant rerolled the item!".to_string();
+        self.message_timer = 60;
     }
 
     /// Use a spell during combat (Q to cycle, Space to cast).
@@ -5485,6 +5848,7 @@ impl GameState {
             room_mod,
             self.listening_mode,
             self.companion,
+            self.companion_level(),
             &self.quests,
             tutorial_hint,
             show_help,
@@ -5511,6 +5875,7 @@ impl GameState {
                 self.best_floor,
                 self.total_kills,
                 self.companion,
+                self.companion_level(),
                 &item_labels,
                 self.inventory_cursor,
                 self.inventory_inspect,
@@ -5788,7 +6153,7 @@ mod tests {
     use super::{
         advance_message_decay, can_be_reshaped_by_seal, combat_prompt_for, detect_combo,
         elite_chain_damage, elite_remaining_hp, enemy_look_text, in_look_range,
-        seal_cross_positions, spell_category, tile_look_text, tutorial_exit_blocker_for,
+        seal_cross_positions, spell_category, tile_look_text, tutorial_exit_blocker_for, Companion,
         FloorProfile, GameState, ListenMode, TalentTree, TextSpeed, TutorialState,
     };
     use crate::dungeon::Tile;
@@ -6074,6 +6439,118 @@ mod tests {
         assert_eq!(FloorProfile::RadicalRich.radical_drop_chance(), 100);
         assert!(FloorProfile::RadicalRich.radical_drop_bonus());
     }
+
+    #[test]
+    fn companion_level_from_xp_thresholds() {
+        assert_eq!(Companion::level_from_xp(0), 1);
+        assert_eq!(Companion::level_from_xp(15), 1);
+        assert_eq!(Companion::level_from_xp(29), 1);
+        assert_eq!(Companion::level_from_xp(30), 2);
+        assert_eq!(Companion::level_from_xp(50), 2);
+        assert_eq!(Companion::level_from_xp(79), 2);
+        assert_eq!(Companion::level_from_xp(80), 3);
+        assert_eq!(Companion::level_from_xp(200), 3);
+    }
+
+    #[test]
+    fn companion_xp_for_level_matches_thresholds() {
+        assert_eq!(Companion::xp_for_level(1), 0);
+        assert_eq!(Companion::xp_for_level(2), 30);
+        assert_eq!(Companion::xp_for_level(3), 80);
+    }
+
+    #[test]
+    fn companion_max_level_is_three() {
+        assert_eq!(Companion::max_level(), 3);
+    }
+
+    #[test]
+    fn merchant_discount_scales_with_level() {
+        assert_eq!(Companion::Merchant.shop_discount_pct(1), 20);
+        assert_eq!(Companion::Merchant.shop_discount_pct(2), 25);
+        assert_eq!(Companion::Merchant.shop_discount_pct(3), 25);
+    }
+
+    #[test]
+    fn non_merchant_has_no_discount() {
+        assert_eq!(Companion::Teacher.shop_discount_pct(3), 0);
+        assert_eq!(Companion::Monk.shop_discount_pct(3), 0);
+        assert_eq!(Companion::Guard.shop_discount_pct(3), 0);
+    }
+
+    #[test]
+    fn monk_heal_scales_with_level() {
+        assert_eq!(Companion::Monk.heal_per_floor(1), 1);
+        assert_eq!(Companion::Monk.heal_per_floor(2), 2);
+        assert_eq!(Companion::Monk.heal_per_floor(3), 2);
+    }
+
+    #[test]
+    fn non_monk_has_no_heal() {
+        assert_eq!(Companion::Teacher.heal_per_floor(3), 0);
+        assert_eq!(Companion::Guard.heal_per_floor(3), 0);
+    }
+
+    #[test]
+    fn guard_blocks_scale_with_level() {
+        assert_eq!(Companion::Guard.guard_max_blocks(1), 1);
+        assert_eq!(Companion::Guard.guard_max_blocks(2), 1);
+        assert_eq!(Companion::Guard.guard_max_blocks(3), 2);
+    }
+
+    #[test]
+    fn guard_second_block_chance_scales_with_level() {
+        assert_eq!(Companion::Guard.guard_second_block_chance(1), 0);
+        assert_eq!(Companion::Guard.guard_second_block_chance(2), 50);
+        assert_eq!(Companion::Guard.guard_second_block_chance(3), 100);
+    }
+
+    #[test]
+    fn non_guard_has_no_blocks() {
+        assert_eq!(Companion::Teacher.guard_max_blocks(3), 0);
+        assert_eq!(Companion::Monk.guard_max_blocks(3), 0);
+    }
+
+    #[test]
+    fn teacher_hint_reveals_more_at_higher_levels() {
+        let entry = friend_entry();
+        let enemy = Enemy::from_vocab(entry, 5, 5, 1);
+        let l1 = Companion::Teacher
+            .contextual_hint(&enemy, 10, 10, false, 1)
+            .unwrap();
+        let l2 = Companion::Teacher
+            .contextual_hint(&enemy, 10, 10, false, 2)
+            .unwrap();
+        let l3 = Companion::Teacher
+            .contextual_hint(&enemy, 10, 10, false, 3)
+            .unwrap();
+        assert!(!l1.contains(&enemy.pinyin));
+        assert!(l2.contains(&enemy.pinyin));
+        assert!(l3.len() >= l2.len());
+    }
+
+    #[test]
+    fn guard_hint_shows_block_count_at_higher_levels() {
+        let entry = friend_entry();
+        let enemy = Enemy::from_vocab(entry, 5, 5, 1);
+        let l1 = Companion::Guard
+            .contextual_hint(&enemy, 10, 10, false, 1)
+            .unwrap();
+        assert!(l1.contains("first hit"));
+        let l3 = Companion::Guard
+            .contextual_hint(&enemy, 10, 10, false, 3)
+            .unwrap();
+        assert!(l3.contains("2 hits"));
+    }
+
+    #[test]
+    fn guard_hint_none_when_already_used() {
+        let entry = friend_entry();
+        let enemy = Enemy::from_vocab(entry, 5, 5, 1);
+        assert!(Companion::Guard
+            .contextual_hint(&enemy, 10, 10, true, 1)
+            .is_none());
+    }
 }
 
 pub fn init_game() -> Result<(), JsValue> {
@@ -6160,6 +6637,9 @@ pub fn init_game() -> Result<(), JsValue> {
         listening_mode: ListenMode::Off,
         companion: None,
         guard_used_this_fight: false,
+        guard_blocks_used: 0,
+        companion_xp: 0,
+        merchant_reroll_used: false,
         quests: Vec::new(),
         daily_mode: false,
         endless_mode: false,
@@ -8231,6 +8711,10 @@ pub fn init_game() -> Result<(), JsValue> {
                     }
                     "Enter" => {
                         s.shop_buy();
+                        s.render();
+                    }
+                    "r" | "R" => {
+                        s.shop_reroll();
                         s.render();
                     }
                     _ => {}

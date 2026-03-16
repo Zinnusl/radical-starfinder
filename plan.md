@@ -1,8 +1,8 @@
 # Radical Roguelike Roadmap
 
 ## Current Status
-The single-player game is up to date through Phase 30 resource pressure tuning and enemy AI improvements.
-Implemented systems now include dungeon crawling, pinyin combat, radical forging, equipment and items, codex and achievements, daily/endless modes, tutorial/settings polish, environmental hazards, boss variety, talents, mystery item identities, inventory/help overlays, script seals, a deity/piety system, polymorph forms, dipping interactions, enemy component shields, crate pushing, bridge building, wall digging, cracked-wall secret rooms with tuned physics feedback, longer-lived message popups, a 3-tile look/inspect mode, visible puzzle niches with brittle-wall vaults and deep-water bridge caches, tighter resource economy with floor-profile-driven scarcity, and six distinct enemy AI behaviors.
+The single-player game is up to date through Phase 31 companion depth.
+Implemented systems now include dungeon crawling, pinyin combat, radical forging, equipment and items, codex and achievements, daily/endless modes, tutorial/settings polish, environmental hazards, boss variety, talents, mystery item identities, inventory/help overlays, script seals, a deity/piety system, polymorph forms, dipping interactions, enemy component shields, crate pushing, bridge building, wall digging, cracked-wall secret rooms with tuned physics feedback, longer-lived message popups, a 3-tile look/inspect mode, visible puzzle niches with brittle-wall vaults and deep-water bridge caches, tighter resource economy with floor-profile-driven scarcity, six distinct enemy AI behaviors, and a companion XP/leveling system with scaled passives and exploration hints.
 
 Multiplayer co-op remains deferred future work and is not part of the current single-player roadmap.
 
@@ -75,14 +75,36 @@ Multiplayer co-op remains deferred future work and is not part of the current si
 - Nearby-ally computation added to the enemy movement loop for pack coordination.
 - Comprehensive tests for all six AI behaviors and all five floor profiles.
 
+### Phase 31: Companion Depth
+
+#### Companion XP and Leveling
+- Companions now earn XP from kills (2 normal, 3 elite, 5 boss) and quest completions (10 per quest).
+- Three-tier leveling: L1 at 0 XP, L2 at 30 XP, L3 at 80 XP.
+- Companion XP resets when recruiting a new companion.
+
+#### Level-Scaled Passive Perks
+- Teacher: L1 meaning hint → L2 adds pinyin → L3 adds radical breakdown.
+- Monk: L1 heal 1 HP/floor → L2 heal 2 HP/floor → L3 heal 2 HP + cure one negative status.
+- Merchant: L1 20% shop discount → L2 25% discount → L3 25% discount + one shop item reroll per floor (R key).
+- Guard: L1 block 1 hit/fight → L2 block 1 + 50% chance of a second → L3 block 2 hits/fight guaranteed.
+
+#### Contextual Exploration Hints
+- Companions now comment on visible tiles during exploration (not just combat).
+- Teacher: notices forges when player has radicals.
+- Monk: notices shrines/altars when player HP is low.
+- Merchant: notices chests on radical-rich floors.
+- Guard: warns when 3+ alert enemies are closing in.
+
+#### HUD and Rendering
+- Companion level displayed in the HUD sidebar and inventory overlay.
+- Shop discount now uses the level-aware Merchant perk value instead of a hardcoded 20%.
+- Shop hint bar shows "R=reroll" when Merchant is L3.
+
 ## Proposed Next Improvements
 
 Goal: deepen single-player runs with more systemic, NetHack-like interactions that build on the current quest, companion, deity, hazard, and enemy-complexity systems.
 
-### Candidate Phase 31 Tracks
-- Companion depth and contextual advice
-  - Add companion XP, stronger passive perks, and occasional context-aware hints tied to nearby rooms, loot, or hazards.
-  - This is the lowest-risk way to add more personality and moment-to-moment decision support.
+### Candidate Phase 32 Tracks
 - Environmental puzzle room expansion
   - Build on the shipped first pass with more patterns such as spike bridges, oil-fire caches, or seal-driven trap vaults.
   - With resource pressure and enemy AI now tightened, this is a strong force multiplier for run variety.
@@ -94,9 +116,8 @@ Goal: deepen single-player runs with more systemic, NetHack-like interactions th
   - This would make the current quest framework feel more like an emergent campaign.
 
 ### Recommended Next Slice
-- Best low-risk / high-leverage start: companion depth or puzzle room expansion.
-- Best follow-up once those feel solid: alignment arcs and deity synergies.
-- Best later force multiplier once those systems are stable: quest chains with dungeon impact.
+- Best low-risk / high-leverage start: puzzle room expansion or alignment arcs.
+- Best follow-up once those feel solid: quest chains with dungeon impact.
 
 ### Phase 29 Follow-ups
 - Expand the first pass with a third or fourth puzzle pattern only after frequency and reward tuning still feel good in normal runs.

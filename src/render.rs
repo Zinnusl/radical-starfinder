@@ -95,6 +95,7 @@ impl Renderer {
         room_modifier: Option<crate::dungeon::RoomModifier>,
         listening_mode: ListenMode,
         companion: Option<crate::game::Companion>,
+        companion_level: u8,
         quests: &[crate::game::Quest],
         tutorial_hint: Option<&str>,
         show_help: bool,
@@ -637,13 +638,12 @@ impl Renderer {
         // Companion indicator
         if let Some(comp) = companion {
             self.ctx.set_fill_style_str("#55ccaa");
-            self.ctx
-                .fill_text(
-                    &format!("{} {}", comp.icon(), comp.name()),
-                    self.canvas_w - 12.0,
-                    eq_y,
-                )
-                .ok();
+            let label = if companion_level > 0 {
+                format!("{} {} Lv.{}", comp.icon(), comp.name(), companion_level)
+            } else {
+                format!("{} {}", comp.icon(), comp.name())
+            };
+            self.ctx.fill_text(&label, self.canvas_w - 12.0, eq_y).ok();
             eq_y += 14.0;
         }
         // Deity piety
@@ -1518,13 +1518,10 @@ impl Renderer {
                 }
 
                 let marker = if selected { "►" } else { " " };
-                let total_discount = (player.shop_discount_pct
-                    + if companion == Some(crate::game::Companion::Merchant) {
-                        20
-                    } else {
-                        0
-                    })
-                .clamp(0, 50);
+                let companion_discount = companion
+                    .map(|c| c.shop_discount_pct(companion_level))
+                    .unwrap_or(0);
+                let total_discount = (player.shop_discount_pct + companion_discount).clamp(0, 50);
                 let display_cost = ((item.cost * (100 - total_discount)) + 99) / 100;
                 let can_afford = player.gold >= display_cost;
                 self.ctx
@@ -1552,12 +1549,15 @@ impl Renderer {
             self.ctx.set_fill_style_str("#555");
             self.ctx.set_font("10px monospace");
             self.ctx.set_text_align("center");
+            let has_reroll =
+                companion == Some(crate::game::Companion::Merchant) && companion_level >= 3;
+            let hint_text = if has_reroll {
+                "↑↓=browse  Enter=buy  R=reroll  Esc=leave"
+            } else {
+                "↑↓=browse  Enter=buy  Esc=leave"
+            };
             self.ctx
-                .fill_text(
-                    "↑↓=browse  Enter=buy  Esc=leave",
-                    self.canvas_w / 2.0,
-                    box_y + box_h + 14.0,
-                )
+                .fill_text(hint_text, self.canvas_w / 2.0, box_y + box_h + 14.0)
                 .ok();
         }
 
@@ -4062,6 +4062,7 @@ impl Renderer {
         best_floor: i32,
         total_kills: u32,
         companion: Option<crate::game::Companion>,
+        companion_level: u8,
         item_labels: &[String],
         inventory_cursor: usize,
         inventory_inspect: Option<usize>,
@@ -4102,7 +4103,13 @@ impl Renderer {
             crate::player::PlayerClass::Alchemist => "Alchemist",
         };
         let companion_text = companion
-            .map(|ally| format!("{} {}", ally.icon(), ally.name()))
+            .map(|ally| {
+                if companion_level > 0 {
+                    format!("{} {} Lv.{}", ally.icon(), ally.name(), companion_level)
+                } else {
+                    format!("{} {}", ally.icon(), ally.name())
+                }
+            })
             .unwrap_or_else(|| "No companion".to_string());
 
         self.ctx.set_font("12px monospace");

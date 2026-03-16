@@ -64,6 +64,13 @@ impl StatusInstance {
             StatusKind::Empowered { .. } => "#ff4400",
         }
     }
+
+    pub fn is_negative(&self) -> bool {
+        matches!(
+            self.kind,
+            StatusKind::Poison { .. } | StatusKind::Burn { .. } | StatusKind::Confused
+        )
+    }
 }
 
 /// Tick all statuses on a list, applying effects. Returns (total_damage, total_heal).
