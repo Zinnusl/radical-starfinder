@@ -62,7 +62,7 @@ impl Codex {
         entries
     }
 
-    /// Total unique characters encountered.
+    #[allow(dead_code)]
     pub fn total_unique(&self) -> usize {
         self.entries.len()
     }

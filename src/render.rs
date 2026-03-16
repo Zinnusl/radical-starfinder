@@ -8,9 +8,9 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
 use crate::dungeon::{AltarKind, DungeonLevel, SealKind, Tile};
 use crate::enemy::{BossKind, Enemy};
-use crate::game::{CombatState, GameSettings, ListenMode, ShopItemKind, TalentTree};
+use crate::game::{combo_tier, CombatState, ComboTier, GameSettings, ListenMode, ShopItemKind};
 use crate::particle::ParticleSystem;
-use crate::player::{Deity, Item, ItemKind, Player, PlayerForm};
+use crate::player::{Deity, Item, ItemKind, ItemState, Player, PlayerForm};
 use crate::radical;
 use crate::sprites::SpriteCache;
 
@@ -103,16 +103,12 @@ impl Renderer {
         settings: &GameSettings,
         show_settings: bool,
         settings_cursor: usize,
-        talents: &TalentTree,
-        show_talent_tree: bool,
-        talent_cursor: usize,
-        knowledge_points_available: i32,
-        knowledge_points_total: i32,
-        knowledge_progress: usize,
-        knowledge_step: usize,
         answer_streak: u32,
         floor_profile_label: &str,
         codex: &crate::codex::Codex,
+        run_journal: &crate::game::RunJournal,
+        post_mortem_page: usize,
+        class_cursor: usize,
     ) {
         let anim_t = Date::now() / 1000.0;
         // Screen shake offset
@@ -534,6 +530,34 @@ impl Renderer {
             )
             .ok();
 
+        let spirit_y = bar_y + bar_h + 4.0;
+        let spirit_frac = (player.spirit as f64 / player.max_spirit as f64).clamp(0.0, 1.0);
+        let spirit_color = if player.spirit < 25 {
+            "#ff4444"
+        } else {
+            "#8844ff"
+        };
+
+        self.ctx.set_fill_style_str(COL_HP_BG);
+        self.ctx.fill_rect(bar_x, spirit_y, bar_w, bar_h);
+        self.ctx.set_fill_style_str(spirit_color);
+        self.ctx
+            .fill_rect(bar_x, spirit_y, bar_w * spirit_frac, bar_h);
+        self.ctx.set_stroke_style_str("#666");
+        self.ctx.set_line_width(1.0);
+        self.ctx.stroke_rect(bar_x, spirit_y, bar_w, bar_h);
+
+        self.ctx.set_fill_style_str("#ffffff");
+        self.ctx.set_font("12px monospace");
+        self.ctx.set_text_align("left");
+        self.ctx
+            .fill_text(
+                &format!("🌕 Spirit: {}/{}", player.spirit, player.max_spirit),
+                bar_x + 4.0,
+                spirit_y + 12.0,
+            )
+            .ok();
+
         // Status effect icons (right of HP bar)
         {
             let mut sx = bar_x + bar_w + 8.0;
@@ -941,19 +965,22 @@ impl Renderer {
                 self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
 
                 // Streak badge (top-right corner of combat box)
-                if answer_streak >= 3 {
-                    self.ctx.set_fill_style_str(if answer_streak >= 10 {
-                        "#ff4422"
-                    } else if answer_streak >= 5 {
-                        "#ff8844"
-                    } else {
-                        "#cc8833"
-                    });
+                let tier = combo_tier(answer_streak);
+                if tier != ComboTier::None {
+                    let color = match tier {
+                        ComboTier::None => "#ffffff",
+                        ComboTier::Good => "#aaddff",
+                        ComboTier::Great => "#44dd88",
+                        ComboTier::Excellent => "#ffdd44",
+                        ComboTier::Perfect => "#ff8844",
+                        ComboTier::Radical => "#ff4422",
+                    };
+                    self.ctx.set_fill_style_str(color);
                     self.ctx.set_font("bold 11px monospace");
                     self.ctx.set_text_align("right");
                     self.ctx
                         .fill_text(
-                            &format!("🔥×{}", answer_streak),
+                            &format!("🔥 {}! ×{}", tier.name(), answer_streak),
                             box_x + box_w - 8.0,
                             box_y + 14.0,
                         )
@@ -2867,7 +2894,7 @@ impl Renderer {
             self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
 
             let cx = self.canvas_w / 2.0;
-            let mut y = 60.0 + (anim_t * 2.1).sin() * 4.0;
+            let mut y = 40.0 + (anim_t * 2.1).sin() * 4.0;
 
             self.ctx.set_fill_style_str("#ffcc33");
             self.ctx.set_font("32px monospace");
@@ -2877,52 +2904,103 @@ impl Renderer {
             self.ctx.set_fill_style_str("#888");
             self.ctx.set_font("14px monospace");
             self.ctx.fill_text("Choose Your Path", cx, y).ok();
-            y += 50.0;
+            y += 40.0;
 
-            let classes = [
-                (
-                    "1",
-                    "📚 Scholar",
-                    "#44aaff",
-                    "Balanced. Hints show meaning in combat.",
-                ),
-                (
-                    "2",
-                    "⚔ Warrior",
-                    "#ff6644",
-                    "+3 HP, +1 damage, 4 item slots.",
-                ),
-                (
-                    "3",
-                    "⚗ Alchemist",
-                    "#44dd88",
-                    "7 item slots, 2x potion healing.",
-                ),
-            ];
+            let all_classes = crate::player::PlayerClass::all();
+            let total = all_classes.len();
+            let cursor = class_cursor;
 
-            for (key, name, color, desc) in &classes {
-                self.ctx.set_fill_style_str(color);
-                self.ctx.set_font("22px monospace");
+            let page_size = 6;
+            let page = cursor / page_size;
+            let start_idx_cls = page * page_size;
+            let end_idx_cls = (start_idx_cls + page_size).min(total);
+
+            for i in start_idx_cls..end_idx_cls {
+                let class_var: crate::player::PlayerClass = all_classes[i];
+                let data = class_var.data();
+
+                let is_selected = i == cursor;
+                let bg_color = if is_selected {
+                    "rgba(255,255,255,0.15)"
+                } else {
+                    "rgba(0,0,0,0.4)"
+                };
+                let border_color = if is_selected { data.color } else { "#444" };
+
+                self.ctx.set_fill_style_str(bg_color);
+                self.ctx.set_stroke_style_str(border_color);
+                self.ctx.set_line_width(if is_selected { 2.0 } else { 1.0 });
+
+                let box_w = 400.0;
+                let box_h = 50.0;
+                let box_x = cx - box_w / 2.0;
+
+                self.ctx.fill_rect(box_x, y, box_w, box_h);
+                self.ctx.stroke_rect(box_x, y, box_w, box_h);
+
+                // Icon
+                self.ctx.set_fill_style_str(data.color);
+                self.ctx.set_font("20px monospace");
+                self.ctx.set_text_align("left");
+                self.ctx.fill_text(data.icon, box_x + 15.0, y + 32.0).ok();
+
+                // Name
                 self.ctx
-                    .fill_text(&format!("[{}] {}", key, name), cx, y)
+                    .set_fill_style_str(if is_selected { "#fff" } else { "#ccc" });
+                self.ctx.set_font("16px monospace");
+                self.ctx
+                    .fill_text(
+                        &format!("{} {}", data.name_cn, data.name_en),
+                        box_x + 45.0,
+                        y + 22.0,
+                    )
                     .ok();
-                y += 22.0;
-                self.ctx.set_fill_style_str("#999");
+
+                let dummy = crate::player::Player::new(0, 0, class_var);
+                self.ctx.set_fill_style_str("#aaa");
                 self.ctx.set_font("12px monospace");
-                self.ctx.fill_text(desc, cx, y).ok();
-                y += 36.0;
+                self.ctx
+                    .fill_text(
+                        &format!("HP:{} Items:{}", dummy.max_hp, dummy.max_items()),
+                        box_x + 280.0,
+                        y + 22.0,
+                    )
+                    .ok();
+
+                // Lore
+                self.ctx.set_fill_style_str(data.color);
+                self.ctx.set_font("12px monospace");
+                self.ctx.fill_text(data.lore, box_x + 45.0, y + 40.0).ok();
+
+                y += box_h + 10.0;
             }
 
+            y += 10.0;
+            let total_pages = (total + page_size - 1) / page_size;
+            self.ctx.set_fill_style_str("#888");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text(
+                    &format!(
+                        "Page {}/{} (↑/↓ to scroll, Enter to select)",
+                        page + 1,
+                        total_pages
+                    ),
+                    cx,
+                    y,
+                )
+                .ok();
+
             if total_runs == 0 {
+                y += 24.0;
                 self.ctx.set_fill_style_str("#66ccff");
                 self.ctx.set_font("12px monospace");
                 self.ctx
                     .fill_text("First run starts with a short tutorial floor.", cx, y)
                     .ok();
-                y += 24.0;
             }
 
-            y += 10.0;
+            y += 20.0;
             self.ctx.set_fill_style_str("#ffcc33");
             self.ctx.set_font("14px monospace");
             self.ctx
@@ -2932,134 +3010,164 @@ impl Renderer {
             self.ctx.set_fill_style_str("#88bbff");
             self.ctx.set_font("12px monospace");
             self.ctx.fill_text("[O] Options", cx, y).ok();
-            y += 20.0;
-            self.ctx
-                .set_fill_style_str(if knowledge_points_available > 0 {
-                    "#aaff88"
-                } else {
-                    "#88ddff"
-                });
-            self.ctx
-                .fill_text(
-                    &format!(
-                        "[T] Talent Tree  ({} KP available)",
-                        knowledge_points_available
-                    ),
-                    cx,
-                    y,
-                )
-                .ok();
-            y += 18.0;
-            self.ctx.set_fill_style_str("#8899aa");
-            self.ctx.set_font("11px monospace");
-            self.ctx
-                .fill_text(
-                    &format!(
-                        "Meta bonuses: +{} HP  -{}% shop  +{} spell",
-                        talents.starting_hp_bonus(),
-                        talents.shop_discount_pct(),
-                        talents.spell_power_bonus()
-                    ),
-                    cx,
-                    y,
-                )
-                .ok();
         }
 
-        // ── Game Over overlay ───────────────────────────────────────────
+        // ── Game Over overlay — Post-mortem ────────────────────────────
         if matches!(combat, CombatState::GameOver) {
-            self.ctx.set_fill_style_str("rgba(0,0,0,0.75)");
+            self.ctx.set_fill_style_str("rgba(0,0,0,0.82)");
             self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
 
             let cx = self.canvas_w / 2.0;
-            let mut y = self.canvas_h / 2.0 - 80.0 + (anim_t * 1.7).sin() * 4.0;
 
-            self.ctx.set_fill_style_str("#ff4444");
-            self.ctx.set_font("48px monospace");
-            self.ctx.set_text_align("center");
-            self.ctx.fill_text("GAME OVER", cx, y).ok();
-            y += 40.0;
+            if post_mortem_page == 0 {
+                // ── Page 0: Summary ──────────────────────────────────
+                let mut y = self.canvas_h / 2.0 - 120.0 + (anim_t * 1.7).sin() * 4.0;
 
-            self.ctx.set_fill_style_str("#aaa");
-            self.ctx.set_font("16px monospace");
-            self.ctx
-                .fill_text(
-                    &format!("Floor {} reached  (Best: {})", floor_num, best_floor),
-                    cx,
-                    y,
-                )
-                .ok();
-            y += 28.0;
+                self.ctx.set_fill_style_str("#ff4444");
+                self.ctx.set_font("42px monospace");
+                self.ctx.set_text_align("center");
+                self.ctx.fill_text("☠ RUN COMPLETE", cx, y).ok();
+                y += 36.0;
 
-            // Stats box
-            self.ctx.set_fill_style_str("#ffdd44");
-            self.ctx.set_font("13px monospace");
-            self.ctx
-                .fill_text(
-                    &format!(
-                        "Gold: {}  |  Spells: {}  |  Recipes: {}/{}",
-                        player.gold,
-                        player.spells.len(),
-                        recipes_found,
-                        crate::radical::RECIPES.len()
-                    ),
-                    cx,
-                    y,
-                )
-                .ok();
-            y += 22.0;
+                // Cause of death
+                let cause = run_journal.death_cause();
+                self.ctx.set_fill_style_str("#ff8888");
+                self.ctx.set_font("16px monospace");
+                self.ctx
+                    .fill_text(&format!("Slain by: {}", cause), cx, y)
+                    .ok();
+                y += 30.0;
 
-            self.ctx.set_fill_style_str("#88bbff");
-            self.ctx
-                .fill_text(
-                    &format!(
-                        "Total runs: {}  |  Total kills: {}",
-                        total_runs + 1,
-                        total_kills
-                    ),
-                    cx,
-                    y,
-                )
-                .ok();
-            y += 22.0;
+                // Floor reached
+                self.ctx.set_fill_style_str("#aaa");
+                self.ctx.set_font("15px monospace");
+                self.ctx
+                    .fill_text(
+                        &format!("Floor {} reached  (Best: {})", floor_num, best_floor),
+                        cx,
+                        y,
+                    )
+                    .ok();
+                y += 26.0;
 
-            // SRS accuracy summary
-            let total_attempts: u32 = srs.stats.values().map(|(_, t, _)| t).sum();
-            let total_correct: u32 = srs.stats.values().map(|(c, _, _)| c).sum();
-            let pct = if total_attempts > 0 {
-                (total_correct as f64 / total_attempts as f64 * 100.0) as u32
+                // Kills / bosses
+                let kills = run_journal.enemies_killed_count();
+                self.ctx.set_fill_style_str("#ffdd44");
+                self.ctx.set_font("13px monospace");
+                self.ctx
+                    .fill_text(
+                        &format!(
+                            "Enemies slain: {}  |  Gold: {}  |  Spells: {}",
+                            kills,
+                            player.gold,
+                            player.spells.len()
+                        ),
+                        cx,
+                        y,
+                    )
+                    .ok();
+                y += 22.0;
+
+                // Max combo
+                self.ctx.set_fill_style_str("#88ddff");
+                self.ctx
+                    .fill_text(
+                        &format!(
+                            "Max combo: {}×  |  Recipes: {}/{}",
+                            run_journal.max_combo,
+                            recipes_found,
+                            crate::radical::RECIPES.len()
+                        ),
+                        cx,
+                        y,
+                    )
+                    .ok();
+                y += 22.0;
+
+                // SRS accuracy
+                let total_attempts: u32 = srs.stats.values().map(|(_, t, _)| t).sum();
+                let total_correct: u32 = srs.stats.values().map(|(c, _, _)| c).sum();
+                let pct = if total_attempts > 0 {
+                    (total_correct as f64 / total_attempts as f64 * 100.0) as u32
+                } else {
+                    0
+                };
+                self.ctx.set_fill_style_str("#aaddaa");
+                self.ctx
+                    .fill_text(
+                        &format!(
+                            "Pinyin accuracy: {}% ({}/{})",
+                            pct, total_correct, total_attempts
+                        ),
+                        cx,
+                        y,
+                    )
+                    .ok();
+                y += 22.0;
+
+                // Total runs / kills
+                self.ctx.set_fill_style_str("#88bbff");
+                self.ctx
+                    .fill_text(
+                        &format!(
+                            "Total runs: {}  |  Total kills: {}",
+                            total_runs + 1,
+                            total_kills
+                        ),
+                        cx,
+                        y,
+                    )
+                    .ok();
+                y += 34.0;
+
+                // Navigation hint
+                self.ctx.set_fill_style_str("#ffcc33");
+                self.ctx.set_font("14px monospace");
+                self.ctx
+                    .fill_text("Press R to restart  |  → Floor log", cx, y)
+                    .ok();
             } else {
-                0
-            };
-            self.ctx.set_fill_style_str("#aaddaa");
-            self.ctx
-                .fill_text(
-                    &format!(
-                        "Pinyin accuracy: {}% ({}/{})",
-                        pct, total_correct, total_attempts
-                    ),
-                    cx,
-                    y,
-                )
-                .ok();
-            y += 30.0;
+                // ── Page 1+: Floor-by-floor log ──────────────────────
+                let mut y = 60.0;
+                self.ctx.set_fill_style_str("#ff8844");
+                self.ctx.set_font("28px monospace");
+                self.ctx.set_text_align("center");
+                self.ctx.fill_text("📜 Floor Log", cx, y).ok();
+                y += 36.0;
 
-            self.ctx.set_fill_style_str("#ffcc33");
-            self.ctx.set_font("14px monospace");
-            self.ctx.fill_text("Press R to restart", cx, y).ok();
-            y += 20.0;
-            self.ctx.set_fill_style_str("#88ddff");
-            self.ctx.set_font("12px monospace");
-            self.ctx
-                .fill_text(
-                    &format!(
-                        "[T] Talent Tree  ({} KP available)",
-                        knowledge_points_available
-                    ),
-                    cx,
-                    y,
-                )
-                .ok();
+                let max_fl = run_journal.max_floor();
+                let floors_per_page = 8;
+                let start_floor = 1 + (post_mortem_page - 1) * floors_per_page;
+                let end_floor = (start_floor + floors_per_page).min(max_fl as usize + 1);
+                let total_pages = ((max_fl as usize).saturating_sub(1)) / floors_per_page + 1;
+
+                self.ctx.set_font("13px monospace");
+                self.ctx.set_text_align("left");
+                let left = (cx - 200.0).max(20.0);
+
+                for fl in start_floor..end_floor {
+                    let line = run_journal.floor_line(fl as i32);
+                    self.ctx.set_fill_style_str("#ffdd44");
+                    self.ctx.fill_text(&format!("F{:>2}:", fl), left, y).ok();
+                    self.ctx.set_fill_style_str("#ccc");
+                    self.ctx.fill_text(&line, left + 44.0, y).ok();
+                    y += 22.0;
+                }
+
+                y += 16.0;
+                self.ctx.set_fill_style_str("#888");
+                self.ctx.set_text_align("center");
+                self.ctx
+                    .fill_text(&format!("Page {}/{}", post_mortem_page, total_pages), cx, y)
+                    .ok();
+                y += 28.0;
+
+                self.ctx.set_fill_style_str("#ffcc33");
+                self.ctx.set_font("14px monospace");
+                self.ctx
+                    .fill_text("← Back  |  → Next  |  R Restart", cx, y)
+                    .ok();
+            }
         }
 
         if show_settings {
@@ -3125,100 +3233,6 @@ impl Renderer {
                 .ok();
         }
 
-        if show_talent_tree {
-            let box_w = 420.0;
-            let box_h = 240.0;
-            let box_x = (self.canvas_w - box_w) / 2.0;
-            let box_y = (self.canvas_h - box_h) / 2.0 + (anim_t * 2.4).sin() * 3.0;
-            self.ctx.set_fill_style_str("rgba(4,10,18,0.7)");
-            self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
-            self.ctx.set_fill_style_str("rgba(16,24,36,0.97)");
-            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
-            self.ctx.set_stroke_style_str("#66ddaa");
-            self.ctx.set_line_width(2.0);
-            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
-
-            self.ctx.set_text_align("center");
-            self.ctx.set_fill_style_str("#c8ffb0");
-            self.ctx.set_font("bold 18px monospace");
-            self.ctx
-                .fill_text("Talent Tree / 天赋", self.canvas_w / 2.0, box_y + 26.0)
-                .ok();
-
-            self.ctx.set_fill_style_str("#aacccc");
-            self.ctx.set_font("12px monospace");
-            self.ctx
-                .fill_text(
-                    &format!(
-                        "Knowledge Points: {} available / {} earned",
-                        knowledge_points_available, knowledge_points_total
-                    ),
-                    self.canvas_w / 2.0,
-                    box_y + 46.0,
-                )
-                .ok();
-            self.ctx
-                .fill_text(
-                    &format!(
-                        "Progress to next point: {}/{} unique codex entries",
-                        knowledge_progress, knowledge_step
-                    ),
-                    self.canvas_w / 2.0,
-                    box_y + 62.0,
-                )
-                .ok();
-
-            for idx in 0..3 {
-                let y = box_y + 98.0 + idx as f64 * 42.0;
-                let selected = idx == talent_cursor;
-                let rank = talents.rank(idx);
-                let max_rank = TalentTree::max_rank(idx);
-                let pips = format!(
-                    "{}{}",
-                    "●".repeat(rank as usize),
-                    "○".repeat(max_rank.saturating_sub(rank) as usize)
-                );
-                if selected {
-                    self.ctx.set_fill_style_str("rgba(102,221,170,0.14)");
-                    self.ctx
-                        .fill_rect(box_x + 16.0, y - 18.0, box_w - 32.0, 30.0);
-                }
-                self.ctx.set_text_align("left");
-                self.ctx
-                    .set_fill_style_str(if selected { "#ffdd88" } else { "#ddeeff" });
-                self.ctx.set_font("bold 14px monospace");
-                self.ctx
-                    .fill_text(TalentTree::title(idx), box_x + 24.0, y)
-                    .ok();
-                self.ctx.set_fill_style_str("#99b8c8");
-                self.ctx.set_font("11px monospace");
-                self.ctx
-                    .fill_text(TalentTree::description(idx), box_x + 24.0, y + 14.0)
-                    .ok();
-                self.ctx.set_text_align("right");
-                self.ctx.set_fill_style_str("#88ffcc");
-                self.ctx.set_font("12px monospace");
-                self.ctx
-                    .fill_text(
-                        &format!("{}  {}", talents.bonus_text(idx), pips),
-                        box_x + box_w - 24.0,
-                        y + 6.0,
-                    )
-                    .ok();
-            }
-
-            self.ctx.set_text_align("center");
-            self.ctx.set_fill_style_str("#7784aa");
-            self.ctx.set_font("11px monospace");
-            self.ctx
-                .fill_text(
-                    "↑↓ select  Enter=buy rank  Esc/T=close",
-                    self.canvas_w / 2.0,
-                    box_y + box_h - 16.0,
-                )
-                .ok();
-        }
-
         if show_help {
             self.draw_help_overlay(combat, listening_mode);
         }
@@ -3262,7 +3276,7 @@ impl Renderer {
         );
 
         match tile {
-            Tile::Floor | Tile::Corridor | Tile::CursedFloor => {
+            Tile::Floor | Tile::Corridor | Tile::CursedFloor | Tile::Trap(_) => {
                 self.ctx.set_fill_style_str(if tile == Tile::Corridor {
                     "rgba(215,225,255,0.06)"
                 } else {
@@ -3703,9 +3717,9 @@ impl Renderer {
             self.ctx.set_font("14px monospace");
             self.ctx.set_text_align("left");
             let name = match i {
-                0 => equipment_name(player.weapon, player.enchantments[0]),
-                1 => equipment_name(player.armor, player.enchantments[1]),
-                _ => equipment_name(player.charm, player.enchantments[2]),
+                0 => equipment_name(player.weapon, player.enchantments[0], player.weapon_state),
+                1 => equipment_name(player.armor, player.enchantments[1], player.armor_state),
+                _ => equipment_name(player.charm, player.enchantments[2], player.charm_state),
             };
             self.ctx
                 .fill_text(&format!("{}: {}", equips[i], name), box_x + 20.0, y)
@@ -3811,11 +3825,11 @@ impl Renderer {
             }
             CombatState::ClassSelect => {
                 lines.push("Class select: 1 Scholar  2 Warrior  3 Alchemist".to_string());
-                lines.push("D daily challenge  T talents".to_string());
+                lines.push("D daily challenge".to_string());
                 "Menu Controls"
             }
             CombatState::GameOver => {
-                lines.push("Game over: R restart  T talents  I inventory".to_string());
+                lines.push("Game over: R restart  I inventory".to_string());
                 "Game Over Controls"
             }
             CombatState::Explore => {
@@ -3827,7 +3841,7 @@ impl Renderer {
             }
             CombatState::Offering { .. } => {
                 lines.push("Altar: Select item to sacrifice for piety".to_string());
-                lines.push("P pray (costs 20 piety)  Esc cancel".to_string());
+                lines.push("[P] Purify cursed equipment  Esc cancel".to_string());
                 "Altar Controls"
             }
             CombatState::DippingSource { .. } => {
@@ -4097,11 +4111,7 @@ impl Renderer {
             )
             .ok();
 
-        let class_name = match player.class {
-            crate::player::PlayerClass::Scholar => "Scholar",
-            crate::player::PlayerClass::Warrior => "Warrior",
-            crate::player::PlayerClass::Alchemist => "Alchemist",
-        };
+        let class_name = player.class.data().name_en;
         let companion_text = companion
             .map(|ally| {
                 if companion_level > 0 {
@@ -4172,12 +4182,28 @@ impl Renderer {
             &str,
             Option<&crate::player::Equipment>,
             Option<&'static str>,
+            ItemState,
         ); 3] = [
-            ("Weapon", player.weapon, player.enchantments[0]),
-            ("Armor ", player.armor, player.enchantments[1]),
-            ("Charm ", player.charm, player.enchantments[2]),
+            (
+                "Weapon",
+                player.weapon,
+                player.enchantments[0],
+                player.weapon_state,
+            ),
+            (
+                "Armor ",
+                player.armor,
+                player.enchantments[1],
+                player.armor_state,
+            ),
+            (
+                "Charm ",
+                player.charm,
+                player.enchantments[2],
+                player.charm_state,
+            ),
         ];
-        for (slot_idx, (label, equip, enchant)) in equip_slots.iter().enumerate() {
+        for (slot_idx, (label, equip, enchant, state)) in equip_slots.iter().enumerate() {
             let selected = inventory_cursor == slot_idx;
             if selected {
                 self.ctx.set_fill_style_str("rgba(255,204,51,0.15)");
@@ -4189,7 +4215,12 @@ impl Renderer {
             let marker = if selected { "▸" } else { " " };
             self.ctx
                 .fill_text(
-                    &format!("{} {}: {}", marker, label, equipment_name(*equip, *enchant)),
+                    &format!(
+                        "{} {}: {}",
+                        marker,
+                        label,
+                        equipment_name(*equip, *enchant, *state)
+                    ),
                     left_x + 12.0,
                     left_y,
                 )
@@ -4771,6 +4802,7 @@ fn tile_sprite_key(tile: Tile) -> &'static str {
         Tile::Npc(1) => "npc_monk",
         Tile::Npc(2) => "npc_merchant",
         Tile::Npc(_) => "npc_guard",
+        Tile::Trap(_) => "tile_floor",
     }
 }
 
@@ -4793,6 +4825,7 @@ fn item_sprite_key(item: &Item) -> &'static str {
         ItemKind::TeleportScroll => "item_teleport_scroll",
         ItemKind::HastePotion => "item_haste_potion",
         ItemKind::StunBomb => "item_stun_bomb",
+        ItemKind::RiceBall => "item_rice_ball",
     }
 }
 
@@ -4869,10 +4902,18 @@ fn hud_message_color(message: &str) -> &'static str {
 fn equipment_name(
     equipment: Option<&crate::player::Equipment>,
     enchantment: Option<&'static str>,
+    state: ItemState,
 ) -> String {
+    let prefix = match state {
+        ItemState::Cursed => "💀 ",
+        ItemState::Blessed => "✨ ",
+        ItemState::Normal => "",
+    };
     match (equipment, enchantment) {
-        (Some(equipment), Some(enchantment)) => format!("{} +{}", equipment.name, enchantment),
-        (Some(equipment), None) => equipment.name.to_string(),
+        (Some(equipment), Some(enchantment)) => {
+            format!("{}{} +{}", prefix, equipment.name, enchantment)
+        }
+        (Some(equipment), None) => format!("{}{}", prefix, equipment.name),
         (None, _) => "None".to_string(),
     }
 }
@@ -5110,6 +5151,12 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
                 glyph: None,
                 glyph_color: "#ffffff",
             },
+            Tile::Trap(_) => TilePalette {
+                fill: COL_FLOOR,
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
         }
     } else {
         match tile {
@@ -5313,6 +5360,12 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
             },
             Tile::Bridge => TilePalette {
                 fill: "#5c4033",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Trap(_) => TilePalette {
+                fill: COL_FLOOR_REVEALED,
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",

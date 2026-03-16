@@ -202,6 +202,8 @@ pub enum Tile {
     LockedDoor,
     /// Cursed floor — hidden trap, tone quiz when stepped on
     CursedFloor,
+    /// Hidden trap tile (type: 0=poison, 1=teleport, 2=alarm)
+    Trap(u8),
 }
 
 impl Tile {
@@ -236,6 +238,7 @@ impl Tile {
                 | Tile::CodexShrine
                 | Tile::WordBridge
                 | Tile::CursedFloor
+                | Tile::Trap(_)
         )
     }
 }
@@ -1335,7 +1338,7 @@ impl DungeonLevel {
         level
     }
 
-    pub fn generate(width: i32, height: i32, seed: u64) -> Self {
+    pub fn generate(width: i32, height: i32, seed: u64, floor: i32) -> Self {
         let mut rng = Rng::new(seed);
         let size = (width * height) as usize;
         let mut tiles = vec![Tile::Wall; size];
@@ -1457,6 +1460,26 @@ impl DungeonLevel {
         level.place_crates(&mut rng);
         level.place_secret_room(&mut rng);
         level.place_puzzle_rooms(&mut rng);
+
+        // Place trap tiles on deeper floors
+        if floor >= 2 {
+            let trap_count = 2 + floor / 3;
+            let mut placed = 0;
+            for _ in 0..trap_count * 10 {
+                let x = (rng.next_u64() % width as u64) as i32;
+                let y = (rng.next_u64() % height as u64) as i32;
+                let idx = (y * width + x) as usize;
+                if idx < level.tiles.len() && level.tiles[idx] == Tile::Floor {
+                    let trap_type = (rng.next_u64() % 3) as u8;
+                    level.tiles[idx] = Tile::Trap(trap_type);
+                    placed += 1;
+                    if placed >= trap_count {
+                        break;
+                    }
+                }
+            }
+        }
+
         level
     }
 
@@ -2253,7 +2276,7 @@ mod tests {
     fn generated_levels_hide_secret_rooms_on_most_runs() {
         let mut secret_count = 0;
         for seed in 1..=24 {
-            let level = DungeonLevel::generate(48, 48, seed);
+            let level = DungeonLevel::generate(48, 48, seed, 1);
             if level
                 .tiles
                 .iter()
@@ -2273,7 +2296,7 @@ mod tests {
     fn generated_levels_regularly_offer_bridge_building_setups() {
         let mut bridge_count = 0;
         for seed in 1..=24 {
-            let level = DungeonLevel::generate(48, 48, seed);
+            let level = DungeonLevel::generate(48, 48, seed, 1);
             if has_pushable_bridge_setup(&level) {
                 bridge_count += 1;
             }
@@ -2304,7 +2327,7 @@ mod tests {
         let mut oil_count = 0;
         let mut seal_count = 0;
         for seed in 1..=24 {
-            let level = DungeonLevel::generate(48, 48, seed);
+            let level = DungeonLevel::generate(48, 48, seed, 1);
             if has_any_puzzle_room(&level) {
                 puzzle_count += 1;
             }

@@ -10,11 +10,11 @@ use crate::achievement::AchievementTracker;
 use crate::audio::Audio;
 use crate::codex::Codex;
 use crate::dungeon::{compute_fov, AltarKind, DungeonLevel, RoomModifier, SealKind, Tile};
-use crate::enemy::{BossKind, Enemy};
+use crate::enemy::{BossKind, Enemy, RadicalAction};
 use crate::particle::ParticleSystem;
 use crate::player::{
-    Deity, EquipEffect, ItemKind, Player, PlayerClass, PlayerForm, EQUIPMENT_POOL, ITEM_KIND_COUNT,
-    MYSTERY_ITEM_APPEARANCES,
+    Deity, EquipEffect, ItemKind, ItemState, Player, PlayerClass, PlayerForm, EQUIPMENT_POOL,
+    ITEM_KIND_COUNT, MYSTERY_ITEM_APPEARANCES,
 };
 use crate::radical::{self, Spell, SpellEffect};
 use crate::render::Renderer;
@@ -56,6 +56,7 @@ impl Companion {
         }
     }
 
+    #[allow(dead_code)]
     pub fn xp_for_level(level: u8) -> u32 {
         match level {
             0 | 1 => 0,
@@ -74,6 +75,7 @@ impl Companion {
         }
     }
 
+    #[allow(dead_code)]
     pub fn max_level() -> u8 {
         3
     }
@@ -191,6 +193,168 @@ impl Companion {
                 }
             }
         }
+    }
+}
+
+// ── Run Journal ────────────────────────────────────────────────────
+#[derive(Clone, Debug)]
+pub enum RunEvent {
+    EnteredFloor(i32),
+    EnemyKilled(#[allow(dead_code)] String, i32),
+    BossKilled(String, i32),
+    SpellForged(String, i32),
+    RadicalCollected(String, i32),
+    ComboAchieved(u32, i32),
+    DiedTo(String, i32),
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RunJournal {
+    pub events: Vec<RunEvent>,
+    pub max_combo: u32,
+}
+
+impl RunJournal {
+    pub fn log(&mut self, event: RunEvent) {
+        self.events.push(event);
+    }
+
+    pub fn floor_summary(&self, floor: i32) -> Vec<&RunEvent> {
+        self.events
+            .iter()
+            .filter(|e| match e {
+                RunEvent::EnteredFloor(f)
+                | RunEvent::EnemyKilled(_, f)
+                | RunEvent::BossKilled(_, f)
+                | RunEvent::SpellForged(_, f)
+                | RunEvent::RadicalCollected(_, f)
+                | RunEvent::ComboAchieved(_, f)
+                | RunEvent::DiedTo(_, f) => *f == floor,
+            })
+            .collect()
+    }
+
+    pub fn death_cause(&self) -> &str {
+        for e in self.events.iter().rev() {
+            if let RunEvent::DiedTo(cause, _) = e {
+                return cause;
+            }
+        }
+        "Unknown"
+    }
+
+    pub fn enemies_killed_count(&self) -> usize {
+        self.events
+            .iter()
+            .filter(|e| matches!(e, RunEvent::EnemyKilled(_, _) | RunEvent::BossKilled(_, _)))
+            .count()
+    }
+
+    #[allow(dead_code)]
+    pub fn spells_forged_list(&self) -> Vec<&str> {
+        self.events
+            .iter()
+            .filter_map(|e| {
+                if let RunEvent::SpellForged(name, _) = e {
+                    Some(name.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    pub fn max_floor(&self) -> i32 {
+        self.events
+            .iter()
+            .filter_map(|e| {
+                if let RunEvent::EnteredFloor(f) = e {
+                    Some(*f)
+                } else {
+                    None
+                }
+            })
+            .max()
+            .unwrap_or(1)
+    }
+
+    /// One-line summary for a given floor
+    pub fn floor_line(&self, floor: i32) -> String {
+        let evts = self.floor_summary(floor);
+        let mut parts: Vec<String> = Vec::new();
+        let mut kills = 0u32;
+        let mut boss: Option<&str> = None;
+        for e in &evts {
+            match e {
+                RunEvent::EnemyKilled(_, _) => kills += 1,
+                RunEvent::BossKilled(h, _) => {
+                    boss = Some(h);
+                    kills += 1;
+                }
+                RunEvent::SpellForged(name, _) => parts.push(format!("Forged {}", name)),
+                RunEvent::RadicalCollected(ch, _) => parts.push(format!("+[{}]", ch)),
+
+                RunEvent::ComboAchieved(n, _) => parts.push(format!("{}× combo", n)),
+                RunEvent::DiedTo(cause, _) => parts.push(format!("☠ {}", cause)),
+                RunEvent::EnteredFloor(_) => {}
+            }
+        }
+        if let Some(b) = boss {
+            parts.insert(0, format!("Boss {} slain", b));
+        } else if kills > 0 {
+            parts.insert(0, format!("{} kills", kills));
+        }
+        if parts.is_empty() {
+            "Explored".to_string()
+        } else {
+            parts.join(", ")
+        }
+    }
+}
+
+// ── Combo tiers ────────────────────────────────────────────────────
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ComboTier {
+    None,
+    Good,
+    Great,
+    Excellent,
+    Perfect,
+    Radical,
+}
+
+impl ComboTier {
+    pub fn name(&self) -> &'static str {
+        match self {
+            ComboTier::None => "",
+            ComboTier::Good => "GOOD",
+            ComboTier::Great => "GREAT",
+            ComboTier::Excellent => "EXCELLENT",
+            ComboTier::Perfect => "PERFECT",
+            ComboTier::Radical => "RADICAL",
+        }
+    }
+
+    pub fn multiplier(&self) -> f64 {
+        match self {
+            ComboTier::None => 1.0,
+            ComboTier::Good => 1.15,
+            ComboTier::Great => 1.3,
+            ComboTier::Excellent => 1.5,
+            ComboTier::Perfect => 1.75,
+            ComboTier::Radical => 2.0,
+        }
+    }
+}
+
+pub fn combo_tier(streak: u32) -> ComboTier {
+    match streak {
+        0..=1 => ComboTier::None,
+        2..=3 => ComboTier::Good,
+        4..=5 => ComboTier::Great,
+        6..=8 => ComboTier::Excellent,
+        9..=11 => ComboTier::Perfect,
+        _ => ComboTier::Radical,
     }
 }
 
@@ -441,93 +605,6 @@ impl Default for GameSettings {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub struct TalentTree {
-    pub jade_heart: u8,
-    pub haggler_ink: u8,
-    pub spell_echo: u8,
-}
-
-impl TalentTree {
-    pub fn spent_points(self) -> i32 {
-        self.jade_heart as i32 + self.haggler_ink as i32 + self.spell_echo as i32
-    }
-
-    pub fn starting_hp_bonus(self) -> i32 {
-        self.jade_heart as i32
-    }
-
-    pub fn shop_discount_pct(self) -> i32 {
-        self.haggler_ink as i32 * 5
-    }
-
-    pub fn spell_power_bonus(self) -> i32 {
-        self.spell_echo as i32
-    }
-
-    pub fn rank(self, idx: usize) -> u8 {
-        match idx {
-            0 => self.jade_heart,
-            1 => self.haggler_ink,
-            2 => self.spell_echo,
-            _ => 0,
-        }
-    }
-
-    pub fn max_rank(idx: usize) -> u8 {
-        match idx {
-            0 => 5,
-            1 => 4,
-            2 => 5,
-            _ => 0,
-        }
-    }
-
-    pub fn title(idx: usize) -> &'static str {
-        match idx {
-            0 => "Jade Heart",
-            1 => "Haggler's Ink",
-            2 => "Spell Echo",
-            _ => "",
-        }
-    }
-
-    pub fn description(idx: usize) -> &'static str {
-        match idx {
-            0 => "+1 starting HP per rank",
-            1 => "-5% shop costs per rank",
-            2 => "+1 spell heal/damage per rank",
-            _ => "",
-        }
-    }
-
-    pub fn bonus_text(self, idx: usize) -> String {
-        match idx {
-            0 => format!("+{} HP", self.starting_hp_bonus()),
-            1 => format!("-{}% prices", self.shop_discount_pct()),
-            2 => format!("+{} power", self.spell_power_bonus()),
-            _ => String::new(),
-        }
-    }
-
-    pub fn can_upgrade(self, idx: usize) -> bool {
-        self.rank(idx) < Self::max_rank(idx)
-    }
-
-    pub fn upgrade(&mut self, idx: usize) -> bool {
-        if !self.can_upgrade(idx) {
-            return false;
-        }
-        match idx {
-            0 => self.jade_heart += 1,
-            1 => self.haggler_ink += 1,
-            2 => self.spell_echo += 1,
-            _ => return false,
-        }
-        true
-    }
-}
-
 #[derive(Clone, Debug)]
 pub enum SentenceChallengeMode {
     BonusGold {
@@ -537,6 +614,11 @@ pub enum SentenceChallengeMode {
         boss_idx: usize,
         success_damage: i32,
         failure_heal: i32,
+    },
+    GatekeeperSeal {
+        boss_idx: usize,
+        success_damage: i32,
+        failure_damage_to_player: i32,
     },
 }
 
@@ -752,18 +834,93 @@ pub enum CombatState {
 }
 
 /// Sentence data for sentence construction challenges.
-const SENTENCES: &[(&[&str], &str)] = &[
+/// Organised into three difficulty tiers so `select_sentence_for_floor` can
+/// pick easier sentences on early floors and harder ones later.
+
+/// Tier 1 — easy (2-3 words, HSK 1)
+const SENTENCES_EASY: &[(&[&str], &str)] = &[
     (&["我", "是", "学生"], "I am a student"),
     (&["你", "好", "吗"], "How are you?"),
-    (&["他", "不", "喝", "水"], "He doesn't drink water"),
     (&["我们", "去", "学校"], "We go to school"),
     (&["她", "很", "高兴"], "She is very happy"),
+    (&["他", "喝", "水"], "He drinks water"),
+    (&["我", "吃", "饭"], "I eat"),
+    (&["你", "看", "书"], "You read books"),
+    (&["他们", "是", "朋友"], "They are friends"),
+    (&["我", "很", "好"], "I am fine"),
+    (&["她", "有", "猫"], "She has a cat"),
+];
+
+/// Tier 2 — medium (3-4 words, HSK 1-2)
+const SENTENCES_MEDIUM: &[(&[&str], &str)] = &[
+    (&["他", "不", "喝", "水"], "He doesn't drink water"),
     (&["我", "想", "吃", "饭"], "I want to eat"),
     (&["今天", "天气", "很", "好"], "Today's weather is good"),
     (&["你", "叫", "什么", "名字"], "What is your name?"),
     (&["他们", "在", "看", "书"], "They are reading books"),
     (&["我", "喜欢", "中国", "菜"], "I like Chinese food"),
+    (&["她", "不", "想", "去"], "She doesn't want to go"),
+    (&["我们", "明天", "去", "学校"], "We go to school tomorrow"),
+    (&["他", "每天", "喝", "茶"], "He drinks tea every day"),
+    (&["你", "在", "做", "什么"], "What are you doing?"),
 ];
+
+/// Tier 3 — hard (4-5 words, HSK 2-3)
+const SENTENCES_HARD: &[(&[&str], &str)] = &[
+    (
+        &["我", "昨天", "买", "了", "书"],
+        "I bought a book yesterday",
+    ),
+    (&["她", "每天", "早上", "跑步"], "She runs every morning"),
+    (
+        &["他们", "下午", "去", "公园", "玩"],
+        "They go to the park to play in the afternoon",
+    ),
+    (&["你", "能", "帮", "我", "吗"], "Can you help me?"),
+    (
+        &["我", "不", "知道", "他", "在哪儿"],
+        "I don't know where he is",
+    ),
+    (
+        &["老师", "今天", "没有", "来", "学校"],
+        "The teacher didn't come to school today",
+    ),
+    (&["我们", "一起", "去", "吃", "饭"], "Let's go eat together"),
+    (&["他", "说", "他", "很", "忙"], "He says he is very busy"),
+    (
+        &["你", "想", "喝", "什么", "茶"],
+        "What tea would you like?",
+    ),
+    (&["她", "的", "朋友", "很", "多"], "She has many friends"),
+];
+
+/// Select a sentence appropriate for the current floor.
+/// Early floors (≤8) pick from easy, mid floors (9–18) from easy+medium,
+/// late floors (19+) can draw from all three tiers.
+fn select_sentence_for_floor(floor: i32, rng_val: u64) -> (&'static [&'static str], &'static str) {
+    if floor <= 8 {
+        let idx = rng_val as usize % SENTENCES_EASY.len();
+        SENTENCES_EASY[idx]
+    } else if floor <= 18 {
+        let pool_len = SENTENCES_EASY.len() + SENTENCES_MEDIUM.len();
+        let idx = rng_val as usize % pool_len;
+        if idx < SENTENCES_EASY.len() {
+            SENTENCES_EASY[idx]
+        } else {
+            SENTENCES_MEDIUM[idx - SENTENCES_EASY.len()]
+        }
+    } else {
+        let pool_len = SENTENCES_EASY.len() + SENTENCES_MEDIUM.len() + SENTENCES_HARD.len();
+        let idx = rng_val as usize % pool_len;
+        if idx < SENTENCES_EASY.len() {
+            SENTENCES_EASY[idx]
+        } else if idx < SENTENCES_EASY.len() + SENTENCES_MEDIUM.len() {
+            SENTENCES_MEDIUM[idx - SENTENCES_EASY.len()]
+        } else {
+            SENTENCES_HARD[idx - SENTENCES_EASY.len() - SENTENCES_MEDIUM.len()]
+        }
+    }
+}
 
 const STROKE_ORDER_DATA: &[(&str, &[&str], &str, &str)] = &[
     ("明", &["日", "月"], "ming2", "bright"),
@@ -994,9 +1151,6 @@ pub struct GameState {
     pub settings: GameSettings,
     pub show_settings: bool,
     pub settings_cursor: usize,
-    pub talents: TalentTree,
-    pub show_talent_tree: bool,
-    pub talent_cursor: usize,
     /// Last spell effect used (for combos)
     pub last_spell: Option<SpellEffect>,
     /// Turns since last spell (combo window)
@@ -1030,6 +1184,13 @@ pub struct GameState {
     next_chain_id: u32,
     pub floor_profile: FloorProfile,
     pub answer_streak: u32,
+    pub run_journal: RunJournal,
+    pub post_mortem_page: usize,
+    pub class_cursor: usize,
+    /// How many times player has been caught stealing
+    pub theft_catches: u32,
+    /// Whether this floor's shop is banned (caught stealing)
+    pub shop_banned: bool,
 }
 
 impl GameState {
@@ -1131,65 +1292,61 @@ impl GameState {
         self.save_settings();
     }
 
-    fn open_talent_tree(&mut self) {
-        self.show_talent_tree = true;
-        self.talent_cursor = 0;
-    }
-
-    fn close_talent_tree(&mut self) {
-        self.show_talent_tree = false;
-    }
-
-    fn move_talent_cursor(&mut self, delta: i32) {
-        let next = (self.talent_cursor as i32 + delta).clamp(0, 2);
-        self.talent_cursor = next as usize;
-    }
-
-    fn knowledge_points_total(&self) -> i32 {
-        (self.codex.total_unique() / 5) as i32
-    }
-
-    fn knowledge_points_available(&self) -> i32 {
-        (self.knowledge_points_total() - self.talents.spent_points()).max(0)
-    }
-
-    fn knowledge_progress(&self) -> (usize, usize) {
-        let unique = self.codex.total_unique();
-        let step = 5;
-        (unique % step, step)
-    }
-
-    fn purchase_selected_talent(&mut self) {
-        if self.knowledge_points_available() <= 0 {
-            self.message = "Need more codex discoveries to earn Knowledge Points.".to_string();
-            self.message_timer = 120;
-            return;
-        }
-        if self.talents.upgrade(self.talent_cursor) {
-            self.save_talents();
-            self.message = format!(
-                "Talent learned: {} ({})",
-                TalentTree::title(self.talent_cursor),
-                self.talents.bonus_text(self.talent_cursor)
-            );
-            self.message_timer = 140;
-        } else {
-            self.message = format!(
-                "{} is already fully mastered.",
-                TalentTree::title(self.talent_cursor)
-            );
-            self.message_timer = 100;
-        }
-    }
-
-    fn make_player(&self, x: i32, y: i32, class: PlayerClass, use_meta: bool) -> Player {
+    fn make_player(&self, x: i32, y: i32, class: PlayerClass) -> Player {
         let mut player = Player::new(x, y, class);
-        if use_meta {
-            player.apply_meta_progression(
-                self.talents.starting_hp_bonus(),
-                self.talents.shop_discount_pct(),
-                self.talents.spell_power_bonus(),
-            );
+        match class {
+            PlayerClass::Warrior => {
+                player.weapon = Some(&crate::player::EQUIPMENT_POOL[0]); // Brush of Clarity
+            }
+            PlayerClass::Herbalist => {
+                player.items.push(crate::player::Item::HealthPotion(5));
+                player.item_states.push(ItemState::Normal);
+                player.items.push(crate::player::Item::HealthPotion(5));
+                player.item_states.push(ItemState::Normal);
+            }
+            PlayerClass::Thief => {
+                player.gold += 20;
+            }
+            PlayerClass::Swordsman => {
+                player.weapon = Some(&crate::player::EQUIPMENT_POOL[1]); // Scholar's Quill
+            }
+            PlayerClass::Merchant => {
+                player.gold += 15;
+                player.shop_discount_pct = 20;
+            }
+            PlayerClass::Pilgrim => {
+                player.add_piety(crate::player::Deity::Jade, 5);
+            }
+            PlayerClass::Beastmaster => {
+                // Beastmaster companion set by caller
+                player.gold += 0;
+            }
+            PlayerClass::Earthmover => {
+                player.weapon = Some(&crate::player::EQUIPMENT_POOL[10]); // Iron Pickaxe
+            }
+            PlayerClass::Ironclad => {
+                player.armor = Some(&crate::player::EQUIPMENT_POOL[3]); // Jade Vest
+            }
+            PlayerClass::Inkmaster => {
+                player.radicals.push("木");
+                player.radicals.push("水");
+                player.radicals.push("火");
+            }
+            PlayerClass::Shaman => {
+                player.spells.push(crate::radical::Spell {
+                    hanzi: "炎",
+                    pinyin: "yán",
+                    meaning: "flame",
+                    effect: crate::radical::SpellEffect::FireAoe(3),
+                });
+                player.spells.push(crate::radical::Spell {
+                    hanzi: "林",
+                    pinyin: "lín",
+                    meaning: "woods",
+                    effect: crate::radical::SpellEffect::Heal(4),
+                });
+            }
+            _ => {}
         }
         player
     }
@@ -1363,7 +1520,10 @@ impl GameState {
 
     fn discounted_cost(&self, base_cost: i32) -> i32 {
         let pct = 100 - self.effective_shop_discount_pct();
-        ((base_cost * pct).max(0) + 99) / 100
+        let mut cost = ((base_cost * pct).max(0) + 99) / 100;
+        let surcharge = (base_cost as f64 * self.theft_catches as f64 * 0.15) as i32;
+        cost += surcharge;
+        cost
     }
 
     fn roll_item_appearance_order(seed: u64) -> [usize; ITEM_KIND_COUNT] {
@@ -1467,7 +1627,7 @@ impl GameState {
         self.srs.current_floor = 0;
         self.level = DungeonLevel::tutorial(MAP_W, MAP_H);
         let (sx, sy) = self.level.start_pos();
-        self.player = self.make_player(sx, sy, class, true);
+        self.player = self.make_player(sx, sy, class);
         self.reset_item_lore();
         self.player.add_radical("女");
         self.player.add_radical("子");
@@ -1604,8 +1764,8 @@ impl GameState {
     }
 
     fn begin_sentence_challenge(&mut self, mode: SentenceChallengeMode, intro: String) {
-        let sent_idx = self.rng_next() as usize % SENTENCES.len();
-        let (words, meaning) = SENTENCES[sent_idx];
+        let rng_val = self.rng_next();
+        let (words, meaning) = select_sentence_for_floor(self.floor_num, rng_val);
         let mut tiles: Vec<usize> = (0..words.len()).collect();
         for i in (1..tiles.len()).rev() {
             let j = self.rng_next() as usize % (i + 1);
@@ -1626,6 +1786,21 @@ impl GameState {
     fn maybe_trigger_boss_phase(&mut self, enemy_idx: usize) -> bool {
         if enemy_idx >= self.enemies.len() || !self.enemies[enemy_idx].is_alive() {
             return false;
+        }
+        if self.enemies[enemy_idx].boss_kind == Some(BossKind::Gatekeeper)
+            && !self.enemies[enemy_idx].phase_triggered
+            && self.enemies[enemy_idx].hp <= self.enemies[enemy_idx].max_hp / 2
+        {
+            self.enemies[enemy_idx].phase_triggered = true;
+            self.begin_sentence_challenge(
+                SentenceChallengeMode::GatekeeperSeal {
+                    boss_idx: enemy_idx,
+                    success_damage: 4 + self.floor_num / 3,
+                    failure_damage_to_player: 3 + self.floor_num / 4,
+                },
+                "🔒 The Gatekeeper invokes a seal! Arrange the sentence to shatter it.".to_string(),
+            );
+            return true;
         }
         if self.enemies[enemy_idx].boss_kind == Some(BossKind::Scholar)
             && !self.enemies[enemy_idx].phase_triggered
@@ -1886,6 +2061,9 @@ impl GameState {
                 self.message_timer = 70;
                 if self.player.hp <= 0 {
                     self.player.hp = 0;
+                    self.run_journal
+                        .log(RunEvent::DiedTo("Spike trap".to_string(), self.floor_num));
+                    self.post_mortem_page = 0;
                     self.combat = CombatState::GameOver;
                     self.message = self.run_summary();
                     self.message_timer = 255;
@@ -1902,6 +2080,63 @@ impl GameState {
             Tile::Water => {
                 self.message = "≈ Shallow water — stunning magic can arc through it.".to_string();
                 self.message_timer = 60;
+            }
+            Tile::Trap(trap_type) => {
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Floor; // trap consumed
+                match trap_type {
+                    0 => {
+                        // Poison trap
+                        self.player
+                            .statuses
+                            .push(crate::status::StatusInstance::new(
+                                crate::status::StatusKind::Poison { damage: 1 },
+                                5,
+                            ));
+                        self.message = "💀 Poison trap! Toxic fumes engulf you!".to_string();
+                        self.trigger_shake(6);
+                        self.flash = Some((120, 255, 80, 0.2));
+                    }
+                    1 => {
+                        // Teleport trap
+                        let mut found = false;
+                        for _ in 0..100 {
+                            let rx = (self.rng_next() % MAP_W as u64) as i32;
+                            let ry = (self.rng_next() % MAP_H as u64) as i32;
+                            let ri = self.level.idx(rx, ry);
+                            if matches!(self.level.tiles[ri], Tile::Floor | Tile::Corridor)
+                                && self.level.revealed[ri]
+                            {
+                                self.player.x = rx;
+                                self.player.y = ry;
+                                found = true;
+                                break;
+                            }
+                        }
+                        self.message = if found {
+                            "✦ Teleport trap! The floor gives way beneath you!".to_string()
+                        } else {
+                            "✦ A teleport trap fizzles...".to_string()
+                        };
+                        self.trigger_shake(4);
+                        self.flash = Some((100, 140, 255, 0.25));
+                    }
+                    _ => {
+                        // Alarm trap — alert all enemies
+                        for e in &mut self.enemies {
+                            if e.is_alive() {
+                                e.alert = true;
+                            }
+                        }
+                        self.message = "🔔 Alarm trap! All monsters are alerted!".to_string();
+                        self.trigger_shake(4);
+                        self.flash = Some((255, 200, 50, 0.2));
+                    }
+                }
+                self.message_timer = 60;
+                if let Some(ref audio) = self.audio {
+                    audio.play_damage();
+                }
             }
             _ => {}
         }
@@ -2030,16 +2265,18 @@ impl GameState {
         crate::srs::save_srs(&self.srs);
         self.codex.save();
         self.floor_num += 1;
+        self.run_journal.log(RunEvent::EnteredFloor(self.floor_num));
         self.srs.current_floor = self.floor_num;
         self.tutorial = None;
         self.merchant_reroll_used = false;
+        self.shop_banned = false;
         if self.floor_num > self.best_floor {
             self.best_floor = self.floor_num;
         }
         self.seed = self.seed.wrapping_mul(6364136223846793005).wrapping_add(1);
         self.rng_state = self.seed;
         self.floor_profile = FloorProfile::roll(self.floor_num, self.rng_next());
-        self.level = DungeonLevel::generate(MAP_W, MAP_H, self.seed);
+        self.level = DungeonLevel::generate(MAP_W, MAP_H, self.seed, self.floor_num);
         let (sx, sy) = self.level.start_pos();
         self.player.move_to(sx, sy);
         self.enemies.clear();
@@ -2221,6 +2458,34 @@ impl GameState {
         }
         let (pdmg, pheal) = status::tick_statuses(&mut self.player.statuses);
         self.player.tick_form();
+
+        // Spirit clock tick
+        if self.player.spirit > 0 {
+            self.player.spirit -= 1;
+            if self.player.spirit == 0 {
+                self.message = "🌑 Your spirit is exhausted! Find food or an ink well!".to_string();
+                self.message_timer = 80;
+            }
+        } else {
+            // Starving: take 1 damage per move
+            self.player.hp -= 1;
+            self.message = "🌑 Spiritual exhaustion drains your life force! (-1 HP)".to_string();
+            self.message_timer = 40;
+            if self.player.hp <= 0 {
+                self.player.hp = 0;
+                if let Some(ref audio) = self.audio {
+                    audio.play_death();
+                }
+                self.run_journal
+                    .log(RunEvent::DiedTo("Starvation".to_string(), self.floor_num));
+                self.post_mortem_page = 0;
+                self.combat = CombatState::GameOver;
+                self.message = self.run_summary();
+                self.message_timer = 255;
+                return;
+            }
+        }
+
         if pdmg > 0 {
             self.player.hp -= pdmg;
             self.message = format!("☠ Poison deals {} damage!", pdmg);
@@ -2230,6 +2495,9 @@ impl GameState {
                 if let Some(ref audio) = self.audio {
                     audio.play_death();
                 }
+                self.run_journal
+                    .log(RunEvent::DiedTo("Poison".to_string(), self.floor_num));
+                self.post_mortem_page = 0;
                 self.combat = CombatState::GameOver;
                 self.message = self.run_summary();
                 self.message_timer = 255;
@@ -2510,10 +2778,16 @@ impl GameState {
 
         // Shop
         if target_tile == Tile::Shop {
+            if self.shop_banned {
+                self.message =
+                    "🚫 The shopkeeper slams the door shut. You're not welcome here!".to_string();
+                self.message_timer = 80;
+                return;
+            }
             let items = self.generate_shop_items();
             self.combat = CombatState::Shopping { items, cursor: 0 };
             self.message =
-                "Welcome to the shop! ↑↓ to browse, Enter to buy, Esc to leave.".to_string();
+                "Welcome to the shop! ↑↓ browse, Enter buy, G grab (steal), Esc leave.".to_string();
             self.message_timer = 255;
             let (px, py) = (self.player.x, self.player.y);
             compute_fov(&mut self.level, px, py, FOV_RADIUS);
@@ -3016,13 +3290,16 @@ impl GameState {
                     + tactical_insight;
 
                 self.answer_streak += 1;
-                let streak_bonus = match self.answer_streak {
-                    3..=4 => 1,
-                    5..=9 => 2,
-                    10.. => 3,
-                    _ => 0,
-                };
-                let hit_dmg = hit_dmg + streak_bonus;
+                if self.answer_streak > self.run_journal.max_combo {
+                    self.run_journal.max_combo = self.answer_streak;
+                    if self.answer_streak >= 5 {
+                        self.run_journal
+                            .log(RunEvent::ComboAchieved(self.answer_streak, self.floor_num));
+                    }
+                }
+                let multiplier = combo_tier(self.answer_streak).multiplier();
+                let hit_dmg = ((hit_dmg as f64) * multiplier).round() as i32;
+                let hit_dmg = hit_dmg.max(1);
 
                 if self.answer_streak == 5 || self.answer_streak == 10 {
                     let (sx, sy) = self.tile_to_screen(self.player.x, self.player.y);
@@ -3088,6 +3365,21 @@ impl GameState {
                         vocab::CompoundPinyinStep::Miss { .. } => {}
                     }
                 } else {
+                    if self.enemies[enemy_idx].radical_dodge {
+                        self.enemies[enemy_idx].radical_dodge = false;
+                        self.message =
+                            format!("🌙 {} dodges your attack with Shadow Step!", e_hanzi);
+                        self.message_timer = 60;
+                        self.typing.clear();
+                        return;
+                    }
+
+                    let armor = self.enemies[enemy_idx].radical_armor;
+                    if armor > 0 {
+                        self.enemies[enemy_idx].radical_armor = 0;
+                        dealt_dmg = (dealt_dmg - armor).max(1);
+                    }
+
                     self.enemies[enemy_idx].hp -= dealt_dmg;
                 }
                 if self.enemies[enemy_idx].hp <= 0 {
@@ -3096,6 +3388,11 @@ impl GameState {
                     self.run_gold_earned += e_gold;
                     if e_is_boss {
                         self.run_bosses_killed += 1;
+                        self.run_journal
+                            .log(RunEvent::BossKilled(e_hanzi.to_string(), self.floor_num));
+                    } else {
+                        self.run_journal
+                            .log(RunEvent::EnemyKilled(e_hanzi.to_string(), self.floor_num));
                     }
                     if let Some(ref audio) = self.audio {
                         audio.play_kill();
@@ -3136,6 +3433,8 @@ impl GameState {
                         let drop_idx = self.rng_next() as usize % available.len();
                         let ch = available[drop_idx].ch;
                         self.player.add_radical(ch);
+                        self.run_journal
+                            .log(RunEvent::RadicalCollected(ch.to_string(), self.floor_num));
                         if self.floor_profile.radical_drop_bonus() {
                             let bonus_idx = self.rng_next() as usize % available.len();
                             self.player.add_radical(available[bonus_idx].ch);
@@ -3173,15 +3472,38 @@ impl GameState {
                     if (self.rng_next() % 100) < equip_chance {
                         let eq_idx = self.rng_next() as usize % EQUIPMENT_POOL.len();
                         let eq = &EQUIPMENT_POOL[eq_idx];
-                        self.player.equip(eq);
-                        if let Some(rad) = dropped {
-                            self.message = format!(
-                                "Defeated {}! +{}g [{}] + {}!",
-                                e_hanzi, e_gold, rad, eq.name
-                            );
+                        let current_state = self.player.equipment_state(eq.slot);
+                        if current_state == ItemState::Cursed {
+                            if let Some(rad) = dropped {
+                                self.message = format!(
+                                    "Defeated {}! +{}g [{}] ({} blocked by curse!)",
+                                    e_hanzi, e_gold, rad, eq.name
+                                );
+                            } else {
+                                self.message = format!(
+                                    "Defeated {}! +{}g ({} blocked by curse!)",
+                                    e_hanzi, e_gold, eq.name
+                                );
+                            }
                         } else {
-                            self.message =
-                                format!("Defeated {}! +{}g + {}!", e_hanzi, e_gold, eq.name);
+                            let state = self.roll_item_state();
+                            self.player.equip(eq, state);
+                            let prefix = match state {
+                                ItemState::Cursed => "💀 ",
+                                ItemState::Blessed => "✨ ",
+                                ItemState::Normal => "",
+                            };
+                            if let Some(rad) = dropped {
+                                self.message = format!(
+                                    "Defeated {}! +{}g [{}] + {}{}!",
+                                    e_hanzi, e_gold, rad, prefix, eq.name
+                                );
+                            } else {
+                                self.message = format!(
+                                    "Defeated {}! +{}g + {}{}!",
+                                    e_hanzi, e_gold, prefix, eq.name
+                                );
+                            }
                         }
                     } else if let Some(rad) = dropped {
                         self.message = format!("Defeated {}! +{}g [{}]", e_hanzi, e_gold, rad);
@@ -3203,8 +3525,14 @@ impl GameState {
                         }
                     }
                     // Streak indicator
-                    if self.answer_streak >= 3 {
-                        self.message = format!("{} 🔥×{}", self.message, self.answer_streak);
+                    let tier = combo_tier(self.answer_streak);
+                    if tier != ComboTier::None {
+                        self.message = format!(
+                            "{} 🔥 {}! ×{}",
+                            self.message,
+                            tier.name(),
+                            self.answer_streak
+                        );
                     }
                     self.message_timer = 80;
                     // Tutorial hint: first tutorial fight complete
@@ -3252,14 +3580,16 @@ impl GameState {
                         self.achievements.unlock("first_boss");
                     }
 
-                    // Boss bonus sentence challenge
+                    // Boss bonus sentence challenge (scaled by floor)
                     if e_is_boss
                         && self.floor_num >= 5
                         && self.enemies[enemy_idx].boss_kind != Some(BossKind::Scholar)
                         && self.enemies[enemy_idx].boss_kind != Some(BossKind::InkSage)
+                        && self.enemies[enemy_idx].boss_kind != Some(BossKind::Gatekeeper)
                     {
+                        let base_reward = 15 + self.floor_num * 2;
                         self.begin_sentence_challenge(
-                            SentenceChallengeMode::BonusGold { reward: 30 },
+                            SentenceChallengeMode::BonusGold { reward: base_reward },
                             "Boss Phase 2! Arrange the words in correct order. ←→ to select, Enter to pick.".to_string(),
                         );
                     }
@@ -3279,10 +3609,14 @@ impl GameState {
                             format!("{} ({} HP left)", message, self.enemies[enemy_idx].hp);
                         self.message_timer = if elite_completed_cycle { 80 } else { 70 };
                     } else {
-                        self.message = if self.answer_streak >= 3 {
+                        let tier = combo_tier(self.answer_streak);
+                        self.message = if tier != ComboTier::None {
                             format!(
-                                "Hit for {}! {} HP left 🔥×{}",
-                                dealt_dmg, self.enemies[enemy_idx].hp, self.answer_streak
+                                "Hit for {}! {} HP left 🔥 {}! ×{}",
+                                dealt_dmg,
+                                self.enemies[enemy_idx].hp,
+                                tier.name(),
+                                self.answer_streak
                             )
                         } else {
                             format!(
@@ -3402,6 +3736,13 @@ impl GameState {
                         }
                         let e_damage = (e_damage - def_bonus).max(0);
                         self.player.hp -= e_damage;
+
+                        if self.enemies[enemy_idx].radical_multiply {
+                            self.enemies[enemy_idx].radical_multiply = false;
+                            self.player.hp -= e_damage;
+                            self.message.push_str(" ✕ Double strike!");
+                        }
+
                         if let Some(ref audio) = self.audio {
                             audio.play_damage();
                         }
@@ -3433,8 +3774,29 @@ impl GameState {
                     self.message
                         .push_str(&format!(" 🥷 The Radical Thief stole {}!", stolen));
                 }
+
+                // Radical actions: enemy uses abilities based on its hanzi components
+                {
+                    let actions = self.enemies[enemy_idx].radical_actions();
+                    let mut action_msgs = Vec::new();
+                    for action in actions {
+                        // 30% chance per radical action
+                        if (self.rng_next() % 100) < 30 {
+                            let msg = self.apply_radical_action(enemy_idx, action);
+                            action_msgs.push(msg);
+                        }
+                    }
+                    if !action_msgs.is_empty() {
+                        self.message.push_str(" ");
+                        self.message.push_str(&action_msgs.join(" "));
+                    }
+                }
+
                 if self.player.hp <= 0 {
                     self.player.hp = 0;
+                    self.run_journal
+                        .log(RunEvent::DiedTo(e_hanzi.to_string(), self.floor_num));
+                    self.post_mortem_page = 0;
                     self.combat = CombatState::GameOver;
                     self.message = self.run_summary();
                     self.message_timer = 255;
@@ -3445,6 +3807,122 @@ impl GameState {
                 }
             }
             self.typing.clear();
+        }
+    }
+
+    /// Apply a radical action triggered by an enemy on a wrong answer.
+    /// Returns a description string of what happened.
+    fn apply_radical_action(&mut self, enemy_idx: usize, action: RadicalAction) -> String {
+        match action {
+            RadicalAction::FireBreath => {
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Burn { damage: 1 },
+                        3,
+                    ));
+                format!("{} — You catch fire!", action.name())
+            }
+            RadicalAction::WaterShield => {
+                let e = &mut self.enemies[enemy_idx];
+                e.hp = (e.hp + 2).min(e.max_hp);
+                format!("{} — Enemy heals 2 HP!", action.name())
+            }
+            RadicalAction::PowerStrike => {
+                self.player.hp -= 2;
+                format!("{} — Extra 2 damage!", action.name())
+            }
+            RadicalAction::SelfHeal => {
+                let e = &mut self.enemies[enemy_idx];
+                e.hp = (e.hp + 3).min(e.max_hp);
+                format!("{} — Enemy heals 3 HP!", action.name())
+            }
+            RadicalAction::WarCry => {
+                self.player.spirit = (self.player.spirit - 10).max(0);
+                format!("{} — Your spirit drains! (-10 spirit)", action.name())
+            }
+            RadicalAction::TrueSight => {
+                if self.player.shield {
+                    self.player.shield = false;
+                    format!("{} — Your shield shatters!", action.name())
+                } else {
+                    format!("{} — The eye sees through you!", action.name())
+                }
+            }
+            RadicalAction::Disarm => {
+                self.player.tone_bonus_damage = (self.player.tone_bonus_damage - 1).max(0);
+                format!("{} — Your grip weakens!", action.name())
+            }
+            RadicalAction::Root => {
+                // Use Poison status as a proxy for "rooted" — 1 damage for 1 turn
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Poison { damage: 1 },
+                        1,
+                    ));
+                format!("{} — Roots bind your feet!", action.name())
+            }
+            RadicalAction::Fortify => {
+                self.enemies[enemy_idx].damage += 1;
+                format!("{} — Enemy grows stronger!", action.name())
+            }
+            RadicalAction::Radiance => {
+                // Temporarily reduce player's next spell power
+                self.player.spell_power_temp_bonus -= 1;
+                format!("{} — Blinding light weakens your focus!", action.name())
+            }
+            RadicalAction::ShadowStep => {
+                self.enemies[enemy_idx].radical_dodge = true;
+                format!("{} — The enemy fades into shadow!", action.name())
+            }
+            RadicalAction::CallAlly => {
+                // Alert all enemies on the floor
+                for e in &mut self.enemies {
+                    if e.is_alive() {
+                        e.alert = true;
+                    }
+                }
+                format!("{} — All monsters become alert!", action.name())
+            }
+            RadicalAction::Charm => {
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Confused,
+                        2,
+                    ));
+                format!("{} — Your mind clouds with confusion!", action.name())
+            }
+            RadicalAction::Swift => {
+                // Extra counter-attack: deal enemy damage again
+                let dmg = self.enemies[enemy_idx].damage;
+                self.player.hp -= dmg;
+                format!(
+                    "{} — A swift follow-up strike for {} damage!",
+                    action.name(),
+                    dmg
+                )
+            }
+            RadicalAction::Leech => {
+                let dmg = self.enemies[enemy_idx].damage;
+                let e = &mut self.enemies[enemy_idx];
+                e.hp = (e.hp + dmg).min(e.max_hp);
+                format!("{} — Enemy drains {} life force!", action.name(), dmg)
+            }
+            RadicalAction::Multiply => {
+                self.enemies[enemy_idx].radical_multiply = true;
+                format!("{} — The next attack will strike twice!", action.name())
+            }
+            RadicalAction::Armor => {
+                self.enemies[enemy_idx].radical_armor += 2;
+                format!("{} — Metal scales deflect your blows!", action.name())
+            }
+            RadicalAction::Earthquake => {
+                self.player.hp -= 1;
+                self.trigger_shake(12);
+                format!("{} — The ground shakes! (-1 HP)", action.name())
+            }
         }
     }
 
@@ -3494,6 +3972,10 @@ impl GameState {
             self.discovered_recipes.push(recipe_idx);
         }
         self.run_spells_forged += 1;
+        self.run_journal.log(RunEvent::SpellForged(
+            format!("{} ({})", recipe.output_hanzi, recipe.output_meaning),
+            self.floor_num,
+        ));
         self.message = format!(
             "Forged {} ({}) — {}! [{}]",
             recipe.output_hanzi,
@@ -4359,6 +4841,12 @@ impl GameState {
             kind: ShopItemKind::Consumable(consumable),
         });
 
+        items.push(ShopItem {
+            label: "🍙 Rice Ball".to_string(),
+            cost: 8,
+            kind: ShopItemKind::Consumable(crate::player::Item::RiceBall(30)),
+        });
+
         items
     }
 
@@ -4393,20 +4881,138 @@ impl GameState {
                 }
                 ShopItemKind::Equipment(idx) => {
                     let eq = &EQUIPMENT_POOL[*idx];
-                    self.player.equip(eq);
-                    self.message = format!("Equipped {}!", eq.name);
+                    let current_state = self.player.equipment_state(eq.slot);
+                    if current_state == ItemState::Cursed {
+                        self.message = format!(
+                            "💀 Your {} slot is cursed! Visit an altar to purify.",
+                            match eq.slot {
+                                crate::player::EquipSlot::Weapon => "weapon",
+                                crate::player::EquipSlot::Armor => "armor",
+                                crate::player::EquipSlot::Charm => "charm",
+                            }
+                        );
+                        self.player.gold += effective_cost; // refund
+                    } else {
+                        self.player.equip(eq, ItemState::Normal);
+                        self.message = format!("Equipped {}!", eq.name);
+                    }
                 }
                 ShopItemKind::Consumable(consumable) => {
                     let name = self.item_display_name(consumable);
-                    if self.player.add_item(consumable.clone()) {
+                    if self.player.add_item(consumable.clone(), ItemState::Normal) {
                         self.message = format!("Bought {}!", name);
                     } else {
-                        self.message = "Item inventory full!".to_string();
+                        self.message = "Inventory full!".to_string();
                         self.player.gold += effective_cost; // refund
                     }
                 }
             }
             self.message_timer = 60;
+        }
+    }
+
+    /// Attempt to steal the currently highlighted shop item.
+    fn shop_steal(&mut self) {
+        if self.shop_banned {
+            self.message = "🚫 The shopkeeper refuses to serve you!".to_string();
+            self.message_timer = 60;
+            return;
+        }
+
+        if let CombatState::Shopping { ref items, cursor } = self.combat.clone() {
+            if cursor >= items.len() {
+                return;
+            }
+
+            let mut chance: i64 = 40;
+            if self.player.class == PlayerClass::Thief {
+                chance += 25;
+            }
+            if self.player.class == PlayerClass::Assassin {
+                chance += 15;
+            }
+            chance -= (self.theft_catches as i64) * 10;
+            chance = chance.clamp(5, 80);
+
+            let roll = (self.rng_next() % 100) as i64;
+
+            if roll < chance {
+                let item = &items[cursor];
+                match &item.kind {
+                    ShopItemKind::Radical(ch) => {
+                        self.player.add_radical(ch);
+                        self.message = format!(
+                            "🤫 You pocket radical [{}] while the shopkeeper looks away!",
+                            ch
+                        );
+                    }
+                    ShopItemKind::HealFull => {
+                        self.player.hp = self.player.max_hp;
+                        self.message = "🤫 You sip the healing brew unnoticed!".to_string();
+                    }
+                    ShopItemKind::Equipment(idx) => {
+                        let eq = &EQUIPMENT_POOL[*idx];
+                        self.player.equip(eq, ItemState::Normal);
+                        self.message =
+                            format!("🤫 You slip on the {} when nobody's watching!", eq.name);
+                    }
+                    ShopItemKind::Consumable(consumable) => {
+                        if !self.player.add_item(consumable.clone(), ItemState::Normal) {
+                            self.message = "Inventory full — can't steal!".to_string();
+                            self.message_timer = 40;
+                            return;
+                        }
+                        self.message = "🤫 Five-finger discount! Item pocketed.".to_string();
+                    }
+                }
+                self.message_timer = 80;
+                if let Some(ref audio) = self.audio {
+                    audio.play_buy();
+                }
+                if let CombatState::Shopping {
+                    ref mut items,
+                    ref mut cursor,
+                } = self.combat
+                {
+                    if *cursor < items.len() {
+                        items.remove(*cursor);
+                        if *cursor >= items.len() && *cursor > 0 {
+                            *cursor -= 1;
+                        }
+                    }
+                }
+            } else {
+                self.theft_catches += 1;
+                self.shop_banned = true;
+                let dmg = 3 + self.theft_catches as i32;
+                self.player.hp -= dmg;
+                self.combat = CombatState::Explore;
+                self.message = format!(
+                    "🚨 Caught stealing! The shopkeeper strikes you for {} damage and throws you out!",
+                    dmg
+                );
+                self.message_timer = 100;
+                if let Some(ref audio) = self.audio {
+                    audio.play_damage();
+                }
+                self.trigger_shake(10);
+                self.flash = Some((255, 50, 50, 0.3));
+
+                if self.player.hp <= 0 {
+                    self.player.hp = 0;
+                    self.run_journal.log(RunEvent::DiedTo(
+                        "Angry shopkeeper".to_string(),
+                        self.floor_num,
+                    ));
+                    self.post_mortem_page = 0;
+                    self.combat = CombatState::GameOver;
+                    self.message = self.run_summary();
+                    self.message_timer = 255;
+                    if let Some(ref audio) = self.audio {
+                        audio.play_death();
+                    }
+                }
+            }
         }
     }
 
@@ -5167,9 +5773,15 @@ impl GameState {
                 0 => {
                     // Random item
                     let item = self.random_item();
+                    let state = self.roll_item_state();
                     let name = self.item_display_name(&item);
-                    if self.player.add_item(item) {
-                        self.message = format!("◆ Found {}!", name);
+                    let prefix = match state {
+                        ItemState::Cursed => "💀 ",
+                        ItemState::Blessed => "✨ ",
+                        ItemState::Normal => "",
+                    };
+                    if self.player.add_item(item, state) {
+                        self.message = format!("◆ Found {}{}!", prefix, name);
                         self.achievements.check_items(self.player.items.len());
                     } else {
                         self.message = "◆ Chest had an item but inventory is full!".to_string();
@@ -5219,6 +5831,9 @@ impl GameState {
                     if let Some(ref audio) = self.audio {
                         audio.play_death();
                     }
+                    self.run_journal
+                        .log(RunEvent::DiedTo("Spike trap".to_string(), self.floor_num));
+                    self.post_mortem_page = 0;
                     self.combat = CombatState::GameOver;
                     self.message = self.run_summary();
                     self.message_timer = 255;
@@ -5255,16 +5870,28 @@ impl GameState {
         }
     }
 
+    fn roll_item_state(&mut self) -> ItemState {
+        let roll = self.rng_next() % 100;
+        if roll < 15 {
+            ItemState::Cursed
+        } else if roll < 25 {
+            ItemState::Blessed
+        } else {
+            ItemState::Normal
+        }
+    }
+
     /// Generate a random item appropriate for the current floor.
     fn random_item(&mut self) -> crate::player::Item {
         use crate::player::Item;
-        match self.rng_next() % 6 {
+        match self.rng_next() % 7 {
             0 => Item::HealthPotion(4 + self.floor_num),
             1 => Item::PoisonFlask(2, 3),
             2 => Item::RevealScroll,
             3 => Item::TeleportScroll,
             4 => Item::HastePotion(5),
-            _ => Item::StunBomb,
+            5 => Item::StunBomb,
+            _ => Item::RiceBall(30),
         }
     }
 
@@ -5274,6 +5901,7 @@ impl GameState {
             return;
         }
         let item = self.player.items.remove(idx);
+        let item_state = self.player.item_states.remove(idx);
         let kind = item.kind();
         let appearance = self.item_appearance(kind).to_string();
         let true_name = item.name();
@@ -5289,14 +5917,37 @@ impl GameState {
                 } else {
                     heal
                 };
+                let heal = match item_state {
+                    ItemState::Cursed => (heal / 2).max(1),
+                    ItemState::Blessed => heal * 3 / 2,
+                    ItemState::Normal => heal,
+                };
                 self.player.hp = (self.player.hp + heal).min(self.player.max_hp);
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
                 self.message = format!(
-                    "💚 Healed {} HP! ({}/{})",
-                    heal, self.player.hp, self.player.max_hp
+                    "{}💚 Healed {} HP! ({}/{})",
+                    prefix, heal, self.player.hp, self.player.max_hp
                 );
+                if item_state == ItemState::Cursed {
+                    self.player
+                        .statuses
+                        .push(crate::status::StatusInstance::new(
+                            crate::status::StatusKind::Poison { damage: 1 },
+                            3,
+                        ));
+                    self.message.push_str(" But the curse poisons you!");
+                }
                 self.message_timer = 60;
             }
             crate::player::Item::PoisonFlask(dmg, turns) => {
+                let dmg = match item_state {
+                    ItemState::Blessed => dmg * 2,
+                    _ => dmg,
+                };
                 let px = self.player.x;
                 let py = self.player.y;
                 let mut count = 0;
@@ -5309,15 +5960,72 @@ impl GameState {
                         count += 1;
                     }
                 }
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
                 self.message = format!(
-                    "☠ Poisoned {} enemies! ({} dmg × {} turns)",
-                    count, dmg, turns
+                    "{}☠ Poisoned {} enemies! ({} dmg × {} turns)",
+                    prefix, count, dmg, turns
                 );
+                if item_state == ItemState::Cursed {
+                    self.player
+                        .statuses
+                        .push(crate::status::StatusInstance::new(
+                            crate::status::StatusKind::Poison { damage: 1 },
+                            2,
+                        ));
+                    self.message.push_str(" But the fumes poison you!");
+                }
                 self.message_timer = 60;
             }
             crate::player::Item::RevealScroll => {
                 self.reveal_entire_floor();
-                self.message = "👁 Map revealed!".to_string();
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                self.message = format!("{}👁 Map revealed!", prefix);
+                if item_state == ItemState::Blessed {
+                    self.player.hp = (self.player.hp + 3).min(self.player.max_hp);
+                    self.message.push_str(" You feel revitalized! (+3 HP)");
+                } else if item_state == ItemState::Cursed {
+                    let mut spawned = false;
+                    for dir in &[
+                        (0, 1),
+                        (1, 0),
+                        (0, -1),
+                        (-1, 0),
+                        (1, 1),
+                        (-1, -1),
+                        (1, -1),
+                        (-1, 1),
+                    ] {
+                        let tx = self.player.x + dir.0;
+                        let ty = self.player.y + dir.1;
+                        if tx > 0 && tx < MAP_W - 1 && ty > 0 && ty < MAP_H - 1 {
+                            let idx = self.level.idx(tx, ty);
+                            if self.level.tiles[idx].is_walkable()
+                                && self.enemy_at(tx, ty).is_none()
+                            {
+                                let pool = crate::vocab::vocab_for_floor(self.floor_num);
+                                if !pool.is_empty() {
+                                    let entry = pool[self.rng_next() as usize % pool.len()];
+                                    let mut e = Enemy::from_vocab(entry, tx, ty, self.floor_num);
+                                    e.alert = true;
+                                    self.enemies.push(e);
+                                    spawned = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if spawned {
+                        self.message.push_str(" An enemy was summoned!");
+                    }
+                }
                 self.message_timer = 60;
             }
             crate::player::Item::TeleportScroll => {
@@ -5335,24 +6043,57 @@ impl GameState {
                         }
                     }
                 }
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
                 if let Some(&(tx, ty)) =
                     candidates.get(self.rng_next() as usize % candidates.len().max(1))
                 {
                     self.player.move_to(tx, ty);
                     let (px, py) = (self.player.x, self.player.y);
                     compute_fov(&mut self.level, px, py, FOV_RADIUS);
-                    self.message = "✦ Teleported!".to_string();
+                    self.message = format!("{}✦ Teleported!", prefix);
                 } else {
-                    self.message = "Teleport fizzled — nowhere to go!".to_string();
+                    self.message = format!("{}Teleport fizzled — nowhere to go!", prefix);
+                }
+                if item_state == ItemState::Blessed {
+                    self.player.shield = true;
+                    self.message.push_str(" You gained a shield!");
+                } else if item_state == ItemState::Cursed {
+                    self.player.hp -= 2;
+                    self.message.push_str(" The rough transit deals 2 damage!");
                 }
                 self.message_timer = 60;
             }
             crate::player::Item::HastePotion(turns) => {
-                self.player.statuses.push(status::StatusInstance::new(
-                    status::StatusKind::Haste,
-                    turns,
-                ));
-                self.message = format!("⚡ Haste for {} turns! Enemies move at half speed.", turns);
+                let turns = match item_state {
+                    ItemState::Blessed => turns * 2,
+                    _ => turns,
+                };
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                if item_state == ItemState::Cursed {
+                    self.player.statuses.push(status::StatusInstance::new(
+                        status::StatusKind::Poison { damage: 1 },
+                        3,
+                    ));
+                    self.message =
+                        format!("{}The foul concoction slows you (poison 3 turns)!", prefix);
+                } else {
+                    self.player.statuses.push(status::StatusInstance::new(
+                        status::StatusKind::Haste,
+                        turns,
+                    ));
+                    self.message = format!(
+                        "{}⚡ Haste for {} turns! Enemies move at half speed.",
+                        prefix, turns
+                    );
+                }
                 self.message_timer = 60;
             }
             crate::player::Item::StunBomb => {
@@ -5362,11 +6103,41 @@ impl GameState {
                         let i = self.level.idx(e.x, e.y);
                         if self.level.visible[i] {
                             e.stunned = true;
+                            if item_state == ItemState::Blessed {
+                                e.hp -= 2;
+                            }
                             count += 1;
                         }
                     }
                 }
-                self.message = format!("💥 Stunned {} enemies!", count);
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                self.message = format!("{}💥 Stunned {} enemies!", prefix, count);
+                if item_state == ItemState::Blessed {
+                    self.message.push_str(" (Dealt 2 holy damage to each!)");
+                } else if item_state == ItemState::Cursed {
+                    self.player.hp -= 2;
+                    self.message
+                        .push_str(" The blast backfires and deals 2 damage to you!");
+                }
+                self.message_timer = 60;
+            }
+            crate::player::Item::RiceBall(amount) => {
+                let amount = match item_state {
+                    ItemState::Cursed => amount / 2,
+                    ItemState::Blessed => (amount as f64 * 1.5) as i32,
+                    ItemState::Normal => amount,
+                };
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                self.player.spirit = (self.player.spirit + amount).min(self.player.max_spirit);
+                self.message = format!("{}🍙 Restored {} spirit energy!", prefix, amount);
                 self.message_timer = 60;
             }
         }
@@ -5385,6 +6156,7 @@ impl GameState {
             return;
         }
         let item = self.player.items.remove(idx);
+        let _item_state = self.player.item_states.remove(idx);
         let deity = altar.deity();
 
         // Basic offering logic
@@ -5489,6 +6261,7 @@ impl GameState {
 
         // Remove potion first
         let potion = self.player.items.remove(source_idx);
+        let _potion_state = self.player.item_states.remove(source_idx);
 
         // Adjust target index if it was an item
         let effective_target_idx = if target_cursor >= 3 {
@@ -5524,7 +6297,7 @@ impl GameState {
                     }
                 } else {
                     self.message = "No weapon to coat.".to_string();
-                    self.player.add_item(potion); // Return item
+                    self.player.add_item(potion, ItemState::Normal); // Return item
                 }
             }
             1 => {
@@ -5533,7 +6306,7 @@ impl GameState {
                     self.message = "You wash your armor.".to_string();
                 } else {
                     self.message = "No armor.".to_string();
-                    self.player.add_item(potion);
+                    self.player.add_item(potion, ItemState::Normal);
                 }
             }
             2 => {
@@ -5544,10 +6317,10 @@ impl GameState {
                 // Inventory Item
                 if effective_target_idx < self.player.items.len() {
                     self.message = "Mixing not yet implemented. Item returned.".to_string();
-                    self.player.add_item(potion);
+                    self.player.add_item(potion, ItemState::Normal);
                 } else {
                     // Invalid target (shouldn't happen)
-                    self.player.add_item(potion);
+                    self.player.add_item(potion, ItemState::Normal);
                 }
             }
         }
@@ -5593,6 +6366,10 @@ impl GameState {
         self.next_chain_id = 1;
         self.floor_profile = FloorProfile::Normal;
         self.answer_streak = 0;
+        self.run_journal = RunJournal::default();
+        self.post_mortem_page = 0;
+        self.theft_catches = 0;
+        self.shop_banned = false;
         self.enemies.clear();
         self.typing.clear();
         // Keep discovered recipes across runs (loaded from localStorage)
@@ -5601,7 +6378,6 @@ impl GameState {
         self.show_inventory = false;
         self.show_help = false;
         self.show_settings = false;
-        self.show_talent_tree = false;
         self.message_tick_delay = 0;
         self.new_floor();
     }
@@ -5715,34 +6491,6 @@ impl GameState {
         }
     }
 
-    fn load_talents() -> TalentTree {
-        let storage: Option<web_sys::Storage> =
-            window().and_then(|w: web_sys::Window| w.local_storage().ok().flatten());
-        storage
-            .and_then(|s| s.get_item("radical_roguelike_talents").ok().flatten())
-            .map(|value| {
-                let mut parts = value.split(',');
-                TalentTree {
-                    jade_heart: parts
-                        .next()
-                        .and_then(|v| v.parse::<u8>().ok())
-                        .unwrap_or(0)
-                        .min(TalentTree::max_rank(0)),
-                    haggler_ink: parts
-                        .next()
-                        .and_then(|v| v.parse::<u8>().ok())
-                        .unwrap_or(0)
-                        .min(TalentTree::max_rank(1)),
-                    spell_echo: parts
-                        .next()
-                        .and_then(|v| v.parse::<u8>().ok())
-                        .unwrap_or(0)
-                        .min(TalentTree::max_rank(2)),
-                }
-            })
-            .unwrap_or_default()
-    }
-
     fn load_stat(key: &str) -> u32 {
         let storage: Option<web_sys::Storage> =
             window().and_then(|w: web_sys::Window| w.local_storage().ok().flatten());
@@ -5784,18 +6532,6 @@ impl GameState {
         }
     }
 
-    fn save_talents(&self) {
-        let storage: Option<web_sys::Storage> =
-            window().and_then(|w: web_sys::Window| w.local_storage().ok().flatten());
-        if let Some(storage) = storage {
-            let data = format!(
-                "{},{},{}",
-                self.talents.jade_heart, self.talents.haggler_ink, self.talents.spell_echo
-            );
-            let _ = storage.set_item("radical_roguelike_talents", &data);
-        }
-    }
-
     fn tick_message(&mut self) {
         if self.message_timer > 0
             && advance_message_decay(
@@ -5812,17 +6548,27 @@ impl GameState {
         let popup = self.achievement_popup.map(|(n, d, _)| (n, d));
         let room_mod = self.current_room_modifier();
         let tutorial_hint = self.tutorial_hint();
-        let (knowledge_progress, knowledge_step) = self.knowledge_progress();
-        let show_help = self.show_help
-            && !self.show_inventory
-            && !self.show_codex
-            && !self.show_settings
-            && !self.show_talent_tree;
+        let show_help =
+            self.show_help && !self.show_inventory && !self.show_codex && !self.show_settings;
         let item_labels: Vec<String> = self
             .player
             .items
             .iter()
-            .map(|item| self.item_display_name(item))
+            .enumerate()
+            .map(|(idx, item)| {
+                let state = self
+                    .player
+                    .item_states
+                    .get(idx)
+                    .copied()
+                    .unwrap_or(ItemState::Normal);
+                let prefix = match state {
+                    ItemState::Cursed => "💀 ",
+                    ItemState::Blessed => "✨ ",
+                    ItemState::Normal => "",
+                };
+                format!("{}{}", prefix, self.item_display_name(item))
+            })
             .collect();
         self.renderer.draw(
             &self.level,
@@ -5856,16 +6602,12 @@ impl GameState {
             &self.settings,
             self.show_settings,
             self.settings_cursor,
-            &self.talents,
-            self.show_talent_tree,
-            self.talent_cursor,
-            self.knowledge_points_available(),
-            self.knowledge_points_total(),
-            knowledge_progress,
-            knowledge_step,
             self.answer_streak,
             self.floor_profile.label(),
             &self.codex,
+            &self.run_journal,
+            self.post_mortem_page,
+            self.class_cursor,
         );
         if self.show_inventory {
             self.renderer.draw_inventory(
@@ -6046,6 +6788,7 @@ fn tile_look_text(tile: Tile) -> String {
         Tile::WordBridge => "Word bridge — answer correctly to bridge the water.".to_string(),
         Tile::LockedDoor => "Locked door — translate to unlock.".to_string(),
         Tile::CursedFloor => "Cursed floor — a hidden trap awaits the unwary.".to_string(),
+        Tile::Trap(_) => "Open floor.".to_string(),
     }
 }
 
@@ -6079,6 +6822,14 @@ fn enemy_look_text(enemy: &Enemy) -> String {
     if let Some(trait_text) = enemy.boss_trait_text() {
         text.push_str(&format!(" {}", trait_text));
     }
+
+    let actions = enemy.radical_actions();
+    if !actions.is_empty() {
+        let action_list: Vec<&str> = actions.iter().map(|a| a.name()).collect();
+        // Append to the look description
+        text.push_str(&format!(" | Abilities: {}", action_list.join(", ")));
+    }
+
     text
 }
 
@@ -6151,10 +6902,11 @@ fn seal_cross_positions(x: i32, y: i32) -> [(i32, i32); 8] {
 #[cfg(test)]
 mod tests {
     use super::{
-        advance_message_decay, can_be_reshaped_by_seal, combat_prompt_for, detect_combo,
-        elite_chain_damage, elite_remaining_hp, enemy_look_text, in_look_range,
-        seal_cross_positions, spell_category, tile_look_text, tutorial_exit_blocker_for, Companion,
-        FloorProfile, GameState, ListenMode, TalentTree, TextSpeed, TutorialState,
+        advance_message_decay, can_be_reshaped_by_seal, combat_prompt_for, combo_tier,
+        detect_combo, elite_chain_damage, elite_remaining_hp, enemy_look_text, in_look_range,
+        seal_cross_positions, spell_category, tile_look_text, tutorial_exit_blocker_for, ComboTier,
+        Companion, FloorProfile, GameState, ListenMode, RunEvent, RunJournal, TextSpeed,
+        TutorialState,
     };
     use crate::dungeon::Tile;
     use crate::enemy::Enemy;
@@ -6233,18 +6985,6 @@ mod tests {
         assert_eq!(GameState::adjust_volume(0, -1), 0);
         assert_eq!(GameState::adjust_volume(95, 1), 100);
         assert_eq!(GameState::adjust_volume(40, -2), 20);
-    }
-
-    #[test]
-    fn talent_tree_upgrades_and_caps() {
-        let mut talents = TalentTree::default();
-        assert!(talents.upgrade(0));
-        assert_eq!(talents.starting_hp_bonus(), 1);
-        for _ in 0..10 {
-            let _ = talents.upgrade(1);
-        }
-        assert_eq!(talents.rank(1), TalentTree::max_rank(1));
-        assert_eq!(talents.shop_discount_pct(), 20);
     }
 
     #[test]
@@ -6551,6 +7291,70 @@ mod tests {
             .contextual_hint(&enemy, 10, 10, true, 1)
             .is_none());
     }
+
+    #[test]
+    fn combo_tier_mapping() {
+        assert_eq!(combo_tier(0), ComboTier::None);
+        assert_eq!(combo_tier(1), ComboTier::None);
+        assert_eq!(combo_tier(2), ComboTier::Good);
+        assert_eq!(combo_tier(3), ComboTier::Good);
+        assert_eq!(combo_tier(4), ComboTier::Great);
+        assert_eq!(combo_tier(5), ComboTier::Great);
+        assert_eq!(combo_tier(6), ComboTier::Excellent);
+        assert_eq!(combo_tier(8), ComboTier::Excellent);
+        assert_eq!(combo_tier(9), ComboTier::Perfect);
+        assert_eq!(combo_tier(11), ComboTier::Perfect);
+        assert_eq!(combo_tier(12), ComboTier::Radical);
+        assert_eq!(combo_tier(20), ComboTier::Radical);
+    }
+
+    #[test]
+    fn combo_tier_multipliers() {
+        assert_eq!(ComboTier::None.multiplier(), 1.0);
+        assert_eq!(ComboTier::Good.multiplier(), 1.15);
+        assert_eq!(ComboTier::Great.multiplier(), 1.3);
+        assert_eq!(ComboTier::Excellent.multiplier(), 1.5);
+        assert_eq!(ComboTier::Perfect.multiplier(), 1.75);
+        assert_eq!(ComboTier::Radical.multiplier(), 2.0);
+    }
+
+    #[test]
+    fn run_journal_logs_and_retrieves_floor_events() {
+        let mut j = RunJournal::default();
+        j.log(RunEvent::EnteredFloor(1));
+        j.log(RunEvent::EnemyKilled("猫".to_string(), 1));
+        j.log(RunEvent::EnemyKilled("狗".to_string(), 1));
+        j.log(RunEvent::SpellForged("FireBolt".to_string(), 1));
+        j.log(RunEvent::EnteredFloor(2));
+        j.log(RunEvent::BossKilled("龙".to_string(), 2));
+
+        assert_eq!(j.enemies_killed_count(), 3);
+        assert_eq!(j.max_floor(), 2);
+        assert_eq!(j.spells_forged_list(), vec!["FireBolt"]);
+
+        let f1 = j.floor_summary(1);
+        assert_eq!(f1.len(), 4);
+        let f2 = j.floor_summary(2);
+        assert_eq!(f2.len(), 2);
+
+        let line1 = j.floor_line(1);
+        assert!(line1.contains("2 kills"));
+        assert!(line1.contains("Forged FireBolt"));
+
+        let line2 = j.floor_line(2);
+        assert!(line2.contains("Boss 龙 slain"));
+    }
+
+    #[test]
+    fn run_journal_death_cause_extracts_reason() {
+        let mut j = RunJournal::default();
+        assert_eq!(j.death_cause(), "Unknown");
+
+        j.log(RunEvent::EnteredFloor(1));
+        j.log(RunEvent::EnemyKilled("猫".to_string(), 1));
+        j.log(RunEvent::DiedTo("Spike trap".to_string(), 1));
+        assert_eq!(j.death_cause(), "Spike trap");
+    }
 }
 
 pub fn init_game() -> Result<(), JsValue> {
@@ -6576,14 +7380,13 @@ pub fn init_game() -> Result<(), JsValue> {
     let renderer = Renderer::new(canvas).map_err(|e| JsValue::from_str(e))?;
 
     let seed = win.performance().map(|p| p.now() as u64).unwrap_or(42);
-    let level = DungeonLevel::generate(MAP_W, MAP_H, seed);
+    let level = DungeonLevel::generate(MAP_W, MAP_H, seed, 1);
     let (sx, sy) = level.start_pos();
     let player = Player::new(sx, sy, PlayerClass::Scholar);
 
     let best_floor = GameState::load_high_score();
     let srs = crate::srs::load_srs();
     let settings = GameState::load_settings();
-    let talents = GameState::load_talents();
     let mut audio = Audio::new();
     if let Some(ref mut audio) = audio {
         audio.set_music_volume(settings.music_volume);
@@ -6629,9 +7432,6 @@ pub fn init_game() -> Result<(), JsValue> {
         settings,
         show_settings: false,
         settings_cursor: 0,
-        talents,
-        show_talent_tree: false,
-        talent_cursor: 0,
         last_spell: None,
         spell_combo_timer: 0,
         listening_mode: ListenMode::Off,
@@ -6655,6 +7455,11 @@ pub fn init_game() -> Result<(), JsValue> {
         next_chain_id: 1,
         floor_profile: FloorProfile::Normal,
         answer_streak: 0,
+        run_journal: RunJournal::default(),
+        post_mortem_page: 0,
+        class_cursor: 0,
+        theft_catches: 0,
+        shop_banned: false,
     }));
 
     // Initial setup
@@ -6693,19 +7498,6 @@ pub fn init_game() -> Result<(), JsValue> {
                     "ArrowDown" | "s" | "S" => s.move_settings_cursor(1),
                     "ArrowLeft" | "a" | "A" => s.adjust_selected_setting(-1),
                     "ArrowRight" | "d" | "D" | "Enter" => s.adjust_selected_setting(1),
-                    _ => {}
-                }
-                s.render();
-                return;
-            }
-
-            if s.show_talent_tree {
-                event.prevent_default();
-                match key.as_str() {
-                    "Escape" | "t" | "T" => s.close_talent_tree(),
-                    "ArrowUp" | "w" | "W" => s.move_talent_cursor(-1),
-                    "ArrowDown" | "s" | "S" => s.move_talent_cursor(1),
-                    "Enter" | "ArrowRight" | "d" | "D" => s.purchase_selected_talent(),
                     _ => {}
                 }
                 s.render();
@@ -6769,16 +7561,6 @@ pub fn init_game() -> Result<(), JsValue> {
                 return;
             }
 
-            if (key == "t" || key == "T")
-                && !s.show_codex
-                && matches!(s.combat, CombatState::ClassSelect | CombatState::GameOver)
-            {
-                event.prevent_default();
-                s.open_talent_tree();
-                s.render();
-                return;
-            }
-
             if (key == "i" || key == "I")
                 && !s.show_codex
                 && matches!(s.combat, CombatState::Explore | CombatState::GameOver)
@@ -6800,10 +7582,22 @@ pub fn init_game() -> Result<(), JsValue> {
                 return;
             }
 
-            // Game over: press R to restart
+            // Game over: press R to restart, arrows to page
             if matches!(s.combat, CombatState::GameOver) {
                 if key == "r" || key == "R" {
                     s.restart();
+                    s.render();
+                } else if key == "ArrowRight" {
+                    let max_fl = s.run_journal.max_floor();
+                    let total_pages = ((max_fl as usize).saturating_sub(1)) / 8 + 1;
+                    if s.post_mortem_page < total_pages {
+                        s.post_mortem_page += 1;
+                    }
+                    s.render();
+                } else if key == "ArrowLeft" {
+                    if s.post_mortem_page > 0 {
+                        s.post_mortem_page -= 1;
+                    }
                     s.render();
                 }
                 return;
@@ -7190,11 +7984,12 @@ pub fn init_game() -> Result<(), JsValue> {
                         s.codex.record(hanzi, pinyin, meaning, correct);
                         if correct {
                             s.player.hp = (s.player.hp + 1).min(s.player.max_hp);
+                            s.player.spirit = (s.player.spirit + 25).min(s.player.max_spirit);
                             let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
                             let gs = &mut *s;
                             gs.particles.spawn_heal(sx, sy, &mut gs.rng_state);
                             s.message = format!(
-                                "✓ Correct! {} has {} components. +1 HP!",
+                                "✓ Correct! {} has {} components. +1 HP, +25 Spirit!",
                                 hanzi, correct_count
                             );
                         } else {
@@ -7859,6 +8654,10 @@ pub fn init_game() -> Result<(), JsValue> {
                                 hanzi, correct_meaning
                             );
                             if s.player.hp <= 0 {
+                                let fl = s.floor_num;
+                                s.run_journal
+                                    .log(RunEvent::DiedTo("Locked door trap".to_string(), fl));
+                                s.post_mortem_page = 0;
                                 s.combat = CombatState::GameOver;
                                 s.message = s.run_summary();
                                 s.message_timer = 255;
@@ -8111,6 +8910,50 @@ pub fn init_game() -> Result<(), JsValue> {
                             }
                             s.message_timer = 120;
                         }
+                        SentenceChallengeMode::GatekeeperSeal {
+                            boss_idx,
+                            success_damage,
+                            failure_damage_to_player,
+                        } => {
+                            if boss_idx < s.enemies.len() && s.enemies[boss_idx].is_alive() {
+                                if correct {
+                                    let applied =
+                                        success_damage.min((s.enemies[boss_idx].hp - 1).max(1));
+                                    s.enemies[boss_idx].hp -= applied;
+                                    s.enemies[boss_idx].stunned = true;
+                                    s.message = format!(
+                                        "✓ Seal shattered! \"{}\" — The Gatekeeper loses {} HP and is stunned!",
+                                        meaning, applied
+                                    );
+                                } else {
+                                    s.player.hp = (s.player.hp - failure_damage_to_player).max(0);
+                                    s.message = format!(
+                                        "✗ The seal backfires! Correct: {} — You take {} damage!",
+                                        correct_text, failure_damage_to_player
+                                    );
+                                    if s.player.hp <= 0 {
+                                        let fl = s.floor_num;
+                                        s.run_journal.log(crate::game::RunEvent::DiedTo(
+                                            "Gatekeeper's Seal".to_string(),
+                                            fl,
+                                        ));
+                                        s.combat = CombatState::GameOver;
+                                        s.message_timer = 200;
+                                        s.render();
+                                        return;
+                                    }
+                                }
+                                s.combat = CombatState::Fighting {
+                                    enemy_idx: boss_idx,
+                                    timer_ms: 0.0,
+                                };
+                                s.typing.clear();
+                            } else {
+                                s.combat = CombatState::Explore;
+                                s.message = "The seal fades.".to_string();
+                            }
+                            s.message_timer = 120;
+                        }
                     }
                 } else if let Some(mode) = escaped_mode {
                     match mode {
@@ -8144,6 +8987,35 @@ pub fn init_game() -> Result<(), JsValue> {
                             }
                             s.message_timer = 80;
                         }
+                        SentenceChallengeMode::GatekeeperSeal {
+                            boss_idx,
+                            failure_damage_to_player,
+                            ..
+                        } => {
+                            if boss_idx < s.enemies.len() && s.enemies[boss_idx].is_alive() {
+                                s.player.hp = (s.player.hp - failure_damage_to_player).max(0);
+                                s.combat = CombatState::Fighting {
+                                    enemy_idx: boss_idx,
+                                    timer_ms: 0.0,
+                                };
+                                s.typing.clear();
+                                s.message = format!(
+                                    "You abandon the seal! The backfire deals {} damage!",
+                                    failure_damage_to_player
+                                );
+                                if s.player.hp <= 0 {
+                                    let fl = s.floor_num;
+                                    s.run_journal
+                                        .log(RunEvent::DiedTo("Gatekeeper's Seal".to_string(), fl));
+                                    s.post_mortem_page = 0;
+                                    s.combat = CombatState::GameOver;
+                                }
+                            } else {
+                                s.combat = CombatState::Explore;
+                                s.message = "The seal fades.".to_string();
+                            }
+                            s.message_timer = 80;
+                        }
                     }
                 }
                 s.render();
@@ -8162,9 +9034,9 @@ pub fn init_game() -> Result<(), JsValue> {
                     s.seed = daily_seed;
                     s.rng_state = daily_seed;
                     s.daily_mode = true;
-                    s.level = DungeonLevel::generate(MAP_W, MAP_H, daily_seed);
+                    s.level = DungeonLevel::generate(MAP_W, MAP_H, daily_seed, 1);
                     let (sx, sy) = s.level.start_pos();
-                    s.player = s.make_player(sx, sy, PlayerClass::Scholar, false);
+                    s.player = s.make_player(sx, sy, PlayerClass::Scholar);
                     s.reset_item_lore();
                     s.combat = CombatState::Explore;
                     s.message =
@@ -8176,26 +9048,37 @@ pub fn init_game() -> Result<(), JsValue> {
                     s.render();
                     return;
                 }
-                let class = match key.as_str() {
-                    "1" => Some(PlayerClass::Scholar),
-                    "2" => Some(PlayerClass::Warrior),
-                    "3" => Some(PlayerClass::Alchemist),
-                    _ => None,
+                let total_classes = PlayerClass::all().len();
+                if key == "ArrowUp" || key == "w" || key == "W" {
+                    if s.class_cursor > 0 {
+                        s.class_cursor -= 1;
+                    } else {
+                        s.class_cursor = total_classes - 1;
+                    }
+                    s.render();
+                    return;
+                }
+                if key == "ArrowDown" || key == "s" || key == "S" {
+                    s.class_cursor = (s.class_cursor + 1) % total_classes;
+                    s.render();
+                    return;
+                }
+
+                let chosen_class = if key == "Enter" {
+                    Some(PlayerClass::all()[s.class_cursor])
+                } else {
+                    None
                 };
-                if let Some(chosen_class) = class {
+                if let Some(chosen_class) = chosen_class {
                     s.daily_mode = false;
                     if s.total_runs == 0 {
                         s.start_tutorial(chosen_class);
                     } else {
                         let (sx, sy) = s.level.start_pos();
-                        s.player = s.make_player(sx, sy, chosen_class, true);
+                        s.player = s.make_player(sx, sy, chosen_class);
                         s.reset_item_lore();
                         s.combat = CombatState::Explore;
-                        let class_name = match chosen_class {
-                            PlayerClass::Scholar => "Scholar",
-                            PlayerClass::Warrior => "Warrior",
-                            PlayerClass::Alchemist => "Alchemist",
-                        };
+                        let class_name = chosen_class.data().name_en;
                         s.message = format!("You chose {}! Explore the dungeon...", class_name);
                         s.message_timer = 120;
                         s.spawn_enemies();
@@ -8238,6 +9121,10 @@ pub fn init_game() -> Result<(), JsValue> {
                                 }
                                 if s.player.hp <= 0 {
                                     s.player.hp = 0;
+                                    let cause = s.enemies[enemy_idx].hanzi.to_string();
+                                    let fl = s.floor_num;
+                                    s.run_journal.log(RunEvent::DiedTo(cause, fl));
+                                    s.post_mortem_page = 0;
                                     s.combat = CombatState::GameOver;
                                     s.message = s.run_summary();
                                     s.message_timer = 255;
@@ -8584,6 +9471,32 @@ pub fn init_game() -> Result<(), JsValue> {
                         s.perform_offering(altar_kind, cursor);
                         s.render();
                     }
+                    "p" | "P" => {
+                        let has_curse = (s.player.weapon.is_some()
+                            && s.player.weapon_state == ItemState::Cursed)
+                            || (s.player.armor.is_some()
+                                && s.player.armor_state == ItemState::Cursed)
+                            || (s.player.charm.is_some()
+                                && s.player.charm_state == ItemState::Cursed);
+                        if has_curse {
+                            if s.player.weapon_state == ItemState::Cursed {
+                                s.player.weapon_state = ItemState::Normal;
+                            }
+                            if s.player.armor_state == ItemState::Cursed {
+                                s.player.armor_state = ItemState::Normal;
+                            }
+                            if s.player.charm_state == ItemState::Cursed {
+                                s.player.charm_state = ItemState::Normal;
+                            }
+                            s.message = "🔮 The altar purifies your cursed equipment!".to_string();
+                            s.message_timer = 90;
+                            s.combat = CombatState::Explore;
+                        } else {
+                            s.message = "You have no cursed equipment to purify.".to_string();
+                            s.message_timer = 60;
+                        }
+                        s.render();
+                    }
                     _ => {}
                 }
                 return;
@@ -8715,6 +9628,10 @@ pub fn init_game() -> Result<(), JsValue> {
                     }
                     "r" | "R" => {
                         s.shop_reroll();
+                        s.render();
+                    }
+                    "g" | "G" => {
+                        s.shop_steal();
                         s.render();
                     }
                     _ => {}
@@ -8980,4 +9897,158 @@ pub fn init_game() -> Result<(), JsValue> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod player_class_tests {
+    use crate::player::PlayerClass;
+
+    #[test]
+    fn class_data_covers_all_variants() {
+        let classes = PlayerClass::all();
+        assert_eq!(classes.len(), 20);
+        for class in &classes {
+            let data = class.data();
+            assert!(!data.name_en.is_empty());
+            assert!(!data.name_cn.is_empty());
+        }
+    }
+}
+
+#[cfg(test)]
+mod item_state_tests {
+
+    #[test]
+    fn cursed_health_potion_heals_less() {
+        let heal = 6i32;
+        let cursed_heal = (heal / 2).max(1);
+        assert_eq!(cursed_heal, 3);
+        let small_heal = 1i32;
+        let cursed_small = (small_heal / 2).max(1);
+        assert_eq!(cursed_small, 1);
+    }
+
+    #[test]
+    fn blessed_health_potion_heals_more() {
+        let heal = 6i32;
+        let blessed_heal = heal * 3 / 2;
+        assert_eq!(blessed_heal, 9);
+    }
+
+    #[test]
+    fn item_state_parallel_vec_stays_in_sync() {
+        use crate::player::{Item, ItemState, Player, PlayerClass};
+        let mut p = Player::new(0, 0, PlayerClass::Scholar);
+        assert!(p.add_item(Item::HealthPotion(5), ItemState::Normal));
+        assert!(p.add_item(Item::StunBomb, ItemState::Cursed));
+        assert!(p.add_item(Item::RevealScroll, ItemState::Blessed));
+        assert_eq!(p.items.len(), 3);
+        assert_eq!(p.item_states.len(), 3);
+        assert_eq!(p.item_states[1], ItemState::Cursed);
+        let (item, state) = p.take_item(1).unwrap();
+        assert!(matches!(item, Item::StunBomb));
+        assert_eq!(state, ItemState::Cursed);
+        assert_eq!(p.items.len(), 2);
+        assert_eq!(p.item_states.len(), 2);
+        assert_eq!(p.item_states[0], ItemState::Normal);
+        assert_eq!(p.item_states[1], ItemState::Blessed);
+    }
+
+    #[test]
+    fn cursed_equipment_cannot_be_replaced() {
+        use crate::player::{ItemState, Player, PlayerClass, EQUIPMENT_POOL};
+        let mut p = Player::new(0, 0, PlayerClass::Scholar);
+        p.equip(&EQUIPMENT_POOL[0], ItemState::Cursed);
+        assert_eq!(p.weapon_state, ItemState::Cursed);
+        assert_eq!(
+            p.equipment_state(crate::player::EquipSlot::Weapon),
+            ItemState::Cursed
+        );
+    }
+
+    #[test]
+    fn spirit_decreases_on_move() {
+        use crate::player::{Player, PlayerClass};
+        let mut p = Player::new(0, 0, PlayerClass::Scholar);
+        assert_eq!(p.spirit, 100);
+        p.spirit -= 1;
+        assert_eq!(p.spirit, 99);
+    }
+
+    #[test]
+    fn rice_ball_restores_spirit() {
+        use crate::player::{Player, PlayerClass};
+        let mut p = Player::new(0, 0, PlayerClass::Scholar);
+        p.spirit = 50;
+        let restore = 30;
+        p.spirit = (p.spirit + restore).min(p.max_spirit);
+        assert_eq!(p.spirit, 80);
+
+        p.spirit = 90;
+        p.spirit = (p.spirit + restore).min(p.max_spirit);
+        assert_eq!(p.spirit, 100);
+    }
+
+    #[test]
+    fn theft_chance_clamped_between_5_and_80() {
+        let base: i64 = 40;
+        let thief_bonus: i64 = 25;
+        assert_eq!((base + thief_bonus).clamp(5, 80), 65);
+        assert_eq!((base + thief_bonus - 100).clamp(5, 80), 5);
+        assert_eq!(base.clamp(5, 80), 40);
+    }
+
+    #[test]
+    fn theft_catch_escalates_damage() {
+        let mut catches: u32 = 0;
+        catches += 1;
+        assert_eq!(3 + catches as i32, 4);
+        catches += 1;
+        assert_eq!(3 + catches as i32, 5);
+        catches += 1;
+        assert_eq!(3 + catches as i32, 6);
+    }
+
+    #[test]
+    fn trap_tile_types_cover_all_variants() {
+        use crate::dungeon::Tile;
+        for t in 0..3u8 {
+            let tile = Tile::Trap(t);
+            assert!(tile.is_walkable());
+        }
+    }
+
+    #[test]
+    fn trap_tile_looks_like_floor_in_look_text() {
+        use crate::dungeon::Tile;
+        let trap_text = super::tile_look_text(Tile::Trap(0));
+        let floor_text = super::tile_look_text(Tile::Floor);
+        assert_eq!(trap_text, floor_text);
+    }
+
+    #[test]
+    fn sentence_selection_scales_by_floor() {
+        let (w_early, _) = super::select_sentence_for_floor(3, 0);
+        assert!(w_early.len() <= 3, "Early floor sentences should be short");
+        let (w_late, _) = super::select_sentence_for_floor(25, 7);
+        assert!(w_late.len() >= 2, "Late floor sentences exist");
+    }
+
+    #[test]
+    fn gatekeeper_seal_mode_damages_player_on_failure() {
+        let mode = super::SentenceChallengeMode::GatekeeperSeal {
+            boss_idx: 0,
+            success_damage: 5,
+            failure_damage_to_player: 3,
+        };
+        if let super::SentenceChallengeMode::GatekeeperSeal {
+            failure_damage_to_player,
+            ..
+        } = mode
+        {
+            assert_eq!(failure_damage_to_player, 3);
+        } else {
+            panic!("expected GatekeeperSeal");
+        }
+    }
 }

@@ -71,7 +71,7 @@ impl Equipment {
 
 #[allow(dead_code)]
 pub const MAX_ITEMS: usize = 5;
-pub const ITEM_KIND_COUNT: usize = 6;
+pub const ITEM_KIND_COUNT: usize = 7;
 pub const MYSTERY_ITEM_APPEARANCES: [&str; ITEM_KIND_COUNT] = [
     "Vermilion Seal 朱符",
     "Jade Seal 玉符",
@@ -79,6 +79,7 @@ pub const MYSTERY_ITEM_APPEARANCES: [&str; ITEM_KIND_COUNT] = [
     "Ink Seal 墨符",
     "Mirror Seal 镜符",
     "Storm Seal 雷符",
+    "Phoenix Seal 凤符",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -89,6 +90,7 @@ pub enum ItemKind {
     TeleportScroll,
     HastePotion,
     StunBomb,
+    RiceBall,
 }
 
 impl ItemKind {
@@ -100,6 +102,7 @@ impl ItemKind {
             ItemKind::TeleportScroll => 3,
             ItemKind::HastePotion => 4,
             ItemKind::StunBomb => 5,
+            ItemKind::RiceBall => 6,
         }
     }
 }
@@ -119,6 +122,8 @@ pub enum Item {
     HastePotion(i32),
     /// Stun all visible enemies
     StunBomb,
+    /// Restore spirit energy
+    RiceBall(i32),
 }
 
 impl Item {
@@ -130,6 +135,7 @@ impl Item {
             Item::TeleportScroll => ItemKind::TeleportScroll,
             Item::HastePotion(_) => ItemKind::HastePotion,
             Item::StunBomb => ItemKind::StunBomb,
+            Item::RiceBall(_) => ItemKind::RiceBall,
         }
     }
 
@@ -141,6 +147,7 @@ impl Item {
             Item::TeleportScroll => "✦ Teleport Scroll",
             Item::HastePotion(_) => "⚡ Haste Potion",
             Item::StunBomb => "💥 Stun Bomb",
+            Item::RiceBall(_) => "🍙 Rice Ball",
         }
     }
 
@@ -153,6 +160,7 @@ impl Item {
             Item::TeleportScroll => "Teleport",
             Item::HastePotion(_) => "Haste",
             Item::StunBomb => "Stun",
+            Item::RiceBall(_) => "Rice",
         }
     }
 
@@ -172,6 +180,7 @@ impl Item {
             Item::TeleportScroll => "Instantly teleport to a random explored tile. Useful for escaping danger.",
             Item::HastePotion(_) => "Grants Haste, letting you take extra actions each turn for a short duration.",
             Item::StunBomb => "Stuns all visible enemies for several turns, preventing them from acting.",
+            Item::RiceBall(_) => "Restores spirit energy. Eat to stave off spiritual exhaustion.",
         }
     }
 }
@@ -300,13 +309,216 @@ impl PlayerForm {
 
 /// Player class specialization chosen at game start.
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ClassData {
+    pub name_en: &'static str,
+    pub name_cn: &'static str,
+    pub lore: &'static str,
+    pub color: &'static str,
+    pub icon: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PlayerClass {
-    /// Balanced: no bonuses
     Scholar,
-    /// +3 HP, +1 damage, -1 item slot
     Warrior,
-    /// 2x item effectiveness, +1 item slot
     Alchemist,
+    Monk,
+    Thief,
+    Calligrapher,
+    Exorcist,
+    Herbalist,
+    Diviner,
+    Swordsman,
+    Merchant,
+    Pilgrim,
+    Beastmaster,
+    Scribe,
+    Assassin,
+    Earthmover,
+    Shaman,
+    Wanderer,
+    Ironclad,
+    Inkmaster,
+}
+
+impl PlayerClass {
+    pub fn all() -> Vec<PlayerClass> {
+        vec![
+            PlayerClass::Scholar,
+            PlayerClass::Warrior,
+            PlayerClass::Alchemist,
+            PlayerClass::Monk,
+            PlayerClass::Thief,
+            PlayerClass::Calligrapher,
+            PlayerClass::Exorcist,
+            PlayerClass::Herbalist,
+            PlayerClass::Diviner,
+            PlayerClass::Swordsman,
+            PlayerClass::Merchant,
+            PlayerClass::Pilgrim,
+            PlayerClass::Beastmaster,
+            PlayerClass::Scribe,
+            PlayerClass::Assassin,
+            PlayerClass::Earthmover,
+            PlayerClass::Shaman,
+            PlayerClass::Wanderer,
+            PlayerClass::Ironclad,
+            PlayerClass::Inkmaster,
+        ]
+    }
+
+    pub fn data(&self) -> ClassData {
+        match self {
+            PlayerClass::Scholar => ClassData {
+                name_en: "Scholar",
+                name_cn: "学者",
+                lore: "Balanced, hints in combat.",
+                color: "#88ccff",
+                icon: "S",
+            },
+            PlayerClass::Warrior => ClassData {
+                name_en: "Warrior",
+                name_cn: "武士",
+                lore: "+3 HP, +1 dmg.",
+                color: "#ff8888",
+                icon: "W",
+            },
+            PlayerClass::Alchemist => ClassData {
+                name_en: "Alchemist",
+                name_cn: "炼丹师",
+                lore: "2x potion healing, +2 slots.",
+                color: "#88ff88",
+                icon: "A",
+            },
+            PlayerClass::Monk => ClassData {
+                name_en: "Monk",
+                name_cn: "僧侣",
+                lore: "Regen 1HP/floor.",
+                color: "#ffcc88",
+                icon: "M",
+            },
+            PlayerClass::Thief => ClassData {
+                name_en: "Thief",
+                name_cn: "盗贼",
+                lore: "Start with gold, extra gold drops.",
+                color: "#cc88ff",
+                icon: "T",
+            },
+            PlayerClass::Calligrapher => ClassData {
+                name_en: "Calligrapher",
+                name_cn: "书法家",
+                lore: "Bonus spell power.",
+                color: "#ffffff",
+                icon: "C",
+            },
+            PlayerClass::Exorcist => ClassData {
+                name_en: "Exorcist",
+                name_cn: "驱魔师",
+                lore: "Bonus vs bosses.",
+                color: "#ff88cc",
+                icon: "E",
+            },
+            PlayerClass::Herbalist => ClassData {
+                name_en: "Herbalist",
+                name_cn: "草药师",
+                lore: "Start w/ 2 health pots.",
+                color: "#aaffaa",
+                icon: "H",
+            },
+            PlayerClass::Diviner => ClassData {
+                name_en: "Diviner",
+                name_cn: "占卜师",
+                lore: "Map partially revealed.",
+                color: "#ddaadd",
+                icon: "D",
+            },
+            PlayerClass::Swordsman => ClassData {
+                name_en: "Swordsman",
+                name_cn: "剑客",
+                lore: "Start w/ weapon, crit chance.",
+                color: "#ffaaaa",
+                icon: "S",
+            },
+            PlayerClass::Merchant => ClassData {
+                name_en: "Merchant",
+                name_cn: "商人",
+                lore: "Shop discount, extra gold.",
+                color: "#ffffaa",
+                icon: "M",
+            },
+            PlayerClass::Pilgrim => ClassData {
+                name_en: "Pilgrim",
+                name_cn: "朝圣者",
+                lore: "Start w/ piety.",
+                color: "#ccccaa",
+                icon: "P",
+            },
+            PlayerClass::Beastmaster => ClassData {
+                name_en: "Beastmaster",
+                name_cn: "驯兽师",
+                lore: "Start w/ companion.",
+                color: "#ccaa88",
+                icon: "B",
+            },
+            PlayerClass::Scribe => ClassData {
+                name_en: "Scribe",
+                name_cn: "抄写员",
+                lore: "Bonus radical drops.",
+                color: "#eeeeee",
+                icon: "S",
+            },
+            PlayerClass::Assassin => ClassData {
+                name_en: "Assassin",
+                name_cn: "刺客",
+                lore: "High dmg, low HP.",
+                color: "#aa4444",
+                icon: "A",
+            },
+            PlayerClass::Earthmover => ClassData {
+                name_en: "Earthmover",
+                name_cn: "土行者",
+                lore: "Start w/ pickaxe.",
+                color: "#aa8866",
+                icon: "E",
+            },
+            PlayerClass::Shaman => ClassData {
+                name_en: "Shaman",
+                name_cn: "巫",
+                lore: "Start w/ 2 random spells.",
+                color: "#88ccaa",
+                icon: "S",
+            },
+            PlayerClass::Wanderer => ClassData {
+                name_en: "Wanderer",
+                name_cn: "浪人",
+                lore: "Random bonus each floor.",
+                color: "#aaaaaa",
+                icon: "W",
+            },
+            PlayerClass::Ironclad => ClassData {
+                name_en: "Ironclad",
+                name_cn: "铁甲",
+                lore: "Start w/ armor, high HP.",
+                color: "#8888aa",
+                icon: "I",
+            },
+            PlayerClass::Inkmaster => ClassData {
+                name_en: "Inkmaster",
+                name_cn: "墨师",
+                lore: "Start w/ extra radicals.",
+                color: "#444444",
+                icon: "I",
+            },
+        }
+    }
+}
+
+/// Whether an item or piece of equipment is normal, cursed, or blessed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ItemState {
+    Normal,
+    Cursed,
+    Blessed,
 }
 
 #[derive(Clone)]
@@ -330,10 +542,16 @@ pub struct Player {
     pub statuses: Vec<StatusInstance>,
     /// Consumable items (max MAX_ITEMS)
     pub items: Vec<Item>,
+    /// State of each consumable item (parallel to `items`)
+    pub item_states: Vec<ItemState>,
     /// Equipped items (up to 3: weapon, armor, charm)
     pub weapon: Option<&'static Equipment>,
     pub armor: Option<&'static Equipment>,
     pub charm: Option<&'static Equipment>,
+    /// State of equipped weapon/armor/charm
+    pub weapon_state: ItemState,
+    pub armor_state: ItemState,
+    pub charm_state: ItemState,
     /// Enchantments on equipment slots: [weapon, armor, charm]
     pub enchantments: [Option<&'static str>; 3],
     /// Bonus damage from tone shrine (used once, then reset)
@@ -352,13 +570,30 @@ pub struct Player {
     pub form: PlayerForm,
     /// Turns remaining in current form (0 = permanent/human)
     pub form_timer: i32,
+    /// Spirit energy — ticks down each move, player takes damage at 0
+    pub spirit: i32,
+    pub max_spirit: i32,
 }
 
 impl Player {
     pub fn new(x: i32, y: i32, class: PlayerClass) -> Self {
         let (hp, max_hp) = match class {
             PlayerClass::Warrior => (13, 13),
-            _ => (10, 10),
+            PlayerClass::Ironclad => (14, 14),
+            PlayerClass::Exorcist | PlayerClass::Swordsman | PlayerClass::Earthmover => (11, 11),
+            PlayerClass::Scholar
+            | PlayerClass::Alchemist
+            | PlayerClass::Pilgrim
+            | PlayerClass::Wanderer => (10, 10),
+            PlayerClass::Thief
+            | PlayerClass::Calligrapher
+            | PlayerClass::Herbalist
+            | PlayerClass::Merchant
+            | PlayerClass::Beastmaster
+            | PlayerClass::Scribe
+            | PlayerClass::Inkmaster => (9, 9),
+            PlayerClass::Monk | PlayerClass::Diviner | PlayerClass::Shaman => (8, 8),
+            PlayerClass::Assassin => (7, 7),
         };
         Self {
             x,
@@ -373,9 +608,13 @@ impl Player {
             shield: false,
             statuses: Vec::new(),
             items: Vec::new(),
+            item_states: Vec::new(),
             weapon: None,
             armor: None,
             charm: None,
+            weapon_state: ItemState::Normal,
+            armor_state: ItemState::Normal,
+            charm_state: ItemState::Normal,
             enchantments: [None; 3],
             tone_bonus_damage: 0,
             defense_bonus: 0,
@@ -385,6 +624,8 @@ impl Player {
             piety: Vec::new(),
             form: PlayerForm::Human,
             form_timer: 0,
+            spirit: 100,
+            max_spirit: 100,
         }
     }
 
@@ -470,6 +711,7 @@ impl Player {
         }
     }
 
+    #[allow(dead_code)]
     pub fn apply_meta_progression(
         &mut self,
         starting_hp_bonus: i32,
@@ -488,8 +730,23 @@ impl Player {
     pub fn max_items(&self) -> usize {
         match self.class {
             PlayerClass::Alchemist => 7,
-            PlayerClass::Warrior => 4,
-            PlayerClass::Scholar => 5,
+            PlayerClass::Thief | PlayerClass::Herbalist => 6,
+            PlayerClass::Scholar
+            | PlayerClass::Calligrapher
+            | PlayerClass::Diviner
+            | PlayerClass::Merchant
+            | PlayerClass::Scribe
+            | PlayerClass::Shaman
+            | PlayerClass::Wanderer
+            | PlayerClass::Inkmaster => 5,
+            PlayerClass::Warrior
+            | PlayerClass::Monk
+            | PlayerClass::Exorcist
+            | PlayerClass::Swordsman
+            | PlayerClass::Pilgrim
+            | PlayerClass::Beastmaster
+            | PlayerClass::Assassin => 4,
+            PlayerClass::Earthmover | PlayerClass::Ironclad => 3,
         }
     }
 
@@ -503,9 +760,10 @@ impl Player {
         self.y = y;
     }
 
-    pub fn add_item(&mut self, item: Item) -> bool {
+    pub fn add_item(&mut self, item: Item, state: ItemState) -> bool {
         if self.items.len() < self.max_items() {
             self.items.push(item);
+            self.item_states.push(state);
             true
         } else {
             false
@@ -513,9 +771,10 @@ impl Player {
     }
 
     #[allow(dead_code)]
-    pub fn take_item(&mut self, idx: usize) -> Option<Item> {
+    pub fn take_item(&mut self, idx: usize) -> Option<(Item, ItemState)> {
         if idx < self.items.len() {
-            Some(self.items.remove(idx))
+            let state = self.item_states.remove(idx);
+            Some((self.items.remove(idx), state))
         } else {
             None
         }
@@ -604,11 +863,28 @@ impl Player {
         }
     }
 
-    pub fn equip(&mut self, equipment: &'static Equipment) {
+    pub fn equip(&mut self, equipment: &'static Equipment, state: ItemState) {
         match equipment.slot {
-            EquipSlot::Weapon => self.weapon = Some(equipment),
-            EquipSlot::Armor => self.armor = Some(equipment),
-            EquipSlot::Charm => self.charm = Some(equipment),
+            EquipSlot::Weapon => {
+                self.weapon = Some(equipment);
+                self.weapon_state = state;
+            }
+            EquipSlot::Armor => {
+                self.armor = Some(equipment);
+                self.armor_state = state;
+            }
+            EquipSlot::Charm => {
+                self.charm = Some(equipment);
+                self.charm_state = state;
+            }
+        }
+    }
+
+    pub fn equipment_state(&self, slot: EquipSlot) -> ItemState {
+        match slot {
+            EquipSlot::Weapon => self.weapon_state,
+            EquipSlot::Armor => self.armor_state,
+            EquipSlot::Charm => self.charm_state,
         }
     }
 

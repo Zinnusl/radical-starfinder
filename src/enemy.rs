@@ -71,6 +71,120 @@ fn get_components(hanzi: &str) -> Vec<&'static str> {
     }
 }
 
+/// Special abilities derived from hanzi semantic components.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RadicalAction {
+    /// 火 fire — burn damage over time
+    FireBreath,
+    /// 水 water — shield (enemy heals 2 HP)
+    WaterShield,
+    /// 力 strength — extra damage (+2)
+    PowerStrike,
+    /// 心 heart — self heal 3 HP
+    SelfHeal,
+    /// 口 mouth — intimidate (player loses 1 spirit if spirit system exists, else just flavor)
+    WarCry,
+    /// 目 eye — reveal player shield status (removes shield)
+    TrueSight,
+    /// 手 hand — disarm (remove player weapon_state bonus for 1 fight, just +1 damage for now)
+    Disarm,
+    /// 木 wood — root (player takes +1 damage next wrong answer)
+    Root,
+    /// 田 field — fortify (enemy gains +1 damage permanently for this fight)
+    Fortify,
+    /// 日 sun — blind (next correct answer deals half damage)
+    Radiance,
+    /// 月 moon — dodge next attack
+    ShadowStep,
+    /// 人 person — summon an ally (just flavor text, no actual summon — too complex)
+    CallAlly,
+    /// 女 woman — charm (player skips next attack input)
+    Charm,
+    /// 子 child — enemy gets an extra counterattack
+    Swift,
+    /// 禾 grain — leech (heal equal to damage dealt)
+    Leech,
+    /// 十 ten — next attack hits twice  
+    Multiply,
+    /// 金 metal — armor (reduce next player hit by 2)
+    Armor,
+    /// 土 earth — earthquake (screen shake + 1 damage)
+    Earthquake,
+}
+
+impl RadicalAction {
+    pub fn from_radical(radical: &str) -> Option<Self> {
+        match radical {
+            "火" => Some(Self::FireBreath),
+            "水" => Some(Self::WaterShield),
+            "力" => Some(Self::PowerStrike),
+            "心" => Some(Self::SelfHeal),
+            "口" => Some(Self::WarCry),
+            "目" => Some(Self::TrueSight),
+            "手" => Some(Self::Disarm),
+            "木" => Some(Self::Root),
+            "田" => Some(Self::Fortify),
+            "日" => Some(Self::Radiance),
+            "月" => Some(Self::ShadowStep),
+            "人" => Some(Self::CallAlly),
+            "女" => Some(Self::Charm),
+            "子" => Some(Self::Swift),
+            "禾" => Some(Self::Leech),
+            "十" => Some(Self::Multiply),
+            "金" => Some(Self::Armor),
+            "土" => Some(Self::Earthquake),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::FireBreath => "🔥 Fire Breath",
+            Self::WaterShield => "💧 Water Shield",
+            Self::PowerStrike => "💪 Power Strike",
+            Self::SelfHeal => "💚 Self Heal",
+            Self::WarCry => "📢 War Cry",
+            Self::TrueSight => "👁 True Sight",
+            Self::Disarm => "🤚 Disarm",
+            Self::Root => "🌿 Root",
+            Self::Fortify => "🏰 Fortify",
+            Self::Radiance => "☀ Radiance",
+            Self::ShadowStep => "🌙 Shadow Step",
+            Self::CallAlly => "👥 Call Ally",
+            Self::Charm => "💕 Charm",
+            Self::Swift => "⚡ Swift",
+            Self::Leech => "🌾 Leech",
+            Self::Multiply => "✕ Multiply",
+            Self::Armor => "🛡 Armor",
+            Self::Earthquake => "🌍 Earthquake",
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::FireBreath => "Burns you for 1 damage over 3 turns",
+            Self::WaterShield => "Heals self for 2 HP",
+            Self::PowerStrike => "Deals 2 extra damage",
+            Self::SelfHeal => "Heals self for 3 HP",
+            Self::WarCry => "Drains 10 spirit energy",
+            Self::TrueSight => "Strips your shield",
+            Self::Disarm => "Weakens your next attack by 1",
+            Self::Root => "Roots you — next wrong answer deals +1 damage",
+            Self::Fortify => "Enemy damage increased by 1",
+            Self::Radiance => "Blinds you — next correct hit deals half damage",
+            Self::ShadowStep => "Dodges your next attack",
+            Self::CallAlly => "Rallies nearby monsters",
+            Self::Charm => "Confuses your next input",
+            Self::Swift => "Strikes again immediately",
+            Self::Leech => "Heals equal to damage dealt",
+            Self::Multiply => "Next attack strikes twice",
+            Self::Armor => "Reduces your next hit by 2",
+            Self::Earthquake => "Shakes the ground for 1 damage",
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Enemy {
     pub x: i32,
@@ -106,9 +220,22 @@ pub struct Enemy {
     /// Defensive components (shields) that must be broken first
     pub components: Vec<&'static str>,
     pub ai: AiBehavior,
+    /// Temporary armor from radical action (reduces next player hit)
+    pub radical_armor: i32,
+    /// Will dodge next attack (ShadowStep)
+    pub radical_dodge: bool,
+    /// Next attack multiplier (Multiply: hits twice)
+    pub radical_multiply: bool,
 }
 
 impl Enemy {
+    pub fn radical_actions(&self) -> Vec<RadicalAction> {
+        self.components
+            .iter()
+            .filter_map(|c| RadicalAction::from_radical(c))
+            .collect()
+    }
+
     pub fn from_vocab(entry: &'static VocabEntry, x: i32, y: i32, floor: i32) -> Self {
         let is_elite = crate::vocab::is_elite(entry);
         let hp = if is_elite { 4 + floor } else { 2 + floor / 2 };
@@ -157,6 +284,9 @@ impl Enemy {
             elite_chain: 0,
             components,
             ai,
+            radical_armor: 0,
+            radical_dodge: false,
+            radical_multiply: false,
         }
     }
 
@@ -193,6 +323,9 @@ impl Enemy {
             elite_chain: 0,
             components: Vec::new(),
             ai: AiBehavior::Chase,
+            radical_armor: 0,
+            radical_dodge: false,
+            radical_multiply: false,
         }
     }
 
@@ -433,5 +566,47 @@ mod tests {
         enemy.ai = AiBehavior::Pack;
         let (nx, ny) = enemy.ai_step(6, 5, 0);
         assert_eq!((nx, ny), (6, 5));
+    }
+
+    #[test]
+    fn radical_action_from_known_radicals() {
+        use super::RadicalAction;
+        assert_eq!(
+            RadicalAction::from_radical("火"),
+            Some(RadicalAction::FireBreath)
+        );
+        assert_eq!(
+            RadicalAction::from_radical("水"),
+            Some(RadicalAction::WaterShield)
+        );
+        assert_eq!(
+            RadicalAction::from_radical("心"),
+            Some(RadicalAction::SelfHeal)
+        );
+        assert_eq!(RadicalAction::from_radical("xyz"), None);
+    }
+
+    #[test]
+    fn enemy_radical_actions_from_components() {
+        use crate::vocab::VOCAB;
+        // 好 has components 女 and 子
+        let entry = VOCAB.iter().find(|e| e.hanzi == "好").unwrap();
+        let enemy = Enemy::from_vocab(entry, 0, 0, 1);
+        let actions = enemy.radical_actions();
+        use super::RadicalAction;
+        assert!(actions.contains(&RadicalAction::Charm)); // 女
+        assert!(actions.contains(&RadicalAction::Swift)); // 子
+        assert_eq!(actions.len(), 2);
+    }
+
+    #[test]
+    fn enemy_without_mapped_components_has_no_actions() {
+        use crate::vocab::VOCAB;
+        // Find an enemy whose components don't map to any action
+        // Use a vocab entry not in get_components (returns empty vec)
+        let entry = VOCAB.iter().find(|e| e.hanzi == "大").unwrap();
+        let enemy = Enemy::from_vocab(entry, 0, 0, 1);
+        let actions = enemy.radical_actions();
+        assert!(actions.is_empty());
     }
 }
