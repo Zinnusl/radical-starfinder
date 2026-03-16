@@ -111,6 +111,7 @@ impl Renderer {
         knowledge_step: usize,
         answer_streak: u32,
         floor_profile_label: &str,
+        codex: &crate::codex::Codex,
     ) {
         let anim_t = Date::now() / 1000.0;
         // Screen shake offset
@@ -306,6 +307,9 @@ impl Renderer {
             if !enemy.is_alive() {
                 continue;
             }
+            if !level.in_bounds(enemy.x, enemy.y) {
+                continue;
+            }
             let eidx = level.idx(enemy.x, enemy.y);
             if !level.visible[eidx] {
                 continue;
@@ -436,6 +440,69 @@ impl Renderer {
             self.ctx.set_fill_style_str("#dbe7ff");
             self.ctx
                 .fill_text("LOOK", look_x + TILE_SIZE / 2.0, look_y - 4.0)
+                .ok();
+        }
+
+        if let CombatState::Aiming { dx, dy, spell_idx } = combat {
+            let max_range = 10;
+            let mut cx = player.x;
+            let mut cy = player.y;
+            for _ in 0..max_range {
+                cx += dx;
+                cy += dy;
+                if !level.in_bounds(cx, cy) {
+                    break;
+                }
+                let idx = (cy * level.width + cx) as usize;
+                if !level.tiles[idx].is_walkable() {
+                    break;
+                }
+                let tx = cx as f64 * TILE_SIZE - cam_x;
+                let ty = cy as f64 * TILE_SIZE - cam_y;
+                if enemies
+                    .iter()
+                    .any(|e| e.is_alive() && e.x == cx && e.y == cy)
+                {
+                    self.ctx.set_fill_style_str("rgba(255,80,60,0.35)");
+                    self.ctx.fill_rect(tx, ty, TILE_SIZE, TILE_SIZE);
+                    self.ctx.set_stroke_style_str("#ff5040");
+                    self.ctx.set_line_width(2.0);
+                    self.ctx
+                        .stroke_rect(tx + 1.0, ty + 1.0, TILE_SIZE - 2.0, TILE_SIZE - 2.0);
+                    break;
+                }
+                self.ctx.set_fill_style_str("rgba(255,200,80,0.18)");
+                self.ctx.fill_rect(tx, ty, TILE_SIZE, TILE_SIZE);
+            }
+            let arrow = match (*dx, *dy) {
+                (0, -1) => "↑",
+                (0, 1) => "↓",
+                (-1, 0) => "←",
+                (1, 0) => "→",
+                _ => "·",
+            };
+            let px = player.x as f64 * TILE_SIZE - cam_x;
+            let py = player.y as f64 * TILE_SIZE - cam_y;
+            self.ctx.set_font("16px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx.set_fill_style_str("#ffcc44");
+            self.ctx
+                .fill_text(arrow, px + TILE_SIZE / 2.0, py - 4.0)
+                .ok();
+
+            let spell_label = if *spell_idx < player.spells.len() {
+                format!(
+                    "{} {}",
+                    player.spells[*spell_idx].hanzi,
+                    player.spells[*spell_idx].effect.label()
+                )
+            } else {
+                "Spell".to_string()
+            };
+            self.ctx.set_font("10px monospace");
+            self.ctx.set_fill_style_str("#ffdd88");
+            self.ctx
+                .fill_text(&spell_label, px + TILE_SIZE / 2.0, py - 16.0)
                 .ok();
         }
 
@@ -1200,117 +1267,209 @@ impl Renderer {
                 .ok();
         }
 
-        // ── Enchanting UI overlay ───────────────────────────────────────
-        if let CombatState::Enchanting { slot, page } = combat {
-            let rad_count = player.radicals.len();
-            let page_size = 9;
-            let _max_page = rad_count.saturating_sub(1) / page_size;
-            let page_start = page * page_size;
-            let page_end = (page_start + page_size).min(rad_count);
-            let page_count = page_end - page_start;
+        // ── Enchanting UI overlay (two-phase) ────────────────────────────
+        if let CombatState::Enchanting { step, slot, page } = combat {
+            if *step == 0 {
+                // ── Phase 0: Select equipment slot ──────────────────────────
+                let box_w = 340.0;
+                let box_h = 140.0;
+                let box_x = (self.canvas_w - box_w) / 2.0;
+                let box_y = 60.0;
 
-            let box_w = 380.0;
-            let box_h = 160.0 + (page_count as f64 / 5.0).ceil() * 36.0;
-            let box_x = (self.canvas_w - box_w) / 2.0;
-            let box_y = 40.0;
+                self.ctx.set_fill_style_str("rgba(15,10,30,0.95)");
+                self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+                self.ctx.set_stroke_style_str("#aa66ff");
+                self.ctx.set_line_width(2.0);
+                self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
 
-            self.ctx.set_fill_style_str("rgba(15,10,30,0.95)");
-            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
-            self.ctx.set_stroke_style_str("#aa66ff");
-            self.ctx.set_line_width(2.0);
-            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+                // Title
+                self.ctx.set_fill_style_str("#aa66ff");
+                self.ctx.set_font("18px monospace");
+                self.ctx.set_text_align("center");
+                self.ctx
+                    .fill_text("✦ Enchant Equipment ✦", self.canvas_w / 2.0, box_y + 26.0)
+                    .ok();
 
-            // Title
-            self.ctx.set_fill_style_str("#aa66ff");
-            self.ctx.set_font("18px monospace");
-            self.ctx.set_text_align("center");
-            self.ctx
-                .fill_text("✦ Enchant Equipment ✦", self.canvas_w / 2.0, box_y + 26.0)
-                .ok();
-
-            // Equipment slots
-            let slots = [
-                (
-                    0,
-                    "1:Weapon",
-                    player.weapon.map(|e| e.name).unwrap_or("—"),
-                    player.enchantments[0],
-                ),
-                (
-                    1,
-                    "2:Armor",
-                    player.armor.map(|e| e.name).unwrap_or("—"),
-                    player.enchantments[1],
-                ),
-                (
-                    2,
-                    "3:Charm",
-                    player.charm.map(|e| e.name).unwrap_or("—"),
-                    player.enchantments[2],
-                ),
-            ];
-            let slot_y = box_y + 46.0;
-            for (i, &(slot_idx, label, name, ench)) in slots.iter().enumerate() {
-                let color = if slot_idx == *slot { "#ffcc33" } else { "#888" };
-                self.ctx.set_fill_style_str(color);
-                self.ctx.set_font("12px monospace");
-                self.ctx.set_text_align("left");
-                let ench_str = ench.map(|e| format!(" [{}]", e)).unwrap_or_default();
+                self.ctx.set_fill_style_str("#aaa");
+                self.ctx.set_font("11px monospace");
                 self.ctx
                     .fill_text(
-                        &format!("{} {}{}", label, name, ench_str),
-                        box_x + 20.0,
-                        slot_y + i as f64 * 20.0,
+                        "Select a slot to enchant",
+                        self.canvas_w / 2.0,
+                        box_y + 44.0,
+                    )
+                    .ok();
+
+                // Equipment slots
+                let slots: [(&str, Option<&str>, Option<&str>); 3] = [
+                    (
+                        "1: Weapon",
+                        player.weapon.map(|e| e.name),
+                        player.enchantments[0],
+                    ),
+                    (
+                        "2: Armor",
+                        player.armor.map(|e| e.name),
+                        player.enchantments[1],
+                    ),
+                    (
+                        "3: Charm",
+                        player.charm.map(|e| e.name),
+                        player.enchantments[2],
+                    ),
+                ];
+                let slot_y = box_y + 62.0;
+                for (i, (label, equip_name, ench)) in slots.iter().enumerate() {
+                    let is_selected = i == *slot;
+                    let has_equip = equip_name.is_some();
+                    let color = if is_selected {
+                        "#ffcc33"
+                    } else if has_equip {
+                        "#ccc"
+                    } else {
+                        "#555"
+                    };
+                    self.ctx.set_fill_style_str(color);
+                    self.ctx.set_font("13px monospace");
+                    self.ctx.set_text_align("left");
+                    let marker = if is_selected { "▸ " } else { "  " };
+                    let eq_name = equip_name.unwrap_or("(empty)");
+                    let ench_str = ench.map(|e| format!(" [{}]", e)).unwrap_or_default();
+                    self.ctx
+                        .fill_text(
+                            &format!("{}{} {}{}", marker, label, eq_name, ench_str),
+                            box_x + 20.0,
+                            slot_y + i as f64 * 22.0,
+                        )
+                        .ok();
+                }
+
+                // Bottom hint
+                self.ctx.set_fill_style_str("#666");
+                self.ctx.set_font("10px monospace");
+                self.ctx.set_text_align("center");
+                self.ctx
+                    .fill_text(
+                        "1-3 or ↑↓+Enter = pick slot   Esc = cancel",
+                        self.canvas_w / 2.0,
+                        box_y + box_h + 14.0,
+                    )
+                    .ok();
+            } else {
+                // ── Phase 1: Select radical to apply ────────────────────────
+                let rad_count = player.radicals.len();
+                let page_size: usize = 6;
+                let page_start = page * page_size;
+                let page_end = (page_start + page_size).min(rad_count);
+                let page_count = page_end - page_start;
+                let max_page = if rad_count == 0 {
+                    0
+                } else {
+                    (rad_count - 1) / page_size
+                };
+
+                let box_w = 380.0;
+                let box_h = 120.0 + (page_count as f64 / 3.0).ceil() * 40.0;
+                let box_x = (self.canvas_w - box_w) / 2.0;
+                let box_y = 40.0;
+
+                self.ctx.set_fill_style_str("rgba(15,10,30,0.95)");
+                self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+                self.ctx.set_stroke_style_str("#aa66ff");
+                self.ctx.set_line_width(2.0);
+                self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+                // Title
+                self.ctx.set_fill_style_str("#aa66ff");
+                self.ctx.set_font("18px monospace");
+                self.ctx.set_text_align("center");
+                self.ctx
+                    .fill_text("✦ Enchant Equipment ✦", self.canvas_w / 2.0, box_y + 26.0)
+                    .ok();
+
+                let slot_label = match slot {
+                    0 => "Weapon",
+                    1 => "Armor",
+                    _ => "Charm",
+                };
+                let equip_name = match slot {
+                    0 => player.weapon.map(|e| e.name).unwrap_or("—"),
+                    1 => player.armor.map(|e| e.name).unwrap_or("—"),
+                    _ => player.charm.map(|e| e.name).unwrap_or("—"),
+                };
+                self.ctx.set_fill_style_str("#ffcc33");
+                self.ctx.set_font("12px monospace");
+                self.ctx.set_text_align("center");
+                self.ctx
+                    .fill_text(
+                        &format!("Enchanting: {} ({})", slot_label, equip_name),
+                        self.canvas_w / 2.0,
+                        box_y + 48.0,
+                    )
+                    .ok();
+
+                self.ctx.set_fill_style_str("#aaa");
+                self.ctx.set_font("11px monospace");
+                self.ctx
+                    .fill_text(
+                        &format!("Pick radical (page {}/{})", page + 1, max_page + 1),
+                        self.canvas_w / 2.0,
+                        box_y + 66.0,
+                    )
+                    .ok();
+
+                let grid_y = box_y + 78.0;
+                for (i, abs_idx) in (page_start..page_end).enumerate() {
+                    let rad_ch = player.radicals[abs_idx];
+                    let col = i % 3;
+                    let row = i / 3;
+                    let rx = box_x + 20.0 + col as f64 * 120.0;
+                    let ry = grid_y + row as f64 * 40.0;
+
+                    self.ctx.set_fill_style_str("rgba(0,0,0,0.3)");
+                    self.ctx.fill_rect(rx, ry, 110.0, 34.0);
+                    self.ctx.set_stroke_style_str("#aa66ff");
+                    self.ctx.set_line_width(1.0);
+                    self.ctx.stroke_rect(rx, ry, 110.0, 34.0);
+
+                    self.ctx.set_fill_style_str("#ffcc33");
+                    self.ctx.set_font("11px monospace");
+                    self.ctx.set_text_align("left");
+                    self.ctx
+                        .fill_text(&format!("{}:", i + 1), rx + 4.0, ry + 14.0)
+                        .ok();
+
+                    self.ctx.set_fill_style_str("#cc99ff");
+                    self.ctx.set_font("20px 'Noto Serif SC', 'SimSun', serif");
+                    self.ctx.set_text_align("center");
+                    self.ctx.fill_text(rad_ch, rx + 55.0, ry + 26.0).ok();
+                }
+
+                if rad_count == 0 {
+                    self.ctx.set_fill_style_str("#666");
+                    self.ctx.set_font("12px monospace");
+                    self.ctx.set_text_align("center");
+                    self.ctx
+                        .fill_text(
+                            "No radicals collected yet!",
+                            self.canvas_w / 2.0,
+                            grid_y + 20.0,
+                        )
+                        .ok();
+                }
+
+                // Bottom hint
+                self.ctx.set_fill_style_str("#666");
+                self.ctx.set_font("10px monospace");
+                self.ctx.set_text_align("center");
+                self.ctx
+                    .fill_text(
+                        "1-6 = pick radical   ←/→ = page   Esc = back",
+                        self.canvas_w / 2.0,
+                        box_y + box_h + 14.0,
                     )
                     .ok();
             }
-
-            // Radical grid
-            self.ctx.set_fill_style_str("#aaa");
-            self.ctx.set_font("11px monospace");
-            self.ctx.set_text_align("center");
-            self.ctx
-                .fill_text("Pick radical (4-9):", self.canvas_w / 2.0, slot_y + 72.0)
-                .ok();
-
-            let grid_y = slot_y + 84.0;
-            for (i, abs_idx) in (page_start..page_end).enumerate() {
-                let rad_ch = player.radicals[abs_idx];
-                let col = i % 5;
-                let row = i / 5;
-                let rx = box_x + 20.0 + col as f64 * 72.0;
-                let ry = grid_y + row as f64 * 36.0;
-
-                self.ctx.set_fill_style_str("rgba(0,0,0,0.3)");
-                self.ctx.fill_rect(rx, ry, 64.0, 30.0);
-                self.ctx.set_stroke_style_str("#aa66ff");
-                self.ctx.set_line_width(1.0);
-                self.ctx.stroke_rect(rx, ry, 64.0, 30.0);
-
-                self.ctx.set_fill_style_str("#888");
-                self.ctx.set_font("10px monospace");
-                self.ctx.set_text_align("left");
-                self.ctx
-                    .fill_text(&format!("{}", i + 1), rx + 2.0, ry + 11.0)
-                    .ok();
-
-                self.ctx.set_fill_style_str("#cc99ff");
-                self.ctx.set_font("18px 'Noto Serif SC', 'SimSun', serif");
-                self.ctx.set_text_align("center");
-                self.ctx.fill_text(rad_ch, rx + 32.0, ry + 24.0).ok();
-            }
-
-            // Bottom hint
-            self.ctx.set_fill_style_str("#666");
-            self.ctx.set_font("10px monospace");
-            self.ctx.set_text_align("center");
-            self.ctx
-                .fill_text(
-                    "1-3=slot  4-9=radical  Esc=cancel",
-                    self.canvas_w / 2.0,
-                    box_y + box_h + 14.0,
-                )
-                .ok();
         }
 
         // ── Shop UI overlay ─────────────────────────────────────────────
@@ -1519,6 +1678,1105 @@ impl Renderer {
             self.ctx
                 .fill_text(
                     "←→ select  Enter=pick  Backspace=undo  Esc=skip",
+                    self.canvas_w / 2.0,
+                    box_y + box_h - 10.0,
+                )
+                .ok();
+        }
+
+        // ── Stroke Order overlay ──────────────────────────────────────
+        if let CombatState::StrokeOrder {
+            hanzi,
+            ref components,
+            correct_order: _,
+            cursor,
+            ref arranged,
+            pinyin,
+            meaning,
+        } = combat
+        {
+            let box_w = 320.0;
+            let box_h = 220.0;
+            let box_x = (self.canvas_w - box_w) / 2.0;
+            let box_y = 60.0 + (anim_t * 3.0).sin() * 2.0;
+
+            self.ctx.set_fill_style_str("rgba(15,20,40,0.95)");
+            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+            self.ctx.set_stroke_style_str("#88ccff");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+            self.ctx.set_fill_style_str("#88ccff");
+            self.ctx.set_font("bold 16px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text("筆 Stroke Order", self.canvas_w / 2.0, box_y + 24.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_font("42px 'Noto Serif SC', 'SimSun', serif");
+            self.ctx
+                .fill_text(hanzi, self.canvas_w / 2.0, box_y + 72.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#aaa");
+            self.ctx.set_font("11px monospace");
+            self.ctx
+                .fill_text(
+                    &format!("{} — {}", pinyin, meaning),
+                    self.canvas_w / 2.0,
+                    box_y + 88.0,
+                )
+                .ok();
+
+            let built: String = arranged.iter().copied().collect::<Vec<_>>().join(" + ");
+            self.ctx.set_fill_style_str("#88ccff");
+            self.ctx.set_font("14px monospace");
+            self.ctx
+                .fill_text(
+                    &format!("Built: [{}]", built),
+                    self.canvas_w / 2.0,
+                    box_y + 110.0,
+                )
+                .ok();
+
+            let remaining: Vec<&&str> = components
+                .iter()
+                .filter(|c| !arranged.contains(c))
+                .collect();
+            self.ctx.set_font("16px 'Noto Serif SC', serif");
+            for (i, part) in remaining.iter().enumerate() {
+                let y = box_y + 135.0 + i as f64 * 22.0;
+                let selected = i == *cursor;
+                self.ctx
+                    .set_fill_style_str(if selected { "#ffcc33" } else { "#ccccee" });
+                let marker = if selected { "▸ " } else { "  " };
+                self.ctx
+                    .fill_text(&format!("{}{}", marker, part), self.canvas_w / 2.0, y)
+                    .ok();
+            }
+
+            self.ctx.set_fill_style_str("#555");
+            self.ctx.set_font("10px monospace");
+            self.ctx
+                .fill_text(
+                    "↑↓ select  Enter=place  Backspace=undo  Esc=skip",
+                    self.canvas_w / 2.0,
+                    box_y + box_h - 10.0,
+                )
+                .ok();
+        }
+
+        // ── Tone Defense overlay ────────────────────────────────────────
+        if let CombatState::ToneDefense {
+            round,
+            hanzi,
+            pinyin: _,
+            meaning: _,
+            correct_tone: _,
+            score,
+            last_result,
+        } = combat
+        {
+            let box_w = 320.0;
+            let box_h = 200.0;
+            let box_x = (self.canvas_w - box_w) / 2.0;
+            let box_y = 60.0 + (anim_t * 3.0).sin() * 2.0;
+
+            self.ctx.set_fill_style_str("rgba(30,15,15,0.95)");
+            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+            self.ctx.set_stroke_style_str("#dd6644");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+            self.ctx.set_fill_style_str("#dd6644");
+            self.ctx.set_font("bold 16px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text(
+                    &format!("壁 Tone Wall — Round {}/5", round + 1),
+                    self.canvas_w / 2.0,
+                    box_y + 24.0,
+                )
+                .ok();
+
+            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_font("42px 'Noto Serif SC', 'SimSun', serif");
+            self.ctx
+                .fill_text(hanzi, self.canvas_w / 2.0, box_y + 75.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#aaa");
+            self.ctx.set_font("12px monospace");
+            self.ctx
+                .fill_text(
+                    &format!("Blocked: {}/{}", score, round + 1),
+                    self.canvas_w / 2.0,
+                    box_y + 95.0,
+                )
+                .ok();
+
+            let tones = [
+                "1: ā (flat)",
+                "2: á (rising)",
+                "3: ǎ (dip)",
+                "4: à (falling)",
+            ];
+            self.ctx.set_font("14px monospace");
+            for (i, label) in tones.iter().enumerate() {
+                let y = box_y + 115.0 + i as f64 * 18.0;
+                self.ctx.set_fill_style_str("#ccccee");
+                self.ctx.fill_text(label, self.canvas_w / 2.0, y).ok();
+            }
+
+            if let Some(was_correct) = last_result {
+                let (txt, col) = if *was_correct {
+                    ("✓", "#66ff66")
+                } else {
+                    ("✗", "#ff6666")
+                };
+                self.ctx.set_fill_style_str(col);
+                self.ctx.set_font("20px monospace");
+                self.ctx.fill_text(txt, box_x + 20.0, box_y + 24.0).ok();
+            }
+
+            self.ctx.set_fill_style_str("#555");
+            self.ctx.set_font("10px monospace");
+            self.ctx
+                .fill_text(
+                    "1-4 pick tone  Esc=flee  Wrong = -1 HP",
+                    self.canvas_w / 2.0,
+                    box_y + box_h - 10.0,
+                )
+                .ok();
+        }
+
+        // ── Compound Builder overlay ────────────────────────────────────
+        if let CombatState::CompoundBuilder {
+            ref parts,
+            correct_compound: _,
+            pinyin: _,
+            meaning,
+            cursor,
+            ref arranged,
+        } = combat
+        {
+            let box_w = 320.0;
+            let box_h = 220.0;
+            let box_x = (self.canvas_w - box_w) / 2.0;
+            let box_y = 60.0 + (anim_t * 3.0).sin() * 2.0;
+
+            self.ctx.set_fill_style_str("rgba(15,30,20,0.95)");
+            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+            self.ctx.set_stroke_style_str("#66dd88");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+            self.ctx.set_fill_style_str("#66dd88");
+            self.ctx.set_font("bold 16px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text("合 Compound Builder", self.canvas_w / 2.0, box_y + 24.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#aaa");
+            self.ctx.set_font("12px monospace");
+            self.ctx
+                .fill_text(
+                    &format!("Hint: {}", meaning),
+                    self.canvas_w / 2.0,
+                    box_y + 44.0,
+                )
+                .ok();
+
+            let built: String = arranged.iter().copied().collect::<Vec<_>>().join("");
+            self.ctx.set_fill_style_str("#66dd88");
+            self.ctx.set_font("28px 'Noto Serif SC', serif");
+            self.ctx
+                .fill_text(
+                    &format!("[{}]", if built.is_empty() { "?" } else { &built }),
+                    self.canvas_w / 2.0,
+                    box_y + 80.0,
+                )
+                .ok();
+
+            let remaining: Vec<&&str> = parts.iter().filter(|p| !arranged.contains(p)).collect();
+            self.ctx.set_font("18px 'Noto Serif SC', serif");
+            for (i, part) in remaining.iter().enumerate() {
+                let y = box_y + 115.0 + i as f64 * 26.0;
+                let selected = i == *cursor;
+                self.ctx
+                    .set_fill_style_str(if selected { "#ffcc33" } else { "#ccccee" });
+                let marker = if selected { "▸ " } else { "  " };
+                self.ctx
+                    .fill_text(&format!("{}{}", marker, part), self.canvas_w / 2.0, y)
+                    .ok();
+            }
+
+            self.ctx.set_fill_style_str("#555");
+            self.ctx.set_font("10px monospace");
+            self.ctx
+                .fill_text(
+                    "↑↓ select  Enter=place  Backspace=undo  Esc=skip",
+                    self.canvas_w / 2.0,
+                    box_y + box_h - 10.0,
+                )
+                .ok();
+        }
+
+        // ── Classifier Match overlay ────────────────────────────────────
+        if let CombatState::ClassifierMatch {
+            round,
+            noun,
+            noun_pinyin: _,
+            noun_meaning,
+            correct_classifier: _,
+            ref options,
+            correct_idx: _,
+            score,
+            last_result,
+        } = combat
+        {
+            let box_w = 320.0;
+            let box_h = 200.0;
+            let box_x = (self.canvas_w - box_w) / 2.0;
+            let box_y = 60.0 + (anim_t * 3.0).sin() * 2.0;
+
+            self.ctx.set_fill_style_str("rgba(30,25,10,0.95)");
+            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+            self.ctx.set_stroke_style_str("#ddaa44");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+            self.ctx.set_fill_style_str("#ddaa44");
+            self.ctx.set_font("bold 16px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text(
+                    &format!("量 Classifier — Round {}/3", round + 1),
+                    self.canvas_w / 2.0,
+                    box_y + 24.0,
+                )
+                .ok();
+
+            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_font("36px 'Noto Serif SC', 'SimSun', serif");
+            self.ctx
+                .fill_text(noun, self.canvas_w / 2.0, box_y + 68.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#aaa");
+            self.ctx.set_font("11px monospace");
+            self.ctx
+                .fill_text(noun_meaning, self.canvas_w / 2.0, box_y + 85.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#ccccee");
+            self.ctx.set_font("12px monospace");
+            self.ctx
+                .fill_text(
+                    &format!("Score: {}/{}", score, round + 1),
+                    self.canvas_w / 2.0,
+                    box_y + 100.0,
+                )
+                .ok();
+
+            self.ctx.set_font("16px 'Noto Serif SC', serif");
+            for (i, opt) in options.iter().enumerate() {
+                let y = box_y + 122.0 + i as f64 * 22.0;
+                self.ctx.set_fill_style_str("#ccccee");
+                self.ctx
+                    .fill_text(&format!("{}: {}", i + 1, opt), self.canvas_w / 2.0, y)
+                    .ok();
+            }
+
+            if let Some(was_correct) = last_result {
+                let (txt, col) = if *was_correct {
+                    ("✓", "#66ff66")
+                } else {
+                    ("✗", "#ff6666")
+                };
+                self.ctx.set_fill_style_str(col);
+                self.ctx.set_font("20px monospace");
+                self.ctx.fill_text(txt, box_x + 20.0, box_y + 24.0).ok();
+            }
+
+            self.ctx.set_fill_style_str("#555");
+            self.ctx.set_font("10px monospace");
+            self.ctx
+                .fill_text(
+                    "1-4 pick classifier  Esc=flee  5g per correct",
+                    self.canvas_w / 2.0,
+                    box_y + box_h - 10.0,
+                )
+                .ok();
+        }
+
+        // ── InkWell overlay ─────────────────────────────────────────────
+        if let CombatState::InkWellChallenge {
+            hanzi,
+            correct_count: _,
+            pinyin,
+            meaning,
+        } = combat
+        {
+            let box_w = 300.0;
+            let box_h = 160.0;
+            let box_x = (self.canvas_w - box_w) / 2.0;
+            let box_y = 60.0 + (anim_t * 3.0).sin() * 2.0;
+
+            self.ctx.set_fill_style_str("rgba(20,20,40,0.95)");
+            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+            self.ctx.set_stroke_style_str("#9999ee");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+            self.ctx.set_fill_style_str("#9999ee");
+            self.ctx.set_font("bold 16px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text("墨 Ink Well", self.canvas_w / 2.0, box_y + 24.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#eeeeff");
+            self.ctx.set_font("36px 'Noto Serif SC', 'SimSun', serif");
+            self.ctx
+                .fill_text(hanzi, self.canvas_w / 2.0, box_y + 70.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#aaa");
+            self.ctx.set_font("12px monospace");
+            self.ctx
+                .fill_text(
+                    &format!("{} — {}", pinyin, meaning),
+                    self.canvas_w / 2.0,
+                    box_y + 92.0,
+                )
+                .ok();
+
+            self.ctx.set_fill_style_str("#ccccee");
+            self.ctx.set_font("12px monospace");
+            self.ctx
+                .fill_text(
+                    "How many components? Press 1-9",
+                    self.canvas_w / 2.0,
+                    box_y + 116.0,
+                )
+                .ok();
+
+            self.ctx.set_fill_style_str("#555");
+            self.ctx.set_font("10px monospace");
+            self.ctx
+                .fill_text(
+                    "Correct = +1 HP  Esc=leave",
+                    self.canvas_w / 2.0,
+                    box_y + box_h - 10.0,
+                )
+                .ok();
+        }
+
+        // ── Ancestor Shrine overlay ─────────────────────────────────────
+        if let CombatState::AncestorChallenge {
+            first_half,
+            correct_second: _,
+            full: _,
+            pinyin: _,
+            meaning,
+            ref options,
+            correct_idx: _,
+        } = combat
+        {
+            let box_w = 320.0;
+            let box_h = 200.0;
+            let box_x = (self.canvas_w - box_w) / 2.0;
+            let box_y = 60.0 + (anim_t * 3.0).sin() * 2.0;
+
+            self.ctx.set_fill_style_str("rgba(40,20,20,0.95)");
+            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+            self.ctx.set_stroke_style_str("#ee9966");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+            self.ctx.set_fill_style_str("#ee9966");
+            self.ctx.set_font("bold 16px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text("祖 Ancestor Shrine", self.canvas_w / 2.0, box_y + 24.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#ffcc88");
+            self.ctx.set_font("28px 'Noto Serif SC', 'SimSun', serif");
+            self.ctx
+                .fill_text(
+                    &format!("{}____", first_half),
+                    self.canvas_w / 2.0,
+                    box_y + 65.0,
+                )
+                .ok();
+
+            self.ctx.set_fill_style_str("#aaa");
+            self.ctx.set_font("11px monospace");
+            self.ctx
+                .fill_text(meaning, self.canvas_w / 2.0, box_y + 85.0)
+                .ok();
+
+            self.ctx.set_font("16px 'Noto Serif SC', serif");
+            for (i, opt) in options.iter().enumerate() {
+                let y = box_y + 110.0 + i as f64 * 22.0;
+                self.ctx.set_fill_style_str("#ccccee");
+                self.ctx
+                    .fill_text(&format!("{}: {}", i + 1, opt), self.canvas_w / 2.0, y)
+                    .ok();
+            }
+
+            self.ctx.set_fill_style_str("#555");
+            self.ctx.set_font("10px monospace");
+            self.ctx
+                .fill_text(
+                    "1-4 complete chengyu  Correct=+10g  Esc=leave",
+                    self.canvas_w / 2.0,
+                    box_y + box_h - 10.0,
+                )
+                .ok();
+        }
+
+        // ── Translation Altar overlay ───────────────────────────────────
+        if let CombatState::TranslationChallenge {
+            round,
+            meaning,
+            correct_hanzi: _,
+            correct_pinyin: _,
+            ref options,
+            correct_idx: _,
+            score,
+        } = combat
+        {
+            let box_w = 320.0;
+            let box_h = 210.0;
+            let box_x = (self.canvas_w - box_w) / 2.0;
+            let box_y = 60.0 + (anim_t * 3.0).sin() * 2.0;
+
+            self.ctx.set_fill_style_str("rgba(20,40,40,0.95)");
+            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+            self.ctx.set_stroke_style_str("#66cccc");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+            self.ctx.set_fill_style_str("#66cccc");
+            self.ctx.set_font("bold 16px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text(
+                    &format!("译 Translation — Round {}/3", round + 1),
+                    self.canvas_w / 2.0,
+                    box_y + 24.0,
+                )
+                .ok();
+
+            self.ctx.set_fill_style_str("#ffffff");
+            self.ctx.set_font("18px monospace");
+            self.ctx
+                .fill_text(
+                    &format!("\"{}\"", meaning),
+                    self.canvas_w / 2.0,
+                    box_y + 58.0,
+                )
+                .ok();
+
+            self.ctx.set_fill_style_str("#ccccee");
+            self.ctx.set_font("12px monospace");
+            self.ctx
+                .fill_text(
+                    &format!("Score: {}/{}", score, round + 1),
+                    self.canvas_w / 2.0,
+                    box_y + 80.0,
+                )
+                .ok();
+
+            self.ctx.set_font("18px 'Noto Serif SC', serif");
+            for (i, opt) in options.iter().enumerate() {
+                let y = box_y + 106.0 + i as f64 * 24.0;
+                self.ctx.set_fill_style_str("#ccccee");
+                self.ctx
+                    .fill_text(&format!("{}: {}", i + 1, opt), self.canvas_w / 2.0, y)
+                    .ok();
+            }
+
+            self.ctx.set_fill_style_str("#555");
+            self.ctx.set_font("10px monospace");
+            self.ctx
+                .fill_text(
+                    "1-4 pick  2+ correct=+1 max HP  Esc=leave",
+                    self.canvas_w / 2.0,
+                    box_y + box_h - 10.0,
+                )
+                .ok();
+        }
+
+        // ── Radical Garden overlay ──────────────────────────────────────
+        if let CombatState::RadicalGardenChallenge {
+            hanzi,
+            pinyin: _,
+            meaning,
+            correct_radical: _,
+            ref options,
+            correct_idx: _,
+        } = combat
+        {
+            let box_w = 310.0;
+            let box_h = 200.0;
+            let box_x = (self.canvas_w - box_w) / 2.0;
+            let box_y = 60.0 + (anim_t * 3.0).sin() * 2.0;
+
+            self.ctx.set_fill_style_str("rgba(20,40,20,0.95)");
+            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+            self.ctx.set_stroke_style_str("#88ee66");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+            self.ctx.set_fill_style_str("#88ee66");
+            self.ctx.set_font("bold 16px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text("部 Radical Garden", self.canvas_w / 2.0, box_y + 24.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#aaffaa");
+            self.ctx.set_font("36px 'Noto Serif SC', 'SimSun', serif");
+            self.ctx
+                .fill_text(hanzi, self.canvas_w / 2.0, box_y + 70.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#aaa");
+            self.ctx.set_font("11px monospace");
+            self.ctx
+                .fill_text(meaning, self.canvas_w / 2.0, box_y + 88.0)
+                .ok();
+
+            self.ctx.set_font("18px 'Noto Serif SC', serif");
+            for (i, opt) in options.iter().enumerate() {
+                let y = box_y + 112.0 + i as f64 * 22.0;
+                self.ctx.set_fill_style_str("#cceecc");
+                self.ctx
+                    .fill_text(&format!("{}: {}", i + 1, opt), self.canvas_w / 2.0, y)
+                    .ok();
+            }
+
+            self.ctx.set_fill_style_str("#555");
+            self.ctx.set_font("10px monospace");
+            self.ctx
+                .fill_text(
+                    "1-4 identify radical  Correct=free radical  Esc=leave",
+                    self.canvas_w / 2.0,
+                    box_y + box_h - 10.0,
+                )
+                .ok();
+        }
+
+        // ── Mirror Pool overlay ─────────────────────────────────────────
+        if let CombatState::MirrorPoolChallenge {
+            hanzi,
+            correct_pinyin: _,
+            meaning,
+            ref input,
+        } = combat
+        {
+            let box_w = 310.0;
+            let box_h = 180.0;
+            let box_x = (self.canvas_w - box_w) / 2.0;
+            let box_y = 60.0 + (anim_t * 3.0).sin() * 2.0;
+
+            self.ctx.set_fill_style_str("rgba(20,20,50,0.95)");
+            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+            self.ctx.set_stroke_style_str("#aaaaff");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+            self.ctx.set_fill_style_str("#aaaaff");
+            self.ctx.set_font("bold 16px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text("鏡 Mirror Pool", self.canvas_w / 2.0, box_y + 24.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#ddddff");
+            self.ctx.set_font("36px 'Noto Serif SC', 'SimSun', serif");
+            self.ctx
+                .fill_text(hanzi, self.canvas_w / 2.0, box_y + 70.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#aaa");
+            self.ctx.set_font("12px monospace");
+            self.ctx
+                .fill_text(meaning, self.canvas_w / 2.0, box_y + 90.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#ffffff");
+            self.ctx.set_font("18px monospace");
+            let display_input = if input.is_empty() {
+                "_ ".to_string()
+            } else {
+                format!("{}▏", input)
+            };
+            self.ctx
+                .fill_text(&display_input, self.canvas_w / 2.0, box_y + 120.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#555");
+            self.ctx.set_font("10px monospace");
+            self.ctx
+                .fill_text(
+                    "Type pinyin  Enter=submit  Backspace=del  Esc=leave",
+                    self.canvas_w / 2.0,
+                    box_y + box_h - 10.0,
+                )
+                .ok();
+        }
+
+        // ── Stone Tutor overlay ─────────────────────────────────────────
+        if let CombatState::StoneTutorChallenge {
+            round,
+            hanzi,
+            pinyin,
+            meaning,
+            correct_tone: _,
+            phase,
+            score,
+        } = combat
+        {
+            let box_w = 310.0;
+            let box_h = 200.0;
+            let box_x = (self.canvas_w - box_w) / 2.0;
+            let box_y = 60.0 + (anim_t * 3.0).sin() * 2.0;
+
+            self.ctx.set_fill_style_str("rgba(40,40,20,0.95)");
+            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+            self.ctx.set_stroke_style_str("#cccc66");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+            self.ctx.set_fill_style_str("#cccc66");
+            self.ctx.set_font("bold 16px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text(
+                    &format!("石 Stone Tutor — Round {}/3", round + 1),
+                    self.canvas_w / 2.0,
+                    box_y + 24.0,
+                )
+                .ok();
+
+            self.ctx.set_fill_style_str("#ffffaa");
+            self.ctx.set_font("36px 'Noto Serif SC', 'SimSun', serif");
+            self.ctx
+                .fill_text(hanzi, self.canvas_w / 2.0, box_y + 70.0)
+                .ok();
+
+            if *phase == 0 {
+                self.ctx.set_fill_style_str("#ccccaa");
+                self.ctx.set_font("14px monospace");
+                self.ctx
+                    .fill_text(
+                        &format!("{} — {}", pinyin, meaning),
+                        self.canvas_w / 2.0,
+                        box_y + 95.0,
+                    )
+                    .ok();
+
+                self.ctx.set_fill_style_str("#aaaaaa");
+                self.ctx.set_font("12px monospace");
+                self.ctx
+                    .fill_text(
+                        "Study this character. Press Space to quiz.",
+                        self.canvas_w / 2.0,
+                        box_y + 125.0,
+                    )
+                    .ok();
+            } else {
+                self.ctx.set_fill_style_str("#ccccaa");
+                self.ctx.set_font("14px monospace");
+                self.ctx
+                    .fill_text(meaning, self.canvas_w / 2.0, box_y + 92.0)
+                    .ok();
+
+                self.ctx.set_fill_style_str("#ccccee");
+                self.ctx.set_font("14px monospace");
+                self.ctx
+                    .fill_text("What tone? 1-4", self.canvas_w / 2.0, box_y + 116.0)
+                    .ok();
+
+                self.ctx.set_font("12px monospace");
+                for i in 1..=4u8 {
+                    let label = match i {
+                        1 => "1: ˉ flat",
+                        2 => "2: ˊ rising",
+                        3 => "3: ˇ dip",
+                        _ => "4: ˋ falling",
+                    };
+                    let y = box_y + 134.0 + (i - 1) as f64 * 16.0;
+                    self.ctx.set_fill_style_str("#aaaacc");
+                    self.ctx.fill_text(label, self.canvas_w / 2.0, y).ok();
+                }
+            }
+
+            self.ctx.set_fill_style_str("#555");
+            self.ctx.set_font("10px monospace");
+            self.ctx
+                .fill_text(
+                    &format!("Score: {}/{}  Esc=leave", score, round),
+                    self.canvas_w / 2.0,
+                    box_y + box_h - 10.0,
+                )
+                .ok();
+        }
+
+        // ── Codex Challenge overlay ─────────────────────────────────────
+        if let CombatState::CodexChallenge {
+            round,
+            hanzi,
+            pinyin: _,
+            meaning: _,
+            options,
+            correct_idx: _,
+            score,
+        } = combat
+        {
+            let box_w = 340.0;
+            let box_h = 220.0;
+            let box_x = (self.canvas_w - box_w) / 2.0;
+            let box_y = 60.0 + (anim_t * 3.0).sin() * 2.0;
+
+            self.ctx.set_fill_style_str("rgba(25,15,45,0.95)");
+            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+            self.ctx.set_stroke_style_str("#cc88ff");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+            self.ctx.set_fill_style_str("#cc88ff");
+            self.ctx.set_font("bold 16px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text(
+                    &format!("典 Codex Shrine — Round {}/3", round + 1),
+                    self.canvas_w / 2.0,
+                    box_y + 24.0,
+                )
+                .ok();
+
+            self.ctx.set_fill_style_str("#eeddff");
+            self.ctx.set_font("36px 'Noto Serif SC', 'SimSun', serif");
+            self.ctx
+                .fill_text(hanzi, self.canvas_w / 2.0, box_y + 72.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#bbaadd");
+            self.ctx.set_font("12px monospace");
+            self.ctx
+                .fill_text("What does this mean?", self.canvas_w / 2.0, box_y + 92.0)
+                .ok();
+
+            self.ctx.set_font("14px monospace");
+            for (i, opt) in options.iter().enumerate() {
+                let y = box_y + 114.0 + i as f64 * 20.0;
+                self.ctx.set_fill_style_str("#ddccee");
+                self.ctx
+                    .fill_text(&format!("{}: {}", i + 1, opt), self.canvas_w / 2.0, y)
+                    .ok();
+            }
+
+            self.ctx.set_fill_style_str("#555");
+            self.ctx.set_font("10px monospace");
+            self.ctx
+                .fill_text(
+                    &format!("Score: {}/{}  Esc=leave", score, round),
+                    self.canvas_w / 2.0,
+                    box_y + box_h - 10.0,
+                )
+                .ok();
+        }
+
+        // ── Journal overlay ─────────────────────────────────────────────
+        if let CombatState::Journal { page } = combat {
+            let box_w = 360.0;
+            let box_h = 300.0;
+            let box_x = (self.canvas_w - box_w) / 2.0;
+            let box_y = 30.0;
+
+            self.ctx.set_fill_style_str("rgba(12,10,28,0.96)");
+            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+            self.ctx.set_stroke_style_str("#88aaff");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+            self.ctx.set_fill_style_str("#88aaff");
+            self.ctx.set_font("bold 16px monospace");
+            self.ctx.set_text_align("center");
+
+            let entries = codex.sorted_entries();
+            let total = entries.len();
+            let per_page = 10;
+            let pages = if total == 0 {
+                1
+            } else {
+                (total + per_page - 1) / per_page
+            };
+            let cur_page = *page;
+
+            self.ctx
+                .fill_text(
+                    &format!("📖 Character Journal — {}/{}", cur_page + 1, pages),
+                    self.canvas_w / 2.0,
+                    box_y + 24.0,
+                )
+                .ok();
+
+            if total == 0 {
+                self.ctx.set_fill_style_str("#777");
+                self.ctx.set_font("14px monospace");
+                self.ctx
+                    .fill_text(
+                        "No characters encountered yet.",
+                        self.canvas_w / 2.0,
+                        box_y + 100.0,
+                    )
+                    .ok();
+            } else {
+                self.ctx.set_text_align("left");
+                self.ctx.set_fill_style_str("#667799");
+                self.ctx.set_font("10px monospace");
+                self.ctx
+                    .fill_text(
+                        "Char  Pinyin        Meaning          Acc",
+                        box_x + 14.0,
+                        box_y + 44.0,
+                    )
+                    .ok();
+
+                let start = cur_page * per_page;
+                let end = (start + per_page).min(total);
+                for (i, entry) in entries[start..end].iter().enumerate() {
+                    let y = box_y + 62.0 + i as f64 * 22.0;
+
+                    self.ctx.set_fill_style_str("#eeddff");
+                    self.ctx.set_font("16px 'Noto Serif SC', 'SimSun', serif");
+                    self.ctx.fill_text(entry.hanzi, box_x + 14.0, y).ok();
+
+                    self.ctx.set_fill_style_str("#aabbcc");
+                    self.ctx.set_font("11px monospace");
+                    self.ctx.fill_text(entry.pinyin, box_x + 50.0, y).ok();
+
+                    self.ctx.set_fill_style_str("#99aabb");
+                    self.ctx.fill_text(entry.meaning, box_x + 145.0, y).ok();
+
+                    let acc = (entry.accuracy() * 100.0) as u32;
+                    let acc_color = if acc >= 80 {
+                        "#88ff88"
+                    } else if acc >= 50 {
+                        "#ffcc44"
+                    } else {
+                        "#ff6666"
+                    };
+                    self.ctx.set_fill_style_str(acc_color);
+                    self.ctx
+                        .fill_text(&format!("{}%", acc), box_x + 290.0, y)
+                        .ok();
+                }
+            }
+
+            self.ctx.set_text_align("center");
+            self.ctx.set_fill_style_str("#555");
+            self.ctx.set_font("10px monospace");
+            self.ctx
+                .fill_text(
+                    "←/→ page  Esc/J=close",
+                    self.canvas_w / 2.0,
+                    box_y + box_h - 10.0,
+                )
+                .ok();
+        }
+
+        // ── Word Bridge Challenge overlay ───────────────────────────────
+        if let CombatState::WordBridgeChallenge {
+            meaning,
+            correct_hanzi: _,
+            correct_pinyin: _,
+            options,
+            correct_idx: _,
+            bridge_x: _,
+            bridge_y: _,
+        } = combat
+        {
+            let box_w = 340.0;
+            let box_h = 200.0;
+            let box_x = (self.canvas_w - box_w) / 2.0;
+            let box_y = 60.0 + (anim_t * 3.0).sin() * 2.0;
+
+            self.ctx.set_fill_style_str("rgba(15,30,40,0.95)");
+            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+            self.ctx.set_stroke_style_str("#44ccaa");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+            self.ctx.set_fill_style_str("#44ccaa");
+            self.ctx.set_font("bold 16px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text("桥 Word Bridge", self.canvas_w / 2.0, box_y + 24.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#ddeeff");
+            self.ctx.set_font("18px monospace");
+            self.ctx
+                .fill_text(
+                    &format!("Which character means \"{}\"?", meaning),
+                    self.canvas_w / 2.0,
+                    box_y + 58.0,
+                )
+                .ok();
+
+            self.ctx.set_font("20px 'Noto Serif SC', 'SimSun', serif");
+            for (i, opt) in options.iter().enumerate() {
+                let y = box_y + 90.0 + i as f64 * 24.0;
+                self.ctx.set_fill_style_str("#ccffee");
+                self.ctx
+                    .fill_text(&format!("{}: {}", i + 1, opt), self.canvas_w / 2.0, y)
+                    .ok();
+            }
+
+            self.ctx.set_fill_style_str("#555");
+            self.ctx.set_font("10px monospace");
+            self.ctx
+                .fill_text(
+                    "Pick 1-4  Esc=leave",
+                    self.canvas_w / 2.0,
+                    box_y + box_h - 10.0,
+                )
+                .ok();
+        }
+
+        // ── Locked Door Challenge overlay ───────────────────────────────
+        if let CombatState::LockedDoorChallenge {
+            hanzi,
+            pinyin: _,
+            correct_meaning: _,
+            options,
+            correct_idx: _,
+            door_x: _,
+            door_y: _,
+        } = combat
+        {
+            let box_w = 340.0;
+            let box_h = 220.0;
+            let box_x = (self.canvas_w - box_w) / 2.0;
+            let box_y = 60.0 + (anim_t * 3.0).sin() * 2.0;
+
+            self.ctx.set_fill_style_str("rgba(35,20,15,0.95)");
+            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+            self.ctx.set_stroke_style_str("#cc6633");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+            self.ctx.set_fill_style_str("#cc6633");
+            self.ctx.set_font("bold 16px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text("锁 Locked Door", self.canvas_w / 2.0, box_y + 24.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#ffddcc");
+            self.ctx.set_font("36px 'Noto Serif SC', 'SimSun', serif");
+            self.ctx
+                .fill_text(hanzi, self.canvas_w / 2.0, box_y + 72.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#cc9977");
+            self.ctx.set_font("12px monospace");
+            self.ctx
+                .fill_text("What does this mean?", self.canvas_w / 2.0, box_y + 92.0)
+                .ok();
+
+            self.ctx.set_font("14px monospace");
+            for (i, opt) in options.iter().enumerate() {
+                let y = box_y + 114.0 + i as f64 * 20.0;
+                self.ctx.set_fill_style_str("#ffeecc");
+                self.ctx
+                    .fill_text(&format!("{}: {}", i + 1, opt), self.canvas_w / 2.0, y)
+                    .ok();
+            }
+
+            self.ctx.set_fill_style_str("#555");
+            self.ctx.set_font("10px monospace");
+            self.ctx
+                .fill_text(
+                    "Pick 1-4  Esc=leave",
+                    self.canvas_w / 2.0,
+                    box_y + box_h - 10.0,
+                )
+                .ok();
+        }
+
+        // ── Cursed Floor Challenge overlay ──────────────────────────────
+        if let CombatState::CursedFloorChallenge {
+            hanzi,
+            pinyin: _,
+            meaning,
+            correct_tone: _,
+        } = combat
+        {
+            let box_w = 320.0;
+            let box_h = 200.0;
+            let box_x = (self.canvas_w - box_w) / 2.0;
+            let box_y = 60.0 + (anim_t * 4.0).sin() * 3.0;
+
+            self.ctx.set_fill_style_str("rgba(30,10,35,0.95)");
+            self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+            self.ctx.set_stroke_style_str("#bb44ff");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+            self.ctx.set_fill_style_str("#bb44ff");
+            self.ctx.set_font("bold 16px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text("咒 Cursed Floor!", self.canvas_w / 2.0, box_y + 24.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#eeccff");
+            self.ctx.set_font("36px 'Noto Serif SC', 'SimSun', serif");
+            self.ctx
+                .fill_text(hanzi, self.canvas_w / 2.0, box_y + 70.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#ccaadd");
+            self.ctx.set_font("14px monospace");
+            self.ctx
+                .fill_text(meaning, self.canvas_w / 2.0, box_y + 92.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#ccccee");
+            self.ctx.set_font("14px monospace");
+            self.ctx
+                .fill_text("What tone? 1-4", self.canvas_w / 2.0, box_y + 116.0)
+                .ok();
+
+            self.ctx.set_font("12px monospace");
+            for i in 1..=4u8 {
+                let label = match i {
+                    1 => "1: ˉ flat",
+                    2 => "2: ˊ rising",
+                    3 => "3: ˇ dip",
+                    _ => "4: ˋ falling",
+                };
+                let y = box_y + 134.0 + (i - 1) as f64 * 16.0;
+                self.ctx.set_fill_style_str("#aaaacc");
+                self.ctx.fill_text(label, self.canvas_w / 2.0, y).ok();
+            }
+
+            self.ctx.set_fill_style_str("#555");
+            self.ctx.set_font("10px monospace");
+            self.ctx
+                .fill_text(
+                    "Pick 1-4  Wrong = -2 gold",
                     self.canvas_w / 2.0,
                     box_y + box_h - 10.0,
                 )
@@ -2004,7 +3262,7 @@ impl Renderer {
         );
 
         match tile {
-            Tile::Floor | Tile::Corridor => {
+            Tile::Floor | Tile::Corridor | Tile::CursedFloor => {
                 self.ctx.set_fill_style_str(if tile == Tile::Corridor {
                     "rgba(215,225,255,0.06)"
                 } else {
@@ -2021,6 +3279,13 @@ impl Renderer {
                         TILE_SIZE - 8.0,
                         1.0,
                     );
+                }
+                if tile == Tile::CursedFloor {
+                    // Subtle cursed shimmer — barely visible trap hint
+                    self.ctx.set_fill_style_str("rgba(180,120,255,0.06)");
+                    let cx = screen_x + 6.0 + ((pattern / 3) % 8) as f64;
+                    let cy = screen_y + 6.0 + ((pattern / 7) % 8) as f64;
+                    self.ctx.fill_rect(cx, cy, 2.0, 2.0);
                 }
             }
             Tile::Wall | Tile::CrackedWall | Tile::BrittleWall => {
@@ -2162,6 +3427,19 @@ impl Renderer {
             | Tile::Chest
             | Tile::Npc(_)
             | Tile::Shrine
+            | Tile::StrokeShrine
+            | Tile::ToneWall
+            | Tile::CompoundShrine
+            | Tile::ClassifierShrine
+            | Tile::InkWell
+            | Tile::AncestorShrine
+            | Tile::TranslationAltar
+            | Tile::RadicalGarden
+            | Tile::MirrorPool
+            | Tile::StoneTutor
+            | Tile::CodexShrine
+            | Tile::WordBridge
+            | Tile::LockedDoor
             | Tile::Altar(_)
             | Tile::Seal(_)
             | Tile::Sign(_) => {
@@ -2486,7 +3764,7 @@ impl Renderer {
     fn draw_help_overlay(&self, combat: &CombatState, listening_mode: ListenMode) {
         let mut lines = vec![
             "Explore: WASD/Arrows move  1-5 use items".to_string(),
-            "I inventory  C codex  V look  O options".to_string(),
+            "I inventory  B spellbook  C codex  V look  O options".to_string(),
             format!(
                 "L listening ({})  X skip floor  ? toggle help",
                 listening_mode.label()
@@ -2508,8 +3786,8 @@ impl Renderer {
                 "Forge Controls"
             }
             CombatState::Enchanting { .. } => {
-                lines.push("Enchant: 1-3 pick slot  4-9 pick radical".to_string());
-                lines.push("<-/-> page  Esc close".to_string());
+                lines.push("Enchant: 1-3 or ↑↓+Enter = pick slot".to_string());
+                lines.push("Then 1-6 = radical  ←/→ page  Esc back".to_string());
                 "Enchant Controls"
             }
             CombatState::Shopping { .. } => {
@@ -2541,7 +3819,7 @@ impl Renderer {
                 "Game Over Controls"
             }
             CombatState::Explore => {
-                lines.push("Q cycle spell  Space cast (Heal/Shield/Reveal work here)".to_string());
+                lines.push("Q cycle spell  Space cast (offensive spells aim first)".to_string());
                 lines.push(
                     "Script seals can flood rooms, raise spikes, or summon ambushes.".to_string(),
                 );
@@ -2559,6 +3837,86 @@ impl Renderer {
             CombatState::DippingTarget { .. } => {
                 lines.push("Dipping: Select weapon/armor/charm to coat".to_string());
                 "Dip Controls"
+            }
+            CombatState::StrokeOrder { .. } => {
+                lines.push("Stroke: ↑/↓ select  Enter place  Backspace undo".to_string());
+                lines.push("Arrange components in correct writing order  Esc skip".to_string());
+                "Stroke Order Controls"
+            }
+            CombatState::ToneDefense { .. } => {
+                lines.push("Tone Wall: 1-4 pick the correct tone".to_string());
+                lines.push("Block attacks! Wrong = 1 damage  Esc flee".to_string());
+                "Tone Defense Controls"
+            }
+            CombatState::CompoundBuilder { .. } => {
+                lines.push("Compound: ↑/↓ select  Enter place  Backspace undo".to_string());
+                lines.push("Combine characters into a word  Esc skip".to_string());
+                "Compound Builder Controls"
+            }
+            CombatState::ClassifierMatch { .. } => {
+                lines.push("Classifier: 1-4 pick the correct measure word".to_string());
+                lines.push("3 rounds — earn 5 gold per correct  Esc flee".to_string());
+                "Classifier Match Controls"
+            }
+            CombatState::Aiming { .. } => {
+                lines.push("Aim: Arrows pick direction  Enter/Space fire".to_string());
+                lines.push("Esc cancel  Spell flies until it hits a wall or enemy".to_string());
+                "Aim Controls"
+            }
+            CombatState::InkWellChallenge { .. } => {
+                lines.push("Ink Well: 1-9 guess number of components".to_string());
+                lines.push("Correct = +1 HP  Esc leave".to_string());
+                "Ink Well Controls"
+            }
+            CombatState::AncestorChallenge { .. } => {
+                lines.push("Ancestor Shrine: 1-4 complete the chengyu".to_string());
+                lines.push("Correct = +10 gold  Esc leave".to_string());
+                "Ancestor Shrine Controls"
+            }
+            CombatState::TranslationChallenge { .. } => {
+                lines.push("Translation: 1-4 pick Chinese for the meaning".to_string());
+                lines.push("3 rounds, 2+ correct = +1 max HP  Esc leave".to_string());
+                "Translation Controls"
+            }
+            CombatState::RadicalGardenChallenge { .. } => {
+                lines.push("Radical Garden: 1-4 identify the radical".to_string());
+                lines.push("Correct = free radical for inventory  Esc leave".to_string());
+                "Radical Garden Controls"
+            }
+            CombatState::MirrorPoolChallenge { .. } => {
+                lines.push("Mirror Pool: type pinyin, Enter submit".to_string());
+                lines.push("Correct = +1 spell power  Backspace delete  Esc leave".to_string());
+                "Mirror Pool Controls"
+            }
+            CombatState::StoneTutorChallenge { .. } => {
+                lines.push("Stone Tutor: Space to advance from study to quiz".to_string());
+                lines.push("Quiz: 1-4 pick tone  3 rounds  Esc leave".to_string());
+                "Stone Tutor Controls"
+            }
+            CombatState::CodexChallenge { .. } => {
+                lines.push("Codex Shrine: 1-4 pick correct meaning".to_string());
+                lines.push("3 rounds — earn 5 gold per correct  Esc leave".to_string());
+                "Codex Shrine Controls"
+            }
+            CombatState::Journal { .. } => {
+                lines.push("Journal: browse encountered characters".to_string());
+                lines.push("←/→ change page  Esc or J close".to_string());
+                "Journal Controls"
+            }
+            CombatState::WordBridgeChallenge { .. } => {
+                lines.push("Word Bridge: 1-4 pick the matching character".to_string());
+                lines.push("Correct = bridge over water  Esc leave".to_string());
+                "Word Bridge Controls"
+            }
+            CombatState::LockedDoorChallenge { .. } => {
+                lines.push("Locked Door: 1-4 pick the correct meaning".to_string());
+                lines.push("Correct = door opens  Wrong = -1 HP  Esc leave".to_string());
+                "Locked Door Controls"
+            }
+            CombatState::CursedFloorChallenge { .. } => {
+                lines.push("Cursed Floor: 1-4 pick the correct tone".to_string());
+                lines.push("Correct = +1 gold  Wrong = -2 gold".to_string());
+                "Cursed Floor Controls"
             }
         };
 
@@ -2705,6 +4063,8 @@ impl Renderer {
         total_kills: u32,
         companion: Option<crate::game::Companion>,
         item_labels: &[String],
+        inventory_cursor: usize,
+        inventory_inspect: Option<usize>,
     ) {
         let box_x = 24.0;
         let box_y = 28.0;
@@ -2729,7 +4089,11 @@ impl Renderer {
         self.ctx.set_font("11px monospace");
         self.ctx.set_fill_style_str("#9aaad8");
         self.ctx
-            .fill_text("Press I or Esc to close", self.canvas_w / 2.0, box_y + 46.0)
+            .fill_text(
+                "I/Esc close   ↑↓ navigate items   Enter inspect",
+                self.canvas_w / 2.0,
+                box_y + 46.0,
+            )
             .ok();
 
         let class_name = match player.class {
@@ -2796,53 +4160,39 @@ impl Renderer {
         self.ctx.set_fill_style_str("#9ab0d7");
         self.ctx.fill_text("Equipment", left_x + 12.0, left_y).ok();
         left_y += 18.0;
-        self.ctx.set_fill_style_str("#dde7ff");
-        self.ctx
-            .fill_text(
-                &format!(
-                    "Weapon: {}",
-                    equipment_name(player.weapon, player.enchantments[0])
-                ),
-                left_x + 12.0,
-                left_y,
-            )
-            .ok();
-        if let Some(equipment) = player.weapon {
-            if let Some(icon) = equipment_sprite_key(equipment.name) {
-                self.draw_sprite_icon(icon, left_x + left_w - 26.0, left_y - 12.0, 14.0);
+
+        let equip_slots: [(
+            &str,
+            Option<&crate::player::Equipment>,
+            Option<&'static str>,
+        ); 3] = [
+            ("Weapon", player.weapon, player.enchantments[0]),
+            ("Armor ", player.armor, player.enchantments[1]),
+            ("Charm ", player.charm, player.enchantments[2]),
+        ];
+        for (slot_idx, (label, equip, enchant)) in equip_slots.iter().enumerate() {
+            let selected = inventory_cursor == slot_idx;
+            if selected {
+                self.ctx.set_fill_style_str("rgba(255,204,51,0.15)");
+                self.ctx
+                    .fill_rect(left_x + 8.0, left_y - 12.0, left_w - 16.0, 16.0);
             }
-        }
-        left_y += 16.0;
-        self.ctx
-            .fill_text(
-                &format!(
-                    "Armor:  {}",
-                    equipment_name(player.armor, player.enchantments[1])
-                ),
-                left_x + 12.0,
-                left_y,
-            )
-            .ok();
-        if let Some(equipment) = player.armor {
-            if let Some(icon) = equipment_sprite_key(equipment.name) {
-                self.draw_sprite_icon(icon, left_x + left_w - 26.0, left_y - 12.0, 14.0);
+            self.ctx
+                .set_fill_style_str(if selected { "#ffcc33" } else { "#dde7ff" });
+            let marker = if selected { "▸" } else { " " };
+            self.ctx
+                .fill_text(
+                    &format!("{} {}: {}", marker, label, equipment_name(*equip, *enchant)),
+                    left_x + 12.0,
+                    left_y,
+                )
+                .ok();
+            if let Some(equipment) = equip {
+                if let Some(icon) = equipment_sprite_key(equipment.name) {
+                    self.draw_sprite_icon(icon, left_x + left_w - 26.0, left_y - 12.0, 14.0);
+                }
             }
-        }
-        left_y += 16.0;
-        self.ctx
-            .fill_text(
-                &format!(
-                    "Charm:  {}",
-                    equipment_name(player.charm, player.enchantments[2])
-                ),
-                left_x + 12.0,
-                left_y,
-            )
-            .ok();
-        if let Some(equipment) = player.charm {
-            if let Some(icon) = equipment_sprite_key(equipment.name) {
-                self.draw_sprite_icon(icon, left_x + left_w - 26.0, left_y - 12.0, 14.0);
-            }
+            left_y += 16.0;
         }
 
         left_y += 26.0;
@@ -2859,6 +4209,14 @@ impl Renderer {
             left_y += 16.0;
         } else {
             for (idx, label) in item_labels.iter().enumerate() {
+                let selected = inventory_cursor == idx + 3;
+                if selected {
+                    self.ctx.set_fill_style_str("rgba(255,204,51,0.15)");
+                    self.ctx
+                        .fill_rect(left_x + 8.0, left_y - 12.0, left_w - 16.0, 16.0);
+                }
+                self.ctx
+                    .set_fill_style_str(if selected { "#ffcc33" } else { "#dde7ff" });
                 if let Some(item) = player.items.get(idx) {
                     self.draw_sprite_icon(
                         item_sprite_key(item),
@@ -2867,8 +4225,13 @@ impl Renderer {
                         12.0,
                     );
                 }
+                let marker = if selected { "▸" } else { " " };
                 self.ctx
-                    .fill_text(&format!("{}. {}", idx + 1, label), left_x + 28.0, left_y)
+                    .fill_text(
+                        &format!("{} {}. {}", marker, idx + 1, label),
+                        left_x + 28.0,
+                        left_y,
+                    )
                     .ok();
                 left_y += 16.0;
             }
@@ -3065,6 +4428,186 @@ impl Renderer {
         self.ctx
             .fill_text(footer, self.canvas_w / 2.0, box_y + box_h - 16.0)
             .ok();
+
+        if let Some(inspect_idx) = inventory_inspect {
+            let (popup_name, popup_desc): (String, String) = if inspect_idx < 3 {
+                let equip_opt = match inspect_idx {
+                    0 => player.weapon,
+                    1 => player.armor,
+                    _ => player.charm,
+                };
+                if let Some(eq) = equip_opt {
+                    let enchant = player.enchantments[inspect_idx];
+                    let name = if let Some(ench_str) = enchant {
+                        format!("{} +{}", eq.name, ench_str)
+                    } else {
+                        eq.name.to_string()
+                    };
+                    (name, eq.description())
+                } else {
+                    let slot = match inspect_idx {
+                        0 => "Weapon",
+                        1 => "Armor",
+                        _ => "Charm",
+                    };
+                    (
+                        format!("{}: Empty", slot),
+                        "No equipment in this slot.".to_string(),
+                    )
+                }
+            } else if let Some(item) = player.items.get(inspect_idx - 3) {
+                (item.name().to_string(), item.description().to_string())
+            } else {
+                ("???".to_string(), "Unknown item.".to_string())
+            };
+
+            let pop_w = 320.0;
+            let pop_h = 100.0;
+            let pop_x = (self.canvas_w - pop_w) / 2.0;
+            let pop_y = (self.canvas_h - pop_h) / 2.0;
+
+            self.ctx.set_fill_style_str("rgba(10,8,24,0.96)");
+            self.ctx.fill_rect(pop_x, pop_y, pop_w, pop_h);
+            self.ctx.set_stroke_style_str("#ffcc33");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(pop_x, pop_y, pop_w, pop_h);
+
+            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_font("bold 14px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text(&popup_name, self.canvas_w / 2.0, pop_y + 24.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#ccdaff");
+            self.ctx.set_font("11px monospace");
+            self.ctx.set_text_align("left");
+            let max_line_chars = 40;
+            let mut dy = pop_y + 46.0;
+            for line in word_wrap(&popup_desc, max_line_chars) {
+                self.ctx.fill_text(&line, pop_x + 16.0, dy).ok();
+                dy += 14.0;
+            }
+
+            self.ctx.set_fill_style_str("#666");
+            self.ctx.set_font("10px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text(
+                    "Esc / Backspace = close",
+                    self.canvas_w / 2.0,
+                    pop_y + pop_h - 10.0,
+                )
+                .ok();
+        }
+    }
+
+    pub fn draw_spellbook(&self, player: &Player) {
+        let box_x = 40.0;
+        let box_y = 40.0;
+        let box_w = self.canvas_w - 80.0;
+        let box_h = self.canvas_h - 80.0;
+
+        self.ctx.set_fill_style_str("rgba(0,0,0,0.88)");
+        self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
+
+        self.ctx.set_fill_style_str("rgba(18,16,36,0.98)");
+        self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+        self.ctx.set_stroke_style_str("#7b5ebd");
+        self.ctx.set_line_width(2.0);
+        self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+        self.ctx.set_text_align("center");
+        self.ctx.set_font("bold 22px monospace");
+        self.ctx.set_fill_style_str("#cc99ff");
+        self.ctx
+            .fill_text("Spellbook", self.canvas_w / 2.0, box_y + 28.0)
+            .ok();
+        self.ctx.set_font("11px monospace");
+        self.ctx.set_fill_style_str("#9aaad8");
+        self.ctx
+            .fill_text("B / Esc to close", self.canvas_w / 2.0, box_y + 46.0)
+            .ok();
+
+        if player.spells.is_empty() {
+            self.ctx.set_fill_style_str("#888");
+            self.ctx.set_font("14px monospace");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text(
+                    "No spells forged yet. Use a Forge to combine radicals!",
+                    self.canvas_w / 2.0,
+                    self.canvas_h / 2.0,
+                )
+                .ok();
+            return;
+        }
+
+        let col_w = (box_w - 32.0) / 2.0;
+        let col_x = [box_x + 16.0, box_x + 16.0 + col_w];
+        let mut col_y = [box_y + 66.0, box_y + 66.0];
+        let max_y = box_y + box_h - 30.0;
+
+        for (idx, spell) in player.spells.iter().enumerate() {
+            let col = if col_y[0] <= col_y[1] { 0 } else { 1 };
+            let x = col_x[col];
+            let y = &mut col_y[col];
+
+            if *y + 60.0 > max_y {
+                continue;
+            }
+
+            let selected = idx == player.selected_spell;
+            if selected {
+                self.ctx.set_fill_style_str("rgba(204,153,255,0.1)");
+                self.ctx.fill_rect(x, *y - 4.0, col_w - 8.0, 56.0);
+            }
+
+            self.draw_sprite_icon(spell_sprite_key(&spell.effect), x + 4.0, *y - 2.0, 14.0);
+
+            self.ctx.set_font("bold 14px monospace");
+            self.ctx
+                .set_fill_style_str(if selected { "#ffdd88" } else { "#dde7ff" });
+            self.ctx.set_text_align("left");
+            let marker = if selected { "►" } else { " " };
+            self.ctx
+                .fill_text(
+                    &format!(
+                        "{} {} {} — {}",
+                        marker,
+                        spell.hanzi,
+                        spell.pinyin,
+                        spell.effect.label()
+                    ),
+                    x + 22.0,
+                    *y + 10.0,
+                )
+                .ok();
+
+            self.ctx.set_font("11px monospace");
+            self.ctx.set_fill_style_str("#aab8dd");
+            self.ctx
+                .fill_text(&format!("\"{}\"", spell.meaning), x + 22.0, *y + 26.0)
+                .ok();
+
+            self.ctx.set_fill_style_str("#8899bb");
+            self.ctx
+                .fill_text(&spell.effect.description(), x + 22.0, *y + 40.0)
+                .ok();
+
+            *y += 56.0;
+        }
+
+        self.ctx.set_fill_style_str("#7784aa");
+        self.ctx.set_font("11px monospace");
+        self.ctx.set_text_align("center");
+        self.ctx
+            .fill_text(
+                "Use Q/E in exploration to switch selected spell. Press number keys in combat to cast.",
+                self.canvas_w / 2.0,
+                box_y + box_h - 12.0,
+            )
+            .ok();
     }
 
     /// Draw the character codex overlay.
@@ -3193,6 +4736,20 @@ fn tile_sprite_key(tile: Tile) -> &'static str {
         Tile::DeepWater => "tile_deep_water",
         Tile::Bridge => "tile_bridge",
         Tile::Shrine => "obj_shrine",
+        Tile::StrokeShrine => "obj_shrine",
+        Tile::ToneWall => "obj_shrine",
+        Tile::CompoundShrine => "obj_shrine",
+        Tile::ClassifierShrine => "obj_shrine",
+        Tile::InkWell => "obj_shrine",
+        Tile::AncestorShrine => "obj_shrine",
+        Tile::TranslationAltar => "obj_shrine",
+        Tile::RadicalGarden => "obj_shrine",
+        Tile::MirrorPool => "obj_shrine",
+        Tile::StoneTutor => "obj_shrine",
+        Tile::CodexShrine => "obj_shrine",
+        Tile::WordBridge => "tile_bridge",
+        Tile::LockedDoor => "obj_shrine",
+        Tile::CursedFloor => "tile_floor",
         Tile::Altar(AltarKind::Jade) => "obj_altar_jade",
         Tile::Altar(AltarKind::Gale) => "obj_altar_gale",
         Tile::Altar(AltarKind::Mirror) => "obj_altar_mirror",
@@ -3438,6 +4995,90 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
                 glyph: Some("🔔"),
                 glyph_color: "#fff8e2",
             },
+            Tile::StrokeShrine => TilePalette {
+                fill: "#1a2d4a",
+                accent: Some("#88ccff"),
+                glyph: Some("筆"),
+                glyph_color: "#88ccff",
+            },
+            Tile::ToneWall => TilePalette {
+                fill: "#3a1515",
+                accent: Some("#dd6644"),
+                glyph: Some("壁"),
+                glyph_color: "#dd6644",
+            },
+            Tile::CompoundShrine => TilePalette {
+                fill: "#1a3a1a",
+                accent: Some("#66dd88"),
+                glyph: Some("合"),
+                glyph_color: "#66dd88",
+            },
+            Tile::ClassifierShrine => TilePalette {
+                fill: "#3a2a1a",
+                accent: Some("#ddaa44"),
+                glyph: Some("量"),
+                glyph_color: "#ddaa44",
+            },
+            Tile::InkWell => TilePalette {
+                fill: "#1a1a2d",
+                accent: Some("#9999ee"),
+                glyph: Some("墨"),
+                glyph_color: "#9999ee",
+            },
+            Tile::AncestorShrine => TilePalette {
+                fill: "#2d1a1a",
+                accent: Some("#ee9966"),
+                glyph: Some("祖"),
+                glyph_color: "#ee9966",
+            },
+            Tile::TranslationAltar => TilePalette {
+                fill: "#1a2d2d",
+                accent: Some("#66cccc"),
+                glyph: Some("译"),
+                glyph_color: "#66cccc",
+            },
+            Tile::RadicalGarden => TilePalette {
+                fill: "#1a2d1a",
+                accent: Some("#88ee66"),
+                glyph: Some("部"),
+                glyph_color: "#88ee66",
+            },
+            Tile::MirrorPool => TilePalette {
+                fill: "#1a1a3a",
+                accent: Some("#aaaaff"),
+                glyph: Some("鏡"),
+                glyph_color: "#aaaaff",
+            },
+            Tile::StoneTutor => TilePalette {
+                fill: "#2d2d1a",
+                accent: Some("#cccc66"),
+                glyph: Some("石"),
+                glyph_color: "#cccc66",
+            },
+            Tile::CodexShrine => TilePalette {
+                fill: "#2a1a3a",
+                accent: Some("#dd99ff"),
+                glyph: Some("典"),
+                glyph_color: "#dd99ff",
+            },
+            Tile::WordBridge => TilePalette {
+                fill: "#1a1a2d",
+                accent: Some("#66aaff"),
+                glyph: Some("桥"),
+                glyph_color: "#66aaff",
+            },
+            Tile::LockedDoor => TilePalette {
+                fill: "#2d1a1a",
+                accent: Some("#ff6644"),
+                glyph: Some("锁"),
+                glyph_color: "#ff6644",
+            },
+            Tile::CursedFloor => TilePalette {
+                fill: "#1a1a1a",
+                accent: None,
+                glyph: None,
+                glyph_color: "#aa44aa",
+            },
             Tile::Altar(kind) => TilePalette {
                 fill: altar_fill(kind),
                 accent: Some(kind.color()),
@@ -3561,6 +5202,90 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
                 glyph: None,
                 glyph_color: "#ffffff",
             },
+            Tile::StrokeShrine => TilePalette {
+                fill: "#111822",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::ToneWall => TilePalette {
+                fill: "#1a1010",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::CompoundShrine => TilePalette {
+                fill: "#112211",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::ClassifierShrine => TilePalette {
+                fill: "#221a11",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::InkWell => TilePalette {
+                fill: "#111118",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::AncestorShrine => TilePalette {
+                fill: "#181111",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::TranslationAltar => TilePalette {
+                fill: "#111818",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::RadicalGarden => TilePalette {
+                fill: "#111811",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::MirrorPool => TilePalette {
+                fill: "#11111f",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::StoneTutor => TilePalette {
+                fill: "#181811",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::CodexShrine => TilePalette {
+                fill: "#16101e",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::WordBridge => TilePalette {
+                fill: "#101018",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::LockedDoor => TilePalette {
+                fill: "#1a1010",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::CursedFloor => TilePalette {
+                fill: "#111111",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
             Tile::Altar(kind) => TilePalette {
                 fill: altar_revealed_fill(kind),
                 accent: None,
@@ -3597,6 +5322,19 @@ fn tile_plate_fill(tile: Tile) -> Option<&'static str> {
         Tile::Chest => Some("rgba(255,231,173,0.16)"),
         Tile::Npc(_) => Some("rgba(225,245,255,0.12)"),
         Tile::Shrine => Some("rgba(255,224,156,0.16)"),
+        Tile::StrokeShrine => Some("rgba(136,204,255,0.16)"),
+        Tile::ToneWall => Some("rgba(221,102,68,0.16)"),
+        Tile::CompoundShrine => Some("rgba(102,221,136,0.16)"),
+        Tile::ClassifierShrine => Some("rgba(221,170,68,0.16)"),
+        Tile::InkWell => Some("rgba(153,153,238,0.16)"),
+        Tile::AncestorShrine => Some("rgba(238,153,102,0.16)"),
+        Tile::TranslationAltar => Some("rgba(102,204,204,0.16)"),
+        Tile::RadicalGarden => Some("rgba(136,238,102,0.16)"),
+        Tile::MirrorPool => Some("rgba(170,170,255,0.16)"),
+        Tile::StoneTutor => Some("rgba(204,204,102,0.16)"),
+        Tile::CodexShrine => Some("rgba(221,153,255,0.16)"),
+        Tile::WordBridge => Some("rgba(102,170,255,0.16)"),
+        Tile::LockedDoor => Some("rgba(255,102,68,0.16)"),
         Tile::Altar(kind) => Some(altar_plate_fill(kind)),
         Tile::Seal(kind) => Some(seal_plate_fill(kind)),
         Tile::Sign(_) => Some("rgba(255,236,200,0.10)"),
@@ -3677,6 +5415,19 @@ fn tile_glyph_y(tile: Tile, screen_y: f64, anim_t: f64, tx: i32, ty: i32) -> f64
         }
         Tile::Oil => base + (anim_t * 2.0 + tx as f64 * 0.4).sin() * 0.6,
         Tile::Shrine => base + (anim_t * 2.5).sin() * 0.9,
+        Tile::StrokeShrine => base + (anim_t * 2.7 + tx as f64 * 0.3).sin() * 0.8,
+        Tile::ToneWall => base + (anim_t * 3.0 + ty as f64 * 0.3).sin() * 0.7,
+        Tile::CompoundShrine => base + (anim_t * 2.4 + tx as f64 * 0.2).sin() * 0.8,
+        Tile::ClassifierShrine => base + (anim_t * 2.6 + ty as f64 * 0.25).sin() * 0.7,
+        Tile::InkWell => base + (anim_t * 2.3 + tx as f64 * 0.25).sin() * 0.7,
+        Tile::AncestorShrine => base + (anim_t * 2.9 + ty as f64 * 0.35).sin() * 0.8,
+        Tile::TranslationAltar => base + (anim_t * 2.5 + tx as f64 * 0.3).sin() * 0.75,
+        Tile::RadicalGarden => base + (anim_t * 2.2 + tx as f64 * 0.2).sin() * 0.9,
+        Tile::MirrorPool => base + (anim_t * 3.2 + ty as f64 * 0.4).sin() * 1.0,
+        Tile::StoneTutor => base + (anim_t * 2.0 + tx as f64 * 0.15).sin() * 0.6,
+        Tile::CodexShrine => base + (anim_t * 2.4 + tx as f64 * 0.2).sin() * 0.8,
+        Tile::WordBridge => base + (anim_t * 2.6 + ty as f64 * 0.3).sin() * 0.7,
+        Tile::LockedDoor => base + (anim_t * 1.8 + tx as f64 * 0.1).sin() * 0.5,
         Tile::Altar(_) => base + (anim_t * 2.8 + ty as f64 * 0.4).sin() * 0.8,
         Tile::Seal(_) => base + (anim_t * 3.1 + tx as f64 * 0.35 + ty as f64 * 0.2).sin() * 0.7,
         Tile::StairsDown => base + (anim_t * 1.8).sin() * 0.4,
@@ -3697,6 +5448,26 @@ fn radical_stack_counts(radicals: &[&'static str]) -> BTreeMap<&'static str, usi
         *counts.entry(*radical).or_insert(0) += 1;
     }
     counts
+}
+
+fn word_wrap(text: &str, max_chars: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in text.split_whitespace() {
+        if !current.is_empty() && current.len() + 1 + word.len() > max_chars {
+            lines.push(current);
+            current = word.to_string();
+        } else {
+            if !current.is_empty() {
+                current.push(' ');
+            }
+            current.push_str(word);
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
 }
 
 #[cfg(test)]

@@ -174,6 +174,34 @@ pub enum Tile {
     Sign(u8),
     /// Bridge created by pushing a crate into water
     Bridge,
+    /// Stroke order challenge shrine
+    StrokeShrine,
+    /// Tone defense wall
+    ToneWall,
+    /// Compound word builder shrine
+    CompoundShrine,
+    /// Classifier matching shrine
+    ClassifierShrine,
+    /// Ink well — component count quiz, reward HP
+    InkWell,
+    /// Ancestor shrine — chengyu/proverb completion
+    AncestorShrine,
+    /// Translation altar — pick correct Chinese for English
+    TranslationAltar,
+    /// Radical garden — identify the radical of a hanzi
+    RadicalGarden,
+    /// Mirror pool — type pinyin for shown hanzi
+    MirrorPool,
+    /// Stone tutor — teaches then quizzes tone
+    StoneTutor,
+    /// Codex shrine — quizzes characters from player's codex
+    CodexShrine,
+    /// Word bridge — answer vocab to extend bridge over deep water
+    WordBridge,
+    /// Locked door — blocks passage until question answered
+    LockedDoor,
+    /// Cursed floor — hidden trap, tone quiz when stepped on
+    CursedFloor,
 }
 
 impl Tile {
@@ -195,6 +223,19 @@ impl Tile {
                 | Tile::Seal(_)
                 | Tile::Sign(_)
                 | Tile::Bridge
+                | Tile::StrokeShrine
+                | Tile::ToneWall
+                | Tile::CompoundShrine
+                | Tile::ClassifierShrine
+                | Tile::InkWell
+                | Tile::AncestorShrine
+                | Tile::TranslationAltar
+                | Tile::RadicalGarden
+                | Tile::MirrorPool
+                | Tile::StoneTutor
+                | Tile::CodexShrine
+                | Tile::WordBridge
+                | Tile::CursedFloor
         )
     }
 }
@@ -1396,6 +1437,20 @@ impl DungeonLevel {
         level.assign_room_modifiers(&mut rng);
         level.place_npcs(&mut rng);
         level.place_shrines(&mut rng);
+        level.place_stroke_shrines(&mut rng);
+        level.place_tone_walls(&mut rng);
+        level.place_compound_shrines(&mut rng);
+        level.place_classifier_shrines(&mut rng);
+        level.place_ink_wells(&mut rng);
+        level.place_ancestor_shrines(&mut rng);
+        level.place_translation_altars(&mut rng);
+        level.place_radical_gardens(&mut rng);
+        level.place_mirror_pools(&mut rng);
+        level.place_stone_tutors(&mut rng);
+        level.place_codex_shrines(&mut rng);
+        level.place_word_bridges(&mut rng);
+        level.place_locked_doors(&mut rng);
+        level.place_cursed_floors(&mut rng);
         level.place_altars(&mut rng);
         level.place_seals(&mut rng);
         level.place_hazards(&mut rng);
@@ -1459,6 +1514,271 @@ impl DungeonLevel {
         let idx = self.idx(cx, cy);
         if self.tiles[idx] == Tile::Floor {
             self.tiles[idx] = Tile::Shrine;
+        }
+    }
+
+    fn place_stroke_shrines(&mut self, rng: &mut Rng) {
+        let n = self.rooms.len();
+        if n <= 3 {
+            return;
+        }
+        if rng.next_u64() % 100 >= 20 {
+            return;
+        }
+        let room_idx = 1 + (rng.next_u64() as usize % (n - 2));
+        let room = &self.rooms[room_idx];
+        let cx = room.x + room.w / 2 + 1;
+        let cy = room.y + room.h / 2;
+        let idx = self.idx(cx, cy);
+        if self.tiles[idx] == Tile::Floor {
+            self.tiles[idx] = Tile::StrokeShrine;
+        }
+    }
+
+    fn place_tone_walls(&mut self, rng: &mut Rng) {
+        let n = self.rooms.len();
+        if n <= 3 {
+            return;
+        }
+        if rng.next_u64() % 100 >= 20 {
+            return;
+        }
+        let room_idx = 1 + (rng.next_u64() as usize % (n - 2));
+        let room = &self.rooms[room_idx];
+        let cx = room.x + room.w / 2;
+        let cy = room.y + room.h / 2 + 1;
+        let idx = self.idx(cx, cy);
+        if self.tiles[idx] == Tile::Floor {
+            self.tiles[idx] = Tile::ToneWall;
+        }
+    }
+
+    fn place_compound_shrines(&mut self, rng: &mut Rng) {
+        let n = self.rooms.len();
+        if n <= 3 {
+            return;
+        }
+        if rng.next_u64() % 100 >= 20 {
+            return;
+        }
+        let room_idx = 1 + (rng.next_u64() as usize % (n - 2));
+        let room = &self.rooms[room_idx];
+        let cx = room.x + room.w / 2 - 1;
+        let cy = room.y + room.h / 2 + 1;
+        let idx = self.idx(cx, cy);
+        if self.tiles[idx] == Tile::Floor {
+            self.tiles[idx] = Tile::CompoundShrine;
+        }
+    }
+
+    fn place_classifier_shrines(&mut self, rng: &mut Rng) {
+        let n = self.rooms.len();
+        if n <= 3 {
+            return;
+        }
+        if rng.next_u64() % 100 >= 20 {
+            return;
+        }
+        let room_idx = 1 + (rng.next_u64() as usize % (n - 2));
+        let room = &self.rooms[room_idx];
+        let cx = room.x + room.w / 2 + 1;
+        let cy = room.y + room.h / 2 + 1;
+        let idx = self.idx(cx, cy);
+        if self.tiles[idx] == Tile::Floor {
+            self.tiles[idx] = Tile::ClassifierShrine;
+        }
+    }
+
+    fn place_ink_wells(&mut self, rng: &mut Rng) {
+        let n = self.rooms.len();
+        if n <= 3 {
+            return;
+        }
+        if rng.next_u64() % 100 >= 18 {
+            return;
+        }
+        let room_idx = 1 + (rng.next_u64() as usize % (n - 2));
+        let room = &self.rooms[room_idx];
+        let cx = room.x + room.w / 2 - 1;
+        let cy = room.y + room.h / 2 - 1;
+        let idx = self.idx(cx, cy);
+        if self.tiles[idx] == Tile::Floor {
+            self.tiles[idx] = Tile::InkWell;
+        }
+    }
+
+    fn place_ancestor_shrines(&mut self, rng: &mut Rng) {
+        let n = self.rooms.len();
+        if n <= 3 {
+            return;
+        }
+        if rng.next_u64() % 100 >= 18 {
+            return;
+        }
+        let room_idx = 1 + (rng.next_u64() as usize % (n - 2));
+        let room = &self.rooms[room_idx];
+        let cx = room.x + room.w / 2 + 1;
+        let cy = room.y + room.h / 2 - 1;
+        let idx = self.idx(cx, cy);
+        if self.tiles[idx] == Tile::Floor {
+            self.tiles[idx] = Tile::AncestorShrine;
+        }
+    }
+
+    fn place_translation_altars(&mut self, rng: &mut Rng) {
+        let n = self.rooms.len();
+        if n <= 3 {
+            return;
+        }
+        if rng.next_u64() % 100 >= 18 {
+            return;
+        }
+        let room_idx = 1 + (rng.next_u64() as usize % (n - 2));
+        let room = &self.rooms[room_idx];
+        let cx = room.x + room.w / 2;
+        let cy = room.y + room.h / 2 - 1;
+        let idx = self.idx(cx, cy);
+        if self.tiles[idx] == Tile::Floor {
+            self.tiles[idx] = Tile::TranslationAltar;
+        }
+    }
+
+    fn place_radical_gardens(&mut self, rng: &mut Rng) {
+        let n = self.rooms.len();
+        if n <= 3 {
+            return;
+        }
+        if rng.next_u64() % 100 >= 18 {
+            return;
+        }
+        let room_idx = 1 + (rng.next_u64() as usize % (n - 2));
+        let room = &self.rooms[room_idx];
+        let cx = room.x + room.w / 2 - 2;
+        let cy = room.y + room.h / 2;
+        let idx = self.idx(cx, cy);
+        if self.tiles[idx] == Tile::Floor {
+            self.tiles[idx] = Tile::RadicalGarden;
+        }
+    }
+
+    fn place_mirror_pools(&mut self, rng: &mut Rng) {
+        let n = self.rooms.len();
+        if n <= 3 {
+            return;
+        }
+        if rng.next_u64() % 100 >= 15 {
+            return;
+        }
+        let room_idx = 1 + (rng.next_u64() as usize % (n - 2));
+        let room = &self.rooms[room_idx];
+        let cx = room.x + room.w / 2 + 2;
+        let cy = room.y + room.h / 2;
+        let idx = self.idx(cx, cy);
+        if self.tiles[idx] == Tile::Floor {
+            self.tiles[idx] = Tile::MirrorPool;
+        }
+    }
+
+    fn place_stone_tutors(&mut self, rng: &mut Rng) {
+        let n = self.rooms.len();
+        if n <= 3 {
+            return;
+        }
+        if rng.next_u64() % 100 >= 18 {
+            return;
+        }
+        let room_idx = 1 + (rng.next_u64() as usize % (n - 2));
+        let room = &self.rooms[room_idx];
+        let cx = room.x + room.w / 2;
+        let cy = room.y + room.h / 2 + 2;
+        let idx = self.idx(cx, cy);
+        if self.tiles[idx] == Tile::Floor {
+            self.tiles[idx] = Tile::StoneTutor;
+        }
+    }
+
+    fn place_codex_shrines(&mut self, rng: &mut Rng) {
+        let n = self.rooms.len();
+        if n <= 3 {
+            return;
+        }
+        if rng.next_u64() % 100 >= 15 {
+            return;
+        }
+        let room_idx = 1 + (rng.next_u64() as usize % (n - 2));
+        let room = &self.rooms[room_idx];
+        let cx = room.x + room.w / 2 - 1;
+        let cy = room.y + room.h / 2 + 1;
+        let idx = self.idx(cx, cy);
+        if self.tiles[idx] == Tile::Floor {
+            self.tiles[idx] = Tile::CodexShrine;
+        }
+    }
+
+    fn place_word_bridges(&mut self, rng: &mut Rng) {
+        for i in 0..self.tiles.len() {
+            if self.tiles[i] == Tile::DeepWater {
+                let x = (i % self.width as usize) as i32;
+                let y = (i / self.width as usize) as i32;
+                for &(dx, dy) in &[(0, -1), (0, 1), (-1, 0), (1, 0)] {
+                    let nx = x + dx;
+                    let ny = y + dy;
+                    if self.in_bounds(nx, ny) {
+                        let ni = self.idx(nx, ny);
+                        if self.tiles[ni] == Tile::Floor && rng.next_u64() % 100 < 8 {
+                            self.tiles[ni] = Tile::WordBridge;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn place_locked_doors(&mut self, rng: &mut Rng) {
+        let n = self.rooms.len();
+        if n <= 4 {
+            return;
+        }
+        if rng.next_u64() % 100 >= 12 {
+            return;
+        }
+        let room_idx = 2 + (rng.next_u64() as usize % (n - 3));
+        let room = &self.rooms[room_idx];
+        let doorways = [
+            (room.x + room.w / 2, room.y),
+            (room.x + room.w / 2, room.y + room.h - 1),
+            (room.x, room.y + room.h / 2),
+            (room.x + room.w - 1, room.y + room.h / 2),
+        ];
+        for (dx, dy) in doorways {
+            if self.in_bounds(dx, dy) {
+                let di = self.idx(dx, dy);
+                if self.tiles[di] == Tile::Floor || self.tiles[di] == Tile::Corridor {
+                    self.tiles[di] = Tile::LockedDoor;
+                    return;
+                }
+            }
+        }
+    }
+
+    fn place_cursed_floors(&mut self, rng: &mut Rng) {
+        let n = self.rooms.len();
+        if n <= 3 {
+            return;
+        }
+        let count = 1 + (rng.next_u64() as usize % 3);
+        for _ in 0..count {
+            let room_idx = 1 + (rng.next_u64() as usize % (n - 2));
+            let room = &self.rooms[room_idx];
+            let rx = room.x + 1 + (rng.next_u64() as i32 % (room.w - 2).max(1));
+            let ry = room.y + 1 + (rng.next_u64() as i32 % (room.h - 2).max(1));
+            if self.in_bounds(rx, ry) {
+                let ri = self.idx(rx, ry);
+                if self.tiles[ri] == Tile::Floor {
+                    self.tiles[ri] = Tile::CursedFloor;
+                }
+            }
         }
     }
 

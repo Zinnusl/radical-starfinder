@@ -34,6 +34,41 @@ pub enum EquipEffect {
     Digging,
 }
 
+impl EquipEffect {
+    pub fn description(&self) -> String {
+        match self {
+            EquipEffect::BonusDamage(n) => {
+                format!("Deals +{} bonus damage on correct combat answers.", n)
+            }
+            EquipEffect::DamageReduction(n) => format!("Reduces incoming damage by {} per hit.", n),
+            EquipEffect::ExtraRadicalDrop(n) => format!(
+                "{}% extra chance to find radical drops from defeated enemies.",
+                n
+            ),
+            EquipEffect::HealOnKill(n) => {
+                format!("Restores {} HP whenever you defeat an enemy.", n)
+            }
+            EquipEffect::GoldBonus(n) => {
+                format!("Earn +{} bonus gold from each enemy defeated.", n)
+            }
+            EquipEffect::Digging => {
+                "Allows you to dig through dungeon walls by walking into them.".to_string()
+            }
+        }
+    }
+}
+
+impl Equipment {
+    pub fn description(&self) -> String {
+        let slot = match self.slot {
+            EquipSlot::Weapon => "Weapon",
+            EquipSlot::Armor => "Armor",
+            EquipSlot::Charm => "Charm",
+        };
+        format!("[{}] {}", slot, self.effect.description())
+    }
+}
+
 #[allow(dead_code)]
 pub const MAX_ITEMS: usize = 5;
 pub const ITEM_KIND_COUNT: usize = 6;
@@ -126,6 +161,17 @@ impl Item {
             self.name().to_string()
         } else {
             format!("? {}", appearance)
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            Item::HealthPotion(_) => "Restores HP instantly when used. Drink during exploration or combat to heal wounds.",
+            Item::PoisonFlask(_, _) => "Throw at an adjacent enemy to inflict poison damage over several turns.",
+            Item::RevealScroll => "Reveals the entire floor map, showing all rooms, corridors, and hidden areas.",
+            Item::TeleportScroll => "Instantly teleport to a random explored tile. Useful for escaping danger.",
+            Item::HastePotion(_) => "Grants Haste, letting you take extra actions each turn for a short duration.",
+            Item::StunBomb => "Stuns all visible enemies for several turns, preventing them from acting.",
         }
     }
 }
@@ -292,6 +338,10 @@ pub struct Player {
     pub enchantments: [Option<&'static str>; 3],
     /// Bonus damage from tone shrine (used once, then reset)
     pub tone_bonus_damage: i32,
+    /// Bonus defense from tone defense wall (used once, then reset)
+    pub defense_bonus: i32,
+    /// Bonus spell power from compound builder (used once, then reset)
+    pub spell_power_temp_bonus: i32,
     /// Permanent shop discount from meta progression (percentage)
     pub shop_discount_pct: i32,
     /// Permanent spell potency bonus from meta progression
@@ -328,6 +378,8 @@ impl Player {
             charm: None,
             enchantments: [None; 3],
             tone_bonus_damage: 0,
+            defense_bonus: 0,
+            spell_power_temp_bonus: 0,
             shop_discount_pct: 0,
             spell_power_bonus: 0,
             piety: Vec::new(),

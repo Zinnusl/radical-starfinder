@@ -53,6 +53,23 @@ impl SpellEffect {
             SpellEffect::Pacify => "☯ Pacify",
         }
     }
+
+    pub fn description(&self) -> String {
+        match self {
+            SpellEffect::FireAoe(dmg) => format!("Deals {} damage to all visible enemies.", dmg),
+            SpellEffect::Heal(amt) => format!("Restores {} HP instantly.", amt),
+            SpellEffect::Reveal => "Reveals the entire floor map.".to_string(),
+            SpellEffect::Shield => "Blocks the next incoming hit this combat.".to_string(),
+            SpellEffect::StrongHit(dmg) => format!("Deals {} bonus damage to current target.", dmg),
+            SpellEffect::Drain(dmg) => {
+                format!("Deals {} damage and heals you for the same amount.", dmg)
+            }
+            SpellEffect::Stun => "Stuns the current enemy, skipping their next attack.".to_string(),
+            SpellEffect::Pacify => {
+                "Convinces a foe to stand down, ending the fight peacefully.".to_string()
+            }
+        }
+    }
 }
 
 /// A forged spell the player can use in combat.

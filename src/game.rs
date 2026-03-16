@@ -454,6 +454,8 @@ pub enum CombatState {
     },
     /// Player is enchanting equipment at a forge
     Enchanting {
+        /// 0 = selecting slot, 1 = selecting radical
+        step: u8,
         /// 0=weapon, 1=armor, 2=charm
         slot: usize,
         /// Which page of radicals to show
@@ -503,6 +505,142 @@ pub enum CombatState {
         source_idx: usize,
         cursor: usize, // 0..items.len() + 3 (equip slots)
     },
+    /// Player is aiming a spell during exploration
+    Aiming { spell_idx: usize, dx: i32, dy: i32 },
+    /// Stroke order challenge at a shrine
+    StrokeOrder {
+        hanzi: &'static str,
+        components: Vec<&'static str>,
+        correct_order: Vec<&'static str>,
+        cursor: usize,
+        arranged: Vec<&'static str>,
+        pinyin: &'static str,
+        meaning: &'static str,
+    },
+    /// Tone defense wall challenge
+    ToneDefense {
+        round: usize,
+        hanzi: &'static str,
+        pinyin: &'static str,
+        meaning: &'static str,
+        correct_tone: u8,
+        score: usize,
+        last_result: Option<bool>,
+    },
+    /// Compound word builder challenge
+    CompoundBuilder {
+        parts: Vec<&'static str>,
+        correct_compound: &'static str,
+        pinyin: &'static str,
+        meaning: &'static str,
+        cursor: usize,
+        arranged: Vec<&'static str>,
+    },
+    /// Classifier matching challenge
+    ClassifierMatch {
+        round: usize,
+        noun: &'static str,
+        noun_pinyin: &'static str,
+        noun_meaning: &'static str,
+        correct_classifier: &'static str,
+        options: [&'static str; 4],
+        correct_idx: usize,
+        score: usize,
+        last_result: Option<bool>,
+    },
+    /// InkWell: guess component count of a hanzi
+    InkWellChallenge {
+        hanzi: &'static str,
+        correct_count: u8,
+        pinyin: &'static str,
+        meaning: &'static str,
+    },
+    /// AncestorShrine: complete a chengyu (4-char idiom)
+    AncestorChallenge {
+        first_half: &'static str,
+        correct_second: &'static str,
+        full: &'static str,
+        pinyin: &'static str,
+        meaning: &'static str,
+        options: [&'static str; 4],
+        correct_idx: usize,
+    },
+    /// TranslationAltar: pick correct Chinese for English meaning (3 rounds)
+    TranslationChallenge {
+        round: usize,
+        meaning: &'static str,
+        correct_hanzi: &'static str,
+        correct_pinyin: &'static str,
+        options: [&'static str; 4],
+        correct_idx: usize,
+        score: usize,
+    },
+    /// RadicalGarden: identify the radical of a hanzi
+    RadicalGardenChallenge {
+        hanzi: &'static str,
+        pinyin: &'static str,
+        meaning: &'static str,
+        correct_radical: &'static str,
+        options: [&'static str; 4],
+        correct_idx: usize,
+    },
+    /// MirrorPool: type pinyin for a hanzi (text input)
+    MirrorPoolChallenge {
+        hanzi: &'static str,
+        correct_pinyin: &'static str,
+        meaning: &'static str,
+        input: String,
+    },
+    /// StoneTutor: teaching phase then tone quiz (3 rounds)
+    StoneTutorChallenge {
+        round: usize,
+        hanzi: &'static str,
+        pinyin: &'static str,
+        meaning: &'static str,
+        correct_tone: u8,
+        /// 0 = teaching phase, 1 = quiz phase
+        phase: u8,
+        score: usize,
+    },
+    /// CodexShrine: quiz on previously encountered characters (3 rounds)
+    CodexChallenge {
+        round: usize,
+        hanzi: &'static str,
+        pinyin: &'static str,
+        meaning: &'static str,
+        options: [&'static str; 4],
+        correct_idx: usize,
+        score: usize,
+    },
+    /// Character Journal: browse codex entries with pagination
+    Journal { page: usize },
+    /// WordBridge: answer vocab question to create bridge over deep water
+    WordBridgeChallenge {
+        meaning: &'static str,
+        correct_hanzi: &'static str,
+        correct_pinyin: &'static str,
+        options: [&'static str; 4],
+        correct_idx: usize,
+        bridge_x: i32,
+        bridge_y: i32,
+    },
+    /// LockedDoor: translation question to unlock
+    LockedDoorChallenge {
+        hanzi: &'static str,
+        pinyin: &'static str,
+        correct_meaning: &'static str,
+        options: [&'static str; 4],
+        correct_idx: usize,
+        door_x: i32,
+        door_y: i32,
+    },
+    /// CursedFloor: quick tone quiz trap
+    CursedFloorChallenge {
+        hanzi: &'static str,
+        pinyin: &'static str,
+        meaning: &'static str,
+        correct_tone: u8,
+    },
 }
 
 /// Sentence data for sentence construction challenges.
@@ -517,6 +655,176 @@ const SENTENCES: &[(&[&str], &str)] = &[
     (&["你", "叫", "什么", "名字"], "What is your name?"),
     (&["他们", "在", "看", "书"], "They are reading books"),
     (&["我", "喜欢", "中国", "菜"], "I like Chinese food"),
+];
+
+const STROKE_ORDER_DATA: &[(&str, &[&str], &str, &str)] = &[
+    ("明", &["日", "月"], "ming2", "bright"),
+    ("休", &["亻", "木"], "xiu1", "rest"),
+    ("林", &["木", "木"], "lin2", "forest"),
+    ("好", &["女", "子"], "hao3", "good"),
+    ("安", &["宀", "女"], "an1", "peace"),
+    ("信", &["亻", "言"], "xin4", "believe"),
+    ("花", &["艹", "化"], "hua1", "flower"),
+    ("想", &["相", "心"], "xiang3", "think"),
+    ("吃", &["口", "乞"], "chi1", "eat"),
+    ("喝", &["口", "曷"], "he1", "drink"),
+];
+
+const COMPOUND_DATA: &[(&str, &[&str], &str, &str)] = &[
+    ("学生", &["学", "生"], "xue2sheng1", "student"),
+    ("老师", &["老", "师"], "lao3shi1", "teacher"),
+    ("中国", &["中", "国"], "zhong1guo2", "China"),
+    ("朋友", &["朋", "友"], "peng2you3", "friend"),
+    ("电话", &["电", "话"], "dian4hua4", "phone"),
+    ("天气", &["天", "气"], "tian1qi4", "weather"),
+    ("大学", &["大", "学"], "da4xue2", "university"),
+    ("飞机", &["飞", "机"], "fei1ji1", "airplane"),
+    ("火车", &["火", "车"], "huo3che1", "train"),
+    ("书包", &["书", "包"], "shu1bao1", "schoolbag"),
+    ("东西", &["东", "西"], "dong1xi1", "thing"),
+    ("工作", &["工", "作"], "gong1zuo4", "work"),
+];
+
+const CLASSIFIER_DATA: &[(&str, &str, &str, &str)] = &[
+    ("书", "本", "shu1", "book"),
+    ("人", "个", "ren2", "person"),
+    ("猫", "只", "mao1", "cat"),
+    ("狗", "只", "gou3", "dog"),
+    ("车", "辆", "che1", "car"),
+    ("花", "朵", "hua1", "flower"),
+    ("纸", "张", "zhi3", "paper"),
+    ("刀", "把", "dao1", "knife"),
+    ("鱼", "条", "yu2", "fish"),
+    ("笔", "支", "bi3", "pen"),
+    ("衣服", "件", "yi1fu2", "clothes"),
+    ("马", "匹", "ma3", "horse"),
+    ("河", "条", "he2", "river"),
+    ("山", "座", "shan1", "mountain"),
+    ("树", "棵", "shu4", "tree"),
+];
+
+const ALL_CLASSIFIERS: &[&str] = &[
+    "个", "本", "只", "辆", "朵", "张", "把", "条", "支", "件", "匹", "座", "棵",
+];
+
+/// (hanzi, component_count, pinyin, meaning)
+const INK_WELL_DATA: &[(&str, u8, &str, &str)] = &[
+    ("明", 2, "ming2", "bright"),
+    ("休", 2, "xiu1", "rest"),
+    ("好", 2, "hao3", "good"),
+    ("安", 2, "an1", "peace"),
+    ("林", 2, "lin2", "forest"),
+    ("想", 2, "xiang3", "think"),
+    ("花", 2, "hua1", "flower"),
+    ("吃", 2, "chi1", "eat"),
+    ("喝", 2, "he1", "drink"),
+    ("信", 2, "xin4", "believe"),
+    ("忘", 2, "wang4", "forget"),
+    ("看", 2, "kan4", "look"),
+];
+
+/// (first_half, second_half, full, pinyin, meaning)
+const CHENGYU_DATA: &[(&str, &str, &str, &str, &str)] = &[
+    (
+        "一心",
+        "一意",
+        "一心一意",
+        "yi1xin1yi1yi4",
+        "wholeheartedly",
+    ),
+    (
+        "半途",
+        "而废",
+        "半途而废",
+        "ban4tu2er2fei4",
+        "give up halfway",
+    ),
+    (
+        "自言",
+        "自语",
+        "自言自语",
+        "zi4yan2zi4yu3",
+        "talk to oneself",
+    ),
+    (
+        "入乡",
+        "随俗",
+        "入乡随俗",
+        "ru4xiang1sui2su2",
+        "when in Rome",
+    ),
+    (
+        "马到",
+        "成功",
+        "马到成功",
+        "ma3dao4cheng2gong1",
+        "instant success",
+    ),
+    (
+        "心想",
+        "事成",
+        "心想事成",
+        "xin1xiang3shi4cheng2",
+        "wishes come true",
+    ),
+    (
+        "大同",
+        "小异",
+        "大同小异",
+        "da4tong2xiao3yi4",
+        "mostly the same",
+    ),
+    (
+        "百发",
+        "百中",
+        "百发百中",
+        "bai3fa1bai3zhong4",
+        "hit every target",
+    ),
+    (
+        "千方",
+        "百计",
+        "千方百计",
+        "qian1fang1bai3ji4",
+        "by every means",
+    ),
+    (
+        "开门",
+        "见山",
+        "开门见山",
+        "kai1men2jian4shan1",
+        "get to the point",
+    ),
+];
+
+/// (hanzi, pinyin, meaning, radical, wrong1, wrong2, wrong3)
+const RADICAL_GARDEN_DATA: &[(&str, &str, &str, &str, &str, &str, &str)] = &[
+    ("妈", "ma1", "mother", "女", "马", "口", "木"),
+    ("河", "he2", "river", "氵", "口", "可", "亻"),
+    ("打", "da3", "hit", "扌", "丁", "口", "大"),
+    ("说", "shuo1", "speak", "讠", "兑", "口", "言"),
+    ("吗", "ma0", "question particle", "口", "马", "女", "木"),
+    ("他", "ta1", "he/him", "亻", "也", "口", "土"),
+    ("跑", "pao3", "run", "足", "包", "口", "走"),
+    ("猫", "mao1", "cat", "犭", "苗", "口", "豸"),
+    ("认", "ren4", "recognize", "讠", "人", "口", "亻"),
+    ("饭", "fan4", "rice/meal", "饣", "反", "口", "食"),
+];
+
+/// (hanzi, pinyin, meaning) — used by MirrorPool (pinyin typing)
+const MIRROR_POOL_DATA: &[(&str, &str, &str)] = &[
+    ("你好", "ni3hao3", "hello"),
+    ("谢谢", "xie4xie4", "thank you"),
+    ("再见", "zai4jian4", "goodbye"),
+    ("学生", "xue2sheng1", "student"),
+    ("老师", "lao3shi1", "teacher"),
+    ("中国", "zhong1guo2", "China"),
+    ("朋友", "peng2you3", "friend"),
+    ("电话", "dian4hua4", "phone"),
+    ("天气", "tian1qi4", "weather"),
+    ("工作", "gong1zuo4", "work"),
+    ("大学", "da4xue2", "university"),
+    ("飞机", "fei1ji1", "airplane"),
 ];
 
 #[derive(Clone, Debug)]
@@ -569,6 +877,9 @@ pub struct GameState {
     /// Whether codex overlay is showing
     pub show_codex: bool,
     pub show_inventory: bool,
+    pub inventory_cursor: usize,
+    pub inventory_inspect: Option<usize>,
+    pub show_spellbook: bool,
     pub show_help: bool,
     item_appearance_order: [usize; ITEM_KIND_COUNT],
     identified_items: [bool; ITEM_KIND_COUNT],
@@ -647,10 +958,13 @@ impl GameState {
 
     fn open_inventory(&mut self) {
         self.show_inventory = true;
+        self.inventory_cursor = 0;
+        self.inventory_inspect = None;
     }
 
     fn close_inventory(&mut self) {
         self.show_inventory = false;
+        self.inventory_inspect = None;
     }
 
     fn start_look_mode(&mut self) {
@@ -1811,6 +2125,11 @@ impl GameState {
             }
         }
 
+        if target_tile == Tile::LockedDoor {
+            self.start_locked_door(nx, ny);
+            return;
+        }
+
         if !target_tile.is_walkable() {
             return;
         }
@@ -1969,6 +2288,106 @@ impl GameState {
             self.start_tone_battle();
             let idx = self.level.idx(nx, ny);
             self.level.tiles[idx] = Tile::Floor;
+            return;
+        }
+
+        if target_tile == Tile::StrokeShrine {
+            self.start_stroke_order();
+            let idx = self.level.idx(nx, ny);
+            self.level.tiles[idx] = Tile::Floor;
+            return;
+        }
+
+        if target_tile == Tile::ToneWall {
+            self.start_tone_defense();
+            let idx = self.level.idx(nx, ny);
+            self.level.tiles[idx] = Tile::Floor;
+            return;
+        }
+
+        if target_tile == Tile::CompoundShrine {
+            self.start_compound_builder();
+            let idx = self.level.idx(nx, ny);
+            self.level.tiles[idx] = Tile::Floor;
+            return;
+        }
+
+        if target_tile == Tile::ClassifierShrine {
+            self.start_classifier_match();
+            let idx = self.level.idx(nx, ny);
+            self.level.tiles[idx] = Tile::Floor;
+            return;
+        }
+
+        if target_tile == Tile::InkWell {
+            self.start_ink_well();
+            let idx = self.level.idx(nx, ny);
+            self.level.tiles[idx] = Tile::Floor;
+            return;
+        }
+
+        if target_tile == Tile::AncestorShrine {
+            self.start_ancestor_challenge();
+            let idx = self.level.idx(nx, ny);
+            self.level.tiles[idx] = Tile::Floor;
+            return;
+        }
+
+        if target_tile == Tile::TranslationAltar {
+            self.start_translation_challenge();
+            let idx = self.level.idx(nx, ny);
+            self.level.tiles[idx] = Tile::Floor;
+            return;
+        }
+
+        if target_tile == Tile::RadicalGarden {
+            self.start_radical_garden();
+            let idx = self.level.idx(nx, ny);
+            self.level.tiles[idx] = Tile::Floor;
+            return;
+        }
+
+        if target_tile == Tile::MirrorPool {
+            self.start_mirror_pool();
+            let idx = self.level.idx(nx, ny);
+            self.level.tiles[idx] = Tile::Floor;
+            return;
+        }
+
+        if target_tile == Tile::StoneTutor {
+            self.start_stone_tutor();
+            let idx = self.level.idx(nx, ny);
+            self.level.tiles[idx] = Tile::Floor;
+            return;
+        }
+
+        if target_tile == Tile::CodexShrine {
+            self.start_codex_challenge();
+            let idx = self.level.idx(nx, ny);
+            self.level.tiles[idx] = Tile::Floor;
+            return;
+        }
+
+        if target_tile == Tile::WordBridge {
+            let dirs = [(0, -1), (0, 1), (-1, 0), (1, 0)];
+            let mut bridge_target = (nx, ny);
+            for (ddx, ddy) in &dirs {
+                let bx = nx + ddx;
+                let by = ny + ddy;
+                if self.level.in_bounds(bx, by) && self.level.tile(bx, by) == Tile::DeepWater {
+                    bridge_target = (bx, by);
+                    break;
+                }
+            }
+            self.start_word_bridge(bridge_target.0, bridge_target.1);
+            return;
+        }
+
+        if target_tile == Tile::CursedFloor {
+            self.player.move_to(nx, ny);
+            let idx = self.level.idx(nx, ny);
+            self.level.tiles[idx] = Tile::Floor;
+            self.start_cursed_floor();
             return;
         }
 
@@ -2640,6 +3059,12 @@ impl GameState {
                         };
                         self.message_timer = if e_is_elite { 70 } else { 60 };
                     } else {
+                        // Apply defense_bonus from ToneDefense reward
+                        let def_bonus = self.player.defense_bonus;
+                        if def_bonus > 0 {
+                            self.player.defense_bonus = 0;
+                        }
+                        let e_damage = (e_damage - def_bonus).max(0);
                         self.player.hp -= e_damage;
                         if let Some(ref audio) = self.audio {
                             audio.play_damage();
@@ -2926,6 +3351,486 @@ impl GameState {
         (entry.hanzi, tone)
     }
 
+    /// Start a stroke order challenge at a StrokeShrine.
+    fn start_stroke_order(&mut self) {
+        let idx = self.rng_next() as usize % STROKE_ORDER_DATA.len();
+        let (hanzi, components, pinyin, meaning) = STROKE_ORDER_DATA[idx];
+        let correct_order: Vec<&'static str> = components.to_vec();
+        // Fisher-Yates shuffle for components
+        let mut shuffled = correct_order.clone();
+        let n = shuffled.len();
+        for i in (1..n).rev() {
+            let j = self.rng_next() as usize % (i + 1);
+            shuffled.swap(i, j);
+        }
+        self.combat = CombatState::StrokeOrder {
+            hanzi,
+            components: shuffled,
+            correct_order,
+            cursor: 0,
+            arranged: Vec::new(),
+            pinyin,
+            meaning,
+        };
+        self.message = format!(
+            "筆 Stroke Shrine! Arrange the components of {} in order.",
+            hanzi
+        );
+        self.message_timer = 120;
+    }
+
+    /// Start a tone defense challenge at a ToneWall.
+    fn start_tone_defense(&mut self) {
+        let pool = vocab::vocab_for_floor(self.floor_num);
+        let entry = if pool.is_empty() {
+            &vocab::VOCAB[self.rng_next() as usize % vocab::VOCAB.len()]
+        } else {
+            pool[self.rng_next() as usize % pool.len()]
+        };
+        let tone = entry
+            .pinyin
+            .chars()
+            .last()
+            .and_then(|c| c.to_digit(10))
+            .unwrap_or(1) as u8;
+        self.combat = CombatState::ToneDefense {
+            round: 0,
+            hanzi: entry.hanzi,
+            pinyin: entry.pinyin,
+            meaning: entry.meaning,
+            correct_tone: tone,
+            score: 0,
+            last_result: None,
+        };
+        self.message = format!("壁 Tone Wall! What tone is {}? Press 1-4.", entry.hanzi);
+        self.message_timer = 120;
+    }
+
+    /// Start a compound builder challenge at a CompoundShrine.
+    fn start_compound_builder(&mut self) {
+        let idx = self.rng_next() as usize % COMPOUND_DATA.len();
+        let (compound, parts, pinyin, meaning) = COMPOUND_DATA[idx];
+        let correct_compound = compound;
+        // Fisher-Yates shuffle for parts
+        let mut shuffled: Vec<&'static str> = parts.to_vec();
+        let n = shuffled.len();
+        for i in (1..n).rev() {
+            let j = self.rng_next() as usize % (i + 1);
+            shuffled.swap(i, j);
+        }
+        self.combat = CombatState::CompoundBuilder {
+            parts: shuffled,
+            correct_compound,
+            pinyin,
+            meaning,
+            cursor: 0,
+            arranged: Vec::new(),
+        };
+        self.message = format!(
+            "合 Compound Shrine! Combine the characters into a word. ({})",
+            meaning
+        );
+        self.message_timer = 120;
+    }
+
+    /// Start a classifier match challenge at a ClassifierShrine.
+    fn start_classifier_match(&mut self) {
+        let idx = self.rng_next() as usize % CLASSIFIER_DATA.len();
+        let (noun, correct_classifier, noun_pinyin, noun_meaning) = CLASSIFIER_DATA[idx];
+        // Build 4 options: 1 correct + 3 random wrong
+        let mut options: Vec<&'static str> = vec![correct_classifier];
+        let mut attempts = 0;
+        while options.len() < 4 && attempts < 50 {
+            let c = ALL_CLASSIFIERS[self.rng_next() as usize % ALL_CLASSIFIERS.len()];
+            if !options.contains(&c) {
+                options.push(c);
+            }
+            attempts += 1;
+        }
+        // Pad if not enough unique classifiers found
+        while options.len() < 4 {
+            options.push("个");
+        }
+        // Fisher-Yates shuffle
+        let n = options.len();
+        for i in (1..n).rev() {
+            let j = self.rng_next() as usize % (i + 1);
+            options.swap(i, j);
+        }
+        let correct_idx = options
+            .iter()
+            .position(|&c| c == correct_classifier)
+            .unwrap_or(0);
+        let options_arr: [&'static str; 4] = [options[0], options[1], options[2], options[3]];
+        self.combat = CombatState::ClassifierMatch {
+            round: 0,
+            noun,
+            noun_pinyin,
+            noun_meaning,
+            correct_classifier,
+            options: options_arr,
+            correct_idx,
+            score: 0,
+            last_result: None,
+        };
+        self.message = format!(
+            "量 Classifier Shrine! Which measure word for {}? Press 1-4.",
+            noun
+        );
+        self.message_timer = 120;
+    }
+
+    fn start_ink_well(&mut self) {
+        let idx = self.rng_next() as usize % INK_WELL_DATA.len();
+        let (hanzi, correct_count, pinyin, meaning) = INK_WELL_DATA[idx];
+        self.combat = CombatState::InkWellChallenge {
+            hanzi,
+            correct_count,
+            pinyin,
+            meaning,
+        };
+        self.message = format!(
+            "墨 Ink Well! {} ({}) — How many components? Press 1-9.",
+            hanzi, meaning
+        );
+        self.message_timer = 120;
+    }
+
+    fn start_ancestor_challenge(&mut self) {
+        let idx = self.rng_next() as usize % CHENGYU_DATA.len();
+        let (first_half, correct_second, full, pinyin, meaning) = CHENGYU_DATA[idx];
+        let mut options: Vec<&'static str> = vec![correct_second];
+        let mut attempts = 0;
+        while options.len() < 4 && attempts < 50 {
+            let other_idx = self.rng_next() as usize % CHENGYU_DATA.len();
+            let (_, other_second, _, _, _) = CHENGYU_DATA[other_idx];
+            if !options.contains(&other_second) {
+                options.push(other_second);
+            }
+            attempts += 1;
+        }
+        while options.len() < 4 {
+            options.push("??");
+        }
+        let n = options.len();
+        for i in (1..n).rev() {
+            let j = self.rng_next() as usize % (i + 1);
+            options.swap(i, j);
+        }
+        let correct_idx = options
+            .iter()
+            .position(|&s| s == correct_second)
+            .unwrap_or(0);
+        let options_arr: [&'static str; 4] = [options[0], options[1], options[2], options[3]];
+        self.combat = CombatState::AncestorChallenge {
+            first_half,
+            correct_second,
+            full,
+            pinyin,
+            meaning,
+            options: options_arr,
+            correct_idx,
+        };
+        self.message = format!(
+            "祖 Ancestor Shrine! Complete the chengyu: {}____. Press 1-4.",
+            first_half
+        );
+        self.message_timer = 120;
+    }
+
+    fn start_translation_challenge(&mut self) {
+        let vocab = vocab::vocab_for_floor(self.floor_num);
+        if vocab.len() < 4 {
+            self.message = "Not enough vocabulary for this floor.".into();
+            self.message_timer = 60;
+            return;
+        }
+        let idx = self.rng_next() as usize % vocab.len();
+        let correct = vocab[idx];
+        let mut options: Vec<&'static str> = vec![correct.hanzi];
+        let mut attempts = 0;
+        while options.len() < 4 && attempts < 50 {
+            let other_idx = self.rng_next() as usize % vocab.len();
+            if !options.contains(&vocab[other_idx].hanzi) {
+                options.push(vocab[other_idx].hanzi);
+            }
+            attempts += 1;
+        }
+        while options.len() < 4 {
+            options.push("?");
+        }
+        let n = options.len();
+        for i in (1..n).rev() {
+            let j = self.rng_next() as usize % (i + 1);
+            options.swap(i, j);
+        }
+        let correct_idx = options
+            .iter()
+            .position(|&s| s == correct.hanzi)
+            .unwrap_or(0);
+        let options_arr: [&'static str; 4] = [options[0], options[1], options[2], options[3]];
+        self.combat = CombatState::TranslationChallenge {
+            round: 0,
+            meaning: correct.meaning,
+            correct_hanzi: correct.hanzi,
+            correct_pinyin: correct.pinyin,
+            options: options_arr,
+            correct_idx,
+            score: 0,
+        };
+        self.message = format!(
+            "译 Translation Altar! Which Chinese means \"{}\"? Press 1-4. (Round 1/3)",
+            correct.meaning
+        );
+        self.message_timer = 120;
+    }
+
+    fn start_radical_garden(&mut self) {
+        let idx = self.rng_next() as usize % RADICAL_GARDEN_DATA.len();
+        let (hanzi, pinyin, meaning, radical, w1, w2, w3) = RADICAL_GARDEN_DATA[idx];
+        let mut options: Vec<&'static str> = vec![radical, w1, w2, w3];
+        let n = options.len();
+        for i in (1..n).rev() {
+            let j = self.rng_next() as usize % (i + 1);
+            options.swap(i, j);
+        }
+        let correct_idx = options.iter().position(|&s| s == radical).unwrap_or(0);
+        let options_arr: [&'static str; 4] = [options[0], options[1], options[2], options[3]];
+        self.combat = CombatState::RadicalGardenChallenge {
+            hanzi,
+            pinyin,
+            meaning,
+            correct_radical: radical,
+            options: options_arr,
+            correct_idx,
+        };
+        self.message = format!(
+            "部 Radical Garden! What is the radical of {}? Press 1-4.",
+            hanzi
+        );
+        self.message_timer = 120;
+    }
+
+    fn start_mirror_pool(&mut self) {
+        let idx = self.rng_next() as usize % MIRROR_POOL_DATA.len();
+        let (hanzi, pinyin, meaning) = MIRROR_POOL_DATA[idx];
+        self.combat = CombatState::MirrorPoolChallenge {
+            hanzi,
+            correct_pinyin: pinyin,
+            meaning,
+            input: String::new(),
+        };
+        self.typing = String::new();
+        self.message = format!(
+            "鏡 Mirror Pool! Type the pinyin for {} ({}). Press Enter to submit.",
+            hanzi, meaning
+        );
+        self.message_timer = 120;
+    }
+
+    fn start_stone_tutor(&mut self) {
+        let vocab = vocab::vocab_for_floor(self.floor_num);
+        if vocab.is_empty() {
+            self.message = "No vocabulary available.".into();
+            self.message_timer = 60;
+            return;
+        }
+        let idx = self.rng_next() as usize % vocab.len();
+        let entry = vocab[idx];
+        let tone = entry
+            .pinyin
+            .chars()
+            .last()
+            .and_then(|c| c.to_digit(10))
+            .unwrap_or(1) as u8;
+        self.combat = CombatState::StoneTutorChallenge {
+            round: 0,
+            hanzi: entry.hanzi,
+            pinyin: entry.pinyin,
+            meaning: entry.meaning,
+            correct_tone: tone,
+            phase: 0,
+            score: 0,
+        };
+        self.message = format!(
+            "石 Stone Tutor! Study: {} — {} ({}). Press Space to continue to quiz.",
+            entry.hanzi, entry.pinyin, entry.meaning
+        );
+        self.message_timer = 120;
+    }
+
+    fn start_codex_challenge(&mut self) {
+        let codex_data: Vec<(&'static str, &'static str, &'static str)> = self
+            .codex
+            .sorted_entries()
+            .iter()
+            .map(|e| (e.hanzi, e.pinyin, e.meaning))
+            .collect();
+        let vocab = vocab::vocab_for_floor(self.floor_num);
+        let use_codex = codex_data.len() >= 4;
+        if !use_codex && vocab.len() < 4 {
+            self.message = "Not enough vocabulary yet.".into();
+            self.message_timer = 60;
+            return;
+        }
+        let (hanzi, pinyin, meaning, distractors) = if use_codex {
+            let idx = self.rng_next() as usize % codex_data.len();
+            let (h, p, m) = codex_data[idx];
+            let mut dist: Vec<&'static str> = codex_data
+                .iter()
+                .filter(|e| e.0 != h)
+                .map(|e| e.2)
+                .collect();
+            while dist.len() < 3 {
+                let vi = self.rng_next() as usize % vocab.len();
+                let vm = vocab[vi].meaning;
+                if vm != m && !dist.contains(&vm) {
+                    dist.push(vm);
+                }
+            }
+            for i in (1..dist.len()).rev() {
+                let j = self.rng_next() as usize % (i + 1);
+                dist.swap(i, j);
+            }
+            (h, p, m, [dist[0], dist[1], dist[2], ""])
+        } else {
+            let idx = self.rng_next() as usize % vocab.len();
+            let entry = vocab[idx];
+            let mut dist: Vec<&'static str> = vocab
+                .iter()
+                .filter(|e| e.hanzi != entry.hanzi)
+                .map(|e| e.meaning)
+                .collect();
+            for i in (1..dist.len()).rev() {
+                let j = self.rng_next() as usize % (i + 1);
+                dist.swap(i, j);
+            }
+            (
+                entry.hanzi,
+                entry.pinyin,
+                entry.meaning,
+                [dist[0], dist[1], dist[2], ""],
+            )
+        };
+        let correct_idx = self.rng_next() as usize % 4;
+        let mut options = [distractors[0], distractors[1], distractors[2], meaning];
+        // Shift correct answer into correct_idx
+        options[3] = options[correct_idx];
+        options[correct_idx] = meaning;
+        self.combat = CombatState::CodexChallenge {
+            round: 0,
+            hanzi,
+            pinyin,
+            meaning,
+            options,
+            correct_idx,
+            score: 0,
+        };
+        self.message = format!("典 Codex Shrine! What does {} mean? Pick 1-4.", hanzi);
+        self.message_timer = 120;
+    }
+
+    fn start_word_bridge(&mut self, bridge_x: i32, bridge_y: i32) {
+        let vocab = vocab::vocab_for_floor(self.floor_num);
+        if vocab.len() < 4 {
+            self.message = "Not enough vocabulary.".into();
+            self.message_timer = 60;
+            return;
+        }
+        let idx = self.rng_next() as usize % vocab.len();
+        let entry = vocab[idx];
+        let mut others: Vec<&'static str> = vocab
+            .iter()
+            .filter(|e| e.hanzi != entry.hanzi)
+            .map(|e| e.hanzi)
+            .collect();
+        for i in (1..others.len()).rev() {
+            let j = self.rng_next() as usize % (i + 1);
+            others.swap(i, j);
+        }
+        let correct_idx = self.rng_next() as usize % 4;
+        let mut options = [others[0], others[1], others[2], entry.hanzi];
+        options[3] = options[correct_idx];
+        options[correct_idx] = entry.hanzi;
+        self.combat = CombatState::WordBridgeChallenge {
+            meaning: entry.meaning,
+            correct_hanzi: entry.hanzi,
+            correct_pinyin: entry.pinyin,
+            options,
+            correct_idx,
+            bridge_x,
+            bridge_y,
+        };
+        self.message = format!(
+            "桥 Word Bridge! Which character means \"{}\"? Pick 1-4.",
+            entry.meaning
+        );
+        self.message_timer = 120;
+    }
+
+    fn start_locked_door(&mut self, door_x: i32, door_y: i32) {
+        let vocab = vocab::vocab_for_floor(self.floor_num);
+        if vocab.len() < 4 {
+            self.message = "Not enough vocabulary.".into();
+            self.message_timer = 60;
+            return;
+        }
+        let idx = self.rng_next() as usize % vocab.len();
+        let entry = vocab[idx];
+        let mut others: Vec<&'static str> = vocab
+            .iter()
+            .filter(|e| e.meaning != entry.meaning)
+            .map(|e| e.meaning)
+            .collect();
+        for i in (1..others.len()).rev() {
+            let j = self.rng_next() as usize % (i + 1);
+            others.swap(i, j);
+        }
+        let correct_idx = self.rng_next() as usize % 4;
+        let mut options = [others[0], others[1], others[2], entry.meaning];
+        options[3] = options[correct_idx];
+        options[correct_idx] = entry.meaning;
+        self.combat = CombatState::LockedDoorChallenge {
+            hanzi: entry.hanzi,
+            pinyin: entry.pinyin,
+            correct_meaning: entry.meaning,
+            options,
+            correct_idx,
+            door_x,
+            door_y,
+        };
+        self.message = format!("锁 Locked Door! What does {} mean? Pick 1-4.", entry.hanzi);
+        self.message_timer = 120;
+    }
+
+    fn start_cursed_floor(&mut self) {
+        let vocab = vocab::vocab_for_floor(self.floor_num);
+        if vocab.is_empty() {
+            self.message = "The curse fizzles.".into();
+            self.message_timer = 60;
+            return;
+        }
+        let idx = self.rng_next() as usize % vocab.len();
+        let entry = vocab[idx];
+        let tone = entry
+            .pinyin
+            .chars()
+            .last()
+            .and_then(|c| c.to_digit(10))
+            .unwrap_or(1) as u8;
+        self.combat = CombatState::CursedFloorChallenge {
+            hanzi: entry.hanzi,
+            pinyin: entry.pinyin,
+            meaning: entry.meaning,
+            correct_tone: tone,
+        };
+        self.message = format!(
+            "咒 Cursed Floor! What tone is {} ({})? Press 1-4.",
+            entry.hanzi, entry.meaning
+        );
+        self.message_timer = 120;
+    }
+
     fn forge_quest_candidates_for_floor(floor: i32) -> Vec<&'static radical::Recipe> {
         let available = radical::radicals_for_floor(floor.max(1));
         radical::RECIPES
@@ -3185,7 +4090,9 @@ impl GameState {
                 } else {
                     1
                 };
-                let spell_power = self.player.spell_power_bonus;
+                let spell_power =
+                    self.player.spell_power_bonus + self.player.spell_power_temp_bonus;
+                self.player.spell_power_temp_bonus = 0;
                 let current_effect = spell.effect;
                 let spell_school = match current_effect {
                     SpellEffect::FireAoe(_) => Some("Fire"),
@@ -3506,9 +4413,15 @@ impl GameState {
         match effect {
             SpellEffect::Heal(_) | SpellEffect::Shield | SpellEffect::Reveal => {}
             _ => {
+                // Offensive spell — enter aiming mode instead of rejecting
                 let label = effect.label();
-                self.message = format!("{} needs a target — use it in combat!", label);
-                self.message_timer = 60;
+                self.combat = CombatState::Aiming {
+                    spell_idx: self.player.selected_spell,
+                    dx: 0,
+                    dy: -1,
+                };
+                self.message = format!("{} — Aim with arrows, Enter to fire, Esc cancel", label);
+                self.message_timer = 120;
                 return;
             }
         }
@@ -3517,7 +4430,8 @@ impl GameState {
             audio.play_spell();
         }
         let p_screen = self.tile_to_screen(self.player.x, self.player.y);
-        let spell_power = self.player.spell_power_bonus;
+        let spell_power = self.player.spell_power_bonus + self.player.spell_power_temp_bonus;
+        self.player.spell_power_temp_bonus = 0;
         let arcane_mult = if self.current_room_modifier() == Some(RoomModifier::Arcane) {
             2
         } else {
@@ -3557,6 +4471,137 @@ impl GameState {
             }
             _ => unreachable!(),
         }
+    }
+
+    fn fire_aimed_spell(&mut self, spell_idx: usize, dx: i32, dy: i32) {
+        if spell_idx >= self.player.spells.len() {
+            self.combat = CombatState::Explore;
+            return;
+        }
+        let effect = self.player.spells[spell_idx].effect;
+        let arcane_mult = if self.current_room_modifier() == Some(RoomModifier::Arcane) {
+            2
+        } else {
+            1
+        };
+        let spell_power = self.player.spell_power_bonus + self.player.spell_power_temp_bonus;
+        self.player.spell_power_temp_bonus = 0;
+
+        let mut cx = self.player.x + dx;
+        let mut cy = self.player.y + dy;
+        let mut hit_enemy: Option<usize> = None;
+        let max_range = 10;
+        for _ in 0..max_range {
+            if !self.level.in_bounds(cx, cy)
+                || !self.level.tiles[self.level.idx(cx, cy)].is_walkable()
+            {
+                break;
+            }
+            if let Some(idx) = self.enemy_at(cx, cy) {
+                hit_enemy = Some(idx);
+                break;
+            }
+            cx += dx;
+            cy += dy;
+        }
+
+        let spell = self.player.use_spell().unwrap();
+        if let Some(ref audio) = self.audio {
+            audio.play_spell();
+        }
+        let p_screen = self.tile_to_screen(self.player.x, self.player.y);
+
+        if let Some(enemy_idx) = hit_enemy {
+            let e_screen =
+                self.tile_to_screen(self.enemies[enemy_idx].x, self.enemies[enemy_idx].y);
+            match effect {
+                SpellEffect::FireAoe(dmg) => {
+                    let dmg = dmg * arcane_mult + spell_power;
+                    self.particles
+                        .spawn_fire(e_screen.0, e_screen.1, &mut self.rng_state);
+                    self.enemies[enemy_idx].hp -= dmg;
+                    let e_hanzi = self.enemies[enemy_idx].hanzi;
+                    if self.enemies[enemy_idx].hp <= 0 {
+                        self.message = format!(
+                            "{}🔥 {} takes {} damage and is defeated!",
+                            spell.hanzi, e_hanzi, dmg
+                        );
+                    } else {
+                        self.message = format!(
+                            "{}🔥 {} takes {} damage! ({} HP left)",
+                            spell.hanzi, e_hanzi, dmg, self.enemies[enemy_idx].hp
+                        );
+                    }
+                }
+                SpellEffect::StrongHit(dmg) => {
+                    let dmg = dmg * arcane_mult + spell_power;
+                    self.particles
+                        .spawn_damage(e_screen.0, e_screen.1, &mut self.rng_state);
+                    self.enemies[enemy_idx].hp -= dmg;
+                    let e_hanzi = self.enemies[enemy_idx].hanzi;
+                    if self.enemies[enemy_idx].hp <= 0 {
+                        self.message = format!(
+                            "{}⚔ {} takes {} damage and is defeated!",
+                            spell.hanzi, e_hanzi, dmg
+                        );
+                    } else {
+                        self.message = format!(
+                            "{}⚔ {} takes {} damage! ({} HP left)",
+                            spell.hanzi, e_hanzi, dmg, self.enemies[enemy_idx].hp
+                        );
+                    }
+                }
+                SpellEffect::Drain(dmg) => {
+                    let dmg = dmg * arcane_mult + spell_power;
+                    self.particles
+                        .spawn_damage(e_screen.0, e_screen.1, &mut self.rng_state);
+                    self.enemies[enemy_idx].hp -= dmg;
+                    self.player.hp = (self.player.hp + dmg).min(self.player.max_hp);
+                    let e_hanzi = self.enemies[enemy_idx].hanzi;
+                    if self.enemies[enemy_idx].hp <= 0 {
+                        self.message = format!(
+                            "{}🩸 Drained {} from {} — foe defeated! +{} HP",
+                            spell.hanzi, dmg, e_hanzi, dmg
+                        );
+                    } else {
+                        self.message = format!(
+                            "{}🩸 Drained {} from {}! +{} HP ({} HP left)",
+                            spell.hanzi, dmg, e_hanzi, dmg, self.enemies[enemy_idx].hp
+                        );
+                    }
+                }
+                SpellEffect::Stun => {
+                    self.enemies[enemy_idx].stunned = true;
+                    let e_hanzi = self.enemies[enemy_idx].hanzi;
+                    self.particles
+                        .spawn_damage(e_screen.0, e_screen.1, &mut self.rng_state);
+                    self.message = format!("{}⚡ {} is stunned!", spell.hanzi, e_hanzi);
+                }
+                SpellEffect::Pacify => {
+                    let e_hanzi = self.enemies[enemy_idx].hanzi;
+                    if self.enemies[enemy_idx].is_boss {
+                        self.enemies[enemy_idx].stunned = true;
+                        self.message = format!(
+                            "{}☯ {} resists pacification but is dazed!",
+                            spell.hanzi, e_hanzi
+                        );
+                    } else {
+                        self.enemies[enemy_idx].hp = 0;
+                        self.message =
+                            format!("{}☯ {} stands down peacefully.", spell.hanzi, e_hanzi);
+                    }
+                }
+                _ => {}
+            }
+            self.flash = Some((255, 200, 100, 0.15));
+            self.shake_timer = 4;
+        } else {
+            self.particles
+                .spawn_fire(p_screen.0, p_screen.1, &mut self.rng_state);
+            self.message = format!("{} flies off but hits nothing.", spell.hanzi);
+        }
+        self.message_timer = 80;
+        self.combat = CombatState::Explore;
     }
 
     /// Apply a spell combo bonus.
@@ -4411,6 +5456,7 @@ impl GameState {
             knowledge_step,
             self.answer_streak,
             self.floor_profile.label(),
+            &self.codex,
         );
         if self.show_inventory {
             self.renderer.draw_inventory(
@@ -4421,7 +5467,11 @@ impl GameState {
                 self.total_kills,
                 self.companion,
                 &item_labels,
+                self.inventory_cursor,
+                self.inventory_inspect,
             );
+        } else if self.show_spellbook {
+            self.renderer.draw_spellbook(&self.player);
         } else if self.show_codex {
             let entries = self.codex.sorted_entries();
             self.renderer.draw_codex(&entries);
@@ -4559,6 +5609,14 @@ fn tile_look_text(tile: Tile) -> String {
             Companion::Guard.name()
         ),
         Tile::Shrine => "Tone shrine — complete a tone challenge for bonus damage.".to_string(),
+        Tile::StrokeShrine => "Stroke shrine — arrange character components in order.".to_string(),
+        Tile::ToneWall => "Tone wall — identify tones to defend against attacks.".to_string(),
+        Tile::CompoundShrine => {
+            "Compound shrine — combine characters into compound words.".to_string()
+        }
+        Tile::ClassifierShrine => {
+            "Classifier shrine — match nouns with correct classifiers.".to_string()
+        }
         Tile::Altar(kind) => format!("{} — offer items here, or pray with 20 favor.", kind.name()),
         Tile::Seal(kind) => format!(
             "{} — one-shot script seal that reshapes the room.",
@@ -4566,6 +5624,18 @@ fn tile_look_text(tile: Tile) -> String {
         ),
         Tile::Sign(_) => "Tutorial sign — step onto it to read the guidance.".to_string(),
         Tile::Bridge => "Bridge — safe footing laid over water.".to_string(),
+        Tile::InkWell => "Ink well — guess the component count to restore HP.".to_string(),
+        Tile::AncestorShrine => "Ancestor shrine — complete the proverb for gold.".to_string(),
+        Tile::TranslationAltar => {
+            "Translation altar — pick the correct Chinese for English meaning.".to_string()
+        }
+        Tile::RadicalGarden => "Radical garden — identify the radical to harvest it.".to_string(),
+        Tile::MirrorPool => "Mirror pool — type the pinyin to gain spell power.".to_string(),
+        Tile::StoneTutor => "Stone tutor — study, then prove you learned the tone.".to_string(),
+        Tile::CodexShrine => "Codex shrine — quiz on characters you've encountered.".to_string(),
+        Tile::WordBridge => "Word bridge — answer correctly to bridge the water.".to_string(),
+        Tile::LockedDoor => "Locked door — translate to unlock.".to_string(),
+        Tile::CursedFloor => "Cursed floor — a hidden trap awaits the unwary.".to_string(),
     }
 }
 
@@ -4983,6 +6053,9 @@ pub fn init_game() -> Result<(), JsValue> {
         codex: Codex::load(&vocab::VOCAB),
         show_codex: false,
         show_inventory: false,
+        inventory_cursor: 0,
+        inventory_inspect: None,
+        show_spellbook: false,
         show_help: false,
         item_appearance_order,
         identified_items: [false; ITEM_KIND_COUNT],
@@ -5071,8 +6144,42 @@ pub fn init_game() -> Result<(), JsValue> {
 
             if s.show_inventory {
                 event.prevent_default();
+                if s.inventory_inspect.is_some() {
+                    match key.as_str() {
+                        "Escape" | "Backspace" => s.inventory_inspect = None,
+                        _ => {}
+                    }
+                } else {
+                    // Unified cursor: 0=weapon, 1=armor, 2=charm, 3+=consumables
+                    let total_slots = 3 + s.player.items.len();
+                    match key.as_str() {
+                        "Escape" | "i" | "I" => s.close_inventory(),
+                        "ArrowUp" | "w" | "W" => {
+                            if s.inventory_cursor > 0 {
+                                s.inventory_cursor -= 1;
+                            }
+                        }
+                        "ArrowDown" | "s" | "S" => {
+                            if s.inventory_cursor < total_slots.saturating_sub(1) {
+                                s.inventory_cursor += 1;
+                            }
+                        }
+                        "Enter" => {
+                            if s.inventory_cursor < total_slots {
+                                s.inventory_inspect = Some(s.inventory_cursor);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                s.render();
+                return;
+            }
+
+            if s.show_spellbook {
+                event.prevent_default();
                 match key.as_str() {
-                    "Escape" | "i" | "I" => s.close_inventory(),
+                    "Escape" | "b" | "B" => s.show_spellbook = false,
                     _ => {}
                 }
                 s.render();
@@ -5112,6 +6219,17 @@ pub fn init_game() -> Result<(), JsValue> {
                 return;
             }
 
+            if (key == "b" || key == "B")
+                && !s.show_codex
+                && !s.show_inventory
+                && matches!(s.combat, CombatState::Explore | CombatState::GameOver)
+            {
+                event.prevent_default();
+                s.show_spellbook = true;
+                s.render();
+                return;
+            }
+
             // Game over: press R to restart
             if matches!(s.combat, CombatState::GameOver) {
                 if key == "r" || key == "R" {
@@ -5122,6 +6240,1126 @@ pub fn init_game() -> Result<(), JsValue> {
             }
 
             // Class selection screen
+
+            // StrokeOrder input
+            if matches!(s.combat, CombatState::StrokeOrder { .. }) {
+                event.prevent_default();
+                let mut completed = None;
+                if let CombatState::StrokeOrder {
+                    hanzi,
+                    ref components,
+                    ref correct_order,
+                    ref mut cursor,
+                    ref mut arranged,
+                    pinyin,
+                    meaning,
+                } = s.combat
+                {
+                    let remaining: Vec<&str> = components
+                        .iter()
+                        .copied()
+                        .filter(|c| !arranged.contains(c))
+                        .collect();
+                    match key.as_str() {
+                        "ArrowUp" | "w" => {
+                            if *cursor > 0 {
+                                *cursor -= 1;
+                            }
+                        }
+                        "ArrowDown" | "s" => {
+                            if !remaining.is_empty() && *cursor + 1 < remaining.len() {
+                                *cursor += 1;
+                            }
+                        }
+                        "Enter" => {
+                            if *cursor < remaining.len() {
+                                let picked = remaining[*cursor];
+                                arranged.push(picked);
+                                *cursor = 0;
+                                if arranged.len() == correct_order.len() {
+                                    let correct = arranged
+                                        .iter()
+                                        .zip(correct_order.iter())
+                                        .all(|(a, b)| a == b);
+                                    completed = Some((correct, hanzi, pinyin, meaning));
+                                }
+                            }
+                        }
+                        "Backspace" => {
+                            arranged.pop();
+                            *cursor = 0;
+                        }
+                        "Escape" => {
+                            completed = Some((false, hanzi, pinyin, meaning));
+                        }
+                        _ => {}
+                    }
+                }
+                if let Some((correct, hanzi, pinyin, meaning)) = completed {
+                    s.srs.record(hanzi, correct);
+                    s.codex.record(hanzi, pinyin, meaning, correct);
+                    let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
+                    if correct {
+                        let gs = &mut *s;
+                        gs.particles.spawn_heal(sx, sy, &mut gs.rng_state);
+                        s.message =
+                            format!("✓ Correct stroke order for {}! (+1 bonus damage)", hanzi);
+                        s.player.tone_bonus_damage += 1;
+                    } else {
+                        let gs = &mut *s;
+                        gs.particles.spawn_damage(sx, sy, &mut gs.rng_state);
+                        s.message =
+                            format!("✗ Wrong order for {} ({} — {}).", hanzi, pinyin, meaning);
+                    }
+                    s.message_timer = 80;
+                    s.combat = CombatState::Explore;
+                }
+                s.render();
+                return;
+            }
+
+            // ToneDefense input
+            if matches!(s.combat, CombatState::ToneDefense { .. }) {
+                event.prevent_default();
+                if let CombatState::ToneDefense {
+                    round,
+                    hanzi,
+                    pinyin,
+                    meaning,
+                    correct_tone,
+                    score,
+                    last_result: _,
+                } = s.combat.clone()
+                {
+                    let chosen = match key.as_str() {
+                        "1" => Some(1u8),
+                        "2" => Some(2u8),
+                        "3" => Some(3u8),
+                        "4" => Some(4u8),
+                        "Escape" => {
+                            s.combat = CombatState::Explore;
+                            s.message = "Retreated from the Tone Wall.".to_string();
+                            s.message_timer = 40;
+                            s.render();
+                            return;
+                        }
+                        _ => None,
+                    };
+                    if let Some(tone) = chosen {
+                        let correct = tone == correct_tone;
+                        s.srs.record(hanzi, correct);
+                        s.codex.record(hanzi, pinyin, meaning, correct);
+                        if !correct {
+                            s.player.hp -= 1;
+                            let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
+                            let gs = &mut *s;
+                            gs.particles.spawn_damage(sx, sy, &mut gs.rng_state);
+                            s.trigger_shake(6);
+                        }
+                        let new_score = if correct { score + 1 } else { score };
+                        if round >= 4 {
+                            s.player.defense_bonus = new_score as i32;
+                            s.combat = CombatState::Explore;
+                            s.message = format!(
+                                "Tone Wall complete! {}/5 correct — +{} defense next fight!",
+                                new_score, new_score
+                            );
+                            s.message_timer = 120;
+                        } else {
+                            let pool = vocab::vocab_for_floor(s.floor_num);
+                            let entry = if pool.is_empty() {
+                                &vocab::VOCAB[s.rng_next() as usize % vocab::VOCAB.len()]
+                            } else {
+                                pool[s.rng_next() as usize % pool.len()]
+                            };
+                            let next_tone = entry
+                                .pinyin
+                                .chars()
+                                .last()
+                                .and_then(|c| c.to_digit(10))
+                                .unwrap_or(1) as u8;
+                            s.combat = CombatState::ToneDefense {
+                                round: round + 1,
+                                hanzi: entry.hanzi,
+                                pinyin: entry.pinyin,
+                                meaning: entry.meaning,
+                                correct_tone: next_tone,
+                                score: new_score,
+                                last_result: Some(correct),
+                            };
+                            s.message = if correct {
+                                format!("✓ Blocked! Round {}/5 — {}", round + 2, entry.hanzi)
+                            } else {
+                                format!(
+                                    "✗ Hit! (was tone {}) Round {}/5 — {}",
+                                    correct_tone,
+                                    round + 2,
+                                    entry.hanzi
+                                )
+                            };
+                            s.message_timer = 80;
+                        }
+                    }
+                }
+                s.render();
+                return;
+            }
+
+            // CompoundBuilder input
+            if matches!(s.combat, CombatState::CompoundBuilder { .. }) {
+                event.prevent_default();
+                let mut completed = None;
+                if let CombatState::CompoundBuilder {
+                    ref parts,
+                    correct_compound,
+                    pinyin,
+                    meaning,
+                    ref mut cursor,
+                    ref mut arranged,
+                } = s.combat
+                {
+                    let remaining: Vec<&str> = parts
+                        .iter()
+                        .copied()
+                        .filter(|p| !arranged.contains(p))
+                        .collect();
+                    match key.as_str() {
+                        "ArrowUp" | "w" => {
+                            if *cursor > 0 {
+                                *cursor -= 1;
+                            }
+                        }
+                        "ArrowDown" | "s" => {
+                            if !remaining.is_empty() && *cursor + 1 < remaining.len() {
+                                *cursor += 1;
+                            }
+                        }
+                        "Enter" => {
+                            if *cursor < remaining.len() {
+                                let picked = remaining[*cursor];
+                                arranged.push(picked);
+                                *cursor = 0;
+                                if arranged.len() == parts.len() {
+                                    let built: String = arranged.iter().copied().collect();
+                                    let correct = built == correct_compound;
+                                    completed = Some((correct, correct_compound, pinyin, meaning));
+                                }
+                            }
+                        }
+                        "Backspace" => {
+                            arranged.pop();
+                            *cursor = 0;
+                        }
+                        "Escape" => {
+                            completed = Some((false, correct_compound, pinyin, meaning));
+                        }
+                        _ => {}
+                    }
+                }
+                if let Some((correct, compound, pinyin, meaning)) = completed {
+                    s.srs.record(compound, correct);
+                    s.codex.record(compound, pinyin, meaning, correct);
+                    let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
+                    if correct {
+                        let gs = &mut *s;
+                        gs.particles.spawn_heal(sx, sy, &mut gs.rng_state);
+                        s.player.spell_power_temp_bonus = 2;
+                        s.message = format!(
+                            "✓ Correct! {} ({}) — +2 spell power next cast!",
+                            compound, meaning
+                        );
+                    } else {
+                        let gs = &mut *s;
+                        gs.particles.spawn_damage(sx, sy, &mut gs.rng_state);
+                        s.message = format!(
+                            "✗ Wrong! The word was {} ({} — {}).",
+                            compound, pinyin, meaning
+                        );
+                    }
+                    s.message_timer = 80;
+                    s.combat = CombatState::Explore;
+                }
+                s.render();
+                return;
+            }
+
+            // ClassifierMatch input
+            if matches!(s.combat, CombatState::ClassifierMatch { .. }) {
+                event.prevent_default();
+                if let CombatState::ClassifierMatch {
+                    round,
+                    noun,
+                    noun_pinyin,
+                    noun_meaning,
+                    correct_classifier,
+                    options: _,
+                    correct_idx,
+                    score,
+                    last_result: _,
+                } = s.combat.clone()
+                {
+                    let chosen = match key.as_str() {
+                        "1" => Some(0usize),
+                        "2" => Some(1usize),
+                        "3" => Some(2usize),
+                        "4" => Some(3usize),
+                        "Escape" => {
+                            s.combat = CombatState::Explore;
+                            s.message = "Left the Classifier Shrine.".to_string();
+                            s.message_timer = 40;
+                            s.render();
+                            return;
+                        }
+                        _ => None,
+                    };
+                    if let Some(pick) = chosen {
+                        let correct = pick == correct_idx;
+                        s.srs.record(noun, correct);
+                        s.codex.record(noun, noun_pinyin, noun_meaning, correct);
+                        let new_score = if correct { score + 1 } else { score };
+                        if round >= 2 {
+                            let gold = new_score as i32 * 5;
+                            s.player.gold += gold;
+                            let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
+                            let gs = &mut *s;
+                            gs.particles.spawn_chest(sx, sy, &mut gs.rng_state);
+                            s.combat = CombatState::Explore;
+                            s.message =
+                                format!("Classifier done! {}/3 correct — +{}g!", new_score, gold);
+                            s.message_timer = 120;
+                        } else {
+                            let next_idx = s.rng_next() as usize % CLASSIFIER_DATA.len();
+                            let (next_noun, next_correct, next_pinyin, next_meaning) =
+                                CLASSIFIER_DATA[next_idx];
+                            let mut opts: Vec<&'static str> = vec![next_correct];
+                            let mut attempts = 0;
+                            while opts.len() < 4 && attempts < 50 {
+                                let c =
+                                    ALL_CLASSIFIERS[s.rng_next() as usize % ALL_CLASSIFIERS.len()];
+                                if !opts.contains(&c) {
+                                    opts.push(c);
+                                }
+                                attempts += 1;
+                            }
+                            while opts.len() < 4 {
+                                opts.push("个");
+                            }
+                            let n = opts.len();
+                            for i in (1..n).rev() {
+                                let j = s.rng_next() as usize % (i + 1);
+                                opts.swap(i, j);
+                            }
+                            let next_correct_idx =
+                                opts.iter().position(|&c| c == next_correct).unwrap_or(0);
+                            s.combat = CombatState::ClassifierMatch {
+                                round: round + 1,
+                                noun: next_noun,
+                                noun_pinyin: next_pinyin,
+                                noun_meaning: next_meaning,
+                                correct_classifier: next_correct,
+                                options: [opts[0], opts[1], opts[2], opts[3]],
+                                correct_idx: next_correct_idx,
+                                score: new_score,
+                                last_result: Some(correct),
+                            };
+                            s.message = if correct {
+                                format!(
+                                    "✓ Correct! ({}) Round {}/3 — {}",
+                                    correct_classifier,
+                                    round + 2,
+                                    next_noun
+                                )
+                            } else {
+                                format!(
+                                    "✗ Wrong! (was {}) Round {}/3 — {}",
+                                    correct_classifier,
+                                    round + 2,
+                                    next_noun
+                                )
+                            };
+                            s.message_timer = 80;
+                        }
+                    }
+                }
+                s.render();
+                return;
+            }
+
+            // InkWell input (press 1-9 to guess component count)
+            if matches!(s.combat, CombatState::InkWellChallenge { .. }) {
+                event.prevent_default();
+                if let CombatState::InkWellChallenge {
+                    hanzi,
+                    correct_count,
+                    pinyin,
+                    meaning,
+                } = s.combat.clone()
+                {
+                    let chosen: Option<u8> = match key.as_str() {
+                        "1" => Some(1),
+                        "2" => Some(2),
+                        "3" => Some(3),
+                        "4" => Some(4),
+                        "5" => Some(5),
+                        "6" => Some(6),
+                        "7" => Some(7),
+                        "8" => Some(8),
+                        "9" => Some(9),
+                        "Escape" => {
+                            s.combat = CombatState::Explore;
+                            s.message = "Left the Ink Well.".to_string();
+                            s.message_timer = 40;
+                            s.render();
+                            return;
+                        }
+                        _ => None,
+                    };
+                    if let Some(guess) = chosen {
+                        let correct = guess == correct_count;
+                        s.srs.record(hanzi, correct);
+                        s.codex.record(hanzi, pinyin, meaning, correct);
+                        if correct {
+                            s.player.hp = (s.player.hp + 1).min(s.player.max_hp);
+                            let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
+                            let gs = &mut *s;
+                            gs.particles.spawn_heal(sx, sy, &mut gs.rng_state);
+                            s.message = format!(
+                                "✓ Correct! {} has {} components. +1 HP!",
+                                hanzi, correct_count
+                            );
+                        } else {
+                            s.message = format!(
+                                "✗ Wrong! {} has {} components ({} — {}).",
+                                hanzi, correct_count, pinyin, meaning
+                            );
+                        }
+                        s.combat = CombatState::Explore;
+                        s.message_timer = 120;
+                    }
+                }
+                s.render();
+                return;
+            }
+
+            // AncestorShrine input (press 1-4 to complete chengyu)
+            if matches!(s.combat, CombatState::AncestorChallenge { .. }) {
+                event.prevent_default();
+                if let CombatState::AncestorChallenge {
+                    first_half,
+                    correct_second,
+                    full,
+                    pinyin,
+                    meaning,
+                    options: _,
+                    correct_idx,
+                } = s.combat.clone()
+                {
+                    let chosen = match key.as_str() {
+                        "1" => Some(0usize),
+                        "2" => Some(1usize),
+                        "3" => Some(2usize),
+                        "4" => Some(3usize),
+                        "Escape" => {
+                            s.combat = CombatState::Explore;
+                            s.message = "Left the Ancestor Shrine.".to_string();
+                            s.message_timer = 40;
+                            s.render();
+                            return;
+                        }
+                        _ => None,
+                    };
+                    if let Some(pick) = chosen {
+                        let correct = pick == correct_idx;
+                        s.srs.record(first_half, correct);
+                        s.codex.record(full, pinyin, meaning, correct);
+                        if correct {
+                            s.player.gold += 10;
+                            let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
+                            let gs = &mut *s;
+                            gs.particles.spawn_chest(sx, sy, &mut gs.rng_state);
+                            s.message = format!("✓ {}! ({} — {}) +10 gold!", full, pinyin, meaning);
+                        } else {
+                            s.message = format!(
+                                "✗ Wrong! {} + {} = {} ({}).",
+                                first_half, correct_second, full, meaning
+                            );
+                        }
+                        s.combat = CombatState::Explore;
+                        s.message_timer = 120;
+                    }
+                }
+                s.render();
+                return;
+            }
+
+            // TranslationAltar input (press 1-4, 3 rounds)
+            if matches!(s.combat, CombatState::TranslationChallenge { .. }) {
+                event.prevent_default();
+                if let CombatState::TranslationChallenge {
+                    round,
+                    meaning,
+                    correct_hanzi,
+                    correct_pinyin,
+                    options: _,
+                    correct_idx,
+                    score,
+                } = s.combat.clone()
+                {
+                    let chosen = match key.as_str() {
+                        "1" => Some(0usize),
+                        "2" => Some(1usize),
+                        "3" => Some(2usize),
+                        "4" => Some(3usize),
+                        "Escape" => {
+                            s.combat = CombatState::Explore;
+                            s.message = "Left the Translation Altar.".to_string();
+                            s.message_timer = 40;
+                            s.render();
+                            return;
+                        }
+                        _ => None,
+                    };
+                    if let Some(pick) = chosen {
+                        let correct = pick == correct_idx;
+                        s.srs.record(correct_hanzi, correct);
+                        s.codex
+                            .record(correct_hanzi, correct_pinyin, meaning, correct);
+                        let new_score = if correct { score + 1 } else { score };
+                        if round >= 2 {
+                            if new_score >= 2 {
+                                s.player.max_hp += 1;
+                                s.player.hp += 1;
+                                let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
+                                let gs = &mut *s;
+                                gs.particles.spawn_heal(sx, sy, &mut gs.rng_state);
+                                s.message = format!(
+                                    "Translation done! {}/3 correct — +1 max HP!",
+                                    new_score
+                                );
+                            } else {
+                                s.message = format!(
+                                    "Translation done! {}/3 correct — not enough for a reward.",
+                                    new_score
+                                );
+                            }
+                            s.combat = CombatState::Explore;
+                            s.message_timer = 120;
+                        } else {
+                            let vocab = vocab::vocab_for_floor(s.floor_num);
+                            if vocab.len() >= 4 {
+                                let next_idx = s.rng_next() as usize % vocab.len();
+                                let next_entry = vocab[next_idx];
+                                let mut opts: Vec<&'static str> = vec![next_entry.hanzi];
+                                let mut attempts = 0;
+                                while opts.len() < 4 && attempts < 50 {
+                                    let oi = s.rng_next() as usize % vocab.len();
+                                    if !opts.contains(&vocab[oi].hanzi) {
+                                        opts.push(vocab[oi].hanzi);
+                                    }
+                                    attempts += 1;
+                                }
+                                while opts.len() < 4 {
+                                    opts.push("?");
+                                }
+                                let n = opts.len();
+                                for i in (1..n).rev() {
+                                    let j = s.rng_next() as usize % (i + 1);
+                                    opts.swap(i, j);
+                                }
+                                let next_correct_idx = opts
+                                    .iter()
+                                    .position(|&h| h == next_entry.hanzi)
+                                    .unwrap_or(0);
+                                s.combat = CombatState::TranslationChallenge {
+                                    round: round + 1,
+                                    meaning: next_entry.meaning,
+                                    correct_hanzi: next_entry.hanzi,
+                                    correct_pinyin: next_entry.pinyin,
+                                    options: [opts[0], opts[1], opts[2], opts[3]],
+                                    correct_idx: next_correct_idx,
+                                    score: new_score,
+                                };
+                                let result_str = if correct {
+                                    "✓ Correct!"
+                                } else {
+                                    "✗ Wrong!"
+                                };
+                                s.message = format!(
+                                    "{} Round {}/3 — Which means \"{}\"?",
+                                    result_str,
+                                    round + 2,
+                                    next_entry.meaning
+                                );
+                                s.message_timer = 80;
+                            } else {
+                                s.combat = CombatState::Explore;
+                                s.message = "Not enough vocabulary.".to_string();
+                                s.message_timer = 60;
+                            }
+                        }
+                    }
+                }
+                s.render();
+                return;
+            }
+
+            // RadicalGarden input (press 1-4)
+            if matches!(s.combat, CombatState::RadicalGardenChallenge { .. }) {
+                event.prevent_default();
+                if let CombatState::RadicalGardenChallenge {
+                    hanzi,
+                    pinyin,
+                    meaning,
+                    correct_radical,
+                    options: _,
+                    correct_idx,
+                } = s.combat.clone()
+                {
+                    let chosen = match key.as_str() {
+                        "1" => Some(0usize),
+                        "2" => Some(1usize),
+                        "3" => Some(2usize),
+                        "4" => Some(3usize),
+                        "Escape" => {
+                            s.combat = CombatState::Explore;
+                            s.message = "Left the Radical Garden.".to_string();
+                            s.message_timer = 40;
+                            s.render();
+                            return;
+                        }
+                        _ => None,
+                    };
+                    if let Some(pick) = chosen {
+                        let correct = pick == correct_idx;
+                        s.srs.record(hanzi, correct);
+                        s.codex.record(hanzi, pinyin, meaning, correct);
+                        if correct {
+                            let rads = radical::radicals_for_floor(s.floor_num.max(1));
+                            if !rads.is_empty() {
+                                let ri = s.rng_next() as usize % rads.len();
+                                let rad = rads[ri];
+                                if !s.player.radicals.contains(&rad.ch) {
+                                    s.player.radicals.push(rad.ch);
+                                }
+                                let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
+                                let gs = &mut *s;
+                                gs.particles.spawn_chest(sx, sy, &mut gs.rng_state);
+                                s.message = format!(
+                                    "✓ Radical of {} is {}! Free radical: {}",
+                                    hanzi, correct_radical, rad.ch
+                                );
+                            } else {
+                                s.message =
+                                    format!("✓ Radical of {} is {}!", hanzi, correct_radical);
+                            }
+                        } else {
+                            s.message = format!(
+                                "✗ Wrong! Radical of {} is {} ({} — {}).",
+                                hanzi, correct_radical, pinyin, meaning
+                            );
+                        }
+                        s.combat = CombatState::Explore;
+                        s.message_timer = 120;
+                    }
+                }
+                s.render();
+                return;
+            }
+
+            // MirrorPool input (type pinyin, Enter to submit)
+            if matches!(s.combat, CombatState::MirrorPoolChallenge { .. }) {
+                event.prevent_default();
+                if let CombatState::MirrorPoolChallenge {
+                    hanzi,
+                    correct_pinyin,
+                    meaning,
+                    input,
+                } = s.combat.clone()
+                {
+                    let mut current_input = input;
+                    match key.as_str() {
+                        "Escape" => {
+                            s.combat = CombatState::Explore;
+                            s.message = "Left the Mirror Pool.".to_string();
+                            s.message_timer = 40;
+                            s.render();
+                            return;
+                        }
+                        "Backspace" => {
+                            current_input.pop();
+                        }
+                        "Enter" => {
+                            let correct = current_input.trim() == correct_pinyin;
+                            s.srs.record(hanzi, correct);
+                            s.codex.record(hanzi, correct_pinyin, meaning, correct);
+                            if correct {
+                                s.player.spell_power_bonus += 1;
+                                let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
+                                let gs = &mut *s;
+                                gs.particles.spawn_heal(sx, sy, &mut gs.rng_state);
+                                s.message = format!(
+                                    "✓ Correct! {} = {}. +1 spell power!",
+                                    hanzi, correct_pinyin
+                                );
+                            } else {
+                                s.message = format!(
+                                    "✗ Wrong! {} = {} ({}).",
+                                    hanzi, correct_pinyin, meaning
+                                );
+                            }
+                            s.combat = CombatState::Explore;
+                            s.message_timer = 120;
+                            s.render();
+                            return;
+                        }
+                        other => {
+                            if other.len() == 1 {
+                                let ch = other.chars().next().unwrap();
+                                if ch.is_ascii_alphanumeric() {
+                                    current_input.push(ch);
+                                }
+                            }
+                        }
+                    }
+                    s.combat = CombatState::MirrorPoolChallenge {
+                        hanzi,
+                        correct_pinyin,
+                        meaning,
+                        input: current_input,
+                    };
+                }
+                s.render();
+                return;
+            }
+
+            // StoneTutor input (Space to advance from teach to quiz, 1-4 for tone quiz)
+            if matches!(s.combat, CombatState::StoneTutorChallenge { .. }) {
+                event.prevent_default();
+                if let CombatState::StoneTutorChallenge {
+                    round,
+                    hanzi,
+                    pinyin,
+                    meaning,
+                    correct_tone,
+                    phase,
+                    score,
+                } = s.combat.clone()
+                {
+                    if phase == 0 {
+                        if key.as_str() == " " || key.as_str() == "Enter" {
+                            s.combat = CombatState::StoneTutorChallenge {
+                                round,
+                                hanzi,
+                                pinyin,
+                                meaning,
+                                correct_tone,
+                                phase: 1,
+                                score,
+                            };
+                            s.message = format!("石 Quiz! What tone is {}? Press 1-4.", hanzi);
+                            s.message_timer = 120;
+                        } else if key.as_str() == "Escape" {
+                            s.combat = CombatState::Explore;
+                            s.message = "Left the Stone Tutor.".to_string();
+                            s.message_timer = 40;
+                        }
+                    } else {
+                        let chosen: Option<u8> = match key.as_str() {
+                            "1" => Some(1),
+                            "2" => Some(2),
+                            "3" => Some(3),
+                            "4" => Some(4),
+                            "Escape" => {
+                                s.combat = CombatState::Explore;
+                                s.message = "Left the Stone Tutor.".to_string();
+                                s.message_timer = 40;
+                                s.render();
+                                return;
+                            }
+                            _ => None,
+                        };
+                        if let Some(guess) = chosen {
+                            let correct = guess == correct_tone;
+                            s.srs.record(hanzi, correct);
+                            s.codex.record(hanzi, pinyin, meaning, correct);
+                            if correct {
+                                s.srs.record(hanzi, true);
+                                s.codex.record(hanzi, pinyin, meaning, true);
+                            }
+                            let new_score = if correct { score + 1 } else { score };
+                            if round >= 2 {
+                                let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
+                                let gs = &mut *s;
+                                gs.particles.spawn_heal(sx, sy, &mut gs.rng_state);
+                                s.combat = CombatState::Explore;
+                                s.message = format!(
+                                    "Stone Tutor done! {}/3 correct. SRS boosted!",
+                                    new_score
+                                );
+                                s.message_timer = 120;
+                            } else {
+                                let vocab = vocab::vocab_for_floor(s.floor_num);
+                                if !vocab.is_empty() {
+                                    let next_idx = s.rng_next() as usize % vocab.len();
+                                    let next = vocab[next_idx];
+                                    let next_tone = next
+                                        .pinyin
+                                        .chars()
+                                        .last()
+                                        .and_then(|c| c.to_digit(10))
+                                        .unwrap_or(1)
+                                        as u8;
+                                    let result_str = if correct {
+                                        format!("✓ Correct! Tone {}.", correct_tone)
+                                    } else {
+                                        format!("✗ Wrong! Was tone {}.", correct_tone)
+                                    };
+                                    s.combat = CombatState::StoneTutorChallenge {
+                                        round: round + 1,
+                                        hanzi: next.hanzi,
+                                        pinyin: next.pinyin,
+                                        meaning: next.meaning,
+                                        correct_tone: next_tone,
+                                        phase: 0,
+                                        score: new_score,
+                                    };
+                                    s.message = format!(
+                                        "{} Study: {} — {} ({}). Press Space.",
+                                        result_str, next.hanzi, next.pinyin, next.meaning
+                                    );
+                                    s.message_timer = 120;
+                                } else {
+                                    s.combat = CombatState::Explore;
+                                    s.message = "No more vocabulary.".to_string();
+                                    s.message_timer = 60;
+                                }
+                            }
+                        }
+                    }
+                }
+                s.render();
+                return;
+            }
+
+            // CodexChallenge input (1-4 pick meaning, Escape to leave)
+            if matches!(s.combat, CombatState::CodexChallenge { .. }) {
+                event.prevent_default();
+                if let CombatState::CodexChallenge {
+                    round,
+                    hanzi,
+                    pinyin,
+                    meaning,
+                    options: _,
+                    correct_idx,
+                    score,
+                } = s.combat.clone()
+                {
+                    let chosen: Option<usize> = match key.as_str() {
+                        "1" => Some(0),
+                        "2" => Some(1),
+                        "3" => Some(2),
+                        "4" => Some(3),
+                        "Escape" => {
+                            s.combat = CombatState::Explore;
+                            s.message = "Left the Codex Shrine.".to_string();
+                            s.message_timer = 40;
+                            s.render();
+                            return;
+                        }
+                        _ => None,
+                    };
+                    if let Some(pick) = chosen {
+                        let correct = pick == correct_idx;
+                        s.srs.record(hanzi, correct);
+                        s.codex.record(hanzi, pinyin, meaning, correct);
+                        let new_score = if correct { score + 1 } else { score };
+                        if round >= 2 {
+                            let gold_earned = new_score as i32 * 5;
+                            s.player.gold += gold_earned;
+                            let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
+                            let gs = &mut *s;
+                            gs.particles.spawn_chest(sx, sy, &mut gs.rng_state);
+                            s.combat = CombatState::Explore;
+                            s.message = format!(
+                                "Codex Shrine done! {}/3 correct. +{} gold!",
+                                new_score, gold_earned
+                            );
+                            s.message_timer = 120;
+                        } else {
+                            let codex_entries = s.codex.sorted_entries();
+                            let vocab = vocab::vocab_for_floor(s.floor_num);
+                            let use_codex = codex_entries.len() >= 4;
+                            let pool: Vec<(&'static str, &'static str, &'static str)> = if use_codex
+                            {
+                                codex_entries
+                                    .iter()
+                                    .map(|e| (e.hanzi, e.pinyin, e.meaning))
+                                    .collect()
+                            } else {
+                                vocab
+                                    .iter()
+                                    .map(|e| (e.hanzi, e.pinyin, e.meaning))
+                                    .collect()
+                            };
+                            if pool.len() >= 4 {
+                                let next_idx = s.rng_next() as usize % pool.len();
+                                let (nh, np, nm) = pool[next_idx];
+                                let mut dist: Vec<&'static str> = pool
+                                    .iter()
+                                    .filter(|(h, _, _)| *h != nh)
+                                    .map(|(_, _, m)| *m)
+                                    .collect();
+                                for i in (1..dist.len()).rev() {
+                                    let j = s.rng_next() as usize % (i + 1);
+                                    dist.swap(i, j);
+                                }
+                                let ci = s.rng_next() as usize % 4;
+                                let mut opts = [dist[0], dist[1], dist[2], nm];
+                                opts[3] = opts[ci];
+                                opts[ci] = nm;
+                                let result_str = if correct {
+                                    format!("✓ Correct! {} = {}", hanzi, meaning)
+                                } else {
+                                    format!("✗ Wrong! {} = {}", hanzi, meaning)
+                                };
+                                s.combat = CombatState::CodexChallenge {
+                                    round: round + 1,
+                                    hanzi: nh,
+                                    pinyin: np,
+                                    meaning: nm,
+                                    options: opts,
+                                    correct_idx: ci,
+                                    score: new_score,
+                                };
+                                s.message =
+                                    format!("{} What does {} mean? Pick 1-4.", result_str, nh);
+                                s.message_timer = 120;
+                            } else {
+                                s.combat = CombatState::Explore;
+                                s.message = "No more vocabulary.".to_string();
+                                s.message_timer = 60;
+                            }
+                        }
+                    }
+                }
+                s.render();
+                return;
+            }
+
+            // Journal input (PgUp/PgDn/Up/Down to scroll, Escape to close)
+            if let CombatState::Journal { page } = s.combat {
+                event.prevent_default();
+                let total = s.codex.sorted_entries().len();
+                let per_page = 12;
+                let max_page = if total == 0 {
+                    0
+                } else {
+                    (total - 1) / per_page
+                };
+                match key.as_str() {
+                    "Escape" => {
+                        s.combat = CombatState::Explore;
+                        s.message = "Closed journal.".to_string();
+                        s.message_timer = 40;
+                    }
+                    "ArrowDown" | "PageDown" | "s" | "S" => {
+                        if page < max_page {
+                            s.combat = CombatState::Journal { page: page + 1 };
+                        }
+                    }
+                    "ArrowUp" | "PageUp" | "w" | "W" => {
+                        if page > 0 {
+                            s.combat = CombatState::Journal { page: page - 1 };
+                        }
+                    }
+                    _ => {}
+                }
+                s.render();
+                return;
+            }
+
+            // WordBridgeChallenge input (1-4 pick hanzi, Escape to leave)
+            if matches!(s.combat, CombatState::WordBridgeChallenge { .. }) {
+                event.prevent_default();
+                if let CombatState::WordBridgeChallenge {
+                    meaning,
+                    correct_hanzi,
+                    correct_pinyin,
+                    options: _,
+                    correct_idx,
+                    bridge_x,
+                    bridge_y,
+                } = s.combat.clone()
+                {
+                    let chosen: Option<usize> = match key.as_str() {
+                        "1" => Some(0),
+                        "2" => Some(1),
+                        "3" => Some(2),
+                        "4" => Some(3),
+                        "Escape" => {
+                            s.combat = CombatState::Explore;
+                            s.message = "Left the Word Bridge.".to_string();
+                            s.message_timer = 40;
+                            s.render();
+                            return;
+                        }
+                        _ => None,
+                    };
+                    if let Some(pick) = chosen {
+                        let correct = pick == correct_idx;
+                        s.srs.record(correct_hanzi, correct);
+                        s.codex
+                            .record(correct_hanzi, correct_pinyin, meaning, correct);
+                        if correct {
+                            let bidx = s.level.idx(bridge_x, bridge_y);
+                            s.level.tiles[bidx] = Tile::Bridge;
+                            let widx = s.level.idx(s.player.x, s.player.y);
+                            if s.level.tiles[widx] == Tile::WordBridge {
+                                s.level.tiles[widx] = Tile::Floor;
+                            }
+                            let (sx, sy) = s.tile_to_screen(bridge_x, bridge_y);
+                            let gs = &mut *s;
+                            gs.particles.spawn_bridge(sx, sy, &mut gs.rng_state);
+                            s.message = format!(
+                                "✓ Correct! {} ({}). A bridge forms over the water!",
+                                correct_hanzi, meaning
+                            );
+                        } else {
+                            s.message = format!(
+                                "✗ Wrong! The answer was {} ({}). Try again later.",
+                                correct_hanzi, meaning
+                            );
+                        }
+                        s.combat = CombatState::Explore;
+                        s.message_timer = 120;
+                    }
+                }
+                s.render();
+                return;
+            }
+
+            // LockedDoorChallenge input (1-4 pick meaning, Escape to leave)
+            if matches!(s.combat, CombatState::LockedDoorChallenge { .. }) {
+                event.prevent_default();
+                if let CombatState::LockedDoorChallenge {
+                    hanzi,
+                    pinyin,
+                    correct_meaning,
+                    options: _,
+                    correct_idx,
+                    door_x,
+                    door_y,
+                } = s.combat.clone()
+                {
+                    let chosen: Option<usize> = match key.as_str() {
+                        "1" => Some(0),
+                        "2" => Some(1),
+                        "3" => Some(2),
+                        "4" => Some(3),
+                        "Escape" => {
+                            s.combat = CombatState::Explore;
+                            s.message = "Stepped away from the locked door.".to_string();
+                            s.message_timer = 40;
+                            s.render();
+                            return;
+                        }
+                        _ => None,
+                    };
+                    if let Some(pick) = chosen {
+                        let correct = pick == correct_idx;
+                        s.srs.record(hanzi, correct);
+                        s.codex.record(hanzi, pinyin, correct_meaning, correct);
+                        if correct {
+                            let didx = s.level.idx(door_x, door_y);
+                            s.level.tiles[didx] = Tile::Floor;
+                            let (sx, sy) = s.tile_to_screen(door_x, door_y);
+                            let gs = &mut *s;
+                            gs.particles.spawn_dig(sx, sy, &mut gs.rng_state);
+                            s.message = format!(
+                                "✓ Correct! {} = {}. The door unlocks!",
+                                hanzi, correct_meaning
+                            );
+                        } else {
+                            s.player.hp = (s.player.hp - 1).max(0);
+                            let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
+                            let gs = &mut *s;
+                            gs.particles.spawn_damage(sx, sy, &mut gs.rng_state);
+                            s.message = format!(
+                                "✗ Wrong! {} = {}. The door shocks you! (-1 HP)",
+                                hanzi, correct_meaning
+                            );
+                            if s.player.hp <= 0 {
+                                s.combat = CombatState::GameOver;
+                                s.message = s.run_summary();
+                                s.message_timer = 255;
+                                s.render();
+                                return;
+                            }
+                        }
+                        s.combat = CombatState::Explore;
+                        s.message_timer = 120;
+                    }
+                }
+                s.render();
+                return;
+            }
+
+            // CursedFloorChallenge input (1-4 pick tone)
+            if matches!(s.combat, CombatState::CursedFloorChallenge { .. }) {
+                event.prevent_default();
+                if let CombatState::CursedFloorChallenge {
+                    hanzi,
+                    pinyin,
+                    meaning,
+                    correct_tone,
+                } = s.combat.clone()
+                {
+                    let chosen: Option<u8> = match key.as_str() {
+                        "1" => Some(1),
+                        "2" => Some(2),
+                        "3" => Some(3),
+                        "4" => Some(4),
+                        "Escape" => {
+                            s.player.gold = (s.player.gold - 2).max(0);
+                            s.combat = CombatState::Explore;
+                            s.message = "You flee the curse! (-2 gold)".to_string();
+                            s.message_timer = 60;
+                            s.render();
+                            return;
+                        }
+                        _ => None,
+                    };
+                    if let Some(guess) = chosen {
+                        let correct = guess == correct_tone;
+                        s.srs.record(hanzi, correct);
+                        s.codex.record(hanzi, pinyin, meaning, correct);
+                        if correct {
+                            s.player.gold += 1;
+                            let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
+                            let gs = &mut *s;
+                            gs.particles.spawn_chest(sx, sy, &mut gs.rng_state);
+                            s.message = format!(
+                                "✓ Curse averted! {} is tone {}. (+1 gold)",
+                                hanzi, correct_tone
+                            );
+                        } else {
+                            s.player.gold = (s.player.gold - 2).max(0);
+                            let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
+                            let gs = &mut *s;
+                            gs.particles.spawn_drain(sx, sy, &mut gs.rng_state);
+                            s.message = format!(
+                                "✗ Cursed! {} is tone {}, not {}. (-2 gold)",
+                                hanzi, correct_tone, guess
+                            );
+                        }
+                        s.combat = CombatState::Explore;
+                        s.message_timer = 120;
+                    }
+                }
+                s.render();
+                return;
+            }
+
             // Tone Battle input
             if matches!(s.combat, CombatState::ToneBattle { .. }) {
                 event.prevent_default();
@@ -5544,7 +7782,11 @@ pub fn init_game() -> Result<(), JsValue> {
                             s.message = "No radicals to enchant with!".to_string();
                             s.message_timer = 90;
                         } else {
-                            s.combat = CombatState::Enchanting { slot: 0, page: 0 };
+                            s.combat = CombatState::Enchanting {
+                                step: 0,
+                                slot: 0,
+                                page: 0,
+                            };
                             s.message =
                                 "Enchant: 1=Weapon 2=Armor 3=Charm. Pick slot, then radical."
                                     .to_string();
@@ -5557,125 +7799,187 @@ pub fn init_game() -> Result<(), JsValue> {
                 return;
             }
 
-            // Enchanting mode
-            if matches!(s.combat, CombatState::Enchanting { .. }) {
+            // Enchanting mode (two-phase: step 0 = pick slot, step 1 = pick radical)
+            if let CombatState::Enchanting { step, slot, page } = s.combat {
                 event.prevent_default();
-                match key.as_str() {
-                    "Escape" => {
-                        s.combat = CombatState::Explore;
-                        s.message.clear();
-                        s.message_timer = 0;
-                        s.render();
-                    }
-                    "1" | "2" | "3" => {
-                        let slot_idx = key.parse::<usize>().unwrap_or(1) - 1;
-                        let has_slot = match slot_idx {
-                            0 => s.player.weapon.is_some(),
-                            1 => s.player.armor.is_some(),
-                            2 => s.player.charm.is_some(),
-                            _ => false,
-                        };
-                        if has_slot {
+                if step == 0 {
+                    // Phase 0: Select equipment slot
+                    match key.as_str() {
+                        "Escape" => {
+                            s.combat = CombatState::Forging {
+                                recipes: s.discovered_recipes.clone(),
+                                cursor: 0,
+                            };
+                            s.message.clear();
+                            s.message_timer = 0;
+                        }
+                        "1" => {
+                            if s.player.weapon.is_some() {
+                                s.combat = CombatState::Enchanting {
+                                    step: 1,
+                                    slot: 0,
+                                    page: 0,
+                                };
+                                s.message = "Enchanting Weapon. Pick a radical.".to_string();
+                                s.message_timer = 255;
+                            } else {
+                                s.message = "No Weapon equipped!".to_string();
+                                s.message_timer = 90;
+                            }
+                        }
+                        "2" => {
+                            if s.player.armor.is_some() {
+                                s.combat = CombatState::Enchanting {
+                                    step: 1,
+                                    slot: 1,
+                                    page: 0,
+                                };
+                                s.message = "Enchanting Armor. Pick a radical.".to_string();
+                                s.message_timer = 255;
+                            } else {
+                                s.message = "No Armor equipped!".to_string();
+                                s.message_timer = 90;
+                            }
+                        }
+                        "3" => {
+                            if s.player.charm.is_some() {
+                                s.combat = CombatState::Enchanting {
+                                    step: 1,
+                                    slot: 2,
+                                    page: 0,
+                                };
+                                s.message = "Enchanting Charm. Pick a radical.".to_string();
+                                s.message_timer = 255;
+                            } else {
+                                s.message = "No Charm equipped!".to_string();
+                                s.message_timer = 90;
+                            }
+                        }
+                        "ArrowUp" | "w" | "W" => {
                             if let CombatState::Enchanting { ref mut slot, .. } = s.combat {
-                                *slot = slot_idx;
+                                if *slot > 0 {
+                                    *slot -= 1;
+                                }
                             }
-                            let slot_name = match slot_idx {
-                                0 => "Weapon",
-                                1 => "Armor",
-                                _ => "Charm",
+                        }
+                        "ArrowDown" | "s" | "S" => {
+                            if let CombatState::Enchanting { ref mut slot, .. } = s.combat {
+                                if *slot < 2 {
+                                    *slot += 1;
+                                }
+                            }
+                        }
+                        "Enter" => {
+                            let has_slot = match slot {
+                                0 => s.player.weapon.is_some(),
+                                1 => s.player.armor.is_some(),
+                                2 => s.player.charm.is_some(),
+                                _ => false,
                             };
-                            s.message = format!(
-                                "Enchanting {}. Pick radical 4-9 or ←/→ to page.",
-                                slot_name
-                            );
+                            if has_slot {
+                                s.combat = CombatState::Enchanting {
+                                    step: 1,
+                                    slot,
+                                    page: 0,
+                                };
+                                let slot_name = match slot {
+                                    0 => "Weapon",
+                                    1 => "Armor",
+                                    _ => "Charm",
+                                };
+                                s.message = format!("Enchanting {}. Pick a radical.", slot_name);
+                                s.message_timer = 255;
+                            } else {
+                                let slot_name = match slot {
+                                    0 => "Weapon",
+                                    1 => "Armor",
+                                    _ => "Charm",
+                                };
+                                s.message = format!("No {} equipped!", slot_name);
+                                s.message_timer = 90;
+                            }
+                        }
+                        _ => {}
+                    }
+                } else {
+                    // Phase 1: Select radical (keys 1-6 per page)
+                    match key.as_str() {
+                        "Escape" => {
+                            s.combat = CombatState::Enchanting {
+                                step: 0,
+                                slot,
+                                page: 0,
+                            };
+                            s.message = "Enchant: pick equipment slot.".to_string();
                             s.message_timer = 255;
-                        } else {
-                            let slot_name = match slot_idx {
-                                0 => "Weapon",
-                                1 => "Armor",
-                                _ => "Charm",
-                            };
-                            s.message = format!("No {} equipped!", slot_name);
-                            s.message_timer = 90;
                         }
-                        s.render();
-                    }
-                    "ArrowLeft" => {
-                        if let CombatState::Enchanting { ref mut page, .. } = s.combat {
-                            if *page > 0 {
-                                *page -= 1;
+                        "ArrowLeft" => {
+                            if let CombatState::Enchanting { ref mut page, .. } = s.combat {
+                                if *page > 0 {
+                                    *page -= 1;
+                                }
                             }
                         }
-                        s.render();
-                    }
-                    "ArrowRight" => {
-                        let max_page = s.player.radicals.len().saturating_sub(1) / 9;
-                        if let CombatState::Enchanting { ref mut page, .. } = s.combat {
-                            if *page < max_page {
-                                *page += 1;
+                        "ArrowRight" => {
+                            let max_page = s.player.radicals.len().saturating_sub(1) / 6;
+                            if let CombatState::Enchanting { ref mut page, .. } = s.combat {
+                                if *page < max_page {
+                                    *page += 1;
+                                }
                             }
                         }
-                        s.render();
-                    }
-                    "4" | "5" | "6" | "7" | "8" | "9" => {
-                        let rad_slot = key.parse::<usize>().unwrap_or(4) - 1;
-                        let page = if let CombatState::Enchanting { page, .. } = s.combat {
-                            page
-                        } else {
-                            0
-                        };
-                        let idx = page * 9 + rad_slot;
-                        let slot = if let CombatState::Enchanting { slot, .. } = s.combat {
-                            slot
-                        } else {
-                            0
-                        };
-                        if idx < s.player.radicals.len() {
-                            let radical = s.player.radicals[idx];
-                            s.player.enchantments[slot] = Some(radical);
-                            // Consume the radical
-                            s.player.radicals.remove(idx);
-                            let slot_name = match slot {
-                                0 => "Weapon",
-                                1 => "Armor",
-                                _ => "Charm",
-                            };
-                            let bonus = match radical {
-                                "力" | "火" => "+1 damage",
-                                "水" | "土" => "+1 defense",
-                                "心" => "+2 max HP",
-                                "金" => "+3 gold/kill",
-                                "目" => "+1 FOV",
-                                _ => "+1 damage",
-                            };
-                            // Apply max HP bonus immediately
-                            if radical == "心" {
-                                s.player.max_hp += 2;
-                                s.player.hp = s.player.hp.min(s.player.max_hp);
+                        "1" | "2" | "3" | "4" | "5" | "6" => {
+                            let key_idx = key.parse::<usize>().unwrap_or(1) - 1;
+                            let abs_idx = page * 6 + key_idx;
+                            if abs_idx < s.player.radicals.len() {
+                                let radical = s.player.radicals[abs_idx];
+                                s.player.enchantments[slot] = Some(radical);
+                                s.player.radicals.remove(abs_idx);
+                                let slot_name = match slot {
+                                    0 => "Weapon",
+                                    1 => "Armor",
+                                    _ => "Charm",
+                                };
+                                let bonus = match radical {
+                                    "力" | "火" => "+1 damage",
+                                    "水" | "土" => "+1 defense",
+                                    "心" => "+2 max HP",
+                                    "金" => "+3 gold/kill",
+                                    "目" => "+1 FOV",
+                                    _ => "+1 damage",
+                                };
+                                if radical == "心" {
+                                    s.player.max_hp += 2;
+                                    s.player.hp = s.player.hp.min(s.player.max_hp);
+                                }
+                                if let Some(ref audio) = s.audio {
+                                    audio.play_forge();
+                                }
+                                let cam_x =
+                                    s.player.x as f64 * 24.0 - s.renderer.canvas_w / 2.0 + 12.0;
+                                let cam_y =
+                                    s.player.y as f64 * 24.0 - s.renderer.canvas_h / 2.0 + 12.0;
+                                let sx = s.player.x as f64 * 24.0 - cam_x + 12.0;
+                                let sy = s.player.y as f64 * 24.0 - cam_y + 12.0;
+                                let gs = &mut *s;
+                                gs.particles.spawn_heal(sx, sy, &mut gs.rng_state);
+                                s.message = format!(
+                                    "Enchanted {} with {} ({})!",
+                                    slot_name, radical, bonus
+                                );
+                                s.message_timer = 120;
+                                s.combat = CombatState::Explore;
+                                let recipe_count = s.discovered_recipes.len();
+                                s.achievements.check_recipes(recipe_count);
+                            } else {
+                                s.message = "No radical at that slot.".to_string();
+                                s.message_timer = 60;
                             }
-                            if let Some(ref audio) = s.audio {
-                                audio.play_forge();
-                            }
-                            let cam_x = s.player.x as f64 * 24.0 - s.renderer.canvas_w / 2.0 + 12.0;
-                            let cam_y = s.player.y as f64 * 24.0 - s.renderer.canvas_h / 2.0 + 12.0;
-                            let sx = s.player.x as f64 * 24.0 - cam_x + 12.0;
-                            let sy = s.player.y as f64 * 24.0 - cam_y + 12.0;
-                            let gs = &mut *s;
-                            gs.particles.spawn_heal(sx, sy, &mut gs.rng_state);
-                            s.message =
-                                format!("Enchanted {} with {} ({})!", slot_name, radical, bonus);
-                            s.message_timer = 120;
-                            s.combat = CombatState::Explore;
-                            let recipe_count = s.discovered_recipes.len();
-                            s.achievements.check_recipes(recipe_count);
-                        } else {
-                            s.message = "No radical at that slot.".to_string();
-                            s.message_timer = 60;
                         }
-                        s.render();
+                        _ => {}
                     }
-                    _ => {}
                 }
+                s.render();
                 return;
             }
 
@@ -5858,6 +8162,47 @@ pub fn init_game() -> Result<(), JsValue> {
                 return;
             }
 
+            if let CombatState::Aiming {
+                spell_idx,
+                ref mut dx,
+                ref mut dy,
+            } = s.combat
+            {
+                event.prevent_default();
+                match key.as_str() {
+                    "ArrowUp" | "w" | "W" => {
+                        *dx = 0;
+                        *dy = -1;
+                    }
+                    "ArrowDown" | "s" | "S" => {
+                        *dx = 0;
+                        *dy = 1;
+                    }
+                    "ArrowLeft" | "a" | "A" => {
+                        *dx = -1;
+                        *dy = 0;
+                    }
+                    "ArrowRight" | "d" | "D" => {
+                        *dx = 1;
+                        *dy = 0;
+                    }
+                    "Enter" | " " => {
+                        let si = spell_idx;
+                        let fdx = *dx;
+                        let fdy = *dy;
+                        s.fire_aimed_spell(si, fdx, fdy);
+                    }
+                    "Escape" => {
+                        s.combat = CombatState::Explore;
+                        s.message = "Cancelled aiming.".to_string();
+                        s.message_timer = 30;
+                    }
+                    _ => {}
+                }
+                s.render();
+                return;
+            }
+
             // Exploration movement + item usage
             // Toggle codex with 'c'
             if key == "c" || key == "C" {
@@ -5939,6 +8284,13 @@ pub fn init_game() -> Result<(), JsValue> {
                         s.combat = CombatState::DippingSource { cursor: 0 };
                         s.message = "Dip which potion?".to_string();
                     }
+                    s.render();
+                    return;
+                }
+                "j" | "J" => {
+                    s.combat = CombatState::Journal { page: 0 };
+                    s.message = "📖 Character Journal".to_string();
+                    s.message_timer = 120;
                     s.render();
                     return;
                 }
