@@ -140,6 +140,7 @@ pub enum FloorProfile {
     Famine,
     RadicalRich,
     Siege,
+    Drought,
 }
 
 impl FloorProfile {
@@ -148,9 +149,10 @@ impl FloorProfile {
             return FloorProfile::Normal;
         }
         match rng_val % 100 {
-            0..=14 => FloorProfile::Famine,
-            15..=29 => FloorProfile::RadicalRich,
-            30..=39 => FloorProfile::Siege,
+            0..=19 => FloorProfile::Famine,
+            20..=34 => FloorProfile::RadicalRich,
+            35..=44 => FloorProfile::Siege,
+            45..=54 => FloorProfile::Drought,
             _ => FloorProfile::Normal,
         }
     }
@@ -161,11 +163,23 @@ impl FloorProfile {
             FloorProfile::Famine => 0.5,
             FloorProfile::RadicalRich => 0.8,
             FloorProfile::Siege => 1.5,
+            FloorProfile::Drought => 0.3,
         }
     }
 
     pub fn radical_drop_bonus(self) -> bool {
         matches!(self, FloorProfile::RadicalRich)
+    }
+
+    /// Chance (0-100) that killing an enemy drops a radical.
+    pub fn radical_drop_chance(self) -> u64 {
+        match self {
+            FloorProfile::Normal => 80,
+            FloorProfile::Famine => 50,
+            FloorProfile::RadicalRich => 100,
+            FloorProfile::Siege => 80,
+            FloorProfile::Drought => 0,
+        }
     }
 
     pub fn label(self) -> &'static str {
@@ -174,6 +188,7 @@ impl FloorProfile {
             FloorProfile::Famine => "⚠ Famine Floor",
             FloorProfile::RadicalRich => "📜 Radical-Rich Floor",
             FloorProfile::Siege => "⚔ Siege Floor",
+            FloorProfile::Drought => "🏜 Drought Floor",
         }
     }
 }
@@ -2502,7 +2517,16 @@ impl GameState {
                 }
             }
 
-            let (nx, ny) = self.enemies[i].ai_step(px, py);
+            let (ex, ey) = (self.enemies[i].x, self.enemies[i].y);
+            let nearby_allies = self
+                .enemies
+                .iter()
+                .enumerate()
+                .filter(|(j, e)| {
+                    *j != i && e.is_alive() && e.alert && (e.x - ex).abs() + (e.y - ey).abs() <= 3
+                })
+                .count();
+            let (nx, ny) = self.enemies[i].ai_step(px, py, nearby_allies);
 
             // Don't walk into walls or other enemies
             if !self.level.is_walkable(nx, ny) {
@@ -2834,13 +2858,20 @@ impl GameState {
                     };
                     self.player.gold += listen_bonus;
                     let available = radical::radicals_for_floor(self.floor_num);
-                    let drop_idx = self.rng_next() as usize % available.len();
-                    let dropped = available[drop_idx].ch;
-                    self.player.add_radical(dropped);
-                    if self.floor_profile.radical_drop_bonus() {
-                        let bonus_idx = self.rng_next() as usize % available.len();
-                        self.player.add_radical(available[bonus_idx].ch);
-                    }
+                    let rad_roll = self.rng_next() % 100;
+                    let rad_chance = self.floor_profile.radical_drop_chance();
+                    let dropped = if rad_roll < rad_chance {
+                        let drop_idx = self.rng_next() as usize % available.len();
+                        let ch = available[drop_idx].ch;
+                        self.player.add_radical(ch);
+                        if self.floor_profile.radical_drop_bonus() {
+                            let bonus_idx = self.rng_next() as usize % available.len();
+                            self.player.add_radical(available[bonus_idx].ch);
+                        }
+                        Some(ch)
+                    } else {
+                        None
+                    };
                     self.advance_radical_quests();
 
                     // Elite enemies drop an extra radical
@@ -2865,18 +2896,25 @@ impl GameState {
                         self.player.hp = (self.player.hp + heal).min(self.player.max_hp);
                     }
 
-                    // Random equipment drop (10% chance, higher for bosses)
-                    let equip_chance = if e_is_boss { 60 } else { 10 };
+                    // Random equipment drop (5% chance, higher for bosses)
+                    let equip_chance = if e_is_boss { 60 } else { 5 };
                     if (self.rng_next() % 100) < equip_chance {
                         let eq_idx = self.rng_next() as usize % EQUIPMENT_POOL.len();
                         let eq = &EQUIPMENT_POOL[eq_idx];
                         self.player.equip(eq);
-                        self.message = format!(
-                            "Defeated {}! +{}g [{}] + {}!",
-                            e_hanzi, e_gold, dropped, eq.name
-                        );
+                        if let Some(rad) = dropped {
+                            self.message = format!(
+                                "Defeated {}! +{}g [{}] + {}!",
+                                e_hanzi, e_gold, rad, eq.name
+                            );
+                        } else {
+                            self.message =
+                                format!("Defeated {}! +{}g + {}!", e_hanzi, e_gold, eq.name);
+                        }
+                    } else if let Some(rad) = dropped {
+                        self.message = format!("Defeated {}! +{}g [{}]", e_hanzi, e_gold, rad);
                     } else {
-                        self.message = format!("Defeated {}! +{}g [{}]", e_hanzi, e_gold, dropped);
+                        self.message = format!("Defeated {}! +{}g", e_hanzi, e_gold);
                     }
                     if e_is_elite && elite_completed_cycle {
                         self.message = format!("⛓ {} — Compound shattered!", self.message);
@@ -2906,10 +2944,17 @@ impl GameState {
                             self.message_timer = 180;
                         }
                     } else if self.total_runs == 0 && self.player.radicals.len() == 1 {
-                        self.message = format!(
-                            "Defeated {}! +{}g [{}] — Walk to an ⚒ anvil to forge spells!",
-                            e_hanzi, e_gold, dropped
-                        );
+                        if let Some(rad) = dropped {
+                            self.message = format!(
+                                "Defeated {}! +{}g [{}] — Walk to an ⚒ anvil to forge spells!",
+                                e_hanzi, e_gold, rad
+                            );
+                        } else {
+                            self.message = format!(
+                                "Defeated {}! +{}g — Walk to an ⚒ anvil to forge spells!",
+                                e_hanzi, e_gold
+                            );
+                        }
                         self.message_timer = 160;
                     }
                     self.combat = CombatState::Explore;
@@ -3853,7 +3898,7 @@ impl GameState {
                 Quest {
                     description: format!("Defeat {} enemies", target),
                     goal: QuestGoal::KillEnemies(0, target),
-                    gold_reward: 15 + floor * 5,
+                    gold_reward: 10 + floor * 3,
                     completed: false,
                     chain_step: 0,
                     chain_id: 0,
@@ -3864,7 +3909,7 @@ impl GameState {
                 Quest {
                     description: format!("Reach floor {}", target_floor),
                     goal: QuestGoal::ReachFloor(target_floor),
-                    gold_reward: 20 + floor * 4,
+                    gold_reward: 14 + floor * 3,
                     completed: false,
                     chain_step: 0,
                     chain_id: 0,
@@ -3875,7 +3920,7 @@ impl GameState {
                 Quest {
                     description: format!("Collect {} radicals", target),
                     goal: QuestGoal::CollectRadicals(0, target),
-                    gold_reward: 12 + floor * 3,
+                    gold_reward: 8 + floor * 2,
                     completed: false,
                     chain_step: 0,
                     chain_id: 0,
@@ -3888,7 +3933,7 @@ impl GameState {
                     Quest {
                         description: format!("Collect {} radicals", target),
                         goal: QuestGoal::CollectRadicals(0, target),
-                        gold_reward: 12 + floor * 3,
+                        gold_reward: 8 + floor * 2,
                         completed: false,
                         chain_step: 0,
                         chain_id: 0,
@@ -3901,7 +3946,7 @@ impl GameState {
                             recipe.output_hanzi, recipe.output_meaning
                         ),
                         goal: QuestGoal::ForgeCharacter(recipe.output_hanzi),
-                        gold_reward: 18 + floor * 4,
+                        gold_reward: 12 + floor * 3,
                         completed: false,
                         chain_step: 0,
                         chain_id: 0,
@@ -3920,7 +3965,7 @@ impl GameState {
                 Quest {
                     description: format!("⛓① Defeat {} enemies", target),
                     goal: QuestGoal::KillEnemies(0, target),
-                    gold_reward: 10 + floor * 3,
+                    gold_reward: 7 + floor * 2,
                     completed: false,
                     chain_step: 1,
                     chain_id,
@@ -3931,7 +3976,7 @@ impl GameState {
                 Quest {
                     description: format!("⛓② Collect {} radicals", target),
                     goal: QuestGoal::CollectRadicals(0, target),
-                    gold_reward: 15 + floor * 4,
+                    gold_reward: 10 + floor * 3,
                     completed: false,
                     chain_step: 2,
                     chain_id,
@@ -3947,7 +3992,7 @@ impl GameState {
                             recipe.output_hanzi, recipe.output_meaning
                         ),
                         goal: QuestGoal::ForgeCharacter(recipe.output_hanzi),
-                        gold_reward: 25 + floor * 5,
+                        gold_reward: 18 + floor * 4,
                         completed: false,
                         chain_step: 3,
                         chain_id,
@@ -3957,7 +4002,7 @@ impl GameState {
                     Quest {
                         description: format!("⛓③ Defeat {} enemies", target),
                         goal: QuestGoal::KillEnemies(0, target),
-                        gold_reward: 25 + floor * 5,
+                        gold_reward: 18 + floor * 4,
                         completed: false,
                         chain_step: 3,
                         chain_id,
@@ -3969,7 +4014,7 @@ impl GameState {
                 Quest {
                     description: format!("⛓④ Reach floor {} (finale!)", target_floor),
                     goal: QuestGoal::ReachFloor(target_floor),
-                    gold_reward: 40 + floor * 6,
+                    gold_reward: 28 + floor * 4,
                     completed: false,
                     chain_step: 4,
                     chain_id,
@@ -3984,7 +4029,7 @@ impl GameState {
         // Always offer heal
         items.push(ShopItem {
             label: "Full Heal".to_string(),
-            cost: 15 + self.floor_num * 3,
+            cost: 20 + self.floor_num * 4,
             kind: ShopItemKind::HealFull,
         });
 
@@ -3995,7 +4040,7 @@ impl GameState {
             let rad = available[idx];
             items.push(ShopItem {
                 label: format!("Radical [{}] ({})", rad.ch, rad.meaning),
-                cost: 10 + self.floor_num,
+                cost: 12 + self.floor_num * 2,
                 kind: ShopItemKind::Radical(rad.ch),
             });
         }
@@ -4005,7 +4050,7 @@ impl GameState {
         let eq = &EQUIPMENT_POOL[eq_idx];
         items.push(ShopItem {
             label: format!("{} ({:?})", eq.name, eq.slot),
-            cost: 25 + self.floor_num * 5,
+            cost: 30 + self.floor_num * 6,
             kind: ShopItemKind::Equipment(eq_idx),
         });
 
@@ -4014,7 +4059,7 @@ impl GameState {
         let cname = self.item_display_name(&consumable);
         items.push(ShopItem {
             label: cname,
-            cost: 12 + self.floor_num * 2,
+            cost: 15 + self.floor_num * 3,
             kind: ShopItemKind::Consumable(consumable),
         });
 
@@ -5969,6 +6014,7 @@ mod tests {
         assert_eq!(FloorProfile::Famine.gold_multiplier(), 0.5);
         assert_eq!(FloorProfile::RadicalRich.gold_multiplier(), 0.8);
         assert_eq!(FloorProfile::Siege.gold_multiplier(), 1.5);
+        assert_eq!(FloorProfile::Drought.gold_multiplier(), 0.3);
     }
 
     #[test]
@@ -5983,6 +6029,50 @@ mod tests {
         assert_eq!(ListenMode::Off.is_active(), false);
         assert_eq!(ListenMode::ToneOnly.is_active(), true);
         assert_eq!(ListenMode::FullAudio.is_active(), true);
+    }
+
+    // --- Resource Pressure Tests ---
+
+    #[test]
+    fn radical_drop_chance_varies_by_profile() {
+        assert_eq!(FloorProfile::Normal.radical_drop_chance(), 80);
+        assert_eq!(FloorProfile::Famine.radical_drop_chance(), 50);
+        assert_eq!(FloorProfile::RadicalRich.radical_drop_chance(), 100);
+        assert_eq!(FloorProfile::Siege.radical_drop_chance(), 80);
+        assert_eq!(FloorProfile::Drought.radical_drop_chance(), 0);
+    }
+
+    #[test]
+    fn drought_profile_is_harshest() {
+        assert_eq!(FloorProfile::Drought.gold_multiplier(), 0.3);
+        assert_eq!(FloorProfile::Drought.radical_drop_chance(), 0);
+        assert_eq!(FloorProfile::Drought.radical_drop_bonus(), false);
+    }
+
+    #[test]
+    fn floor_profile_roll_distribution() {
+        // Famine: 0..=19, RadicalRich: 20..=34, Siege: 35..=44, Drought: 45..=54, Normal: 55+
+        assert_eq!(FloorProfile::roll(5, 0), FloorProfile::Famine);
+        assert_eq!(FloorProfile::roll(5, 19), FloorProfile::Famine);
+        assert_eq!(FloorProfile::roll(5, 20), FloorProfile::RadicalRich);
+        assert_eq!(FloorProfile::roll(5, 34), FloorProfile::RadicalRich);
+        assert_eq!(FloorProfile::roll(5, 35), FloorProfile::Siege);
+        assert_eq!(FloorProfile::roll(5, 44), FloorProfile::Siege);
+        assert_eq!(FloorProfile::roll(5, 45), FloorProfile::Drought);
+        assert_eq!(FloorProfile::roll(5, 54), FloorProfile::Drought);
+        assert_eq!(FloorProfile::roll(5, 55), FloorProfile::Normal);
+        assert_eq!(FloorProfile::roll(5, 99), FloorProfile::Normal);
+    }
+
+    #[test]
+    fn drought_label_shows_desert_emoji() {
+        assert!(FloorProfile::Drought.label().contains("Drought"));
+    }
+
+    #[test]
+    fn radical_rich_guarantees_radical_drops() {
+        assert_eq!(FloorProfile::RadicalRich.radical_drop_chance(), 100);
+        assert!(FloorProfile::RadicalRich.radical_drop_bonus());
     }
 }
 

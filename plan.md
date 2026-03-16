@@ -1,8 +1,8 @@
 # Radical Roguelike Roadmap
 
 ## Current Status
-The single-player game is up to date through the first Phase 29 environmental puzzle-room pass.
-Implemented systems now include dungeon crawling, pinyin combat, radical forging, equipment and items, codex and achievements, daily/endless modes, tutorial/settings polish, environmental hazards, boss variety, talents, mystery item identities, inventory/help overlays, script seals, a deity/piety system, polymorph forms, dipping interactions, enemy component shields, crate pushing, bridge building, wall digging, cracked-wall secret rooms with tuned physics feedback, longer-lived message popups, a 3-tile look/inspect mode, and visible puzzle niches with brittle-wall vaults and deep-water bridge caches.
+The single-player game is up to date through Phase 30 resource pressure tuning and enemy AI improvements.
+Implemented systems now include dungeon crawling, pinyin combat, radical forging, equipment and items, codex and achievements, daily/endless modes, tutorial/settings polish, environmental hazards, boss variety, talents, mystery item identities, inventory/help overlays, script seals, a deity/piety system, polymorph forms, dipping interactions, enemy component shields, crate pushing, bridge building, wall digging, cracked-wall secret rooms with tuned physics feedback, longer-lived message popups, a 3-tile look/inspect mode, visible puzzle niches with brittle-wall vaults and deep-water bridge caches, tighter resource economy with floor-profile-driven scarcity, and six distinct enemy AI behaviors.
 
 Multiplayer co-op remains deferred future work and is not part of the current single-player roadmap.
 
@@ -58,23 +58,34 @@ Multiplayer co-op remains deferred future work and is not part of the current si
 - These rooms reuse the existing digging and crate-bridge verbs rather than adding a separate puzzle control scheme.
 - Look text, tile art, and generation tests now telegraph and protect the new puzzle-room interactions.
 
+### Phase 30: Resource Pressure Tuning and Enemy AI
+
+#### Resource Pressure
+- Enemy gold income reduced across the board: normal kills yield `3+floor` (was `5+floor*2`), elites `8+floor*2` (was `15+floor*3`), boss gold cut ~30%.
+- New `FloorProfile::Drought` added (10% chance on floors 3+): 0.3× gold multiplier and 0% radical drops.
+- Floor profile weights rebalanced: Normal 45%, Famine 20%, RadicalRich 15%, Siege 10%, Drought 10%.
+- Radical drops now probabilistic per floor profile (Normal 80%, Famine 50%, RadicalRich 100%, Siege 80%, Drought 0%) instead of guaranteed.
+- Shop prices increased: heal `20+floor*4`, radical `12+floor*2`, equipment `30+floor*6`, consumable `15+floor*3`.
+- Equipment drop rate halved from 10% to 5% (bosses remain 60%).
+- Quest rewards reduced ~30% across all quest types to remove the pure-bonus economy problem.
+
+#### Enemy AI
+- Three new `AiBehavior` variants: Sentinel (holds position, engages only when adjacent), Kiter (retreats when close, advances when far, holds at medium range), Pack (chases only with 2+ nearby allies or when adjacent).
+- AI distribution rebalanced across six behaviors: Chase 44%, Ambush 12.5%, Retreat 12.5%, Sentinel 12.5%, Kiter 12.5%, Pack 6.25%.
+- Nearby-ally computation added to the enemy movement loop for pack coordination.
+- Comprehensive tests for all six AI behaviors and all five floor profiles.
+
 ## Proposed Next Improvements
 
 Goal: deepen single-player runs with more systemic, NetHack-like interactions that build on the current quest, companion, deity, hazard, and enemy-complexity systems.
 
-### Candidate Phase 29 Tracks
+### Candidate Phase 31 Tracks
 - Companion depth and contextual advice
   - Add companion XP, stronger passive perks, and occasional context-aware hints tied to nearby rooms, loot, or hazards.
   - This is the lowest-risk way to add more personality and moment-to-moment decision support.
-- Resource pressure and scarcity tuning
-  - Tighten gold/radical availability, vary floor loot profiles, and force harder shop and consumable trade-offs.
-  - This would make the existing item, shop, and recovery systems matter more run-to-run.
-- Enemy tactics and room-aware AI
-  - Expand enemy behavior beyond basic alert pursuit with ranged retreat, corridor blocking, ambush, and room-modifier-aware tactics.
-  - This builds directly on the current alert state, elite complexity, and room modifier systems.
 - Environmental puzzle room expansion
   - Build on the shipped first pass with more patterns such as spike bridges, oil-fire caches, or seal-driven trap vaults.
-  - This remains a good later force multiplier once the surrounding economy and combat pacing are tuned.
+  - With resource pressure and enemy AI now tightened, this is a strong force multiplier for run variety.
 - Alignment arcs and deity synergies
   - Track broader playstyle patterns across deity choices and reward them with small run-defining perks.
   - This adds replayability using the existing piety and altar systems instead of introducing an all-new subsystem.
@@ -83,9 +94,9 @@ Goal: deepen single-player runs with more systemic, NetHack-like interactions th
   - This would make the current quest framework feel more like an emergent campaign.
 
 ### Recommended Next Slice
-- Best low-risk / high-leverage starts: companion depth or resource pressure.
-- Best follow-up once pacing feels tighter: enemy tactics.
-- Best later force multiplier once those systems are stable: expand puzzle-room variants.
+- Best low-risk / high-leverage start: companion depth or puzzle room expansion.
+- Best follow-up once those feel solid: alignment arcs and deity synergies.
+- Best later force multiplier once those systems are stable: quest chains with dungeon impact.
 
 ### Phase 29 Follow-ups
 - Expand the first pass with a third or fourth puzzle pattern only after frequency and reward tuning still feel good in normal runs.

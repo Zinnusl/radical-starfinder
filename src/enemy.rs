@@ -8,6 +8,9 @@ pub enum AiBehavior {
     Chase,
     Retreat,
     Ambush,
+    Sentinel,
+    Kiter,
+    Pack,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -114,11 +117,7 @@ impl Enemy {
         } else {
             1 + floor / 3
         };
-        let gold = if is_elite {
-            15 + floor * 3
-        } else {
-            5 + floor * 2
-        };
+        let gold = if is_elite { 8 + floor * 2 } else { 3 + floor };
 
         let components = get_components(entry.hanzi);
 
@@ -126,10 +125,13 @@ impl Enemy {
             AiBehavior::Chase
         } else {
             let seed = (x.wrapping_mul(31) ^ y.wrapping_mul(17) ^ floor.wrapping_mul(7)) as u32;
-            match seed % 10 {
-                0..=5 => AiBehavior::Chase,
-                6..=7 => AiBehavior::Ambush,
-                _ => AiBehavior::Retreat,
+            match seed % 16 {
+                0..=6 => AiBehavior::Chase,
+                7..=8 => AiBehavior::Ambush,
+                9..=10 => AiBehavior::Retreat,
+                11..=12 => AiBehavior::Sentinel,
+                13..=14 => AiBehavior::Kiter,
+                _ => AiBehavior::Pack,
             }
         };
 
@@ -161,13 +163,13 @@ impl Enemy {
     pub fn boss_from_vocab(entry: &'static VocabEntry, x: i32, y: i32, floor: i32) -> Self {
         let boss_kind = BossKind::for_floor(floor);
         let (hp, damage, gold, cooldown) = match boss_kind {
-            Some(BossKind::Gatekeeper) => (16 + floor, 3 + floor / 3, 60 + floor * 5, 1),
-            Some(BossKind::Scholar) => (14 + floor, 3 + floor / 3, 70 + floor * 5, 0),
-            Some(BossKind::Elementalist) => (18 + floor, 4 + floor / 3, 80 + floor * 5, 0),
-            Some(BossKind::MimicKing) => (22 + floor, 4 + floor / 3, 90 + floor * 5, 2),
-            Some(BossKind::InkSage) => (20 + floor, 5 + floor / 3, 100 + floor * 5, 0),
-            Some(BossKind::RadicalThief) => (24 + floor, 5 + floor / 3, 120 + floor * 5, 0),
-            None => (8 + floor, 2 + floor / 2, 30 + floor * 5, 0),
+            Some(BossKind::Gatekeeper) => (16 + floor, 3 + floor / 3, 40 + floor * 4, 1),
+            Some(BossKind::Scholar) => (14 + floor, 3 + floor / 3, 45 + floor * 4, 0),
+            Some(BossKind::Elementalist) => (18 + floor, 4 + floor / 3, 50 + floor * 4, 0),
+            Some(BossKind::MimicKing) => (22 + floor, 4 + floor / 3, 55 + floor * 4, 2),
+            Some(BossKind::InkSage) => (20 + floor, 5 + floor / 3, 65 + floor * 4, 0),
+            Some(BossKind::RadicalThief) => (24 + floor, 5 + floor / 3, 80 + floor * 4, 0),
+            None => (8 + floor, 2 + floor / 2, 20 + floor * 3, 0),
         };
         Self {
             x,
@@ -233,7 +235,7 @@ impl Enemy {
         }
     }
 
-    pub fn ai_step(&self, tx: i32, ty: i32) -> (i32, i32) {
+    pub fn ai_step(&self, tx: i32, ty: i32, nearby_allies: usize) -> (i32, i32) {
         let dist = (tx - self.x).abs() + (ty - self.y).abs();
         match self.ai {
             AiBehavior::Chase => self.step_toward(tx, ty),
@@ -246,6 +248,29 @@ impl Enemy {
             }
             AiBehavior::Ambush => {
                 if dist <= 3 {
+                    self.step_toward(tx, ty)
+                } else {
+                    (self.x, self.y)
+                }
+            }
+            AiBehavior::Sentinel => {
+                if dist <= 1 {
+                    self.step_toward(tx, ty)
+                } else {
+                    (self.x, self.y)
+                }
+            }
+            AiBehavior::Kiter => {
+                if dist <= 2 {
+                    self.step_retreat(tx, ty)
+                } else if dist >= 5 {
+                    self.step_toward(tx, ty)
+                } else {
+                    (self.x, self.y)
+                }
+            }
+            AiBehavior::Pack => {
+                if nearby_allies >= 2 || dist <= 1 {
                     self.step_toward(tx, ty)
                 } else {
                     (self.x, self.y)
@@ -326,12 +351,87 @@ mod tests {
         let mut enemy = Enemy::from_vocab(friend_entry(), 5, 5, 1);
 
         enemy.ai = AiBehavior::Chase;
-        let _ = enemy.ai_step(10, 10);
+        let _ = enemy.ai_step(10, 10, 0);
 
         enemy.ai = AiBehavior::Retreat;
-        let _ = enemy.ai_step(10, 10);
+        let _ = enemy.ai_step(10, 10, 0);
 
         enemy.ai = AiBehavior::Ambush;
-        let _ = enemy.ai_step(10, 10);
+        let _ = enemy.ai_step(10, 10, 0);
+
+        enemy.ai = AiBehavior::Sentinel;
+        let _ = enemy.ai_step(10, 10, 0);
+
+        enemy.ai = AiBehavior::Kiter;
+        let _ = enemy.ai_step(10, 10, 0);
+
+        enemy.ai = AiBehavior::Pack;
+        let _ = enemy.ai_step(10, 10, 0);
+    }
+
+    #[test]
+    fn sentinel_holds_position_when_far() {
+        let mut enemy = Enemy::from_vocab(friend_entry(), 5, 5, 1);
+        enemy.ai = AiBehavior::Sentinel;
+        let (nx, ny) = enemy.ai_step(10, 10, 0);
+        assert_eq!((nx, ny), (5, 5));
+    }
+
+    #[test]
+    fn sentinel_chases_when_adjacent() {
+        let mut enemy = Enemy::from_vocab(friend_entry(), 5, 5, 1);
+        enemy.ai = AiBehavior::Sentinel;
+        let (nx, ny) = enemy.ai_step(6, 5, 0);
+        assert_eq!((nx, ny), (6, 5));
+    }
+
+    #[test]
+    fn kiter_retreats_when_close() {
+        let mut enemy = Enemy::from_vocab(friend_entry(), 5, 5, 1);
+        enemy.ai = AiBehavior::Kiter;
+        let (nx, ny) = enemy.ai_step(6, 5, 0);
+        assert_ne!((nx, ny), (6, 5));
+        assert!((nx - 5i32).abs() + (ny - 5i32).abs() <= 1);
+    }
+
+    #[test]
+    fn kiter_advances_when_far() {
+        let mut enemy = Enemy::from_vocab(friend_entry(), 0, 0, 1);
+        enemy.ai = AiBehavior::Kiter;
+        let (nx, ny) = enemy.ai_step(10, 10, 0);
+        assert!(nx > 0 || ny > 0);
+    }
+
+    #[test]
+    fn kiter_holds_at_medium_range() {
+        let mut enemy = Enemy::from_vocab(friend_entry(), 5, 5, 1);
+        enemy.ai = AiBehavior::Kiter;
+        // dist = 3+1 = 4, in the hold zone (3..=4)
+        let (nx, ny) = enemy.ai_step(8, 6, 0);
+        assert_eq!((nx, ny), (5, 5));
+    }
+
+    #[test]
+    fn pack_holds_without_allies() {
+        let mut enemy = Enemy::from_vocab(friend_entry(), 5, 5, 1);
+        enemy.ai = AiBehavior::Pack;
+        let (nx, ny) = enemy.ai_step(10, 10, 0);
+        assert_eq!((nx, ny), (5, 5));
+    }
+
+    #[test]
+    fn pack_chases_with_enough_allies() {
+        let mut enemy = Enemy::from_vocab(friend_entry(), 5, 5, 1);
+        enemy.ai = AiBehavior::Pack;
+        let (nx, ny) = enemy.ai_step(10, 10, 2);
+        assert_ne!((nx, ny), (5, 5));
+    }
+
+    #[test]
+    fn pack_chases_when_adjacent_even_alone() {
+        let mut enemy = Enemy::from_vocab(friend_entry(), 5, 5, 1);
+        enemy.ai = AiBehavior::Pack;
+        let (nx, ny) = enemy.ai_step(6, 5, 0);
+        assert_eq!((nx, ny), (6, 5));
     }
 }
