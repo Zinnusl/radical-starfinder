@@ -40,6 +40,7 @@ jobs:
           mkdir -p dist
           cp index.html manifest.json sw.js dist/
           cp -r pkg dist/
+          cp -r assets dist/
           touch dist/.nojekyll
 
       - name: Upload artifact for Pages
