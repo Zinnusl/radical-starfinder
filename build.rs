@@ -314,67 +314,171 @@ fn normalize_numbered_pinyin(pinyin: &str) -> String {
 fn diacritic_pinyin_to_numbered(input: &str) -> String {
     input
         .split_whitespace()
-        .filter_map(convert_syllable)
+        .filter_map(convert_token)
         .collect::<Vec<_>>()
         .join("")
 }
 
-fn convert_syllable(raw: &str) -> Option<String> {
-    let mut out = String::new();
-    let mut tone_from_mark: Option<char> = None;
-    let mut tone_from_digit: Option<char> = None;
+/// Map a diacritic character to (base_ascii, optional_tone_digit).
+fn map_diacritic(ch: char) -> Option<(char, Option<char>)> {
+    let mapped = match ch {
+        'ā' => ('a', Some('1')),
+        'ē' => ('e', Some('1')),
+        'ī' => ('i', Some('1')),
+        'ō' => ('o', Some('1')),
+        'ū' => ('u', Some('1')),
+        'ǖ' => ('v', Some('1')),
+        'á' => ('a', Some('2')),
+        'é' => ('e', Some('2')),
+        'í' => ('i', Some('2')),
+        'ó' => ('o', Some('2')),
+        'ú' => ('u', Some('2')),
+        'ǘ' => ('v', Some('2')),
+        'ǎ' => ('a', Some('3')),
+        'ě' => ('e', Some('3')),
+        'ǐ' => ('i', Some('3')),
+        'ǒ' => ('o', Some('3')),
+        'ǔ' => ('u', Some('3')),
+        'ǚ' => ('v', Some('3')),
+        'à' => ('a', Some('4')),
+        'è' => ('e', Some('4')),
+        'ì' => ('i', Some('4')),
+        'ò' => ('o', Some('4')),
+        'ù' => ('u', Some('4')),
+        'ǜ' => ('v', Some('4')),
+        'ü' | 'Ü' => ('v', None),
+        'A'..='Z' | 'a'..='z' => (ch.to_ascii_lowercase(), None),
+        _ => return None,
+    };
+    Some(mapped)
+}
+
+/// Convert a whitespace-separated token (which may contain multiple
+/// concatenated pinyin syllables) into numbered pinyin.
+/// E.g. "péngyoumen" → "peng2you5men5", "àihào" → "ai4hao4".
+fn convert_token(raw: &str) -> Option<String> {
+    // Pass 1: strip diacritics → plain ASCII, record tone for each position.
+    let mut ascii = String::new();
+    let mut tones: Vec<Option<char>> = Vec::new();
+    let mut explicit_tone_digit: Option<char> = None;
 
     for ch in raw.chars() {
         if ('1'..='5').contains(&ch) {
-            tone_from_digit = Some(ch);
+            explicit_tone_digit = Some(ch);
             continue;
         }
-
-        let mapped = match ch {
-            'ā' => ('a', Some('1')),
-            'ē' => ('e', Some('1')),
-            'ī' => ('i', Some('1')),
-            'ō' => ('o', Some('1')),
-            'ū' => ('u', Some('1')),
-            'ǖ' => ('v', Some('1')),
-            'á' => ('a', Some('2')),
-            'é' => ('e', Some('2')),
-            'í' => ('i', Some('2')),
-            'ó' => ('o', Some('2')),
-            'ú' => ('u', Some('2')),
-            'ǘ' => ('v', Some('2')),
-            'ǎ' => ('a', Some('3')),
-            'ě' => ('e', Some('3')),
-            'ǐ' => ('i', Some('3')),
-            'ǒ' => ('o', Some('3')),
-            'ǔ' => ('u', Some('3')),
-            'ǚ' => ('v', Some('3')),
-            'à' => ('a', Some('4')),
-            'è' => ('e', Some('4')),
-            'ì' => ('i', Some('4')),
-            'ò' => ('o', Some('4')),
-            'ù' => ('u', Some('4')),
-            'ǜ' => ('v', Some('4')),
-            'ü' | 'Ü' => ('v', None),
-            'A'..='Z' | 'a'..='z' => (ch.to_ascii_lowercase(), None),
-            _ => continue,
-        };
-
-        out.push(mapped.0);
-        if mapped.1.is_some() {
-            tone_from_mark = mapped.1;
+        if let Some((base, tone)) = map_diacritic(ch) {
+            tones.push(tone);
+            ascii.push(base);
         }
     }
 
-    if out.is_empty() {
+    if ascii.is_empty() {
         return None;
     }
 
-    if let Some(digit) = tone_from_digit.or(tone_from_mark).or(Some('5')) {
-        out.push(digit);
+    // If the token is a single syllable (has explicit digit or only one
+    // syllable after splitting), use the old direct path for robustness.
+    if let Some(digit) = explicit_tone_digit {
+        return Some(format!("{}{}", ascii, digit));
     }
 
-    Some(out)
+    // Pass 2: greedy longest-match split into valid pinyin syllables.
+    let syllables = split_pinyin_syllables(&ascii);
+
+    // Pass 3: assign tones to each syllable.
+    let mut result = String::new();
+    let mut pos = 0;
+    for syl in &syllables {
+        let syl_len = syl.len();
+        let mut tone = None;
+        for i in pos..pos + syl_len {
+            if let Some(Some(t)) = tones.get(i) {
+                tone = Some(*t);
+            }
+        }
+        result.push_str(syl);
+        result.push(tone.unwrap_or('5'));
+        pos += syl_len;
+    }
+
+    if result.is_empty() {
+        None
+    } else {
+        Some(result)
+    }
+}
+
+/// Valid pinyin syllables (without tones) used for greedy splitting.
+/// Listed longest-first so longest match wins.
+fn pinyin_syllable_table() -> &'static [&'static str] {
+    &[
+        // 6-letter
+        "zhuang", "shuang", "chuang", // 5-letter
+        "zhuan", "zheng", "zhang", "zhuai", "zhong", "zhuan", "shuan", "sheng", "shang", "shuai",
+        "shuai", "chuan", "cheng", "chang", "chuai", "chong", "guang", "huang", "kuang", "niang",
+        "qiang", "xiang", "jiong", "qiong", "xiong", "liang", // 4-letter
+        "zhan", "zhao", "zhei", "zhen", "zhai", "zhao", "zhou", "zhua", "shan", "shao", "shei",
+        "shen", "shou", "shua", "shuo", "shai", "shao", "chan", "chao", "chen", "chou", "chua",
+        "chui", "chun", "chuo", "chai", "bang", "beng", "bing", "biao", "cang", "ceng", "cong",
+        "cuan", "dang", "deng", "ding", "dong", "dian", "diao", "duan", "fang", "feng", "fiao",
+        "gang", "geng", "gong", "guan", "guai", "giao", "hang", "heng", "hong", "huan", "huai",
+        "jian", "jiao", "jing", "juan", "jiang", "jiue", "kang", "keng", "kong", "kuan", "kuai",
+        "lang", "leng", "ling", "long", "lian", "liao", "luan", "mang", "meng", "ming", "mian",
+        "miao", "nang", "neng", "ning", "nong", "nian", "niao", "nuan", "pang", "peng", "ping",
+        "pian", "piao", "qian", "qiao", "qing", "quan", "rang", "reng", "rong", "ruan", "sang",
+        "seng", "song", "suan", "tang", "teng", "ting", "tong", "tian", "tiao", "tuan", "wang",
+        "weng", "xian", "xiao", "xing", "xuan", "yang", "ying", "yong", "yuan", "zang", "zeng",
+        "zong", "zuan", // 3-letter
+        "zhi", "zhu", "zhe", "zha", "zhu", "shi", "shu", "she", "sha", "chi", "chu", "che", "cha",
+        "bai", "ban", "bao", "bei", "ben", "bin", "cai", "can", "cao", "cei", "cen", "cou", "cui",
+        "cun", "cuo", "dai", "dan", "dao", "dei", "den", "dia", "die", "diu", "dou", "dui", "dun",
+        "duo", "fan", "fei", "fen", "fou", "gai", "gan", "gao", "gei", "gen", "gou", "gua", "gui",
+        "gun", "guo", "hai", "han", "hao", "hei", "hen", "hou", "hua", "hui", "hun", "huo", "jia",
+        "jie", "jin", "jiu", "jue", "jun", "kai", "kan", "kao", "kei", "ken", "kou", "kua", "kui",
+        "kun", "kuo", "lai", "lan", "lao", "lei", "lia", "lie", "lin", "liu", "lou", "lun", "luo",
+        "lve", "mai", "man", "mao", "mei", "men", "mie", "min", "miu", "mou", "nai", "nan", "nao",
+        "nei", "nen", "nie", "nin", "niu", "nou", "nun", "nuo", "nve", "pai", "pan", "pao", "pei",
+        "pen", "pie", "pin", "pou", "qia", "qie", "qin", "qiu", "que", "qun", "ran", "rao", "ren",
+        "rou", "rua", "rui", "run", "ruo", "sai", "san", "sao", "sei", "sen", "sou", "sui", "sun",
+        "suo", "tai", "tan", "tao", "tei", "tie", "tou", "tui", "tun", "tuo", "wai", "wan", "wei",
+        "wen", "xia", "xie", "xin", "xiu", "xue", "xun", "yai", "yan", "yao", "yin", "you", "yue",
+        "yun", "zai", "zan", "zao", "zei", "zen", "zou", "zui", "zun", "zuo", "ang", "eng",
+        // 2-letter
+        "ba", "bo", "bi", "bu", "ca", "ce", "ci", "cu", "da", "de", "di", "du", "fa", "fo", "fu",
+        "ga", "ge", "gu", "ha", "he", "hu", "ji", "ju", "ka", "ke", "ku", "la", "le", "li", "lo",
+        "lu", "lv", "ma", "me", "mi", "mo", "mu", "na", "ne", "ni", "nu", "nv", "pa", "pi", "po",
+        "pu", "qi", "qu", "re", "ri", "ru", "sa", "se", "si", "su", "ta", "te", "ti", "tu", "wa",
+        "wo", "wu", "xi", "xu", "ya", "ye", "yi", "yu", "za", "ze", "zi", "zu", "ai", "an", "ao",
+        "ei", "en", "er", "ou", // 1-letter
+        "a", "e", "o",
+    ]
+}
+
+/// Greedy longest-match split of plain ASCII pinyin into syllables.
+fn split_pinyin_syllables(ascii: &str) -> Vec<&str> {
+    let table = pinyin_syllable_table();
+    let mut syllables = Vec::new();
+    let mut pos = 0;
+    let bytes = ascii.as_bytes();
+
+    while pos < bytes.len() {
+        let remaining = &ascii[pos..];
+        let mut matched = false;
+        for &syl in table {
+            if remaining.starts_with(syl) {
+                syllables.push(&ascii[pos..pos + syl.len()]);
+                pos += syl.len();
+                matched = true;
+                break;
+            }
+        }
+        if !matched {
+            pos += 1;
+        }
+    }
+
+    syllables
 }
 
 fn escape_rust_string(s: &str) -> String {
@@ -402,6 +506,12 @@ fn apply_compat_overrides(
             pinyin = "peng2you3".to_string();
             if meaning.is_empty() || meaning == "N" {
                 meaning = "friend".to_string();
+            }
+        }
+        "朋友们" => {
+            pinyin = "peng2you3men5".to_string();
+            if meaning.is_empty() || meaning == "N" {
+                meaning = "friends".to_string();
             }
         }
         "对不起" => {
