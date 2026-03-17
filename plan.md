@@ -1,8 +1,8 @@
 # Radical Roguelike Roadmap
 
 ## Current Status
-The single-player game is up to date through Phase 31 companion depth.
-Implemented systems now include dungeon crawling, pinyin combat, radical forging, equipment and items, codex and achievements, daily/endless modes, tutorial/settings polish, environmental hazards, boss variety, talents, mystery item identities, inventory/help overlays, script seals, a deity/piety system, polymorph forms, dipping interactions, enemy component shields, crate pushing, bridge building, wall digging, cracked-wall secret rooms with tuned physics feedback, longer-lived message popups, a 3-tile look/inspect mode, visible puzzle niches with brittle-wall vaults and deep-water bridge caches, tighter resource economy with floor-profile-driven scarcity, six distinct enemy AI behaviors, and a companion XP/leveling system with scaled passives and exploration hints.
+The single-player game is up to date through Phase 32 deep roguelike overhaul.
+Implemented systems now include dungeon crawling, pinyin combat, radical forging, equipment and items, codex and achievements, daily/endless modes, tutorial/settings polish, environmental hazards, boss variety, mystery item identities, inventory/help overlays, script seals, a deity/piety system, polymorph forms, dipping interactions, enemy component shields, crate pushing, bridge building, wall digging, cracked-wall secret rooms, puzzle niches, tighter resource economy with floor-profile-driven scarcity, six distinct enemy AI behaviors, companion XP/leveling with scaled passives, 20 player classes with Dark Souls-style lore, cursed/blessed item states, a spirit/hunger clock, monster radical actions derived from hanzi semantic components, shopkeeper theft with escalating consequences, mimics and hidden trap tiles, combo chains with damage multipliers, floor-scaled sentence construction boss phases, and a paginated run journal with post-mortem death screen.
 
 Multiplayer co-op remains deferred future work and is not part of the current single-player roadmap.
 
@@ -100,28 +100,74 @@ Multiplayer co-op remains deferred future work and is not part of the current si
 - Shop discount now uses the level-aware Merchant perk value instead of a hardcoded 20%.
 - Shop hint bar shows "R=reroll" when Merchant is L3.
 
+### Phase 32: Deep Roguelike Overhaul
+
+#### Talent Tree Removal
+- Removed talent tree entirely for a true roguelike with no meta-progression between runs.
+
+#### Class Expansion
+- Expanded from 3 to 20 player classes, each with unique lore, icon, color, HP range, inventory size, and starting item/equipment loadouts.
+- Paginated cursor-based class selection screen.
+
+#### Monster Radical Action System
+- 18 `RadicalAction` variants mapped from hanzi semantic components (火→FireBreath, 水→WaterShield, 心→SelfHeal, etc.).
+- Each monster gains abilities derived from the radicals in its hanzi representation.
+- Actions modify combat: armor, dodge, multiply, heal, disarm, root, charm, and more.
+- Look mode displays each enemy's radical abilities.
+
+#### Cursed/Blessed Item States
+- Items and equipment can be Cursed (💀), Blessed (✨), or Normal.
+- Cursed equipment cannot be replaced; cursed consumables have weakened effects.
+- Blessed items have enhanced effects.
+- Altar purification removes curses from all equipped items.
+
+#### Spirit/Hunger Clock
+- Spirit resource (100 max) decreases by 1 per move; starvation damage at 0.
+- RiceBall item restores spirit; InkWell gives +25 spirit.
+- Spirit bar displayed on HUD.
+
+#### Shopkeeper Theft
+- 'G' key to attempt theft with probability system (40% base, class bonuses, catch penalties).
+- Caught: damage, shop ban, 15% price surcharge per catch.
+- Ban resets on new floor.
+
+#### Mimics and Trap Tiles
+- Hidden trap tiles look like normal floor; 3 types: poison, teleport, alarm.
+- Chests have 10% mimic chance spawning tougher enemies.
+
+#### Combo Chains
+- Sequential correct pinyin answers build a streak through 6 tiers (Good→Radical).
+- Damage multiplier scales from 1.0× to 2.0×.
+- HUD shows streak badge with tier name and color.
+
+#### Sentence Construction Boss Phase Expansion
+- Expanded from 10 to 30 sentences across 3 difficulty tiers (easy, medium, hard).
+- Floor-scaled sentence selection: easy for early floors, all tiers for late floors.
+- New GatekeeperSeal mode: Gatekeeper boss triggers a seal phase at half HP; failure damages the player.
+- BonusGold rewards now scale with floor number.
+
+#### Run Journal and Post-Mortem
+- RunEvent system tracks floor entries, kills, boss kills, spell forges, items found, and death cause.
+- Paginated death screen: summary page + floor-by-floor event log.
+
 ## Proposed Next Improvements
 
-Goal: deepen single-player runs with more systemic, NetHack-like interactions that build on the current quest, companion, deity, hazard, and enemy-complexity systems.
+Goal: continue deepening single-player runs with systemic, NetHack-like interactions that build on the Phase 32 overhaul.
 
-### Candidate Phase 32 Tracks
-- Environmental puzzle room expansion
-  - Build on the shipped first pass with more patterns such as spike bridges, oil-fire caches, or seal-driven trap vaults.
-  - With resource pressure and enemy AI now tightened, this is a strong force multiplier for run variety.
+### Candidate Phase 33 Tracks
 - Alignment arcs and deity synergies
   - Track broader playstyle patterns across deity choices and reward them with small run-defining perks.
   - This adds replayability using the existing piety and altar systems instead of introducing an all-new subsystem.
 - Quest chains with dungeon impact
   - Let quests spawn follow-up objectives, alter floor generation, and reward the player with more than just gold.
   - This would make the current quest framework feel more like an emergent campaign.
+- Advanced puzzle room patterns
+  - Spike bridges, oil-fire ambush caches, and seal-triggered vault traps.
+  - With the 20-class system and radical actions, puzzle rooms can now interact with class abilities.
 
 ### Recommended Next Slice
-- Best low-risk / high-leverage start: puzzle room expansion or alignment arcs.
-- Best follow-up once those feel solid: quest chains with dungeon impact.
-
-### Phase 29 Follow-ups
-- Expand the first pass with a third or fourth puzzle pattern only after frequency and reward tuning still feel good in normal runs.
-- Good future candidates are spike-bridge rooms, oil-fire ambush caches, and seal-triggered vault traps.
+- Best low-risk / high-leverage start: alignment arcs or quest chains.
+- Best follow-up: advanced puzzle rooms that leverage class-specific interactions.
 
 ## Deferred / Future Work
 

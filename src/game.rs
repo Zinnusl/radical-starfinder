@@ -9,6 +9,7 @@ use web_sys::{window, HtmlCanvasElement, KeyboardEvent};
 use crate::achievement::AchievementTracker;
 use crate::audio::Audio;
 use crate::codex::Codex;
+use crate::combat;
 use crate::dungeon::{compute_fov, AltarKind, DungeonLevel, RoomModifier, SealKind, Tile};
 use crate::enemy::{BossKind, Enemy, RadicalAction};
 use crate::particle::ParticleSystem;
@@ -831,6 +832,8 @@ pub enum CombatState {
         meaning: &'static str,
         correct_tone: u8,
     },
+    /// Tactical grid-based combat (new system).
+    TacticalBattle(Box<combat::TacticalBattle>),
 }
 
 /// Sentence data for sentence construction challenges.
@@ -1191,6 +1194,10 @@ pub struct GameState {
     pub theft_catches: u32,
     /// Whether this floor's shop is banned (caught stealing)
     pub shop_banned: bool,
+    /// Saved TacticalBattle state for boss sentence challenges.
+    /// When a boss triggers a sentence challenge mid-tactical-battle,
+    /// the battle state is stashed here and restored after the challenge.
+    pub saved_battle: Option<Box<combat::TacticalBattle>>,
 }
 
 impl GameState {
@@ -1786,6 +1793,14 @@ impl GameState {
     fn maybe_trigger_boss_phase(&mut self, enemy_idx: usize) -> bool {
         if enemy_idx >= self.enemies.len() || !self.enemies[enemy_idx].is_alive() {
             return false;
+        }
+        // Save tactical battle state before sentence challenge replaces combat state
+        if matches!(self.combat, CombatState::TacticalBattle(_)) {
+            if let CombatState::TacticalBattle(battle) =
+                std::mem::replace(&mut self.combat, CombatState::Explore)
+            {
+                self.saved_battle = Some(battle);
+            }
         }
         if self.enemies[enemy_idx].boss_kind == Some(BossKind::Gatekeeper)
             && !self.enemies[enemy_idx].phase_triggered
@@ -2444,7 +2459,10 @@ impl GameState {
             return;
         }
         // If fighting, ignore movement
-        if matches!(self.combat, CombatState::Fighting { .. }) {
+        if matches!(
+            self.combat,
+            CombatState::Fighting { .. } | CombatState::TacticalBattle(_)
+        ) {
             return;
         }
 
@@ -2681,12 +2699,15 @@ impl GameState {
             return;
         }
 
-        // Check for enemy bump → start combat
+        // Check for enemy bump → start tactical combat
         if let Some(idx) = self.enemy_at(nx, ny) {
-            self.combat = CombatState::Fighting {
-                enemy_idx: idx,
-                timer_ms: 0.0,
-            };
+            let battle = combat::transition::enter_combat(
+                &self.player,
+                &self.enemies,
+                &[idx],
+                self.floor_num,
+            );
+            self.combat = CombatState::TacticalBattle(Box::new(battle));
             self.typing.clear();
             self.guard_used_this_fight = false;
             self.guard_blocks_used = 0;
@@ -3088,13 +3109,18 @@ impl GameState {
 
             // If enemy walks into player → start combat (same as player bumping enemy)
             if nx == px && ny == py {
-                if !matches!(self.combat, CombatState::Fighting { .. }) {
-                    // Shake on enemy engagement
+                if !matches!(
+                    self.combat,
+                    CombatState::Fighting { .. } | CombatState::TacticalBattle(_)
+                ) {
                     self.trigger_shake(4);
-                    self.combat = CombatState::Fighting {
-                        enemy_idx: i,
-                        timer_ms: 0.0,
-                    };
+                    let battle = combat::transition::enter_combat(
+                        &self.player,
+                        &self.enemies,
+                        &[i],
+                        self.floor_num,
+                    );
+                    self.combat = CombatState::TacticalBattle(Box::new(battle));
                     self.typing.clear();
                     self.message = format!(
                         "{} attacks! {}",
@@ -5854,12 +5880,14 @@ impl GameState {
                 mimic.alert = true;
                 mimic.gold_value *= 2; // better drops
                 self.enemies.push(mimic);
-                // Immediately start combat
                 let idx = self.enemies.len() - 1;
-                self.combat = CombatState::Fighting {
-                    enemy_idx: idx,
-                    timer_ms: 0.0,
-                };
+                let battle = combat::transition::enter_combat(
+                    &self.player,
+                    &self.enemies,
+                    &[idx],
+                    self.floor_num,
+                );
+                self.combat = CombatState::TacticalBattle(Box::new(battle));
                 self.typing.clear();
                 self.message = format!(
                     "◆ It's a Mimic! Type pinyin for {} ({})",
@@ -6326,6 +6354,215 @@ impl GameState {
         }
         self.combat = CombatState::Explore;
         self.message_timer = 90;
+    }
+
+    fn handle_tactical_victory(&mut self, killed: &[usize], combo: u32) {
+        let mut total_gold_gained: i32 = 0;
+        let mut last_radical_drop: Option<&str> = None;
+        let mut equip_msg: Option<String> = None;
+        let mut sentence_challenge: Option<(SentenceChallengeMode, String)> = None;
+
+        for &ei in killed {
+            if ei >= self.enemies.len() {
+                continue;
+            }
+            let e_hanzi = self.enemies[ei].hanzi;
+            let e_is_boss = self.enemies[ei].is_boss;
+            let e_is_elite = self.enemies[ei].is_elite;
+            let e_gold_base = self.enemies[ei].gold_value
+                + self.player.gold_bonus()
+                + self.player.enchant_gold_bonus();
+
+            self.total_kills += 1;
+            self.run_kills += 1;
+            self.run_gold_earned += e_gold_base;
+            if e_is_boss {
+                self.run_bosses_killed += 1;
+                self.run_journal
+                    .log(RunEvent::BossKilled(e_hanzi.to_string(), self.floor_num));
+            } else {
+                self.run_journal
+                    .log(RunEvent::EnemyKilled(e_hanzi.to_string(), self.floor_num));
+            }
+
+            if let Some(ref audio) = self.audio {
+                audio.play_kill();
+            }
+
+            let (sx, sy) = self.tile_to_screen(self.enemies[ei].x, self.enemies[ei].y);
+            self.particles.spawn_kill(sx, sy, &mut self.rng_state);
+            self.flash = Some((255, 255, 255, 0.3));
+
+            let mut gold_gain = e_gold_base;
+            if self.player.get_piety(Deity::Iron) >= 10 && self.player.get_piety(Deity::Gold) >= 10
+            {
+                gold_gain *= 2;
+            }
+            if self.player.get_piety(Deity::Gold) >= 10 {
+                gold_gain += 3;
+            }
+            gold_gain = (gold_gain as f64 * self.floor_profile.gold_multiplier()) as i32;
+            gold_gain = gold_gain.max(1);
+            self.player.gold += gold_gain;
+            total_gold_gained += gold_gain;
+
+            let listen_bonus = if !e_is_elite {
+                match self.listening_mode {
+                    ListenMode::ToneOnly => 3,
+                    ListenMode::FullAudio => 5,
+                    ListenMode::Off => 0,
+                }
+            } else {
+                0
+            };
+            self.player.gold += listen_bonus;
+            total_gold_gained += listen_bonus;
+
+            let available = radical::radicals_for_floor(self.floor_num);
+            let rad_roll = self.rng_next() % 100;
+            let rad_chance = self.floor_profile.radical_drop_chance();
+            if rad_roll < rad_chance {
+                let drop_idx = self.rng_next() as usize % available.len();
+                let ch = available[drop_idx].ch;
+                self.player.add_radical(ch);
+                self.run_journal
+                    .log(RunEvent::RadicalCollected(ch.to_string(), self.floor_num));
+                if self.floor_profile.radical_drop_bonus() {
+                    let bonus_idx = self.rng_next() as usize % available.len();
+                    self.player.add_radical(available[bonus_idx].ch);
+                }
+                last_radical_drop = Some(ch);
+            }
+            self.advance_radical_quests();
+
+            if e_is_elite {
+                let drop2 = self.rng_next() as usize % available.len();
+                self.player.add_radical(available[drop2].ch);
+            }
+
+            let extra_chance = self.player.extra_radical_chance();
+            if extra_chance > 0 && (self.rng_next() % 100) < extra_chance as u64 {
+                let drop2 = self.rng_next() as usize % available.len();
+                self.player.add_radical(available[drop2].ch);
+            }
+
+            let mut heal = self.player.heal_on_kill();
+            if self.player.get_piety(Deity::Jade) >= 10 {
+                heal += 1;
+            }
+            if heal > 0 {
+                self.player.hp = (self.player.hp + heal).min(self.player.max_hp);
+            }
+
+            let equip_chance: u64 = if e_is_boss { 60 } else { 5 };
+            if (self.rng_next() % 100) < equip_chance {
+                let eq_idx = self.rng_next() as usize % EQUIPMENT_POOL.len();
+                let eq = &EQUIPMENT_POOL[eq_idx];
+                let current_state = self.player.equipment_state(eq.slot);
+                if current_state == ItemState::Cursed {
+                    equip_msg = Some(format!("{} blocked by curse!", eq.name));
+                } else {
+                    let state = self.roll_item_state();
+                    self.player.equip(eq, state);
+                    let prefix = match state {
+                        ItemState::Cursed => "💀 ",
+                        ItemState::Blessed => "✨ ",
+                        ItemState::Normal => "",
+                    };
+                    equip_msg = Some(format!("{}{}", prefix, eq.name));
+                }
+            }
+
+            if e_is_boss {
+                let rares = radical::rare_radicals();
+                if !rares.is_empty() {
+                    let rare_idx = self.rng_next() as usize % rares.len();
+                    let rare = rares[rare_idx].ch;
+                    self.player.add_radical(rare);
+                    last_radical_drop = Some(rare);
+                }
+            }
+
+            let kill_xp = if e_is_boss {
+                5
+            } else if e_is_elite {
+                3
+            } else {
+                2
+            };
+            self.add_companion_xp(kill_xp);
+
+            self.achievements.record_correct();
+            self.achievements.check_kills(self.total_kills);
+            self.achievements.check_gold(self.player.gold);
+            self.achievements.check_radicals(self.player.radicals.len());
+            if e_is_elite {
+                self.achievements.unlock("first_elite");
+            }
+            if e_is_boss {
+                self.achievements.unlock("first_boss");
+            }
+
+            if e_is_boss
+                && self.floor_num >= 5
+                && self.enemies[ei].boss_kind != Some(BossKind::Scholar)
+                && self.enemies[ei].boss_kind != Some(BossKind::InkSage)
+                && self.enemies[ei].boss_kind != Some(BossKind::Gatekeeper)
+            {
+                let base_reward = 15 + self.floor_num * 2;
+                sentence_challenge = Some((
+                    SentenceChallengeMode::BonusGold { reward: base_reward },
+                    "Boss Phase 2! Arrange the words in correct order. ←→ to select, Enter to pick.".to_string(),
+                ));
+            }
+
+            self.advance_kill_quests();
+        }
+
+        self.answer_streak = combo;
+
+        let mut msg = format!("Victory! +{}g", total_gold_gained);
+        if let Some(rad) = last_radical_drop {
+            msg = format!("{} [{}]", msg, rad);
+        }
+        if let Some(eq) = equip_msg {
+            msg = format!("{} + {}", msg, eq);
+        }
+        let tier = combo_tier(self.answer_streak);
+        if tier != ComboTier::None {
+            msg = format!("{} 🔥 {}! ×{}", msg, tier.name(), self.answer_streak);
+        }
+        self.message = msg;
+        self.message_timer = 90;
+
+        if let Some(tutorial) = self.tutorial.as_mut() {
+            if !tutorial.combat_done {
+                tutorial.combat_done = true;
+                self.message = "Great! Now walk to the ⚒ and forge 好 from 女 + 子.".to_string();
+                self.message_timer = 180;
+            }
+        }
+
+        if let Some((mode, intro)) = sentence_challenge {
+            self.combat = CombatState::Explore;
+            self.begin_sentence_challenge(mode, intro);
+        } else {
+            self.combat = CombatState::Explore;
+        }
+    }
+
+    fn handle_tactical_defeat(&mut self, killer_name: String) {
+        self.player.hp = 0;
+        self.run_journal
+            .log(RunEvent::DiedTo(killer_name, self.floor_num));
+        self.post_mortem_page = 0;
+        self.combat = CombatState::GameOver;
+        self.message = self.run_summary();
+        self.message_timer = 255;
+        if let Some(ref audio) = self.audio {
+            audio.play_death();
+        }
+        self.save_high_score();
     }
 
     fn run_summary(&self) -> String {
@@ -7460,6 +7697,7 @@ pub fn init_game() -> Result<(), JsValue> {
         class_cursor: 0,
         theft_catches: 0,
         shop_banned: false,
+        saved_battle: None,
     }));
 
     // Initial setup
@@ -8899,10 +9137,24 @@ pub fn init_game() -> Result<(), JsValue> {
                                         correct_text, healed
                                     );
                                 }
-                                s.combat = CombatState::Fighting {
-                                    enemy_idx: boss_idx,
-                                    timer_ms: 0.0,
-                                };
+                                if let Some(mut battle) = s.saved_battle.take() {
+                                    for unit in &mut battle.units {
+                                        if let combat::UnitKind::Enemy(eidx) = unit.kind {
+                                            if eidx == boss_idx {
+                                                unit.hp = s.enemies[boss_idx].hp;
+                                                unit.max_hp = s.enemies[boss_idx].max_hp;
+                                                unit.stunned = s.enemies[boss_idx].stunned;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    s.combat = CombatState::TacticalBattle(battle);
+                                } else {
+                                    s.combat = CombatState::Fighting {
+                                        enemy_idx: boss_idx,
+                                        timer_ms: 0.0,
+                                    };
+                                }
                                 s.typing.clear();
                             } else {
                                 s.combat = CombatState::Explore;
@@ -8943,10 +9195,24 @@ pub fn init_game() -> Result<(), JsValue> {
                                         return;
                                     }
                                 }
-                                s.combat = CombatState::Fighting {
-                                    enemy_idx: boss_idx,
-                                    timer_ms: 0.0,
-                                };
+                                if let Some(mut battle) = s.saved_battle.take() {
+                                    for unit in &mut battle.units {
+                                        if let combat::UnitKind::Enemy(eidx) = unit.kind {
+                                            if eidx == boss_idx {
+                                                unit.hp = s.enemies[boss_idx].hp;
+                                                unit.max_hp = s.enemies[boss_idx].max_hp;
+                                                unit.stunned = s.enemies[boss_idx].stunned;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    s.combat = CombatState::TacticalBattle(battle);
+                                } else {
+                                    s.combat = CombatState::Fighting {
+                                        enemy_idx: boss_idx,
+                                        timer_ms: 0.0,
+                                    };
+                                }
                                 s.typing.clear();
                             } else {
                                 s.combat = CombatState::Explore;
@@ -8972,10 +9238,24 @@ pub fn init_game() -> Result<(), JsValue> {
                                 s.enemies[boss_idx].hp =
                                     (before + failure_heal).min(s.enemies[boss_idx].max_hp);
                                 let healed = s.enemies[boss_idx].hp - before;
-                                s.combat = CombatState::Fighting {
-                                    enemy_idx: boss_idx,
-                                    timer_ms: 0.0,
-                                };
+                                if let Some(mut battle) = s.saved_battle.take() {
+                                    for unit in &mut battle.units {
+                                        if let combat::UnitKind::Enemy(eidx) = unit.kind {
+                                            if eidx == boss_idx {
+                                                unit.hp = s.enemies[boss_idx].hp;
+                                                unit.max_hp = s.enemies[boss_idx].max_hp;
+                                                unit.stunned = s.enemies[boss_idx].stunned;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    s.combat = CombatState::TacticalBattle(battle);
+                                } else {
+                                    s.combat = CombatState::Fighting {
+                                        enemy_idx: boss_idx,
+                                        timer_ms: 0.0,
+                                    };
+                                }
                                 s.typing.clear();
                                 s.message = format!(
                                     "You abandon the syntax duel. The Scholar regains {} HP!",
@@ -8994,10 +9274,24 @@ pub fn init_game() -> Result<(), JsValue> {
                         } => {
                             if boss_idx < s.enemies.len() && s.enemies[boss_idx].is_alive() {
                                 s.player.hp = (s.player.hp - failure_damage_to_player).max(0);
-                                s.combat = CombatState::Fighting {
-                                    enemy_idx: boss_idx,
-                                    timer_ms: 0.0,
-                                };
+                                if let Some(mut battle) = s.saved_battle.take() {
+                                    for unit in &mut battle.units {
+                                        if let combat::UnitKind::Enemy(eidx) = unit.kind {
+                                            if eidx == boss_idx {
+                                                unit.hp = s.enemies[boss_idx].hp;
+                                                unit.max_hp = s.enemies[boss_idx].max_hp;
+                                                unit.stunned = s.enemies[boss_idx].stunned;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    s.combat = CombatState::TacticalBattle(battle);
+                                } else {
+                                    s.combat = CombatState::Fighting {
+                                        enemy_idx: boss_idx,
+                                        timer_ms: 0.0,
+                                    };
+                                }
                                 s.typing.clear();
                                 s.message = format!(
                                     "You abandon the seal! The backfire deals {} damage!",
@@ -9087,6 +9381,144 @@ pub fn init_game() -> Result<(), JsValue> {
                     }
                     s.render();
                 }
+                return;
+            }
+
+            if matches!(s.combat, CombatState::TacticalBattle(_)) {
+                event.prevent_default();
+                let gs = &mut *s;
+                let mut old_combat = std::mem::replace(&mut gs.combat, CombatState::Explore);
+                if let CombatState::TacticalBattle(ref mut battle) = old_combat {
+                    let result = combat::input::handle_input(battle, key.as_str());
+
+                    // SRS tracking: consume last_answer from tactical battle
+                    if let Some((hanzi, correct)) = battle.last_answer.take() {
+                        gs.srs.record(hanzi, correct);
+                        if correct {
+                            gs.run_correct_answers += 1;
+                            gs.answer_streak += 1;
+                        } else {
+                            gs.run_wrong_answers += 1;
+                            gs.answer_streak = 0;
+                        }
+                    }
+
+                    if let Some(spell_idx) = battle.spent_spell_index.take() {
+                        if spell_idx < gs.player.spells.len() {
+                            gs.player.spells.remove(spell_idx);
+                        }
+                        if spell_idx < battle.available_spells.len() {
+                            battle.available_spells.remove(spell_idx);
+                        }
+                    }
+
+                    match result {
+                        combat::input::BattleEvent::Flee => {
+                            // Nearest alive enemy gets a free hit
+                            let free_hit = battle
+                                .units
+                                .iter()
+                                .filter(|u| matches!(u.kind, combat::UnitKind::Enemy(_)) && u.alive)
+                                .map(|u| u.damage)
+                                .next()
+                                .unwrap_or(0);
+
+                            combat::transition::exit_combat(
+                                battle,
+                                &mut gs.player,
+                                &mut gs.enemies,
+                            );
+
+                            if free_hit > 0 {
+                                if gs.player.shield {
+                                    gs.player.shield = false;
+                                    gs.message = "Fled! Shield absorbed the blow!".to_string();
+                                } else {
+                                    gs.player.hp -= free_hit;
+                                    gs.message =
+                                        format!("Fled! Hit for {} on the way out!", free_hit);
+                                }
+                            } else {
+                                gs.message = "Fled from battle!".to_string();
+                            }
+
+                            if gs.player.hp <= 0 {
+                                gs.player.hp = 0;
+                                gs.run_journal
+                                    .log(RunEvent::DiedTo("fleeing".to_string(), gs.floor_num));
+                                gs.post_mortem_page = 0;
+                                gs.combat = CombatState::GameOver;
+                                gs.message = gs.run_summary();
+                                gs.message_timer = 255;
+                                if let Some(ref audio) = gs.audio {
+                                    audio.play_death();
+                                }
+                                gs.save_high_score();
+                            } else {
+                                gs.message_timer = 60;
+                                gs.combat = CombatState::Explore;
+                            }
+
+                            gs.render();
+                            return;
+                        }
+                        combat::input::BattleEvent::Victory => {
+                            let combo = battle.combo_streak;
+                            let killed = combat::transition::exit_combat(
+                                battle,
+                                &mut gs.player,
+                                &mut gs.enemies,
+                            );
+                            gs.handle_tactical_victory(&killed, combo);
+                            gs.render();
+                            return;
+                        }
+                        combat::input::BattleEvent::Defeat => {
+                            let killer_name = battle
+                                .units
+                                .iter()
+                                .find(|u| u.is_enemy() && u.alive)
+                                .map(|u| u.hanzi.to_string())
+                                .unwrap_or_else(|| "battle".to_string());
+                            combat::transition::exit_combat(
+                                battle,
+                                &mut gs.player,
+                                &mut gs.enemies,
+                            );
+                            gs.handle_tactical_defeat(killer_name);
+                            gs.render();
+                            return;
+                        }
+                        combat::input::BattleEvent::None => {}
+                    }
+                }
+                gs.combat = old_combat;
+                // Check for boss phase triggers after processing tactical battle input
+                if let CombatState::TacticalBattle(ref battle) = gs.combat {
+                    let mut trigger_idx = None;
+                    for unit in &battle.units {
+                        if let combat::UnitKind::Enemy(eidx) = unit.kind {
+                            if unit.alive
+                                && eidx < gs.enemies.len()
+                                && gs.enemies[eidx].boss_kind.is_some()
+                                && !gs.enemies[eidx].phase_triggered
+                                && unit.hp <= unit.max_hp / 2
+                            {
+                                // Sync HP from battle unit to enemy array before triggering
+                                gs.enemies[eidx].hp = unit.hp;
+                                gs.enemies[eidx].max_hp = unit.max_hp;
+                                trigger_idx = Some(eidx);
+                                break;
+                            }
+                        }
+                    }
+                    if let Some(eidx) = trigger_idx {
+                        gs.maybe_trigger_boss_phase(eidx);
+                        gs.render();
+                        return;
+                    }
+                }
+                gs.render();
                 return;
             }
 
@@ -9844,6 +10276,13 @@ pub fn init_game() -> Result<(), JsValue> {
                             crate::audio::MusicMood::Combat
                         }
                     }
+                    CombatState::TacticalBattle(ref battle) => {
+                        if battle.is_boss_battle {
+                            crate::audio::MusicMood::Boss
+                        } else {
+                            crate::audio::MusicMood::Combat
+                        }
+                    }
                     CombatState::GameOver => crate::audio::MusicMood::Silent,
                     _ => crate::audio::MusicMood::Explore,
                 };
@@ -9883,7 +10322,46 @@ pub fn init_game() -> Result<(), JsValue> {
                         s.flash = None;
                     }
                 }
-                // Visual polish needs continuous animation for ambience and idle motion.
+
+                // Tick tactical battle animations (Resolve/EnemyTurn/End phase timers).
+                {
+                    let gs = &mut *s;
+                    let mut old_combat = std::mem::replace(&mut gs.combat, CombatState::Explore);
+                    if let CombatState::TacticalBattle(ref mut battle) = old_combat {
+                        let event = combat::tick::tick_battle(battle);
+                        match event {
+                            combat::input::BattleEvent::Victory => {
+                                let combo = battle.combo_streak;
+                                let killed = combat::transition::exit_combat(
+                                    battle,
+                                    &mut gs.player,
+                                    &mut gs.enemies,
+                                );
+                                gs.handle_tactical_victory(&killed, combo);
+                            }
+                            combat::input::BattleEvent::Defeat => {
+                                let killer_name = battle
+                                    .units
+                                    .iter()
+                                    .find(|u| u.is_enemy() && u.alive)
+                                    .map(|u| u.hanzi.to_string())
+                                    .unwrap_or_else(|| "an enemy".to_string());
+                                combat::transition::exit_combat(
+                                    battle,
+                                    &mut gs.player,
+                                    &mut gs.enemies,
+                                );
+                                gs.handle_tactical_defeat(killer_name);
+                            }
+                            _ => {
+                                gs.combat = old_combat;
+                            }
+                        }
+                    } else {
+                        gs.combat = old_combat;
+                    }
+                }
+
                 s.render();
             }
             // Schedule next frame

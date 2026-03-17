@@ -5,6 +5,7 @@ use wasm_bindgen::prelude::*;
 mod achievement;
 mod audio;
 mod codex;
+mod combat;
 mod dungeon;
 mod enemy;
 mod game;
