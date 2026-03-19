@@ -2228,7 +2228,7 @@ impl GameState {
                 self.flash = Some((255, 60, 60, 0.2));
                 self.message = format!("🪤 Spikes jab you for {} damage!", dmg);
                 self.message_timer = 70;
-                if self.player.hp <= 0 {
+                if self.player.hp <= 0 && !self.try_phoenix_revive() {
                     self.player.hp = 0;
                     self.run_journal
                         .log(RunEvent::DiedTo("Spike trap".to_string(), self.floor_num));
@@ -2652,7 +2652,7 @@ impl GameState {
                 starvation_dmg
             );
             self.message_timer = 40;
-            if self.player.hp <= 0 {
+            if self.player.hp <= 0 && !self.try_phoenix_revive() {
                 self.player.hp = 0;
                 if let Some(ref audio) = self.audio {
                     audio.play_death();
@@ -2671,7 +2671,7 @@ impl GameState {
             self.player.hp -= pdmg;
             self.message = format!("☠ Poison deals {} damage!", pdmg);
             self.message_timer = 40;
-            if self.player.hp <= 0 {
+            if self.player.hp <= 0 && !self.try_phoenix_revive() {
                 self.player.hp = 0;
                 if let Some(ref audio) = self.audio {
                     audio.play_death();
@@ -4012,7 +4012,7 @@ impl GameState {
                     }
                 }
 
-                if self.player.hp <= 0 {
+                if self.player.hp <= 0 && !self.try_phoenix_revive() {
                     self.player.hp = 0;
                     self.run_journal
                         .log(RunEvent::DiedTo(e_hanzi.to_string(), self.floor_num));
@@ -5218,7 +5218,7 @@ impl GameState {
                 self.trigger_shake(10);
                 self.flash = Some((255, 50, 50, 0.3));
 
-                if self.player.hp <= 0 {
+                if self.player.hp <= 0 && !self.try_phoenix_revive() {
                     self.player.hp = 0;
                     self.run_journal.log(RunEvent::DiedTo(
                         "Angry shopkeeper".to_string(),
@@ -6046,7 +6046,7 @@ impl GameState {
                 // Damage trap
                 let dmg = 2 + self.floor_num / 2;
                 self.player.hp -= dmg;
-                if self.player.hp <= 0 {
+                if self.player.hp <= 0 && !self.try_phoenix_revive() {
                     self.player.hp = 0;
                     if let Some(ref audio) = self.audio {
                         audio.play_death();
@@ -6108,16 +6108,26 @@ impl GameState {
     /// Generate a random item appropriate for the current floor.
     fn random_item(&mut self) -> crate::player::Item {
         use crate::player::Item;
-        match self.rng_next() % 10 {
+        match self.rng_next() % 20 {
             0 => Item::HealthPotion(4 + self.floor_num),
             1 => Item::PoisonFlask(2, 3),
             2 => Item::RevealScroll,
             3 => Item::TeleportScroll,
             4 => Item::HastePotion(5),
             5 => Item::StunBomb,
-            7 => Item::MeditationIncense(5),
-            8 => Item::AncestralWine(3),
-            _ => Item::RiceBall(40),
+            6 | 7 => Item::RiceBall(40),
+            8 => Item::MeditationIncense(5),
+            9 => Item::AncestralWine(3),
+            10 => Item::SmokeScreen(4),
+            11 => Item::FireCracker(3 + self.floor_num / 2),
+            12 => Item::IronSkinElixir(5),
+            13 => Item::ClarityTea,
+            14 => Item::GoldIngot(8 + self.floor_num * 2),
+            15 => Item::ThunderTalisman(5 + self.floor_num),
+            16 => Item::JadeSalve(2),
+            17 => Item::SerpentFang,
+            18 => Item::WardingCharm(5),
+            _ => Item::InkBomb,
         }
     }
 
@@ -6417,6 +6427,323 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
+            crate::player::Item::SmokeScreen(turns) => {
+                let turns = match item_state {
+                    ItemState::Cursed => (turns / 2).max(1),
+                    ItemState::Blessed => turns * 2,
+                    ItemState::Normal => turns,
+                };
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                self.player.statuses.push(status::StatusInstance::new(
+                    status::StatusKind::Haste,
+                    turns,
+                ));
+                self.message = format!("{}🌫 Smoke screen! Haste for {} turns!", prefix, turns);
+                if item_state == ItemState::Cursed {
+                    self.player
+                        .statuses
+                        .push(status::StatusInstance::new(status::StatusKind::Confused, 2));
+                    self.message.push_str(" The smoke disorients you!");
+                }
+                self.message_timer = 60;
+            }
+            crate::player::Item::FireCracker(damage) => {
+                let damage = match item_state {
+                    ItemState::Blessed => damage * 2,
+                    _ => damage,
+                };
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                let mut count = 0;
+                for e in &mut self.enemies {
+                    if e.is_alive() {
+                        let i = self.level.idx(e.x, e.y);
+                        if self.level.visible[i] {
+                            e.hp -= damage;
+                            if item_state == ItemState::Blessed {
+                                e.statuses.push(status::StatusInstance::new(
+                                    status::StatusKind::Burn { damage: 1 },
+                                    2,
+                                ));
+                            }
+                            count += 1;
+                        }
+                    }
+                }
+                self.message = format!(
+                    "{}🧨 Cracker hit {} enemies for {} damage!",
+                    prefix, count, damage
+                );
+                if item_state == ItemState::Cursed {
+                    let self_dmg = (damage / 2).max(1);
+                    self.player.hp -= self_dmg;
+                    self.message
+                        .push_str(&format!(" Backfire! You take {} damage!", self_dmg));
+                }
+                self.message_timer = 60;
+            }
+            crate::player::Item::IronSkinElixir(turns) => {
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                let regen_amt = if item_state == ItemState::Blessed {
+                    2
+                } else {
+                    1
+                };
+                let regen_turns = match item_state {
+                    ItemState::Cursed => (turns / 2).max(1),
+                    _ => turns,
+                };
+                self.player.statuses.push(status::StatusInstance::new(
+                    status::StatusKind::Regen { heal: regen_amt },
+                    regen_turns,
+                ));
+                if item_state != ItemState::Cursed {
+                    self.player.shield = true;
+                    self.message = format!(
+                        "{}🛡 Iron Skin! Shield + Regen({}) for {} turns!",
+                        prefix, regen_amt, regen_turns
+                    );
+                } else {
+                    self.message = format!(
+                        "{}Regen({}) for {} turns, but no shield!",
+                        prefix, regen_amt, regen_turns
+                    );
+                }
+                self.message_timer = 60;
+            }
+            crate::player::Item::ClarityTea => {
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                if item_state == ItemState::Cursed {
+                    if !self.player.statuses.is_empty() {
+                        let idx = self.rng_next() as usize % self.player.statuses.len();
+                        let removed = self.player.statuses.remove(idx);
+                        let _ = removed;
+                    }
+                    self.player
+                        .statuses
+                        .push(status::StatusInstance::new(status::StatusKind::Confused, 2));
+                    self.message = format!("{}🍵 Removed one status, but now confused!", prefix);
+                } else {
+                    self.player.statuses.retain(|s| !s.is_negative());
+                    self.message = format!("{}🍵 All negative effects purged!", prefix);
+                    if item_state == ItemState::Blessed {
+                        self.player.hp = (self.player.hp + 3).min(self.player.max_hp);
+                        self.player.spirit = (self.player.spirit + 10).min(self.player.max_spirit);
+                        self.message.push_str(" +3 HP, +10 spirit!");
+                    }
+                }
+                self.message_timer = 60;
+            }
+            crate::player::Item::GoldIngot(amount) => {
+                let amount = match item_state {
+                    ItemState::Cursed => (amount / 2).max(1),
+                    ItemState::Blessed => amount * 2,
+                    ItemState::Normal => amount,
+                };
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                self.player.gold += amount;
+                self.message = format!("{}🪙 Gained {} gold!", prefix, amount);
+                self.message_timer = 60;
+            }
+            crate::player::Item::ThunderTalisman(damage) => {
+                let damage = match item_state {
+                    ItemState::Cursed => (damage / 2).max(1),
+                    ItemState::Blessed => damage * 2,
+                    ItemState::Normal => damage,
+                };
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                let px = self.player.x;
+                let py = self.player.y;
+                let mut nearest: Option<(usize, i32)> = None;
+                for (i, e) in self.enemies.iter().enumerate() {
+                    if e.is_alive() {
+                        let dist = (e.x - px).abs() + (e.y - py).abs();
+                        if nearest.is_none() || dist < nearest.unwrap().1 {
+                            nearest = Some((i, dist));
+                        }
+                    }
+                }
+                if let Some((idx, _)) = nearest {
+                    self.enemies[idx].hp -= damage;
+                    if item_state == ItemState::Blessed {
+                        self.enemies[idx].stunned = true;
+                    }
+                    self.message = format!("{}⚡ Thunder strikes for {} damage!", prefix, damage);
+                    if item_state == ItemState::Blessed {
+                        self.message.push_str(" Target stunned!");
+                    }
+                } else {
+                    self.message = format!("{}⚡ Thunder crackles but finds no target!", prefix);
+                }
+                self.message_timer = 60;
+            }
+            crate::player::Item::JadeSalve(regen) => {
+                let regen = match item_state {
+                    ItemState::Cursed => (regen / 2).max(1),
+                    ItemState::Blessed => regen * 2,
+                    ItemState::Normal => regen,
+                };
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                self.player.statuses.push(status::StatusInstance::new(
+                    status::StatusKind::Regen { heal: regen },
+                    5,
+                ));
+                self.message = format!(
+                    "{}💎 Jade Salve! Regen {} per turn for 5 turns!",
+                    prefix, regen
+                );
+                if item_state == ItemState::Blessed {
+                    self.player.hp = (self.player.hp + 2).min(self.player.max_hp);
+                    self.message.push_str(" +2 HP!");
+                }
+                self.message_timer = 60;
+            }
+            crate::player::Item::SerpentFang => {
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                let venom_turns = if item_state == ItemState::Blessed {
+                    8
+                } else {
+                    5
+                };
+                self.player.statuses.push(status::StatusInstance::new(
+                    status::StatusKind::Envenomed,
+                    venom_turns,
+                ));
+                self.message = format!("{}🐍 Weapon envenomed for {} turns!", prefix, venom_turns);
+                if item_state == ItemState::Cursed {
+                    self.player.statuses.push(status::StatusInstance::new(
+                        status::StatusKind::Poison { damage: 1 },
+                        3,
+                    ));
+                    self.message.push_str(" The venom bites back!");
+                }
+                if item_state == ItemState::Blessed {
+                    self.player.statuses.push(status::StatusInstance::new(
+                        status::StatusKind::Empowered { amount: 1 },
+                        5,
+                    ));
+                    self.message.push_str(" You feel empowered!");
+                }
+                self.message_timer = 60;
+            }
+            crate::player::Item::WardingCharm(turns) => {
+                let turns = match item_state {
+                    ItemState::Cursed => (turns / 2).max(1),
+                    _ => turns,
+                };
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                self.player.statuses.push(status::StatusInstance::new(
+                    status::StatusKind::SpiritShield,
+                    turns,
+                ));
+                if item_state != ItemState::Cursed {
+                    self.player.shield = true;
+                    self.message = format!(
+                        "{}🔮 Ward active! Shield + Spirit Shield for {} turns!",
+                        prefix, turns
+                    );
+                } else {
+                    self.message = format!(
+                        "{}Spirit Shield for {} turns, but no physical shield!",
+                        prefix, turns
+                    );
+                }
+                if item_state == ItemState::Blessed {
+                    self.player.statuses.push(status::StatusInstance::new(
+                        status::StatusKind::Regen { heal: 1 },
+                        turns,
+                    ));
+                    self.message.push_str(" +Regen!");
+                }
+                self.message_timer = 60;
+            }
+            crate::player::Item::InkBomb => {
+                let mut count = 0;
+                let stun_turns = if item_state == ItemState::Blessed {
+                    5
+                } else {
+                    3
+                };
+                for e in &mut self.enemies {
+                    if e.is_alive() {
+                        let i = self.level.idx(e.x, e.y);
+                        if self.level.visible[i] {
+                            e.stunned = true;
+                            if item_state == ItemState::Blessed {
+                                e.hp -= 1;
+                            }
+                            count += 1;
+                        }
+                    }
+                }
+                let _ = stun_turns;
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                self.message = format!("{}🖤 Ink splatters {} enemies!", prefix, count);
+                if item_state == ItemState::Blessed {
+                    self.message.push_str(" (Dealt 1 damage each!)");
+                }
+                if item_state == ItemState::Cursed {
+                    self.player
+                        .statuses
+                        .push(status::StatusInstance::new(status::StatusKind::Confused, 2));
+                    self.message
+                        .push_str(" Ink splashes back — you're confused!");
+                }
+                self.message_timer = 60;
+            }
+            crate::player::Item::PhoenixPlume(_) => {
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                self.message = format!(
+                    "{}🔥 The Phoenix Plume glows warmly... it activates on death, not by hand.",
+                    prefix
+                );
+                self.message_timer = 60;
+                self.player.items.insert(idx, item);
+                self.player.item_states.insert(idx, item_state);
+            }
         }
 
         if newly_identified {
@@ -6427,7 +6754,45 @@ impl GameState {
         }
     }
 
-    /// Restart after game over.
+    fn try_phoenix_revive(&mut self) -> bool {
+        if self.player.hp > 0 {
+            return false;
+        }
+        let plume_pos = self
+            .player
+            .items
+            .iter()
+            .position(|item| matches!(item, crate::player::Item::PhoenixPlume(_)));
+        if let Some(idx) = plume_pos {
+            let item = self.player.items.remove(idx);
+            let item_state = self.player.item_states.remove(idx);
+            let heal = match &item {
+                crate::player::Item::PhoenixPlume(h) => *h,
+                _ => 1,
+            };
+            let heal = match item_state {
+                ItemState::Cursed => (heal / 2).max(1),
+                ItemState::Blessed => self.player.max_hp,
+                ItemState::Normal => heal,
+            };
+            self.player.hp = heal.min(self.player.max_hp);
+            self.message = format!(
+                "🔥 The Phoenix Plume ignites! You are reborn with {} HP!",
+                self.player.hp
+            );
+            if item_state == ItemState::Cursed {
+                self.player
+                    .statuses
+                    .push(status::StatusInstance::new(status::StatusKind::Confused, 3));
+                self.message.push_str(" But you feel disoriented...");
+            }
+            self.message_timer = 120;
+            true
+        } else {
+            false
+        }
+    }
+
     fn perform_offering(&mut self, altar: AltarKind, idx: usize) {
         if idx >= self.player.items.len() {
             return;
@@ -6609,6 +6974,7 @@ impl GameState {
         let mut total_gold_gained: i32 = 0;
         let mut last_radical_drop: Option<&str> = None;
         let mut equip_msg: Option<String> = None;
+        let mut item_msg: Option<String> = None;
         let mut sentence_challenge: Option<(SentenceChallengeMode, String)> = None;
 
         for &ei in killed {
@@ -6722,6 +7088,31 @@ impl GameState {
                 }
             }
 
+            let item_chance: u64 = if e_is_boss {
+                40
+            } else if e_is_elite {
+                15
+            } else {
+                4
+            };
+            if (self.rng_next() % 100) < item_chance {
+                let drop_item = if e_is_boss && (self.rng_next() % 5) == 0 {
+                    crate::player::Item::PhoenixPlume(self.player.max_hp / 2)
+                } else {
+                    self.random_item()
+                };
+                let state = self.roll_item_state();
+                let name = drop_item.name().to_string();
+                if self.player.add_item(drop_item, state) {
+                    let prefix = match state {
+                        ItemState::Cursed => "💀 ",
+                        ItemState::Blessed => "✨ ",
+                        ItemState::Normal => "",
+                    };
+                    item_msg = Some(format!("{}{}", prefix, name));
+                }
+            }
+
             if e_is_boss {
                 let rares = radical::rare_radicals();
                 if !rares.is_empty() {
@@ -6776,6 +7167,9 @@ impl GameState {
         }
         if let Some(eq) = equip_msg {
             msg = format!("{} + {}", msg, eq);
+        }
+        if let Some(itm) = item_msg {
+            msg = format!("{} + {}", msg, itm);
         }
         let tier = combo_tier(self.answer_streak);
         if tier != ComboTier::None {
@@ -9140,7 +9534,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                 "✗ Wrong! {} = {}. The door shocks you! (-1 HP)",
                                 hanzi, correct_meaning
                             );
-                            if s.player.hp <= 0 {
+                            if s.player.hp <= 0 && !s.try_phoenix_revive() {
                                 let fl = s.floor_num;
                                 s.run_journal
                                     .log(RunEvent::DiedTo("Locked door trap".to_string(), fl));
@@ -9432,7 +9826,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                         "✗ The seal backfires! Correct: {} — You take {} damage!",
                                         correct_text, failure_damage_to_player
                                     );
-                                    if s.player.hp <= 0 {
+                                    if s.player.hp <= 0 && !s.try_phoenix_revive() {
                                         let fl = s.floor_num;
                                         s.run_journal.log(crate::game::RunEvent::DiedTo(
                                             "Gatekeeper's Seal".to_string(),
@@ -9546,7 +9940,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                     "You abandon the seal! The backfire deals {} damage!",
                                     failure_damage_to_player
                                 );
-                                if s.player.hp <= 0 {
+                                if s.player.hp <= 0 && !s.try_phoenix_revive() {
                                     let fl = s.floor_num;
                                     s.run_journal
                                         .log(RunEvent::DiedTo("Gatekeeper's Seal".to_string(), fl));
@@ -9715,7 +10109,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                 gs.message = "Fled from battle!".to_string();
                             }
 
-                            if gs.player.hp <= 0 {
+                            if gs.player.hp <= 0 && !gs.try_phoenix_revive() {
                                 gs.player.hp = 0;
                                 gs.run_journal
                                     .log(RunEvent::DiedTo("fleeing".to_string(), gs.floor_num));
@@ -9831,7 +10225,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                     );
                                     s.message_timer = 40;
                                 }
-                                if s.player.hp <= 0 {
+                                if s.player.hp <= 0 && !s.try_phoenix_revive() {
                                     s.player.hp = 0;
                                     let cause = s.enemies[enemy_idx].hanzi.to_string();
                                     let fl = s.floor_num;

@@ -544,9 +544,93 @@ fn use_item_in_combat(
         Item::RevealScroll
         | Item::RiceBall(_)
         | Item::MeditationIncense(_)
-        | Item::AncestralWine(_) => {
+        | Item::AncestralWine(_)
+        | Item::GoldIngot(_)
+        | Item::PhoenixPlume(_) => {
             battle.log_message("This item has no effect in combat.");
             return BattleEvent::None;
+        }
+        Item::SmokeScreen(turns) => {
+            let turns = *turns;
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Haste, turns));
+            format!("Smoke screen! Haste for {} turns!", turns)
+        }
+        Item::FireCracker(damage) => {
+            let damage = *damage;
+            let mut count = 0;
+            for i in 1..battle.units.len() {
+                if battle.units[i].alive {
+                    battle.units[i].hp -= damage;
+                    count += 1;
+                }
+            }
+            format!("Cracker hit {} enemies for {} damage!", count, damage)
+        }
+        Item::IronSkinElixir(turns) => {
+            let turns = *turns;
+            battle.units[0].defending = true;
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Regen { heal: 1 }, turns));
+            format!("Iron Skin! Shield + Regen for {} turns!", turns)
+        }
+        Item::ClarityTea => {
+            battle.units[0].statuses.retain(|s| !s.is_negative());
+            "All negative effects purged!".to_string()
+        }
+        Item::ThunderTalisman(damage) => {
+            let damage = *damage;
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            let mut nearest: Option<(usize, i32)> = None;
+            for i in 1..battle.units.len() {
+                if battle.units[i].alive {
+                    let dist = (battle.units[i].x - px).abs() + (battle.units[i].y - py).abs();
+                    if nearest.is_none() || dist < nearest.unwrap().1 {
+                        nearest = Some((i, dist));
+                    }
+                }
+            }
+            if let Some((idx, _)) = nearest {
+                battle.units[idx].hp -= damage;
+                format!("Thunder strikes for {} damage!", damage)
+            } else {
+                battle.log_message("No target for thunder!");
+                return BattleEvent::None;
+            }
+        }
+        Item::JadeSalve(regen) => {
+            let regen = *regen;
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Regen { heal: regen }, 5));
+            format!("Jade Salve! Regen {} per turn for 5 turns!", regen)
+        }
+        Item::SerpentFang => {
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Envenomed, 5));
+            "Weapon envenomed for 5 turns!".to_string()
+        }
+        Item::WardingCharm(turns) => {
+            let turns = *turns;
+            battle.units[0].defending = true;
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::SpiritShield, turns));
+            format!("Ward active! Shield + Spirit Shield for {} turns!", turns)
+        }
+        Item::InkBomb => {
+            let mut count = 0;
+            for i in 1..battle.units.len() {
+                if battle.units[i].alive {
+                    battle.units[i].stunned = true;
+                    count += 1;
+                }
+            }
+            format!("Ink splatters {} enemies!", count)
         }
     };
     battle.log_message(&msg);

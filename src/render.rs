@@ -5973,6 +5973,17 @@ fn item_sprite_key(item: &Item) -> &'static str {
         ItemKind::RiceBall => "item_rice_ball",
         ItemKind::MeditationIncense => "item_meditation_incense",
         ItemKind::AncestralWine => "item_ancestral_wine",
+        ItemKind::SmokeScreen => "item_smoke_screen",
+        ItemKind::FireCracker => "item_fire_cracker",
+        ItemKind::IronSkinElixir => "item_iron_skin_elixir",
+        ItemKind::ClarityTea => "item_clarity_tea",
+        ItemKind::GoldIngot => "item_gold_ingot",
+        ItemKind::ThunderTalisman => "item_thunder_talisman",
+        ItemKind::JadeSalve => "item_jade_salve",
+        ItemKind::SerpentFang => "item_serpent_fang",
+        ItemKind::WardingCharm => "item_warding_charm",
+        ItemKind::InkBomb => "item_ink_bomb",
+        ItemKind::PhoenixPlume => "item_phoenix_plume",
     }
 }
 

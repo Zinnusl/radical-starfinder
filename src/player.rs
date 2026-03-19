@@ -77,7 +77,7 @@ impl Equipment {
 
 #[allow(dead_code)]
 pub const MAX_ITEMS: usize = 5;
-pub const ITEM_KIND_COUNT: usize = 9;
+pub const ITEM_KIND_COUNT: usize = 20;
 pub const MYSTERY_ITEM_APPEARANCES: [&str; ITEM_KIND_COUNT] = [
     "Vermilion Seal 朱符",
     "Jade Seal 玉符",
@@ -88,6 +88,17 @@ pub const MYSTERY_ITEM_APPEARANCES: [&str; ITEM_KIND_COUNT] = [
     "Phoenix Seal 凤符",
     "Moon Seal 月符",
     "Dragon Seal 龙符",
+    "Tiger Seal 虎符",
+    "Flame Seal 火符",
+    "Mountain Seal 山符",
+    "Lotus Seal 莲符",
+    "River Seal 河符",
+    "Star Seal 星符",
+    "Serpent Seal 蛇符",
+    "Bamboo Seal 竹符",
+    "Iron Seal 铁符",
+    "Sun Seal 日符",
+    "Wind Seal 风符",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -101,6 +112,17 @@ pub enum ItemKind {
     RiceBall,
     MeditationIncense,
     AncestralWine,
+    SmokeScreen,
+    FireCracker,
+    IronSkinElixir,
+    ClarityTea,
+    GoldIngot,
+    ThunderTalisman,
+    JadeSalve,
+    SerpentFang,
+    WardingCharm,
+    InkBomb,
+    PhoenixPlume,
 }
 
 impl ItemKind {
@@ -115,6 +137,17 @@ impl ItemKind {
             ItemKind::RiceBall => 6,
             ItemKind::MeditationIncense => 7,
             ItemKind::AncestralWine => 8,
+            ItemKind::SmokeScreen => 9,
+            ItemKind::FireCracker => 10,
+            ItemKind::IronSkinElixir => 11,
+            ItemKind::ClarityTea => 12,
+            ItemKind::GoldIngot => 13,
+            ItemKind::ThunderTalisman => 14,
+            ItemKind::JadeSalve => 15,
+            ItemKind::SerpentFang => 16,
+            ItemKind::WardingCharm => 17,
+            ItemKind::InkBomb => 18,
+            ItemKind::PhoenixPlume => 19,
         }
     }
 }
@@ -140,6 +173,28 @@ pub enum Item {
     MeditationIncense(i32),
     /// Full spirit restore + Confused for N turns
     AncestralWine(i32),
+    /// Grant Haste for N turns (smoke cover)
+    SmokeScreen(i32),
+    /// AoE damage to all visible enemies
+    FireCracker(i32),
+    /// Grant Shield + Regen for N turns
+    IronSkinElixir(i32),
+    /// Remove all negative status effects
+    ClarityTea,
+    /// Gain N gold instantly
+    GoldIngot(i32),
+    /// High damage to nearest enemy
+    ThunderTalisman(i32),
+    /// Regen N per turn for 5 turns
+    JadeSalve(i32),
+    /// Apply Envenomed to self weapon for 5 turns
+    SerpentFang,
+    /// Grant Shield + SpiritShield for N turns
+    WardingCharm(i32),
+    /// Stun all visible enemies + confuse (like enhanced StunBomb)
+    InkBomb,
+    /// Auto-revive on death, restoring N HP (passive, consumed on death)
+    PhoenixPlume(i32),
 }
 
 impl Item {
@@ -154,6 +209,17 @@ impl Item {
             Item::RiceBall(_) => ItemKind::RiceBall,
             Item::MeditationIncense(_) => ItemKind::MeditationIncense,
             Item::AncestralWine(_) => ItemKind::AncestralWine,
+            Item::SmokeScreen(_) => ItemKind::SmokeScreen,
+            Item::FireCracker(_) => ItemKind::FireCracker,
+            Item::IronSkinElixir(_) => ItemKind::IronSkinElixir,
+            Item::ClarityTea => ItemKind::ClarityTea,
+            Item::GoldIngot(_) => ItemKind::GoldIngot,
+            Item::ThunderTalisman(_) => ItemKind::ThunderTalisman,
+            Item::JadeSalve(_) => ItemKind::JadeSalve,
+            Item::SerpentFang => ItemKind::SerpentFang,
+            Item::WardingCharm(_) => ItemKind::WardingCharm,
+            Item::InkBomb => ItemKind::InkBomb,
+            Item::PhoenixPlume(_) => ItemKind::PhoenixPlume,
         }
     }
 
@@ -168,6 +234,17 @@ impl Item {
             Item::RiceBall(_) => "🍙 Rice Ball",
             Item::MeditationIncense(_) => "🧘 Meditation Incense",
             Item::AncestralWine(_) => "🍶 Ancestral Wine",
+            Item::SmokeScreen(_) => "🌫 Smoke Screen",
+            Item::FireCracker(_) => "🧨 Fire Cracker",
+            Item::IronSkinElixir(_) => "🛡 Iron Skin Elixir",
+            Item::ClarityTea => "🍵 Clarity Tea",
+            Item::GoldIngot(_) => "🪙 Gold Ingot",
+            Item::ThunderTalisman(_) => "⚡ Thunder Talisman",
+            Item::JadeSalve(_) => "💎 Jade Salve",
+            Item::SerpentFang => "🐍 Serpent Fang",
+            Item::WardingCharm(_) => "🔮 Warding Charm",
+            Item::InkBomb => "🖤 Ink Bomb",
+            Item::PhoenixPlume(_) => "🔥 Phoenix Plume",
         }
     }
 
@@ -183,6 +260,17 @@ impl Item {
             Item::RiceBall(_) => "Rice",
             Item::MeditationIncense(_) => "Incense",
             Item::AncestralWine(_) => "Wine",
+            Item::SmokeScreen(_) => "Smoke",
+            Item::FireCracker(_) => "Cracker",
+            Item::IronSkinElixir(_) => "IronSkin",
+            Item::ClarityTea => "Clarity",
+            Item::GoldIngot(_) => "Gold",
+            Item::ThunderTalisman(_) => "Thunder",
+            Item::JadeSalve(_) => "Salve",
+            Item::SerpentFang => "Fang",
+            Item::WardingCharm(_) => "Ward",
+            Item::InkBomb => "InkBomb",
+            Item::PhoenixPlume(_) => "Phoenix",
         }
     }
 
@@ -205,6 +293,17 @@ impl Item {
             Item::RiceBall(_) => "Restores spirit energy. Eat to stave off spiritual exhaustion.",
             Item::MeditationIncense(_) => "Burns fragrant incense that shields your spirit from decay for several moves.",
             Item::AncestralWine(_) => "Potent rice wine that fully restores spirit but leaves you confused and disoriented.",
+            Item::SmokeScreen(_) => "Releases a burst of smoke granting you swift movement for several turns.",
+            Item::FireCracker(_) => "Explodes with a thunderous crack, dealing damage to all visible enemies.",
+            Item::IronSkinElixir(_) => "Hardens your skin like iron, granting a protective shield and slow regeneration.",
+            Item::ClarityTea => "A calming brew that purges all negative effects from your body and mind.",
+            Item::GoldIngot(_) => "A gleaming bar of pure gold. Can be sold or used for instant wealth.",
+            Item::ThunderTalisman(_) => "Channels a bolt of lightning at the nearest enemy, dealing heavy damage.",
+            Item::JadeSalve(_) => "A soothing jade ointment that slowly regenerates your wounds over time.",
+            Item::SerpentFang => "Coats your weapon in deadly venom, envenoming your strikes for several turns.",
+            Item::WardingCharm(_) => "Erects a protective ward that shields both body and spirit from harm.",
+            Item::InkBomb => "Splatters blinding ink on all visible enemies, stunning them in place.",
+            Item::PhoenixPlume(_) => "A mystical feather that burns on death, reviving you from the brink of destruction.",
         }
     }
 }

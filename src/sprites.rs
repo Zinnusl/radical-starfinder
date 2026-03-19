@@ -238,6 +238,66 @@ impl SpriteCache {
             "item_ancestral_wine",
             "assets/sprites/items/ancestral_wine.png",
         );
+        register(
+            &mut sprites,
+            "item_rice_ball",
+            "assets/sprites/items/rice_ball.png",
+        );
+        register(
+            &mut sprites,
+            "item_smoke_screen",
+            "assets/sprites/items/smoke_screen.png",
+        );
+        register(
+            &mut sprites,
+            "item_fire_cracker",
+            "assets/sprites/items/fire_cracker.png",
+        );
+        register(
+            &mut sprites,
+            "item_iron_skin_elixir",
+            "assets/sprites/items/iron_skin_elixir.png",
+        );
+        register(
+            &mut sprites,
+            "item_clarity_tea",
+            "assets/sprites/items/clarity_tea.png",
+        );
+        register(
+            &mut sprites,
+            "item_gold_ingot",
+            "assets/sprites/items/gold_ingot.png",
+        );
+        register(
+            &mut sprites,
+            "item_thunder_talisman",
+            "assets/sprites/items/thunder_talisman.png",
+        );
+        register(
+            &mut sprites,
+            "item_jade_salve",
+            "assets/sprites/items/jade_salve.png",
+        );
+        register(
+            &mut sprites,
+            "item_serpent_fang",
+            "assets/sprites/items/serpent_fang.png",
+        );
+        register(
+            &mut sprites,
+            "item_warding_charm",
+            "assets/sprites/items/warding_charm.png",
+        );
+        register(
+            &mut sprites,
+            "item_ink_bomb",
+            "assets/sprites/items/ink_bomb.png",
+        );
+        register(
+            &mut sprites,
+            "item_phoenix_plume",
+            "assets/sprites/items/phoenix_plume.png",
+        );
 
         register(
             &mut sprites,
