@@ -1,5 +1,5 @@
 use crate::combat::grid::manhattan;
-use crate::combat::{BattleUnit, TacticalBattle, UnitKind};
+use crate::combat::{EnemyIntent, TacticalBattle};
 use crate::enemy::AiBehavior;
 
 pub enum AiAction {
@@ -8,6 +8,69 @@ pub enum AiAction {
     MeleeAttack { target_unit: usize },
     UseRadicalAction { action_idx: usize },
     Wait,
+}
+
+pub fn calculate_all_intents(battle: &mut TacticalBattle) {
+    let player_x = battle.units[0].x;
+    let player_y = battle.units[0].y;
+
+    for i in 1..battle.units.len() {
+        if !battle.units[i].alive {
+            battle.units[i].intent = None;
+            continue;
+        }
+        let dist = manhattan(battle.units[i].x, battle.units[i].y, player_x, player_y);
+        let ai = battle.units[i].ai;
+        let has_radical = !battle.units[i].radical_actions.is_empty();
+        let stunned = battle.units[i].stunned;
+
+        if stunned {
+            battle.units[i].intent = Some(EnemyIntent::Idle);
+            continue;
+        }
+
+        let intent = match ai {
+            AiBehavior::Chase | AiBehavior::Pack => {
+                if dist <= 1 {
+                    if has_radical {
+                        EnemyIntent::RadicalAbility { name: "Ability" }
+                    } else {
+                        EnemyIntent::Attack
+                    }
+                } else {
+                    EnemyIntent::Approach
+                }
+            }
+            AiBehavior::Retreat | AiBehavior::Kiter => {
+                if dist <= 1 {
+                    EnemyIntent::Retreat
+                } else if dist <= 3 {
+                    EnemyIntent::Idle
+                } else {
+                    EnemyIntent::Approach
+                }
+            }
+            AiBehavior::Ambush => {
+                if dist <= 1 {
+                    EnemyIntent::Attack
+                } else if dist <= 3 {
+                    EnemyIntent::Approach
+                } else {
+                    EnemyIntent::Idle
+                }
+            }
+            AiBehavior::Sentinel => {
+                if dist <= 1 {
+                    EnemyIntent::Attack
+                } else {
+                    EnemyIntent::Idle
+                }
+            }
+        };
+
+        battle.units[i].intent = Some(intent);
+    }
+    battle.intents_calculated = true;
 }
 
 /// Choose an action for the enemy at `unit_idx` based on its AiBehavior.

@@ -254,6 +254,12 @@ pub enum RoomModifier {
     Arcane,
     /// Enemies take 1 extra damage per hit
     Cursed,
+    /// Overgrown bamboo and natural terrain
+    Garden,
+    /// Icy and frozen terrain
+    Frozen,
+    /// Lava and fire hazards
+    Infernal,
 }
 
 #[derive(Clone)]
@@ -1491,10 +1497,13 @@ impl DungeonLevel {
         }
         for i in 1..n - 1 {
             if rng.next_u64() % 100 < 30 {
-                self.rooms[i].modifier = Some(match rng.next_u64() % 3 {
+                self.rooms[i].modifier = Some(match rng.next_u64() % 6 {
                     0 => RoomModifier::Dark,
                     1 => RoomModifier::Arcane,
-                    _ => RoomModifier::Cursed,
+                    2 => RoomModifier::Cursed,
+                    3 => RoomModifier::Garden,
+                    4 => RoomModifier::Frozen,
+                    _ => RoomModifier::Infernal,
                 });
             }
         }

@@ -22,6 +22,8 @@ pub enum StatusKind {
     Empowered { amount: i32 },
     /// Burn damage over time
     Burn { damage: i32 },
+    /// Blocks spirit drain for N turns (overworld).
+    SpiritShield,
 }
 
 /// An active status effect with remaining duration.
@@ -49,6 +51,7 @@ impl StatusInstance {
             StatusKind::Revealed => "👁Map",
             StatusKind::Envenomed => "☠Wep",
             StatusKind::Empowered { .. } => "💪Pow",
+            StatusKind::SpiritShield => "🌕Spr",
         }
     }
 
@@ -62,6 +65,7 @@ impl StatusInstance {
             StatusKind::Revealed => "#44ccff",
             StatusKind::Envenomed => "#00ff00",
             StatusKind::Empowered { .. } => "#ff4400",
+            StatusKind::SpiritShield => "#8844ff",
         }
     }
 
@@ -119,6 +123,12 @@ pub fn has_envenomed(statuses: &[StatusInstance]) -> bool {
     statuses
         .iter()
         .any(|s| matches!(s.kind, StatusKind::Envenomed))
+}
+
+pub fn has_spirit_shield(statuses: &[StatusInstance]) -> bool {
+    statuses
+        .iter()
+        .any(|s| matches!(s.kind, StatusKind::SpiritShield))
 }
 
 pub fn empowered_amount(statuses: &[StatusInstance]) -> i32 {

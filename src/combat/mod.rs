@@ -13,7 +13,172 @@ use crate::enemy::{AiBehavior, RadicalAction};
 use crate::radical::SpellEffect;
 use crate::status::StatusInstance;
 
-pub const ARENA_SIZE: usize = 9;
+// ── Wuxing (五行) Elemental Cycle ────────────────────────────────────────────
+
+/// The five Chinese elements. Cycle: Water > Fire > Metal > Wood > Earth > Water.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WuxingElement {
+    Water, // 水
+    Fire,  // 火
+    Metal, // 金
+    Wood,  // 木
+    Earth, // 土
+}
+
+impl WuxingElement {
+    /// Derive element from radical, if it matches one of the five.
+    pub fn from_radical(radical: &str) -> Option<Self> {
+        match radical {
+            "水" => Some(Self::Water),
+            "火" => Some(Self::Fire),
+            "金" => Some(Self::Metal),
+            "木" => Some(Self::Wood),
+            "土" => Some(Self::Earth),
+            _ => None,
+        }
+    }
+
+    /// Returns true if `self` beats `other` in the destructive cycle.
+    pub fn beats(self, other: Self) -> bool {
+        matches!(
+            (self, other),
+            (Self::Water, Self::Fire)
+                | (Self::Fire, Self::Metal)
+                | (Self::Metal, Self::Wood)
+                | (Self::Wood, Self::Earth)
+                | (Self::Earth, Self::Water)
+        )
+    }
+
+    /// Damage multiplier: 1.5× advantage, 0.75× disadvantage, 1.0× neutral.
+    pub fn multiplier(attacker: Option<Self>, defender: Option<Self>) -> f64 {
+        match (attacker, defender) {
+            (Some(a), Some(d)) if a.beats(d) => 1.5,
+            (Some(a), Some(d)) if d.beats(a) => 0.75,
+            _ => 1.0,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Water => "水 Water",
+            Self::Fire => "火 Fire",
+            Self::Metal => "金 Metal",
+            Self::Wood => "木 Wood",
+            Self::Earth => "土 Earth",
+        }
+    }
+
+    pub fn emoji(self) -> &'static str {
+        match self {
+            Self::Water => "💧",
+            Self::Fire => "🔥",
+            Self::Metal => "⚔",
+            Self::Wood => "🌿",
+            Self::Earth => "🪨",
+        }
+    }
+}
+
+// ── Weather System ───────────────────────────────────────────────────────────
+
+/// Arena-wide weather effect that modifies combat rules.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Weather {
+    /// No weather — baseline.
+    Clear,
+    /// Rain: Water tiles spread, Fire damage -1, Lightning chains +1 tile.
+    Rain,
+    /// Fog: Line of sight reduced by 2, ranged spell range -1.
+    Fog,
+    /// Sandstorm: Movement costs +1, accuracy reduced (miss chance +10%).
+    Sandstorm,
+    /// Spiritual Ink: Spell power +1, focus regen +1 per turn.
+    SpiritualInk,
+}
+
+impl Weather {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Clear => "Clear",
+            Self::Rain => "Rain",
+            Self::Fog => "Fog",
+            Self::Sandstorm => "Sandstorm",
+            Self::SpiritualInk => "Spiritual Ink",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::Clear => "Normal conditions.",
+            Self::Rain => "Water spreads. Fire weakened. Lightning chains further.",
+            Self::Fog => "Reduced visibility. Spell range shortened.",
+            Self::Sandstorm => "Movement costs +1. Attacks may miss.",
+            Self::SpiritualInk => "Spell power +1. Focus regenerates faster.",
+        }
+    }
+
+    pub fn emoji(self) -> &'static str {
+        match self {
+            Self::Clear => "☀",
+            Self::Rain => "🌧",
+            Self::Fog => "🌫",
+            Self::Sandstorm => "🏜",
+            Self::SpiritualInk => "🖋",
+        }
+    }
+}
+
+// ── Enemy Intent (Telegraphed Attacks) ───────────────────────────────────────
+
+/// What an enemy intends to do on its next turn.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EnemyIntent {
+    /// Will attack the player.
+    Attack,
+    /// Will move toward the player.
+    Approach,
+    /// Will use a radical ability.
+    RadicalAbility { name: &'static str },
+    /// Will retreat / move away.
+    Retreat,
+    /// Will wait / do nothing.
+    Idle,
+}
+
+impl EnemyIntent {
+    pub fn emoji(&self) -> &'static str {
+        match self {
+            Self::Attack => "⚔",
+            Self::Approach => "➡",
+            Self::RadicalAbility { .. } => "✦",
+            Self::Retreat => "←",
+            Self::Idle => "💤",
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Attack => "Attacking",
+            Self::Approach => "Approaching",
+            Self::RadicalAbility { name } => name,
+            Self::Retreat => "Retreating",
+            Self::Idle => "Idle",
+        }
+    }
+}
+
+/// Determine arena size based on encounter type.
+/// Normal = 7×7, Elite = 9×9, Boss = 11×11.
+pub fn arena_size_for_encounter(has_elite: bool, has_boss: bool) -> usize {
+    if has_boss {
+        11
+    } else if has_elite {
+        9
+    } else {
+        7
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Direction {
@@ -78,6 +243,40 @@ impl Direction {
     }
 }
 
+/// Arena biome — determines tileset and terrain mix.
+/// Derived from the dungeon `RoomModifier` of the room where combat starts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArenaBiome {
+    /// Default stone dungeon.
+    Stone,
+    /// Shadow / reduced visibility rooms.
+    Dark,
+    /// Arcane / magical rooms.
+    Arcane,
+    /// Cursed / corrupted rooms.
+    Cursed,
+    /// Overgrown garden with bamboo and grass.
+    Garden,
+    /// Frozen tundra with ice and snow.
+    Frozen,
+    /// Volcanic inferno with lava and fire.
+    Infernal,
+}
+
+impl ArenaBiome {
+    pub fn from_room_modifier(m: Option<crate::dungeon::RoomModifier>) -> Self {
+        match m {
+            Some(crate::dungeon::RoomModifier::Dark) => ArenaBiome::Dark,
+            Some(crate::dungeon::RoomModifier::Arcane) => ArenaBiome::Arcane,
+            Some(crate::dungeon::RoomModifier::Cursed) => ArenaBiome::Cursed,
+            Some(crate::dungeon::RoomModifier::Garden) => ArenaBiome::Garden,
+            Some(crate::dungeon::RoomModifier::Frozen) => ArenaBiome::Frozen,
+            Some(crate::dungeon::RoomModifier::Infernal) => ArenaBiome::Infernal,
+            None => ArenaBiome::Stone,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BattleTile {
     Open,
@@ -94,21 +293,69 @@ pub enum BattleTile {
     BrokenGround,
     /// Blocks line of sight, decays after N turns. Walkable.
     Steam,
+    /// Deals 2 damage per turn to units standing on it. Costs 2 movement.
+    Lava,
+    /// Deals 1 damage on entry.
+    Thorns,
+    /// +2 spell power for units standing on it (stronger InkPool).
+    ArcaneGlyph,
+    /// Costs 2 movement to enter (like BrokenGround but thematic).
+    Sand,
+    /// Blocks movement, blocks LOS. Bamboo thicket (Garden biome).
+    BambooThicket,
+    /// Slows movement (+1 cost). Frozen ground (Frozen biome).
+    FrozenGround,
+    /// One-time spirit restore (+15). Becomes Open after use.
+    SpiritWell,
+    /// Drains 3 spirit per turn while standing on it.
+    SpiritDrain,
+    /// Wait on this tile to restore 10 spirit.
+    MeditationStone,
+    /// When an enemy dies on this tile, player gains 10 spirit.
+    SoulTrap,
 }
 
 impl BattleTile {
     pub fn is_walkable(self) -> bool {
-        !matches!(self, BattleTile::Obstacle)
+        !matches!(self, BattleTile::Obstacle | BattleTile::BambooThicket)
     }
 
     pub fn blocks_los(self) -> bool {
-        matches!(self, BattleTile::Obstacle | BattleTile::Steam)
+        matches!(
+            self,
+            BattleTile::Obstacle | BattleTile::Steam | BattleTile::BambooThicket
+        )
     }
 
     pub fn extra_move_cost(self) -> i32 {
         match self {
-            BattleTile::Water | BattleTile::BrokenGround => 1,
+            BattleTile::Water | BattleTile::BrokenGround | BattleTile::Lava | BattleTile::Sand => 1,
+            BattleTile::FrozenGround => 1,
             _ => 0,
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            BattleTile::Open => "Open ground. No special effects.",
+            BattleTile::Obstacle => "Obstacle. Impassable.",
+            BattleTile::Grass => "Grass. No special effects.",
+            BattleTile::Water => "Water. Costs 2 movement.",
+            BattleTile::Ice => "Ice. Slippery surface.",
+            BattleTile::Scorched => "Scorched. 1 damage/turn.",
+            BattleTile::InkPool => "Ink Pool. Spells +1 damage.",
+            BattleTile::BrokenGround => "Broken ground. Costs 2 movement.",
+            BattleTile::Steam => "Steam. Blocks line of sight.",
+            BattleTile::Lava => "Lava. 2 damage/turn. Costs 2 movement.",
+            BattleTile::Thorns => "Thorns. 1 damage on entry.",
+            BattleTile::ArcaneGlyph => "Arcane Glyph. Spells +2 damage.",
+            BattleTile::Sand => "Sand. Costs 2 movement.",
+            BattleTile::BambooThicket => "Bamboo Thicket. Impassable, blocks sight.",
+            BattleTile::FrozenGround => "Frozen Ground. Costs 2 movement.",
+            BattleTile::SpiritWell => "Spirit Well. +15 spirit (one-time).",
+            BattleTile::SpiritDrain => "Spirit Drain. -3 spirit/turn.",
+            BattleTile::MeditationStone => "Meditation Stone. Wait to restore 10 spirit.",
+            BattleTile::SoulTrap => "Soul Trap. Enemy death here grants +10 spirit.",
         }
     }
 }
@@ -120,16 +367,18 @@ pub struct TacticalArena {
     pub tiles: Vec<BattleTile>,
     /// Per-tile turn countdown for Steam decay (0 = no timer).
     pub steam_timers: Vec<u8>,
+    pub biome: ArenaBiome,
 }
 
 impl TacticalArena {
-    pub fn new(width: usize, height: usize) -> Self {
+    pub fn new(width: usize, height: usize, biome: ArenaBiome) -> Self {
         let count = width * height;
         Self {
             width,
             height,
             tiles: vec![BattleTile::Open; count],
             steam_timers: vec![0; count],
+            biome,
         }
     }
 
@@ -231,6 +480,19 @@ pub struct BattleUnit {
     pub boss_kind: Option<crate::enemy::BossKind>,
     /// Whether this unit is a decoy (MimicKing clones).
     pub is_decoy: bool,
+    /// Word group ID — units from the same multi-char word share this value.
+    pub word_group: Option<usize>,
+    /// Position within the word (0 = first char, 1 = second, etc.).
+    pub word_group_order: u8,
+    /// Wuxing element derived from radical (if any).
+    pub wuxing_element: Option<WuxingElement>,
+    /// Telegraphed intent for this enemy's next turn.
+    pub intent: Option<EnemyIntent>,
+    /// SRS mastery tier: 0=unknown, 1=learning, 2=familiar, 3=mastered.
+    pub mastery_tier: u8,
+    /// Charge-cast: turns remaining before complex character attack fires.
+    /// None = not charging. Some(0) = ready to fire.
+    pub charge_remaining: Option<u8>,
 }
 
 impl BattleUnit {
@@ -266,6 +528,14 @@ pub enum TypingAction {
     ShieldBreak {
         target_unit: usize,
         component: &'static str,
+    },
+    /// Elite chain attack — multi-syllable pinyin typed one syllable at a time.
+    EliteChain {
+        target_unit: usize,
+        syllable_progress: usize,
+        total_syllables: usize,
+        damage_per_syllable: i32,
+        damage_dealt: i32,
     },
 }
 
@@ -309,6 +579,20 @@ pub enum TacticalPhase {
         timer: u8,
         /// Whether the enemy action has been executed yet.
         acted: bool,
+    },
+
+    /// Player is inspecting the arena (free-look cursor).
+    Look {
+        /// Current look-cursor position on the grid.
+        cursor_x: i32,
+        cursor_y: i32,
+    },
+
+    /// Player chooses starting position before combat begins.
+    Deployment {
+        cursor_x: i32,
+        cursor_y: i32,
+        valid_tiles: Vec<(i32, i32)>,
     },
 
     /// Battle is over — showing results before returning to exploration.
@@ -390,6 +674,25 @@ pub struct TacticalBattle {
         &'static str,
         crate::radical::SpellEffect,
     )>,
+    pub player_class: Option<crate::player::PlayerClass>,
+    pub available_items: Vec<(usize, crate::player::Item)>,
+    pub used_item_indices: Vec<usize>,
+    pub item_menu_open: bool,
+    pub item_cursor: usize,
+    /// Arena weather effect.
+    pub weather: Weather,
+    /// Mental focus resource. Complex chars cost more focus to attack.
+    pub focus: i32,
+    pub max_focus: i32,
+    /// Radical synergy tracking: (last radical killed, consecutive streak).
+    pub radical_synergy_radical: Option<&'static str>,
+    pub radical_synergy_streak: u32,
+    /// Kill history for chengyu (成语) detection — last 4 hanzi killed.
+    pub chengyu_history: Vec<String>,
+    /// Enemy intents calculated at start of each round.
+    pub intents_calculated: bool,
+    /// Accumulated spirit delta from tile effects (applied by game.rs each tick).
+    pub pending_spirit_delta: i32,
 }
 
 impl TacticalBattle {
@@ -453,7 +756,7 @@ impl TacticalBattle {
 
     /// Get combo damage multiplier based on current streak.
     /// Same 6 tiers as existing system: 0=1.0, 1-2=1.1, 3-4=1.2,
-    /// 5-7=1.3, 8-11=1.5, 12+=2.0.
+    /// 5-7=1.3, 8-11=1.5, 12+=1.75.
     pub fn combo_multiplier(&self) -> f64 {
         match self.combo_streak {
             0 => 1.0,
@@ -461,7 +764,7 @@ impl TacticalBattle {
             3..=4 => 1.2,
             5..=7 => 1.3,
             8..=11 => 1.5,
-            _ => 2.0,
+            _ => 1.75,
         }
     }
 

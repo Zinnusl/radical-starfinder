@@ -38,6 +38,28 @@ impl SrsTracker {
         }
     }
 
+    /// Mastery tier: 0=unknown (never seen), 1=learning (<60% acc or <3 attempts),
+    /// 2=familiar (60-85% with 3+ attempts), 3=mastered (>85% with 5+ attempts).
+    pub fn mastery_tier(&self, hanzi: &str) -> u8 {
+        match self.stats.get(hanzi) {
+            None => 0,
+            Some(&(correct, total, _)) => {
+                if total < 3 {
+                    1
+                } else {
+                    let acc = correct as f64 / total as f64;
+                    if acc > 0.85 && total >= 5 {
+                        3
+                    } else if acc >= 0.6 {
+                        2
+                    } else {
+                        1
+                    }
+                }
+            }
+        }
+    }
+
     /// Get spawn weight for a character — lower accuracy = higher weight,
     /// but weights decay back toward 1x if the character hasn't been seen
     /// for several floors (temporal decay).

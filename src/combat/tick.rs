@@ -1,7 +1,8 @@
+use crate::combat::ai::calculate_all_intents;
 use crate::combat::input::{execute_enemy_turn_action, BattleEvent};
 use crate::combat::terrain::apply_scorched_damage;
 use crate::combat::turn::advance_turn;
-use crate::combat::{TacticalBattle, TacticalPhase};
+use crate::combat::{BattleTile, TacticalBattle, TacticalPhase, Weather};
 use crate::status::tick_statuses;
 
 const _RESOLVE_FRAMES: u8 = 30; // ~500ms at 60fps
@@ -9,6 +10,9 @@ const ENEMY_TURN_FRAMES: u8 = 24; // ~400ms
 const END_DELAY_FRAMES: u8 = 60; // ~1s before key accepted
 
 pub fn tick_battle(battle: &mut TacticalBattle) -> BattleEvent {
+    if !battle.intents_calculated {
+        calculate_all_intents(battle);
+    }
     match battle.phase {
         TacticalPhase::Resolve {
             ref mut timer,
@@ -90,6 +94,18 @@ fn advance_and_set_phase(battle: &mut TacticalBattle) -> BattleEvent {
         for msg in &scorched_msgs {
             battle.log_message(msg);
         }
+
+        if battle.weather == Weather::Rain {
+            spread_rain_water(&mut battle.arena);
+        }
+
+        let focus_regen = match battle.weather {
+            Weather::SpiritualInk => 4,
+            _ => 3,
+        };
+        battle.focus = (battle.focus + focus_regen).min(battle.max_focus);
+
+        calculate_all_intents(battle);
         if battle.player_dead() {
             battle.phase = TacticalPhase::End {
                 victory: false,
@@ -163,5 +179,33 @@ fn tick_player_end_of_turn(battle: &mut TacticalBattle) {
     }
     if battle.units[0].hp <= 0 {
         battle.units[0].alive = false;
+    }
+}
+
+use crate::combat::TacticalArena;
+
+fn spread_rain_water(arena: &mut TacticalArena) {
+    let w = arena.width as i32;
+    let h = arena.height as i32;
+    let mut new_water = Vec::new();
+    for y in 0..h {
+        for x in 0..w {
+            if arena.tile(x, y) == Some(BattleTile::Water) {
+                for (dx, dy) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+                    let nx = x + dx;
+                    let ny = y + dy;
+                    if arena.tile(nx, ny) == Some(BattleTile::Open) {
+                        let roll =
+                            ((nx as u64).wrapping_mul(31).wrapping_add(ny as u64 * 17)) % 100;
+                        if roll < 20 {
+                            new_water.push((nx, ny));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for (wx, wy) in new_water {
+        arena.set_tile(wx, wy, BattleTile::Water);
     }
 }

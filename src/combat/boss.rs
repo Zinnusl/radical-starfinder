@@ -1,9 +1,8 @@
-use crate::combat::action::{deal_damage, move_unit};
+use crate::combat::action::move_unit;
 use crate::combat::ai::{step_away, step_toward};
 use crate::combat::grid::manhattan;
-use crate::combat::{BattleTile, BattleUnit, Direction, TacticalBattle, UnitKind, ARENA_SIZE};
+use crate::combat::{BattleTile, BattleUnit, Direction, TacticalBattle, UnitKind};
 use crate::enemy::{AiBehavior, BossKind};
-use crate::radical::SpellEffect;
 
 /// Try to perform a boss-specific action. Returns Some(log_message) if the boss
 /// acted (skipping normal AI), or None to fall through to normal AI.
@@ -112,7 +111,7 @@ fn elementalist_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<S
 
     if turn % 4 == 0 {
         let seed = turn as u64;
-        let size = ARENA_SIZE as i32;
+        let size = battle.arena.width as i32;
         let mut shifted = 0;
         for i in 0..3 {
             let hash = seed
@@ -230,6 +229,12 @@ fn mimic_king_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<Str
             fortify_stacks: 0,
             boss_kind: None,
             is_decoy: true,
+            word_group: None,
+            word_group_order: 0,
+            wuxing_element: None,
+            intent: None,
+            mastery_tier: 0,
+            charge_remaining: None,
         };
 
         battle.units.push(decoy);

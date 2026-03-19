@@ -994,74 +994,228 @@ const INK_WELL_DATA: &[(&str, u8, &str, &str)] = &[
 /// (first_half, second_half, full, pinyin, meaning)
 const CHENGYU_DATA: &[(&str, &str, &str, &str, &str)] = &[
     (
-        "一心",
-        "一意",
-        "一心一意",
+        "\u{4e00}\u{5fc3}",
+        "\u{4e00}\u{610f}",
+        "\u{4e00}\u{5fc3}\u{4e00}\u{610f}",
         "yi1xin1yi1yi4",
         "wholeheartedly",
     ),
     (
-        "半途",
-        "而废",
-        "半途而废",
+        "\u{534a}\u{9014}",
+        "\u{800c}\u{5e9f}",
+        "\u{534a}\u{9014}\u{800c}\u{5e9f}",
         "ban4tu2er2fei4",
         "give up halfway",
     ),
     (
-        "自言",
-        "自语",
-        "自言自语",
+        "\u{81ea}\u{8a00}",
+        "\u{81ea}\u{8bed}",
+        "\u{81ea}\u{8a00}\u{81ea}\u{8bed}",
         "zi4yan2zi4yu3",
         "talk to oneself",
     ),
     (
-        "入乡",
-        "随俗",
-        "入乡随俗",
+        "\u{5165}\u{4e61}",
+        "\u{968f}\u{4fd7}",
+        "\u{5165}\u{4e61}\u{968f}\u{4fd7}",
         "ru4xiang1sui2su2",
         "when in Rome",
     ),
     (
-        "马到",
-        "成功",
-        "马到成功",
+        "\u{9a6c}\u{5230}",
+        "\u{6210}\u{529f}",
+        "\u{9a6c}\u{5230}\u{6210}\u{529f}",
         "ma3dao4cheng2gong1",
         "instant success",
     ),
     (
-        "心想",
-        "事成",
-        "心想事成",
+        "\u{5fc3}\u{60f3}",
+        "\u{4e8b}\u{6210}",
+        "\u{5fc3}\u{60f3}\u{4e8b}\u{6210}",
         "xin1xiang3shi4cheng2",
         "wishes come true",
     ),
     (
-        "大同",
-        "小异",
-        "大同小异",
+        "\u{5927}\u{540c}",
+        "\u{5c0f}\u{5f02}",
+        "\u{5927}\u{540c}\u{5c0f}\u{5f02}",
         "da4tong2xiao3yi4",
         "mostly the same",
     ),
     (
-        "百发",
-        "百中",
-        "百发百中",
+        "\u{767e}\u{53d1}",
+        "\u{767e}\u{4e2d}",
+        "\u{767e}\u{53d1}\u{767e}\u{4e2d}",
         "bai3fa1bai3zhong4",
         "hit every target",
     ),
     (
-        "千方",
-        "百计",
-        "千方百计",
+        "\u{5343}\u{65b9}",
+        "\u{767e}\u{8ba1}",
+        "\u{5343}\u{65b9}\u{767e}\u{8ba1}",
         "qian1fang1bai3ji4",
         "by every means",
     ),
     (
-        "开门",
-        "见山",
-        "开门见山",
+        "\u{5f00}\u{95e8}",
+        "\u{89c1}\u{5c71}",
+        "\u{5f00}\u{95e8}\u{89c1}\u{5c71}",
         "kai1men2jian4shan1",
         "get to the point",
+    ),
+    (
+        "\u{4e07}\u{4e8b}",
+        "\u{5982}\u{610f}",
+        "\u{4e07}\u{4e8b}\u{5982}\u{610f}",
+        "wan4shi4ru2yi4",
+        "everything goes well",
+    ),
+    (
+        "\u{5929}\u{4e0b}",
+        "\u{592a}\u{5e73}",
+        "\u{5929}\u{4e0b}\u{592a}\u{5e73}",
+        "tian1xia4tai4ping2",
+        "peace under heaven",
+    ),
+    (
+        "\u{5927}\u{5f00}",
+        "\u{773c}\u{754c}",
+        "\u{5927}\u{5f00}\u{773c}\u{754c}",
+        "da4kai1yan3jie4",
+        "eye-opening",
+    ),
+    (
+        "\u{4e03}\u{4e0a}",
+        "\u{516b}\u{4e0b}",
+        "\u{4e03}\u{4e0a}\u{516b}\u{4e0b}",
+        "qi1shang4ba1xia4",
+        "at sixes and sevens",
+    ),
+    (
+        "\u{4e94}\u{5149}",
+        "\u{5341}\u{8272}",
+        "\u{4e94}\u{5149}\u{5341}\u{8272}",
+        "wu3guang1shi2se4",
+        "dazzling",
+    ),
+    (
+        "\u{4e5d}\u{6b7b}",
+        "\u{4e00}\u{751f}",
+        "\u{4e5d}\u{6b7b}\u{4e00}\u{751f}",
+        "jiu3si3yi1sheng1",
+        "narrow escape",
+    ),
+    (
+        "\u{4e00}\u{5200}",
+        "\u{4e24}\u{65ad}",
+        "\u{4e00}\u{5200}\u{4e24}\u{65ad}",
+        "yi1dao1liang3duan4",
+        "cut cleanly",
+    ),
+    (
+        "\u{4e00}\u{76ee}",
+        "\u{4e86}\u{7136}",
+        "\u{4e00}\u{76ee}\u{4e86}\u{7136}",
+        "yi1mu4liao3ran2",
+        "crystal clear",
+    ),
+    (
+        "\u{4e0d}\u{53ef}",
+        "\u{601d}\u{8bae}",
+        "\u{4e0d}\u{53ef}\u{601d}\u{8bae}",
+        "bu4ke3si1yi4",
+        "incredible",
+    ),
+    (
+        "\u{6cf0}\u{7136}",
+        "\u{81ea}\u{82e5}",
+        "\u{6cf0}\u{7136}\u{81ea}\u{82e5}",
+        "tai4ran2zi4ruo4",
+        "calm and composed",
+    ),
+    (
+        "\u{5b66}\u{4ee5}",
+        "\u{81f4}\u{7528}",
+        "\u{5b66}\u{4ee5}\u{81f4}\u{7528}",
+        "xue2yi3zhi4yong4",
+        "learn to apply",
+    ),
+    (
+        "\u{5927}\u{5668}",
+        "\u{665a}\u{6210}",
+        "\u{5927}\u{5668}\u{665a}\u{6210}",
+        "da4qi4wan3cheng2",
+        "great minds mature slowly",
+    ),
+    (
+        "\u{53e3}\u{662f}",
+        "\u{5fc3}\u{975e}",
+        "\u{53e3}\u{662f}\u{5fc3}\u{975e}",
+        "kou3shi4xin1fei1",
+        "say one thing mean another",
+    ),
+    (
+        "\u{9f99}\u{98de}",
+        "\u{51e4}\u{821e}",
+        "\u{9f99}\u{98de}\u{51e4}\u{821e}",
+        "long2fei1feng4wu3",
+        "dragons fly phoenixes dance",
+    ),
+    (
+        "\u{864e}\u{5934}",
+        "\u{86c7}\u{5c3e}",
+        "\u{864e}\u{5934}\u{86c7}\u{5c3e}",
+        "hu3tou2she2wei3",
+        "strong start weak end",
+    ),
+    (
+        "\u{6c34}\u{6ef4}",
+        "\u{77f3}\u{7a7f}",
+        "\u{6c34}\u{6ef4}\u{77f3}\u{7a7f}",
+        "shui3di1shi2chuan1",
+        "water wears stone",
+    ),
+    (
+        "\u{98ce}\u{548c}",
+        "\u{65e5}\u{4e3d}",
+        "\u{98ce}\u{548c}\u{65e5}\u{4e3d}",
+        "feng1he2ri4li4",
+        "gentle breeze sunny day",
+    ),
+    (
+        "\u{91d1}\u{7389}",
+        "\u{6ee1}\u{5802}",
+        "\u{91d1}\u{7389}\u{6ee1}\u{5802}",
+        "jin1yu4man3tang2",
+        "riches fill the hall",
+    ),
+    (
+        "\u{5929}\u{957f}",
+        "\u{5730}\u{4e45}",
+        "\u{5929}\u{957f}\u{5730}\u{4e45}",
+        "tian1chang2di4jiu3",
+        "everlasting",
+    ),
+    (
+        "\u{5fc3}\u{5982}",
+        "\u{6b62}\u{6c34}",
+        "\u{5fc3}\u{5982}\u{6b62}\u{6c34}",
+        "xin1ru2zhi3shui3",
+        "mind still as water",
+    ),
+    (
+        "\u{5149}\u{660e}",
+        "\u{78ca}\u{843d}",
+        "\u{5149}\u{660e}\u{78ca}\u{843d}",
+        "guang1ming2lei3luo4",
+        "open and upright",
+    ),
+    (
+        "\u{4e00}\u{8def}",
+        "\u{5e73}\u{5b89}",
+        "\u{4e00}\u{8def}\u{5e73}\u{5b89}",
+        "yi1lu4ping2an1",
+        "safe journey",
     ),
 ];
 
@@ -2478,16 +2632,25 @@ impl GameState {
         self.player.tick_form();
 
         // Spirit clock tick
+        let spirit_shielded = crate::status::has_spirit_shield(&self.player.statuses);
+        let spirit_sustained = self.player.has_spirit_sustain();
+        let skip_drain = spirit_shielded || (spirit_sustained && self.move_count % 2 == 0);
         if self.player.spirit > 0 {
-            self.player.spirit -= 1;
+            if !skip_drain {
+                self.player.spirit -= 1;
+            }
             if self.player.spirit == 0 {
                 self.message = "🌑 Your spirit is exhausted! Find food or an ink well!".to_string();
                 self.message_timer = 80;
             }
         } else {
-            // Starving: take 1 damage per move
-            self.player.hp -= 1;
-            self.message = "🌑 Spiritual exhaustion drains your life force! (-1 HP)".to_string();
+            // Starving: damage scales with depth
+            let starvation_dmg = 1 + self.floor_num / 5;
+            self.player.hp -= starvation_dmg;
+            self.message = format!(
+                "🌑 Spiritual exhaustion drains your life force! (-{} HP)",
+                starvation_dmg
+            );
             self.message_timer = 40;
             if self.player.hp <= 0 {
                 self.player.hp = 0;
@@ -2701,11 +2864,36 @@ impl GameState {
 
         // Check for enemy bump → start tactical combat
         if let Some(idx) = self.enemy_at(nx, ny) {
+            let mut combat_indices = vec![idx];
+            let mut sentence_ambush = false;
+
+            if self.floor_num >= 8 && !self.enemies[idx].is_boss {
+                let chance = if self.floor_num >= 15 { 3 } else { 5 };
+                if self.rng_next() % chance == 0 {
+                    let pool = vocab::sentences_for_floor(self.floor_num);
+                    if !pool.is_empty() {
+                        let entry_idx = self.rng_next() as usize % pool.len();
+                        let sentence = &pool[entry_idx];
+                        let sent_enemies =
+                            combat::transition::enemies_from_sentence(sentence, self.floor_num);
+                        for mut se in sent_enemies {
+                            se.x = nx;
+                            se.y = ny;
+                            self.enemies.push(se);
+                            combat_indices.push(self.enemies.len() - 1);
+                        }
+                        sentence_ambush = true;
+                    }
+                }
+            }
+
             let battle = combat::transition::enter_combat(
                 &self.player,
                 &self.enemies,
-                &[idx],
+                &combat_indices,
                 self.floor_num,
+                self.current_room_modifier(),
+                &self.srs,
             );
             self.combat = CombatState::TacticalBattle(Box::new(battle));
             self.typing.clear();
@@ -2738,6 +2926,10 @@ impl GameState {
                 ) {
                     self.message.push_str(&format!("\n{}", hint));
                 }
+            }
+            if sentence_ambush {
+                self.message
+                    .push_str("\n\u{26a0} Sentence ambush! Extra enemies joined the fight!");
             }
             self.message_timer = 255;
             return;
@@ -3119,6 +3311,8 @@ impl GameState {
                         &self.enemies,
                         &[i],
                         self.floor_num,
+                        self.current_room_modifier(),
+                        &self.srs,
                     );
                     self.combat = CombatState::TacticalBattle(Box::new(battle));
                     self.typing.clear();
@@ -4870,7 +5064,7 @@ impl GameState {
         items.push(ShopItem {
             label: "🍙 Rice Ball".to_string(),
             cost: 8,
-            kind: ShopItemKind::Consumable(crate::player::Item::RiceBall(30)),
+            kind: ShopItemKind::Consumable(crate::player::Item::RiceBall(40)),
         });
 
         items
@@ -5886,6 +6080,8 @@ impl GameState {
                     &self.enemies,
                     &[idx],
                     self.floor_num,
+                    self.current_room_modifier(),
+                    &self.srs,
                 );
                 self.combat = CombatState::TacticalBattle(Box::new(battle));
                 self.typing.clear();
@@ -5912,14 +6108,16 @@ impl GameState {
     /// Generate a random item appropriate for the current floor.
     fn random_item(&mut self) -> crate::player::Item {
         use crate::player::Item;
-        match self.rng_next() % 7 {
+        match self.rng_next() % 10 {
             0 => Item::HealthPotion(4 + self.floor_num),
             1 => Item::PoisonFlask(2, 3),
             2 => Item::RevealScroll,
             3 => Item::TeleportScroll,
             4 => Item::HastePotion(5),
             5 => Item::StunBomb,
-            _ => Item::RiceBall(30),
+            7 => Item::MeditationIncense(5),
+            8 => Item::AncestralWine(3),
+            _ => Item::RiceBall(40),
         }
     }
 
@@ -6166,6 +6364,57 @@ impl GameState {
                 };
                 self.player.spirit = (self.player.spirit + amount).min(self.player.max_spirit);
                 self.message = format!("{}🍙 Restored {} spirit energy!", prefix, amount);
+                self.message_timer = 60;
+            }
+            crate::player::Item::MeditationIncense(turns) => {
+                let turns = match item_state {
+                    ItemState::Cursed => (turns / 2).max(1),
+                    ItemState::Blessed => turns + 3,
+                    ItemState::Normal => turns,
+                };
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::SpiritShield,
+                        turns,
+                    ));
+                self.message = format!("{}🌕 Spirit Shield active for {} turns!", prefix, turns);
+                self.message_timer = 60;
+            }
+            crate::player::Item::AncestralWine(confuse_turns) => {
+                let confuse_turns = match item_state {
+                    ItemState::Cursed => confuse_turns + 3,
+                    ItemState::Blessed => 0,
+                    ItemState::Normal => confuse_turns,
+                };
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                self.player.spirit = self.player.max_spirit;
+                if confuse_turns > 0 {
+                    self.player
+                        .statuses
+                        .push(crate::status::StatusInstance::new(
+                            crate::status::StatusKind::Confused,
+                            confuse_turns,
+                        ));
+                    self.message = format!(
+                        "{}🍶 Spirit fully restored! But you feel dizzy for {} turns...",
+                        prefix, confuse_turns
+                    );
+                } else {
+                    self.message = format!(
+                        "{}🍶 Spirit fully restored! The blessed wine clears your mind!",
+                        prefix
+                    );
+                }
                 self.message_timer = 60;
             }
         }
@@ -8222,12 +8471,12 @@ pub fn init_game() -> Result<(), JsValue> {
                         s.codex.record(hanzi, pinyin, meaning, correct);
                         if correct {
                             s.player.hp = (s.player.hp + 1).min(s.player.max_hp);
-                            s.player.spirit = (s.player.spirit + 25).min(s.player.max_spirit);
+                            s.player.spirit = (s.player.spirit + 35).min(s.player.max_spirit);
                             let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
                             let gs = &mut *s;
                             gs.particles.spawn_heal(sx, sy, &mut gs.rng_state);
                             s.message = format!(
-                                "✓ Correct! {} has {} components. +1 HP, +25 Spirit!",
+                                "✓ Correct! {} has {} components. +1 HP, +35 Spirit!",
                                 hanzi, correct_count
                             );
                         } else {
@@ -9389,7 +9638,31 @@ pub fn init_game() -> Result<(), JsValue> {
                 let gs = &mut *s;
                 let mut old_combat = std::mem::replace(&mut gs.combat, CombatState::Explore);
                 if let CombatState::TacticalBattle(ref mut battle) = old_combat {
+                    let log_len_before = battle.log.len();
                     let result = combat::input::handle_input(battle, key.as_str());
+
+                    // Scan new log messages for particle/shake triggers
+                    for msg in &battle.log[log_len_before..] {
+                        if msg.contains("Collision!") || msg.contains("Slammed") {
+                            gs.trigger_shake(4);
+                            let px = gs.renderer.canvas_w / 2.0;
+                            let py = gs.renderer.canvas_h / 2.0;
+                            gs.particles
+                                .spawn_knockback_collision(px, py, &mut gs.rng_state);
+                        }
+                        if msg.contains("CHENGYU!") {
+                            gs.trigger_shake(6);
+                            let px = gs.renderer.canvas_w / 2.0;
+                            let py = gs.renderer.canvas_h / 3.0;
+                            gs.particles.spawn_chengyu(px, py, &mut gs.rng_state);
+                        }
+                        if msg.contains("Super effective!") {
+                            let px = gs.renderer.canvas_w / 2.0;
+                            let py = gs.renderer.canvas_h / 2.0;
+                            gs.particles
+                                .spawn_wuxing_effective(px, py, &mut gs.rng_state);
+                        }
+                    }
 
                     // SRS tracking: consume last_answer from tactical battle
                     if let Some((hanzi, correct)) = battle.last_answer.take() {
@@ -9490,6 +9763,13 @@ pub fn init_game() -> Result<(), JsValue> {
                             return;
                         }
                         combat::input::BattleEvent::None => {}
+                    }
+
+                    if battle.pending_spirit_delta != 0 {
+                        gs.player.spirit = (gs.player.spirit + battle.pending_spirit_delta)
+                            .max(0)
+                            .min(gs.player.max_spirit);
+                        battle.pending_spirit_delta = 0;
                     }
                 }
                 gs.combat = old_combat;
@@ -10312,6 +10592,69 @@ pub fn init_game() -> Result<(), JsValue> {
                 if had_message {
                     s.tick_message();
                 }
+
+                {
+                    let weather = if let CombatState::TacticalBattle(ref battle) = s.combat {
+                        Some(battle.weather)
+                    } else {
+                        None
+                    };
+                    if let Some(weather) = weather {
+                        let gs = &mut *s;
+                        let cw = gs.renderer.canvas_w;
+                        let ch = gs.renderer.canvas_h;
+                        match weather {
+                            combat::Weather::Rain => {
+                                for _ in 0..3 {
+                                    let x = (gs.rng_state & 0xFFFF) as f64 / 65536.0 * cw;
+                                    gs.rng_state ^= gs.rng_state << 13;
+                                    gs.rng_state ^= gs.rng_state >> 7;
+                                    gs.rng_state ^= gs.rng_state << 17;
+                                    gs.particles.spawn_rain_drop(x, 0.0, &mut gs.rng_state);
+                                }
+                            }
+                            combat::Weather::Fog => {
+                                if gs.rng_state % 4 == 0 {
+                                    let x = (gs.rng_state & 0xFFFF) as f64 / 65536.0 * cw;
+                                    gs.rng_state ^= gs.rng_state << 13;
+                                    gs.rng_state ^= gs.rng_state >> 7;
+                                    gs.rng_state ^= gs.rng_state << 17;
+                                    let y = ch * 0.6
+                                        + (gs.rng_state & 0xFFFF) as f64 / 65536.0 * ch * 0.4;
+                                    gs.rng_state ^= gs.rng_state << 13;
+                                    gs.rng_state ^= gs.rng_state >> 7;
+                                    gs.rng_state ^= gs.rng_state << 17;
+                                    gs.particles.spawn_fog_wisp(x, y, &mut gs.rng_state);
+                                }
+                            }
+                            combat::Weather::Sandstorm => {
+                                for _ in 0..2 {
+                                    let y = (gs.rng_state & 0xFFFF) as f64 / 65536.0 * ch;
+                                    gs.rng_state ^= gs.rng_state << 13;
+                                    gs.rng_state ^= gs.rng_state >> 7;
+                                    gs.rng_state ^= gs.rng_state << 17;
+                                    gs.particles.spawn_sand_grain(0.0, y, &mut gs.rng_state);
+                                }
+                            }
+                            combat::Weather::SpiritualInk => {
+                                if gs.rng_state % 3 == 0 {
+                                    let x = (gs.rng_state & 0xFFFF) as f64 / 65536.0 * cw;
+                                    gs.rng_state ^= gs.rng_state << 13;
+                                    gs.rng_state ^= gs.rng_state >> 7;
+                                    gs.rng_state ^= gs.rng_state << 17;
+                                    let y = ch * 0.3
+                                        + (gs.rng_state & 0xFFFF) as f64 / 65536.0 * ch * 0.5;
+                                    gs.rng_state ^= gs.rng_state << 13;
+                                    gs.rng_state ^= gs.rng_state >> 7;
+                                    gs.rng_state ^= gs.rng_state << 17;
+                                    gs.particles.spawn_ink_mote(x, y, &mut gs.rng_state);
+                                }
+                            }
+                            combat::Weather::Clear => {}
+                        }
+                    }
+                }
+
                 s.particles.tick();
                 if s.shake_timer > 0 {
                     s.shake_timer -= 1;
@@ -10354,6 +10697,13 @@ pub fn init_game() -> Result<(), JsValue> {
                                 gs.handle_tactical_defeat(killer_name);
                             }
                             _ => {
+                                if battle.pending_spirit_delta != 0 {
+                                    gs.player.spirit = (gs.player.spirit
+                                        + battle.pending_spirit_delta)
+                                        .max(0)
+                                        .min(gs.player.max_spirit);
+                                    battle.pending_spirit_delta = 0;
+                                }
                                 gs.combat = old_combat;
                             }
                         }
@@ -10448,9 +10798,9 @@ mod item_state_tests {
     fn spirit_decreases_on_move() {
         use crate::player::{Player, PlayerClass};
         let mut p = Player::new(0, 0, PlayerClass::Scholar);
-        assert_eq!(p.spirit, 100);
+        assert_eq!(p.spirit, 160);
         p.spirit -= 1;
-        assert_eq!(p.spirit, 99);
+        assert_eq!(p.spirit, 159);
     }
 
     #[test]
@@ -10458,13 +10808,13 @@ mod item_state_tests {
         use crate::player::{Player, PlayerClass};
         let mut p = Player::new(0, 0, PlayerClass::Scholar);
         p.spirit = 50;
-        let restore = 30;
+        let restore = 40;
         p.spirit = (p.spirit + restore).min(p.max_spirit);
-        assert_eq!(p.spirit, 80);
+        assert_eq!(p.spirit, 90);
 
-        p.spirit = 90;
+        p.spirit = 140;
         p.spirit = (p.spirit + restore).min(p.max_spirit);
-        assert_eq!(p.spirit, 100);
+        assert_eq!(p.spirit, 160);
     }
 
     #[test]

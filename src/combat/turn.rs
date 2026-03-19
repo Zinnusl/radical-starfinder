@@ -1,5 +1,4 @@
 use crate::combat::{BattleUnit, TacticalBattle, UnitKind};
-use crate::enemy::AiBehavior;
 use crate::player::{PlayerClass, PlayerForm};
 use crate::status::has_haste;
 

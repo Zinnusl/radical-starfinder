@@ -1,5 +1,5 @@
 use crate::combat::action::deal_damage;
-use crate::combat::{BattleTile, TacticalBattle};
+use crate::combat::{BattleTile, TacticalBattle, Weather};
 use crate::radical::SpellEffect;
 use std::collections::VecDeque;
 
@@ -31,7 +31,7 @@ pub fn apply_terrain_interactions(
             for &(x, y) in affected_tiles {
                 if let Some(tile) = battle.arena.tile(x, y) {
                     match tile {
-                        BattleTile::Grass => {
+                        BattleTile::Grass | BattleTile::Thorns => {
                             battle.arena.set_tile(x, y, BattleTile::Scorched);
                             messages.push(format!("Grass burns at ({},{})!", x, y));
                             if let Some(idx) = battle.unit_at(x, y) {
@@ -57,7 +57,29 @@ pub fn apply_terrain_interactions(
             for &(x, y) in affected_tiles {
                 if battle.arena.tile(x, y) == Some(BattleTile::Water) {
                     let connected = flood_connected_water(&battle.arena, x, y);
-                    for (wx, wy) in connected {
+                    // In rain, lightning chains 1 extra tile beyond water
+                    let expanded = if battle.weather == Weather::Rain {
+                        let mut extra = Vec::new();
+                        let deltas: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+                        for &(wx, wy) in &connected {
+                            for (dx, dy) in &deltas {
+                                let nx = wx + dx;
+                                let ny = wy + dy;
+                                if battle.arena.in_bounds(nx, ny)
+                                    && !connected.contains(&(nx, ny))
+                                    && !extra.contains(&(nx, ny))
+                                {
+                                    extra.push((nx, ny));
+                                }
+                            }
+                        }
+                        let mut all = connected;
+                        all.extend(extra);
+                        all
+                    } else {
+                        connected
+                    };
+                    for (wx, wy) in expanded {
                         if let Some(idx) = battle.unit_at(wx, wy) {
                             if !stun_targets.contains(&idx) {
                                 stun_targets.push(idx);
@@ -79,7 +101,10 @@ pub fn apply_terrain_interactions(
         TerrainSource::Earthquake => {
             for &(x, y) in affected_tiles {
                 if let Some(tile) = battle.arena.tile(x, y) {
-                    if matches!(tile, BattleTile::Open | BattleTile::Grass) {
+                    if matches!(
+                        tile,
+                        BattleTile::Open | BattleTile::Grass | BattleTile::Sand
+                    ) {
                         battle.arena.set_tile(x, y, BattleTile::BrokenGround);
                     }
                 }
@@ -159,22 +184,72 @@ pub fn apply_knockback(
         return messages;
     }
 
-    if battle.unit_at(dest_x, dest_y).is_some() {
-        messages.push("Knockback blocked by another unit!".to_string());
+    if let Some(collide_idx) = battle.unit_at(dest_x, dest_y) {
+        // Collision damage: both the knocked unit and the unit it hits take 1 damage.
+        let actual_target = deal_damage(battle, target_idx, 1);
+        let actual_collide = deal_damage(battle, collide_idx, 1);
+        messages.push(format!(
+            "Collision! {} takes {} damage, {} takes {} damage!",
+            battle.units[target_idx].hanzi,
+            actual_target,
+            battle.units[collide_idx].hanzi,
+            actual_collide
+        ));
         return messages;
     }
 
     battle.units[target_idx].x = dest_x;
     battle.units[target_idx].y = dest_y;
 
-    if dest_tile == BattleTile::Water {
-        use crate::status::{StatusInstance, StatusKind};
-        battle.units[target_idx]
-            .statuses
-            .push(StatusInstance::new(StatusKind::Confused, 1));
-        messages.push("Knocked into water — slowed!".to_string());
-    } else {
-        messages.push(format!("{} knocked back!", battle.units[target_idx].hanzi));
+    match dest_tile {
+        BattleTile::Water => {
+            use crate::status::{StatusInstance, StatusKind};
+            battle.units[target_idx]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Confused, 1));
+            messages.push("Knocked into water — slowed!".to_string());
+        }
+        BattleTile::Lava => {
+            let actual = deal_damage(battle, target_idx, 2);
+            messages.push(format!(
+                "{} knocked into lava for {} damage!",
+                battle.units[target_idx].hanzi, actual
+            ));
+        }
+        BattleTile::Scorched => {
+            let actual = deal_damage(battle, target_idx, 1);
+            messages.push(format!(
+                "{} knocked onto scorched ground for {} damage!",
+                battle.units[target_idx].hanzi, actual
+            ));
+        }
+        BattleTile::Thorns => {
+            let actual = deal_damage(battle, target_idx, 1);
+            messages.push(format!(
+                "{} knocked into thorns for {} damage!",
+                battle.units[target_idx].hanzi, actual
+            ));
+        }
+        BattleTile::Ice => {
+            messages.push(format!("{} slides on ice!", battle.units[target_idx].hanzi));
+            let slide_x = dest_x + dx;
+            let slide_y = dest_y + dy;
+            if battle.arena.in_bounds(slide_x, slide_y)
+                && battle
+                    .arena
+                    .tile(slide_x, slide_y)
+                    .map(|t| t.is_walkable())
+                    .unwrap_or(false)
+                && battle.unit_at(slide_x, slide_y).is_none()
+            {
+                battle.units[target_idx].x = slide_x;
+                battle.units[target_idx].y = slide_y;
+                messages.push(format!("Slid to ({},{})!", slide_x, slide_y));
+            }
+        }
+        _ => {
+            messages.push(format!("{} knocked back!", battle.units[target_idx].hanzi));
+        }
     }
 
     messages
@@ -198,6 +273,20 @@ pub fn apply_scorched_damage(battle: &mut TacticalBattle) -> Vec<String> {
                 "{} burns on scorched ground! (-{} HP)",
                 name, actual
             ));
+        }
+        if tile == Some(BattleTile::Lava) {
+            let actual = deal_damage(battle, i, 2);
+            let name = if battle.units[i].is_player() {
+                "You".to_string()
+            } else {
+                battle.units[i].hanzi.to_string()
+            };
+            messages.push(format!("{} sears in lava! (-{} HP)", name, actual));
+        }
+        // SpiritDrain: drains spirit from player standing on it
+        if tile == Some(BattleTile::SpiritDrain) && battle.units[i].is_player() {
+            battle.pending_spirit_delta -= 3;
+            messages.push("⚫ The spirit drain saps your energy! (-3 spirit)".to_string());
         }
     }
     messages

@@ -1,4 +1,4 @@
-use crate::combat::{TacticalArena, TacticalBattle};
+use crate::combat::{TacticalArena, TacticalBattle, Weather};
 use std::collections::VecDeque;
 
 pub fn manhattan(x1: i32, y1: i32, x2: i32, y2: i32) -> i32 {
@@ -43,7 +43,10 @@ pub fn reachable_tiles(
             if (nx != start_x || ny != start_y) && battle.unit_at(nx, ny).is_some() {
                 continue;
             }
-            let step_cost = 1 + tile.extra_move_cost();
+            let mut step_cost = 1 + tile.extra_move_cost();
+            if battle.weather == Weather::Sandstorm {
+                step_cost += 1;
+            }
             let new_cost = cur_cost + step_cost;
             if new_cost > movement {
                 continue;
@@ -71,16 +74,15 @@ pub fn reachable_tiles(
     result
 }
 
-/// Bresenham line-of-sight check. Returns true if (x1,y1) can see (x2,y2)
-/// without Obstacle tiles blocking.
+/// Bresenham line-of-sight check between two tiles.
 pub fn has_line_of_sight(arena: &TacticalArena, x1: i32, y1: i32, x2: i32, y2: i32) -> bool {
-    let mut x = x1;
-    let mut y = y1;
     let dx = (x2 - x1).abs();
     let dy = -(y2 - y1).abs();
     let sx = if x1 < x2 { 1 } else { -1 };
     let sy = if y1 < y2 { 1 } else { -1 };
     let mut err = dx + dy;
+    let mut x = x1;
+    let mut y = y1;
 
     loop {
         if x == x2 && y == y2 {
@@ -128,4 +130,12 @@ pub fn tiles_in_range_with_los(
         }
     }
     result
+}
+
+/// Adjust range based on weather conditions (e.g., Fog reduces range).
+pub fn weather_adjusted_range(base_range: i32, weather: Weather) -> i32 {
+    match weather {
+        Weather::Fog => (base_range - 2).max(1),
+        _ => base_range,
+    }
 }

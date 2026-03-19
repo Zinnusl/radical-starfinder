@@ -32,6 +32,8 @@ pub enum EquipEffect {
     GoldBonus(i32),
     /// Allows digging through walls
     Digging,
+    /// Halves spirit drain rate (drain 1 per 2 moves instead of every move)
+    SpiritSustain,
 }
 
 impl EquipEffect {
@@ -54,6 +56,10 @@ impl EquipEffect {
             EquipEffect::Digging => {
                 "Allows you to dig through dungeon walls by walking into them.".to_string()
             }
+            EquipEffect::SpiritSustain => {
+                "Halves spirit drain rate — lose 1 spirit every 2 moves instead of every move."
+                    .to_string()
+            }
         }
     }
 }
@@ -71,7 +77,7 @@ impl Equipment {
 
 #[allow(dead_code)]
 pub const MAX_ITEMS: usize = 5;
-pub const ITEM_KIND_COUNT: usize = 7;
+pub const ITEM_KIND_COUNT: usize = 9;
 pub const MYSTERY_ITEM_APPEARANCES: [&str; ITEM_KIND_COUNT] = [
     "Vermilion Seal 朱符",
     "Jade Seal 玉符",
@@ -80,6 +86,8 @@ pub const MYSTERY_ITEM_APPEARANCES: [&str; ITEM_KIND_COUNT] = [
     "Mirror Seal 镜符",
     "Storm Seal 雷符",
     "Phoenix Seal 凤符",
+    "Moon Seal 月符",
+    "Dragon Seal 龙符",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -91,6 +99,8 @@ pub enum ItemKind {
     HastePotion,
     StunBomb,
     RiceBall,
+    MeditationIncense,
+    AncestralWine,
 }
 
 impl ItemKind {
@@ -103,6 +113,8 @@ impl ItemKind {
             ItemKind::HastePotion => 4,
             ItemKind::StunBomb => 5,
             ItemKind::RiceBall => 6,
+            ItemKind::MeditationIncense => 7,
+            ItemKind::AncestralWine => 8,
         }
     }
 }
@@ -124,6 +136,10 @@ pub enum Item {
     StunBomb,
     /// Restore spirit energy
     RiceBall(i32),
+    /// Block spirit drain for N moves
+    MeditationIncense(i32),
+    /// Full spirit restore + Confused for N turns
+    AncestralWine(i32),
 }
 
 impl Item {
@@ -136,6 +152,8 @@ impl Item {
             Item::HastePotion(_) => ItemKind::HastePotion,
             Item::StunBomb => ItemKind::StunBomb,
             Item::RiceBall(_) => ItemKind::RiceBall,
+            Item::MeditationIncense(_) => ItemKind::MeditationIncense,
+            Item::AncestralWine(_) => ItemKind::AncestralWine,
         }
     }
 
@@ -148,6 +166,8 @@ impl Item {
             Item::HastePotion(_) => "⚡ Haste Potion",
             Item::StunBomb => "💥 Stun Bomb",
             Item::RiceBall(_) => "🍙 Rice Ball",
+            Item::MeditationIncense(_) => "🧘 Meditation Incense",
+            Item::AncestralWine(_) => "🍶 Ancestral Wine",
         }
     }
 
@@ -161,6 +181,8 @@ impl Item {
             Item::HastePotion(_) => "Haste",
             Item::StunBomb => "Stun",
             Item::RiceBall(_) => "Rice",
+            Item::MeditationIncense(_) => "Incense",
+            Item::AncestralWine(_) => "Wine",
         }
     }
 
@@ -181,6 +203,8 @@ impl Item {
             Item::HastePotion(_) => "Grants Haste, letting you take extra actions each turn for a short duration.",
             Item::StunBomb => "Stuns all visible enemies for several turns, preventing them from acting.",
             Item::RiceBall(_) => "Restores spirit energy. Eat to stave off spiritual exhaustion.",
+            Item::MeditationIncense(_) => "Burns fragrant incense that shields your spirit from decay for several moves.",
+            Item::AncestralWine(_) => "Potent rice wine that fully restores spirit but leaves you confused and disoriented.",
         }
     }
 }
@@ -240,6 +264,11 @@ pub const EQUIPMENT_POOL: &[Equipment] = &[
         name: "Iron Pickaxe",
         slot: EquipSlot::Weapon,
         effect: EquipEffect::Digging,
+    },
+    Equipment {
+        name: "Spirit Talisman",
+        slot: EquipSlot::Charm,
+        effect: EquipEffect::SpiritSustain,
     },
 ];
 
@@ -624,9 +653,24 @@ impl Player {
             piety: Vec::new(),
             form: PlayerForm::Human,
             form_timer: 0,
-            spirit: 100,
-            max_spirit: 100,
+            spirit: Self::base_max_spirit(class),
+            max_spirit: Self::base_max_spirit(class),
         }
+    }
+
+    fn base_max_spirit(class: PlayerClass) -> i32 {
+        match class {
+            PlayerClass::Monk | PlayerClass::Pilgrim => 180,
+            PlayerClass::Herbalist | PlayerClass::Calligrapher | PlayerClass::Inkmaster => 170,
+            PlayerClass::Scholar => 160,
+            _ => 150,
+        }
+    }
+
+    pub fn has_spirit_sustain(&self) -> bool {
+        self.charm
+            .map(|c| matches!(c.effect, EquipEffect::SpiritSustain))
+            .unwrap_or(false)
     }
 
     pub fn get_piety(&self, deity: Deity) -> i32 {

@@ -184,6 +184,82 @@ impl ParticleSystem {
         self.burst(x, y, 22, 200, 160, 255, 3.0, rng);
         self.burst(x, y, 12, 255, 200, 255, 2.0, rng);
     }
+
+    pub fn spawn_knockback_collision(&mut self, x: f64, y: f64, rng: &mut u64) {
+        self.burst(x, y, 16, 200, 180, 160, 3.5, rng);
+        self.burst(x, y, 8, 255, 255, 200, 2.0, rng);
+    }
+
+    pub fn spawn_chengyu(&mut self, x: f64, y: f64, rng: &mut u64) {
+        self.burst(x, y, 24, 255, 215, 0, 3.5, rng);
+        self.burst(x, y, 12, 255, 100, 50, 2.5, rng);
+        self.burst(x, y, 8, 255, 255, 180, 1.5, rng);
+    }
+
+    pub fn spawn_wuxing_effective(&mut self, x: f64, y: f64, rng: &mut u64) {
+        self.burst(x, y, 18, 120, 255, 120, 3.0, rng);
+        self.burst(x, y, 10, 255, 255, 100, 2.0, rng);
+    }
+
+    pub fn spawn_rain_drop(&mut self, x: f64, y: f64, rng: &mut u64) {
+        self.particles.push(Particle {
+            x: x + (rng_f64(rng) - 0.5) * 6.0,
+            y,
+            vx: -0.3,
+            vy: 3.0 + rng_f64(rng) * 2.0,
+            life: 1.0,
+            decay: 0.06 + rng_f64(rng) * 0.04,
+            size: 1.0 + rng_f64(rng),
+            r: 100,
+            g: 140,
+            b: 220,
+        });
+    }
+
+    pub fn spawn_fog_wisp(&mut self, x: f64, y: f64, rng: &mut u64) {
+        self.particles.push(Particle {
+            x,
+            y,
+            vx: (rng_f64(rng) - 0.5) * 0.4,
+            vy: -(0.2 + rng_f64(rng) * 0.3),
+            life: 1.0,
+            decay: 0.008 + rng_f64(rng) * 0.006,
+            size: 4.0 + rng_f64(rng) * 4.0,
+            r: 180,
+            g: 180,
+            b: 200,
+        });
+    }
+
+    pub fn spawn_sand_grain(&mut self, x: f64, y: f64, rng: &mut u64) {
+        self.particles.push(Particle {
+            x,
+            y,
+            vx: 1.5 + rng_f64(rng) * 2.0,
+            vy: (rng_f64(rng) - 0.5) * 0.8,
+            life: 1.0,
+            decay: 0.04 + rng_f64(rng) * 0.03,
+            size: 1.0 + rng_f64(rng) * 1.5,
+            r: 200,
+            g: 180,
+            b: 120,
+        });
+    }
+
+    pub fn spawn_ink_mote(&mut self, x: f64, y: f64, rng: &mut u64) {
+        self.particles.push(Particle {
+            x,
+            y,
+            vx: (rng_f64(rng) - 0.5) * 0.6,
+            vy: -(0.5 + rng_f64(rng) * 1.0),
+            life: 1.0,
+            decay: 0.012 + rng_f64(rng) * 0.008,
+            size: 2.0 + rng_f64(rng) * 2.5,
+            r: 40,
+            g: 20,
+            b: 60,
+        });
+    }
 }
 
 /// Simple xorshift rng returning f64 in [0,1).

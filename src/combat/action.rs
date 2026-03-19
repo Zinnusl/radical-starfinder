@@ -1,6 +1,11 @@
-use crate::combat::{Direction, TacticalBattle};
+use crate::combat::{BattleTile, Direction, TacticalBattle, WuxingElement};
 
-pub fn move_unit(battle: &mut TacticalBattle, unit_idx: usize, dest_x: i32, dest_y: i32) {
+pub fn move_unit(
+    battle: &mut TacticalBattle,
+    unit_idx: usize,
+    dest_x: i32,
+    dest_y: i32,
+) -> Vec<String> {
     let unit = &mut battle.units[unit_idx];
     let old_x = unit.x;
     let old_y = unit.y;
@@ -16,6 +21,26 @@ pub fn move_unit(battle: &mut TacticalBattle, unit_idx: usize, dest_x: i32, dest
     if unit.is_player() {
         battle.player_moved = true;
     }
+
+    let mut messages = Vec::new();
+    if battle.arena.tile(dest_x, dest_y) == Some(BattleTile::Thorns) {
+        let actual = deal_damage(battle, unit_idx, 1);
+        let name = if battle.units[unit_idx].is_player() {
+            "You".to_string()
+        } else {
+            battle.units[unit_idx].hanzi.to_string()
+        };
+        messages.push(format!("{} is pierced by thorns! (-{} HP)", name, actual));
+    }
+    // SpiritWell: one-time spirit restore, convert to Open
+    if battle.arena.tile(dest_x, dest_y) == Some(BattleTile::SpiritWell)
+        && battle.units[unit_idx].is_player()
+    {
+        battle.arena.set_tile(dest_x, dest_y, BattleTile::Open);
+        battle.pending_spirit_delta += 15;
+        messages.push("🌊 The Spirit Well restores your energy! (+15 spirit)".to_string());
+    }
+    messages
 }
 
 pub fn defend(battle: &mut TacticalBattle, unit_idx: usize) {
@@ -29,11 +54,19 @@ pub fn defend(battle: &mut TacticalBattle, unit_idx: usize) {
 
 pub fn wait(battle: &mut TacticalBattle, unit_idx: usize) {
     let unit = &mut battle.units[unit_idx];
-    // Max +2 stored movement.
     unit.stored_movement = (unit.stored_movement + 1).min(2);
-    if unit.is_player() {
+    let is_player = unit.is_player();
+    let ux = unit.x;
+    let uy = unit.y;
+    if is_player {
         battle.player_acted = true;
-        battle.log_message("You wait, gathering momentum.");
+        let tile = battle.arena.tile(ux, uy);
+        if tile == Some(BattleTile::MeditationStone) {
+            battle.pending_spirit_delta += 10;
+            battle.log_message("You meditate on the stone... (+10 spirit)");
+        } else {
+            battle.log_message("You wait, gathering momentum.");
+        }
     }
 }
 
@@ -50,12 +83,72 @@ pub fn deal_damage(battle: &mut TacticalBattle, target_idx: usize, raw_damage: i
     unit.radical_armor = 0;
 
     damage = damage.max(1);
+
+    let reading_bonus = word_group_order_bonus(battle, target_idx, damage);
+    damage += reading_bonus;
+
+    let unit = &mut battle.units[target_idx];
     unit.hp -= damage;
     if unit.hp <= 0 {
         unit.hp = 0;
         unit.alive = false;
+        if reading_bonus > 0 {
+            battle.log_message(format!("Reading order bonus! +{} damage", reading_bonus));
+        }
+        // SoulTrap: if enemy dies on a SoulTrap tile, log it for spirit gain
+        if !battle.units[target_idx].is_player() {
+            let dx = battle.units[target_idx].x;
+            let dy = battle.units[target_idx].y;
+            if battle.arena.tile(dx, dy) == Some(BattleTile::SoulTrap) {
+                battle.pending_spirit_delta += 10;
+                battle.log_message("💀 Soul Trap captures the fallen spirit! (+10 spirit)");
+            }
+        }
     }
     damage
+}
+
+/// +50% bonus damage when killing word-group members in reading order (left→right).
+fn word_group_order_bonus(battle: &TacticalBattle, target_idx: usize, base_damage: i32) -> i32 {
+    let target = &battle.units[target_idx];
+    let group = match target.word_group {
+        Some(g) => g,
+        None => return 0,
+    };
+    let order = target.word_group_order;
+    if order == 0 {
+        return (base_damage as f64 * 0.5) as i32;
+    }
+    let prev_dead = battle
+        .units
+        .iter()
+        .any(|u| u.word_group == Some(group) && u.word_group_order == order - 1 && !u.alive);
+    if prev_dead {
+        (base_damage as f64 * 0.5) as i32
+    } else {
+        0
+    }
+}
+
+pub fn deal_damage_from(
+    battle: &mut TacticalBattle,
+    attacker_idx: usize,
+    target_idx: usize,
+    raw_damage: i32,
+) -> (i32, Option<&'static str>) {
+    let atk_elem = battle.units[attacker_idx].wuxing_element;
+    let def_elem = battle.units[target_idx].wuxing_element;
+    let multiplier = WuxingElement::multiplier(atk_elem, def_elem);
+    let modified = (raw_damage as f64 * multiplier).ceil() as i32;
+    let actual = deal_damage(battle, target_idx, modified);
+    let label = if multiplier > 1.0 {
+        Some("Super effective!")
+    } else if multiplier < 1.0 {
+        Some("Not very effective...")
+    } else {
+        None
+    };
+    (actual, label)
 }
 
 /// Backstab (+50%) if attacker is behind target's facing.

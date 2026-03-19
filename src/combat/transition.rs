@@ -2,25 +2,34 @@ use crate::combat::turn::{
     build_turn_queue, enemy_base_movement, enemy_base_speed, player_movement, player_speed,
 };
 use crate::combat::{
-    BattleTile, BattleUnit, Direction, TacticalArena, TacticalBattle, TacticalPhase, UnitKind,
-    ARENA_SIZE,
+    arena_size_for_encounter, ArenaBiome, BattleTile, BattleUnit, Direction, TacticalArena,
+    TacticalBattle, TacticalPhase, UnitKind, Weather, WuxingElement,
 };
+use crate::dungeon::RoomModifier;
 use crate::enemy::{AiBehavior, Enemy};
 use crate::player::Player;
+use crate::srs::SrsTracker;
+use crate::vocab::SentenceEntry;
 
 pub fn enter_combat(
     player: &Player,
     enemies: &[Enemy],
     enemy_indices: &[usize],
     floor: i32,
+    room_modifier: Option<RoomModifier>,
+    srs: &SrsTracker,
 ) -> TacticalBattle {
-    let arena = generate_arena(floor);
+    let has_elite = enemy_indices.iter().any(|&ei| enemies[ei].is_elite);
+    let has_boss = enemy_indices.iter().any(|&ei| enemies[ei].is_boss);
+    let arena_size = arena_size_for_encounter(has_elite, has_boss);
+    let biome = ArenaBiome::from_room_modifier(room_modifier);
+    let arena = generate_arena(floor, arena_size, biome);
 
     let mut units = Vec::new();
 
     // Player unit at bottom-center.
-    let px = (ARENA_SIZE / 2) as i32;
-    let py = (ARENA_SIZE - 2) as i32;
+    let px = (arena_size / 2) as i32;
+    let py = (arena_size - 2) as i32;
     let p_speed = player_speed(player.class, player.form, &player.statuses);
     let p_movement = player_movement(player.form, &player.statuses);
 
@@ -51,57 +60,139 @@ pub fn enter_combat(
         fortify_stacks: 0,
         boss_kind: None,
         is_decoy: false,
+        word_group: None,
+        word_group_order: 0,
+        wuxing_element: None,
+        intent: None,
+        mastery_tier: 0,
+        charge_remaining: None,
     });
 
     // Enemy units spread across top half.
-    let enemy_count = enemy_indices.len();
-    for (i, &ei) in enemy_indices.iter().enumerate() {
+    // Multi-char words are split into one BattleUnit per character.
+    let mut word_group_id: usize = 0;
+
+    let total_units: usize = enemy_indices
+        .iter()
+        .map(|&ei| {
+            let e = &enemies[ei];
+            crate::vocab::split_hanzi_chars(e.hanzi, e.pinyin).len()
+        })
+        .sum();
+
+    let mut unit_slot = 0usize;
+    for &ei in enemy_indices.iter() {
         let e = &enemies[ei];
-        let spacing = ARENA_SIZE as i32 / (enemy_count as i32 + 1);
-        let ex = spacing * (i as i32 + 1);
-        let ey = 1 + (i as i32 % 2);
+        let chars = crate::vocab::split_hanzi_chars(e.hanzi, e.pinyin);
+        let char_count = chars.len();
+        let is_multi = char_count > 1;
 
         let e_speed = enemy_base_speed(e.is_elite, e.is_boss);
         let e_movement = enemy_base_movement(e.is_elite, e.is_boss);
 
-        units.push(BattleUnit {
-            kind: UnitKind::Enemy(ei),
-            x: ex.min(ARENA_SIZE as i32 - 1),
-            y: ey,
-            facing: Direction::South,
-            hanzi: e.hanzi,
-            pinyin: e.pinyin,
-            speed: e_speed,
-            movement: e_movement,
-            stored_movement: 0,
-            hp: e.hp,
-            max_hp: e.max_hp,
-            damage: e.damage,
-            defending: false,
-            alive: e.hp > 0,
-            ai: e.ai,
-            radical_actions: e.radical_actions(),
-            statuses: e.statuses.clone(),
-            stunned: e.stunned,
-            radical_armor: e.radical_armor,
-            radical_dodge: e.radical_dodge,
-            radical_multiply: e.radical_multiply,
-            fortify_stacks: 0,
-            boss_kind: e.boss_kind,
-            is_decoy: false,
-        });
+        let hp_per = if is_multi {
+            (e.hp / char_count as i32).max(1)
+        } else {
+            e.hp
+        };
+        let max_hp_per = if is_multi {
+            (e.max_hp / char_count as i32).max(1)
+        } else {
+            e.max_hp
+        };
+        let dmg_per = if is_multi {
+            (e.damage / char_count as i32).max(1)
+        } else {
+            e.damage
+        };
+
+        let group = if is_multi {
+            let g = word_group_id;
+            word_group_id += 1;
+            Some(g)
+        } else {
+            None
+        };
+
+        for (ci, (ch_hanzi, ch_pinyin)) in chars.into_iter().enumerate() {
+            let spacing = arena_size as i32 / (total_units as i32 + 1);
+            let ex = (spacing * (unit_slot as i32 + 1)).min(arena_size as i32 - 1);
+            let ey = 1 + (unit_slot as i32 % 2);
+
+            // Leak the per-char strings so they become &'static str
+            // (battle lifetime matches game tick — acceptable for WASM).
+            let hanzi_static: &'static str = Box::leak(ch_hanzi.into_boxed_str());
+            let pinyin_static: &'static str = Box::leak(ch_pinyin.into_boxed_str());
+
+            units.push(BattleUnit {
+                kind: UnitKind::Enemy(ei),
+                x: ex,
+                y: ey,
+                facing: Direction::South,
+                hanzi: hanzi_static,
+                pinyin: pinyin_static,
+                speed: e_speed,
+                movement: e_movement,
+                stored_movement: 0,
+                hp: hp_per,
+                max_hp: max_hp_per,
+                damage: dmg_per,
+                defending: false,
+                alive: e.hp > 0,
+                ai: e.ai,
+                radical_actions: e.radical_actions(),
+                statuses: e.statuses.clone(),
+                stunned: e.stunned,
+                radical_armor: e.radical_armor,
+                radical_dodge: e.radical_dodge,
+                radical_multiply: e.radical_multiply,
+                fortify_stacks: 0,
+                boss_kind: e.boss_kind,
+                is_decoy: false,
+                word_group: group,
+                word_group_order: ci as u8,
+                wuxing_element: derive_wuxing_element(e),
+                intent: None,
+                mastery_tier: srs.mastery_tier(hanzi_static),
+                charge_remaining: if hanzi_static.chars().count() >= 3 {
+                    Some((hanzi_static.chars().count() as u8) - 1)
+                } else {
+                    None
+                },
+            });
+
+            let last_idx = units.len() - 1;
+            apply_mastery_debuffs(&mut units[last_idx]);
+
+            unit_slot += 1;
+        }
     }
 
     let turn_queue = build_turn_queue(&units);
 
     let is_boss_battle = enemy_indices.iter().any(|&ei| enemies[ei].is_boss);
 
+    // Determine weather — Clear most of the time, variety on deeper floors.
+    let weather = pick_weather(floor, biome);
+
+    let deploy_tiles = compute_deployment_tiles(&arena, &units);
+    let initial_phase = if deploy_tiles.len() > 1 {
+        let (cx, cy) = deploy_tiles[deploy_tiles.len() / 2];
+        TacticalPhase::Deployment {
+            cursor_x: cx,
+            cursor_y: cy,
+            valid_tiles: deploy_tiles,
+        }
+    } else {
+        TacticalPhase::Command
+    };
+
     TacticalBattle {
         arena,
         units,
         turn_queue,
         turn_queue_pos: 0,
-        phase: TacticalPhase::Command,
+        phase: initial_phase,
         turn_number: 1,
         combo_streak: 0,
         player_moved: false,
@@ -122,12 +213,30 @@ pub fn enter_combat(
         ward_tiles: Vec::new(),
         last_spell_school: None,
         stolen_spells: Vec::new(),
+        player_class: Some(player.class),
+        available_items: player
+            .items
+            .iter()
+            .enumerate()
+            .map(|(i, item)| (i, item.clone()))
+            .collect(),
+        used_item_indices: Vec::new(),
+        item_menu_open: false,
+        item_cursor: 0,
+        weather,
+        focus: 10,
+        max_focus: 10,
+        radical_synergy_radical: None,
+        radical_synergy_streak: 0,
+        chengyu_history: Vec::new(),
+        intents_calculated: false,
+        pending_spirit_delta: 0,
     }
 }
 
 /// Scatter some obstacles and terrain based on floor depth.
-fn generate_arena(floor: i32) -> TacticalArena {
-    let mut arena = TacticalArena::new(ARENA_SIZE, ARENA_SIZE);
+fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
+    let mut arena = TacticalArena::new(size, size, biome);
 
     // Simple deterministic obstacle placement based on floor.
     let obstacle_count = 3 + (floor / 3).min(6) as usize;
@@ -137,43 +246,143 @@ fn generate_arena(floor: i32) -> TacticalArena {
             .wrapping_mul(2654435761)
             .wrapping_add(i as u64)
             .wrapping_mul(2246822519);
-        let x = ((hash >> 16) % ARENA_SIZE as u64) as i32;
-        let y = (1 + (hash >> 8) % (ARENA_SIZE as u64 - 3)) as i32;
+        let x = ((hash >> 16) % size as u64) as i32;
+        let y = (1 + (hash >> 8) % (size as u64 - 3)) as i32;
         // Don't place obstacles on spawn points.
-        if y <= 0 || y >= (ARENA_SIZE as i32 - 1) {
+        if y <= 0 || y >= (size as i32 - 1) {
             continue;
         }
-        let mid = ARENA_SIZE as i32 / 2;
-        if y == (ARENA_SIZE as i32 - 2) && (x - mid).abs() <= 1 {
+        let mid = size as i32 / 2;
+        if y == (size as i32 - 2) && (x - mid).abs() <= 1 {
             continue;
         }
         arena.set_tile(x, y, BattleTile::Obstacle);
     }
 
-    // Sprinkle some terrain variety on higher floors.
+    // Sprinkle biome-specific terrain on higher floors.
     if floor >= 3 {
-        let terrain_count = (floor / 5).min(4) as usize;
+        let terrain_count = (floor / 5).min(4) as usize
+            + match biome {
+                ArenaBiome::Stone => 0,
+                _ => 2,
+            };
         for i in 0..terrain_count {
             let hash = seed
                 .wrapping_mul(1103515245)
                 .wrapping_add((i + obstacle_count) as u64)
                 .wrapping_mul(12345);
-            let x = ((hash >> 16) % ARENA_SIZE as u64) as i32;
-            let y = (1 + (hash >> 8) % (ARENA_SIZE as u64 - 3)) as i32;
+            let x = ((hash >> 16) % size as u64) as i32;
+            let y = (1 + (hash >> 8) % (size as u64 - 3)) as i32;
             if arena.tile(x, y) != Some(BattleTile::Open) {
                 continue;
             }
-            let tile = match hash % 4 {
-                0 => BattleTile::Grass,
-                1 => BattleTile::Water,
-                2 => BattleTile::BrokenGround,
-                _ => BattleTile::InkPool,
+            let tile = match biome {
+                ArenaBiome::Stone => match hash % 5 {
+                    0 => BattleTile::Grass,
+                    1 => BattleTile::Water,
+                    2 => BattleTile::BrokenGround,
+                    3 => BattleTile::SpiritWell,
+                    _ => BattleTile::InkPool,
+                },
+                ArenaBiome::Dark => match hash % 6 {
+                    0 => BattleTile::InkPool,
+                    1 => BattleTile::BrokenGround,
+                    2 => BattleTile::SpiritDrain,
+                    3 => BattleTile::SoulTrap,
+                    4 => BattleTile::Sand,
+                    _ => BattleTile::Thorns,
+                },
+                ArenaBiome::Arcane => match hash % 6 {
+                    0 => BattleTile::ArcaneGlyph,
+                    1 => BattleTile::InkPool,
+                    2 => BattleTile::Steam,
+                    3 => BattleTile::SpiritWell,
+                    4 => BattleTile::MeditationStone,
+                    _ => BattleTile::Ice,
+                },
+                ArenaBiome::Cursed => match hash % 5 {
+                    0 => BattleTile::Scorched,
+                    1 => BattleTile::Lava,
+                    2 => BattleTile::BrokenGround,
+                    3 => BattleTile::SpiritDrain,
+                    _ => BattleTile::Thorns,
+                },
+                ArenaBiome::Garden => match hash % 4 {
+                    0 => BattleTile::Grass,
+                    1 => BattleTile::Water,
+                    2 => BattleTile::BambooThicket,
+                    _ => BattleTile::Thorns,
+                },
+                ArenaBiome::Frozen => match hash % 4 {
+                    0 => BattleTile::Ice,
+                    1 => BattleTile::FrozenGround,
+                    2 => BattleTile::Water,
+                    _ => BattleTile::BrokenGround,
+                },
+                ArenaBiome::Infernal => match hash % 4 {
+                    0 => BattleTile::Lava,
+                    1 => BattleTile::Scorched,
+                    2 => BattleTile::Sand,
+                    _ => BattleTile::BrokenGround,
+                },
             };
             arena.set_tile(x, y, tile);
         }
     }
 
     arena
+}
+
+pub fn enemies_from_sentence(sentence: &SentenceEntry, floor: i32) -> Vec<Enemy> {
+    let chars: Vec<char> = sentence.hanzi.chars().collect();
+    let syllables = crate::vocab::pinyin_syllables(sentence.pinyin);
+
+    chars
+        .into_iter()
+        .enumerate()
+        .map(|(i, ch)| {
+            let hanzi: &'static str = Box::leak(ch.to_string().into_boxed_str());
+            let pinyin: &'static str = if i < syllables.len() {
+                Box::leak(syllables[i].to_string().into_boxed_str())
+            } else {
+                Box::leak(ch.to_string().into_boxed_str())
+            };
+            let hp = 1 + floor / 3;
+            let damage = 1 + floor / 4;
+            Enemy {
+                x: i as i32,
+                y: 0,
+                hanzi,
+                pinyin,
+                meaning: sentence.meaning,
+                hp,
+                max_hp: hp,
+                damage,
+                alert: true,
+                is_boss: false,
+                is_elite: false,
+                gold_value: 2 + floor,
+                stunned: false,
+                statuses: Vec::new(),
+                boss_kind: None,
+                phase_triggered: false,
+                summon_cooldown: 0,
+                resisted_spell: None,
+                elite_chain: 0,
+                components: Vec::new(),
+                ai: AiBehavior::Chase,
+                radical_armor: 0,
+                radical_dodge: false,
+                radical_multiply: false,
+            }
+        })
+        .collect()
+}
+
+pub fn sentence_arena_size(char_count: usize) -> usize {
+    let base = arena_size_for_encounter(false, false);
+    let extra = (char_count / 3).min(4);
+    base + extra
 }
 
 /// Sync battle results back to the player and enemies.
@@ -188,18 +397,94 @@ pub fn exit_combat(
     }
 
     let mut killed = Vec::new();
+
+    // With per-char splitting, multiple BattleUnits may share the same enemy index.
+    // Sum remaining HP across all sub-units for each overworld enemy.
+    let mut hp_sums: std::collections::HashMap<usize, i32> = std::collections::HashMap::new();
     for unit in &battle.units {
         if let UnitKind::Enemy(ei) = unit.kind {
             if ei < enemies.len() {
-                let was_alive = enemies[ei].hp > 0;
-                enemies[ei].hp = unit.hp.max(0);
-                if was_alive && enemies[ei].hp <= 0 {
-                    killed.push(ei);
-                }
+                *hp_sums.entry(ei).or_insert(0) += unit.hp.max(0);
             }
+        }
+    }
+
+    for (&ei, &total_hp) in &hp_sums {
+        let was_alive = enemies[ei].hp > 0;
+        enemies[ei].hp = total_hp;
+        if was_alive && total_hp <= 0 {
+            killed.push(ei);
         }
     }
 
     player.spirit = (player.spirit - 2).max(0);
     killed
+}
+
+fn compute_deployment_tiles(arena: &TacticalArena, units: &[BattleUnit]) -> Vec<(i32, i32)> {
+    let h = arena.height as i32;
+    let mut tiles = Vec::new();
+    for y in (h - 2)..h {
+        for x in 0..arena.width as i32 {
+            if arena.tile(x, y).map(|t| t.is_walkable()).unwrap_or(false)
+                && !units.iter().any(|u| u.x == x && u.y == y)
+            {
+                tiles.push((x, y));
+            }
+        }
+    }
+    tiles
+}
+
+fn derive_wuxing_element(enemy: &Enemy) -> Option<WuxingElement> {
+    for comp in &enemy.components {
+        if let Some(elem) = WuxingElement::from_radical(comp) {
+            return Some(elem);
+        }
+    }
+    None
+}
+
+fn apply_mastery_debuffs(unit: &mut BattleUnit) {
+    match unit.mastery_tier {
+        3 => {
+            unit.hp = ((unit.hp as f64) * 0.7).ceil() as i32;
+            unit.max_hp = ((unit.max_hp as f64) * 0.7).ceil() as i32;
+            unit.damage = ((unit.damage as f64) * 0.7).ceil() as i32;
+        }
+        2 => {
+            unit.hp = ((unit.hp as f64) * 0.85).ceil() as i32;
+            unit.max_hp = ((unit.max_hp as f64) * 0.85).ceil() as i32;
+            unit.damage = ((unit.damage as f64) * 0.85).ceil() as i32;
+        }
+        _ => {}
+    }
+    unit.hp = unit.hp.max(1);
+    unit.max_hp = unit.max_hp.max(1);
+    unit.damage = unit.damage.max(1);
+}
+
+fn pick_weather(floor: i32, biome: ArenaBiome) -> Weather {
+    if floor < 5 {
+        return Weather::Clear;
+    }
+    let hash = (floor as u64)
+        .wrapping_mul(2654435761)
+        .wrapping_add(biome as u64);
+    match hash % 10 {
+        0..=4 => Weather::Clear,
+        5 => Weather::Rain,
+        6 => Weather::Fog,
+        7 => Weather::Sandstorm,
+        8..=9 => match biome {
+            ArenaBiome::Arcane => Weather::SpiritualInk,
+            ArenaBiome::Dark => Weather::Fog,
+            ArenaBiome::Cursed => Weather::Sandstorm,
+            ArenaBiome::Stone => Weather::Rain,
+            ArenaBiome::Garden => Weather::Rain,
+            ArenaBiome::Frozen => Weather::Fog,
+            ArenaBiome::Infernal => Weather::Sandstorm,
+        },
+        _ => Weather::Clear,
+    }
 }

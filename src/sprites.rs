@@ -228,6 +228,16 @@ impl SpriteCache {
             "item_stun_bomb",
             "assets/sprites/items/stun_bomb.png",
         );
+        register(
+            &mut sprites,
+            "item_meditation_incense",
+            "assets/sprites/items/meditation_incense.png",
+        );
+        register(
+            &mut sprites,
+            "item_ancestral_wine",
+            "assets/sprites/items/ancestral_wine.png",
+        );
 
         register(
             &mut sprites,
@@ -283,6 +293,165 @@ impl SpriteCache {
             &mut sprites,
             "equip_phoenix_feather",
             "assets/sprites/equipment/phoenix_feather.png",
+        );
+
+        // Arena tile sprites (biome floors)
+        register(
+            &mut sprites,
+            "arena_floor_stone",
+            "assets/sprites/tiles/arena_floor_stone.png",
+        );
+        register(
+            &mut sprites,
+            "arena_floor_dark",
+            "assets/sprites/tiles/arena_floor_dark.png",
+        );
+        register(
+            &mut sprites,
+            "arena_floor_arcane",
+            "assets/sprites/tiles/arena_floor_arcane.png",
+        );
+        register(
+            &mut sprites,
+            "arena_floor_cursed",
+            "assets/sprites/tiles/arena_floor_cursed.png",
+        );
+        // Arena tile sprites (biome obstacles)
+        register(
+            &mut sprites,
+            "arena_obstacle_stone",
+            "assets/sprites/tiles/arena_obstacle_stone.png",
+        );
+        register(
+            &mut sprites,
+            "arena_obstacle_dark",
+            "assets/sprites/tiles/arena_obstacle_dark.png",
+        );
+        register(
+            &mut sprites,
+            "arena_obstacle_arcane",
+            "assets/sprites/tiles/arena_obstacle_arcane.png",
+        );
+        register(
+            &mut sprites,
+            "arena_obstacle_cursed",
+            "assets/sprites/tiles/arena_obstacle_cursed.png",
+        );
+        register(
+            &mut sprites,
+            "arena_floor_garden",
+            "assets/sprites/tiles/arena_floor_garden.png",
+        );
+        register(
+            &mut sprites,
+            "arena_floor_frozen",
+            "assets/sprites/tiles/arena_floor_frozen.png",
+        );
+        register(
+            &mut sprites,
+            "arena_floor_infernal",
+            "assets/sprites/tiles/arena_floor_infernal.png",
+        );
+        register(
+            &mut sprites,
+            "arena_obstacle_garden",
+            "assets/sprites/tiles/arena_obstacle_garden.png",
+        );
+        register(
+            &mut sprites,
+            "arena_obstacle_frozen",
+            "assets/sprites/tiles/arena_obstacle_frozen.png",
+        );
+        register(
+            &mut sprites,
+            "arena_obstacle_infernal",
+            "assets/sprites/tiles/arena_obstacle_infernal.png",
+        );
+        // Arena tile sprites (special terrain)
+        register(
+            &mut sprites,
+            "arena_grass",
+            "assets/sprites/tiles/arena_grass.png",
+        );
+        register(
+            &mut sprites,
+            "arena_water",
+            "assets/sprites/tiles/arena_water.png",
+        );
+        register(
+            &mut sprites,
+            "arena_ice",
+            "assets/sprites/tiles/arena_ice.png",
+        );
+        register(
+            &mut sprites,
+            "arena_scorched",
+            "assets/sprites/tiles/arena_scorched.png",
+        );
+        register(
+            &mut sprites,
+            "arena_ink_pool",
+            "assets/sprites/tiles/arena_ink_pool.png",
+        );
+        register(
+            &mut sprites,
+            "arena_broken_ground",
+            "assets/sprites/tiles/arena_broken_ground.png",
+        );
+        register(
+            &mut sprites,
+            "arena_steam",
+            "assets/sprites/tiles/arena_steam.png",
+        );
+        register(
+            &mut sprites,
+            "arena_lava",
+            "assets/sprites/tiles/arena_lava.png",
+        );
+        register(
+            &mut sprites,
+            "arena_thorns",
+            "assets/sprites/tiles/arena_thorns.png",
+        );
+        register(
+            &mut sprites,
+            "arena_arcane_glyph",
+            "assets/sprites/tiles/arena_arcane_glyph.png",
+        );
+        register(
+            &mut sprites,
+            "arena_sand",
+            "assets/sprites/tiles/arena_sand.png",
+        );
+        register(
+            &mut sprites,
+            "arena_bamboo_thicket",
+            "assets/sprites/tiles/arena_bamboo_thicket.png",
+        );
+        register(
+            &mut sprites,
+            "arena_frozen_ground",
+            "assets/sprites/tiles/arena_frozen_ground.png",
+        );
+        register(
+            &mut sprites,
+            "arena_spirit_well",
+            "assets/sprites/tiles/arena_spirit_well.png",
+        );
+        register(
+            &mut sprites,
+            "arena_spirit_drain",
+            "assets/sprites/tiles/arena_spirit_drain.png",
+        );
+        register(
+            &mut sprites,
+            "arena_meditation_stone",
+            "assets/sprites/tiles/arena_meditation_stone.png",
+        );
+        register(
+            &mut sprites,
+            "arena_soul_trap",
+            "assets/sprites/tiles/arena_soul_trap.png",
         );
 
         register(
