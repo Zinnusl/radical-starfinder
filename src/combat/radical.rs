@@ -1,6 +1,6 @@
 use crate::combat::action::deal_damage;
 use crate::combat::terrain::{apply_terrain_interactions, TerrainSource};
-use crate::combat::TacticalBattle;
+use crate::combat::{ArcingProjectile, Projectile, ProjectileEffect, TacticalBattle};
 use crate::enemy::{PlayerRadicalAbility, RadicalAction};
 use crate::status::{StatusInstance, StatusKind};
 
@@ -38,11 +38,27 @@ pub fn apply_radical_action(
         RadicalAction::OverwhelmingForce => {
             let missing = battle.units[unit_idx].max_hp - battle.units[unit_idx].hp;
             let dmg = 1 + missing / 2;
-            let actual = deal_damage(battle, 0, dmg);
+            let ex = battle.units[unit_idx].x;
+            let ey = battle.units[unit_idx].y;
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.projectiles.push(Projectile {
+                from_x: ex as f64,
+                from_y: ey as f64,
+                to_x: px,
+                to_y: py,
+                progress: 0.0,
+                speed: 0.12,
+                arc_height: 0.2,
+                effect: ProjectileEffect::Damage(dmg),
+                owner_idx: unit_idx,
+                glyph: "💪",
+                color: "#ff4444",
+                done: false,
+            });
             format!(
-                "{} — Strikes with overwhelming force! (-{} HP)",
+                "{} — Strikes with overwhelming force!",
                 action.name(),
-                actual
             )
         }
         RadicalAction::DoubtSeed => {
@@ -52,7 +68,24 @@ pub fn apply_radical_action(
             format!("{} — Sows a seed of doubt!", action.name())
         }
         RadicalAction::DevouringMaw => {
-            let actual = deal_damage(battle, 0, 1);
+            let ex = battle.units[unit_idx].x;
+            let ey = battle.units[unit_idx].y;
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.projectiles.push(Projectile {
+                from_x: ex as f64,
+                from_y: ey as f64,
+                to_x: px,
+                to_y: py,
+                progress: 0.0,
+                speed: 0.10,
+                arc_height: 0.3,
+                effect: ProjectileEffect::Damage(1),
+                owner_idx: unit_idx,
+                glyph: "👄",
+                color: "#aa44aa",
+                done: false,
+            });
             let mut stole_dodge = false;
             let mut stole_armor = 0;
 
@@ -75,7 +108,7 @@ pub fn apply_radical_action(
             if stole_armor > 0 {
                 battle.units[unit_idx].radical_armor += stole_armor;
             }
-            format!("{} — Devours protection! (-{} HP)", action.name(), actual)
+            format!("{} — Devours protection!", action.name())
         }
         RadicalAction::WitnessMark => {
             battle.units[0].marked_extra_damage = 3;
@@ -101,8 +134,21 @@ pub fn apply_radical_action(
             let p_hp = battle.units[0].hp;
             let p_max = battle.units[0].max_hp;
             let dmg = if p_hp * 100 < p_max * 40 { 3 } else { 1 };
-            let actual = deal_damage(battle, 0, dmg);
-            format!("{} — Reaps the harvest! (-{} HP)", action.name(), actual)
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.arcing_projectiles.push(ArcingProjectile {
+                target_x: px,
+                target_y: py,
+                turns_remaining: 1,
+                effect: ProjectileEffect::Damage(dmg),
+                glyph: "🌾",
+                color: "#ddaa00",
+                owner_is_player: false,
+            });
+            format!(
+                "{} — Reaping incoming! (lands next turn)",
+                action.name()
+            )
         }
         RadicalAction::RevealingDawn => {
             battle.units[unit_idx].statuses.retain(|s| !s.is_negative());
@@ -128,7 +174,7 @@ pub fn apply_radical_action(
         RadicalAction::WaningCurse => {
             battle.units[0]
                 .statuses
-                .push(StatusInstance::new(StatusKind::Poison { damage: 2 }, 3));
+                .push(StatusInstance::new(StatusKind::Poison { damage: 1 }, 2));
             format!("{} — A waning curse!", action.name())
         }
         RadicalAction::MortalResilience => {
@@ -149,9 +195,22 @@ pub fn apply_radical_action(
             format!("{} — A protective shield forms!", action.name())
         }
         RadicalAction::PotentialBurst => {
-            let actual = deal_damage(battle, 0, 1);
             battle.units[0].marked_extra_damage += 2;
-            format!("{} — Potential bursts! (-{} HP)", action.name(), actual)
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.arcing_projectiles.push(ArcingProjectile {
+                target_x: px,
+                target_y: py,
+                turns_remaining: 1,
+                effect: ProjectileEffect::Damage(1),
+                glyph: "💥",
+                color: "#ff8800",
+                owner_is_player: false,
+            });
+            format!(
+                "{} — Potential bursts! (lands next turn)",
+                action.name()
+            )
         }
         RadicalAction::ChasingChaff => {
             battle.units[0]
@@ -166,8 +225,21 @@ pub fn apply_radical_action(
                 .wrapping_mul(17)
                 % 2;
             if seed == 0 {
-                let actual = deal_damage(battle, 0, 4);
-                format!("{} — The gambit succeeds! (-{} HP)", action.name(), actual)
+                let px = battle.units[0].x;
+                let py = battle.units[0].y;
+                battle.arcing_projectiles.push(ArcingProjectile {
+                    target_x: px,
+                    target_y: py,
+                    turns_remaining: 1,
+                    effect: ProjectileEffect::Damage(3),
+                    glyph: "🎲",
+                    color: "#ffff00",
+                    owner_is_player: false,
+                });
+                format!(
+                    "{} — The gambit succeeds! (lands next turn)",
+                    action.name()
+                )
             } else {
                 battle.units[unit_idx].stunned = true;
                 format!("{} — The gambit fails! (Stunned)", action.name())
@@ -182,29 +254,88 @@ pub fn apply_radical_action(
             battle.units[0]
                 .statuses
                 .push(StatusInstance::new(StatusKind::Slow, 3));
-            let actual = deal_damage(battle, 0, 1);
-            format!("{} — A crushing weight! (-{} HP)", action.name(), actual)
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.arcing_projectiles.push(ArcingProjectile {
+                target_x: px,
+                target_y: py,
+                turns_remaining: 1,
+                effect: ProjectileEffect::Damage(1),
+                glyph: "⛰",
+                color: "#886644",
+                owner_is_player: false,
+            });
+            format!(
+                "{} — A crushing weight incoming! (lands next turn)",
+                action.name()
+            )
         }
         RadicalAction::EchoStrike => {
             let dmg = battle.units[unit_idx].damage;
-            let actual = deal_damage(battle, 0, dmg);
-            format!("{} — An echoing strike! (-{} HP)", action.name(), actual)
+            let ex = battle.units[unit_idx].x;
+            let ey = battle.units[unit_idx].y;
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.projectiles.push(Projectile {
+                from_x: ex as f64,
+                from_y: ey as f64,
+                to_x: px,
+                to_y: py,
+                progress: 0.0,
+                speed: 0.14,
+                arc_height: 0.2,
+                effect: ProjectileEffect::Damage(dmg),
+                owner_idx: unit_idx,
+                glyph: "🔁",
+                color: "#ffaa00",
+                done: false,
+            });
+            format!("{} — An echoing strike!", action.name())
         }
         RadicalAction::PreciseExecution => {
             let p_hp = battle.units[0].hp;
             let p_max = battle.units[0].max_hp;
             let dmg = if p_hp * 100 < p_max * 25 { 4 } else { 1 };
-            let actual = deal_damage(battle, 0, dmg);
-            format!("{} — Precise execution! (-{} HP)", action.name(), actual)
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.arcing_projectiles.push(ArcingProjectile {
+                target_x: px,
+                target_y: py,
+                turns_remaining: 1,
+                effect: ProjectileEffect::Damage(dmg),
+                glyph: "🎯",
+                color: "#ff2222",
+                owner_is_player: false,
+            });
+            format!(
+                "{} — Precise execution incoming! (lands next turn)",
+                action.name()
+            )
         }
         RadicalAction::CleavingCut => {
-            let actual = deal_damage(battle, 0, 2);
+            let ex = battle.units[unit_idx].x;
+            let ey = battle.units[unit_idx].y;
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.projectiles.push(Projectile {
+                from_x: ex as f64,
+                from_y: ey as f64,
+                to_x: px,
+                to_y: py,
+                progress: 0.0,
+                speed: 0.13,
+                arc_height: 0.2,
+                effect: ProjectileEffect::Damage(2),
+                owner_idx: unit_idx,
+                glyph: "🗡",
+                color: "#cccccc",
+                done: false,
+            });
             battle.units[0].max_hp = battle.units[0].max_hp.saturating_sub(1).max(1);
             battle.units[0].hp = battle.units[0].hp.min(battle.units[0].max_hp);
             format!(
-                "{} — A cleaving cut! (-{} HP, Max HP -1)",
+                "{} — A cleaving cut! (Max HP -1)",
                 action.name(),
-                actual
             )
         }
         RadicalAction::BindingOath => {
@@ -232,8 +363,25 @@ pub fn apply_radical_action(
             }
             battle.units[unit_idx].x = nx.clamp(0, battle.arena.width as i32 - 1);
             battle.units[unit_idx].y = ny.clamp(0, battle.arena.height as i32 - 1);
-            let actual = deal_damage(battle, 0, 1);
-            format!("{} — Pursues and strikes! (-{} HP)", action.name(), actual)
+            let ex = battle.units[unit_idx].x;
+            let ey = battle.units[unit_idx].y;
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.projectiles.push(Projectile {
+                from_x: ex as f64,
+                from_y: ey as f64,
+                to_x: px,
+                to_y: py,
+                progress: 0.0,
+                speed: 0.14,
+                arc_height: 0.1,
+                effect: ProjectileEffect::Damage(1),
+                owner_idx: unit_idx,
+                glyph: "👣",
+                color: "#886644",
+                done: false,
+            });
+            format!("{} — Pursues and strikes!", action.name())
         }
         RadicalAction::EntanglingWeb => {
             battle.units[0]
@@ -254,14 +402,31 @@ pub fn apply_radical_action(
         RadicalAction::CavalryCharge => {
             let dist = (battle.units[unit_idx].x - battle.units[0].x).abs()
                 + (battle.units[unit_idx].y - battle.units[0].y).abs();
-            let dmg = dist.min(4);
-            let actual = deal_damage(battle, 0, dmg);
+            let dmg = dist.min(3);
             let facing = battle.units[unit_idx].facing;
             battle.units[0].x =
                 (battle.units[0].x + facing.dx() * 2).clamp(0, battle.arena.width as i32 - 1);
             battle.units[0].y =
                 (battle.units[0].y + facing.dy() * 2).clamp(0, battle.arena.height as i32 - 1);
-            format!("{} — A devastating charge! (-{} HP)", action.name(), actual)
+            let ex = battle.units[unit_idx].x;
+            let ey = battle.units[unit_idx].y;
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.projectiles.push(Projectile {
+                from_x: ex as f64,
+                from_y: ey as f64,
+                to_x: px,
+                to_y: py,
+                progress: 0.0,
+                speed: 0.12,
+                arc_height: 0.2,
+                effect: ProjectileEffect::Damage(dmg),
+                owner_idx: unit_idx,
+                glyph: "🐎",
+                color: "#aa6622",
+                done: false,
+            });
+            format!("{} — A devastating charge!", action.name())
         }
         RadicalAction::SoaringEscape => {
             battle.units[unit_idx].radical_dodge = true;
@@ -269,11 +434,32 @@ pub fn apply_radical_action(
             format!("{} — Takes to the skies!", action.name())
         }
         RadicalAction::DownpourBarrage => {
-            let actual = deal_damage(battle, 0, 1);
-            battle.units[0]
-                .statuses
-                .push(StatusInstance::new(StatusKind::Bleed { damage: 1 }, 3));
-            format!("{} — A barrage of rain! (-{} HP)", action.name(), actual)
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            let offsets = [(0, 0), (-1, 0), (1, 0)];
+            for (dx, dy) in &offsets {
+                let tx = px + dx;
+                let ty = py + dy;
+                if tx >= 0
+                    && ty >= 0
+                    && (tx as usize) < battle.arena.width
+                    && (ty as usize) < battle.arena.height
+                {
+                    battle.arcing_projectiles.push(ArcingProjectile {
+                        target_x: tx,
+                        target_y: ty,
+                        turns_remaining: 2,
+                        effect: ProjectileEffect::Damage(1),
+                        glyph: "🌧",
+                        color: "#4488ff",
+                        owner_is_player: false,
+                    });
+                }
+            }
+            format!(
+                "{} — Rain barrage incoming! (lands in 2 turns)",
+                action.name()
+            )
         }
         RadicalAction::PetrifyingGaze => {
             battle.units[0]
@@ -283,11 +469,28 @@ pub fn apply_radical_action(
             format!("{} — Petrifying gaze!", action.name())
         }
         RadicalAction::ParasiticSwarm => {
-            let actual = deal_damage(battle, 0, 1);
-            let heal = actual + 1;
+            let ex = battle.units[unit_idx].x;
+            let ey = battle.units[unit_idx].y;
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.projectiles.push(Projectile {
+                from_x: ex as f64,
+                from_y: ey as f64,
+                to_x: px,
+                to_y: py,
+                progress: 0.0,
+                speed: 0.09,
+                arc_height: 0.4,
+                effect: ProjectileEffect::Damage(1),
+                owner_idx: unit_idx,
+                glyph: "🐛",
+                color: "#88aa00",
+                done: false,
+            });
+            let heal = 2; // raw dmg (1) + 1
             battle.units[unit_idx].hp =
                 (battle.units[unit_idx].hp + heal).min(battle.units[unit_idx].max_hp);
-            format!("{} — A swarm drains you! (-{} HP)", action.name(), actual)
+            format!("{} — A swarm drains you!", action.name())
         }
         RadicalAction::MercenaryPact => {
             let u_hp = battle.units[unit_idx].hp;
@@ -311,25 +514,71 @@ pub fn apply_radical_action(
             format!("{} — Unyielding as a mountain!", action.name())
         }
         RadicalAction::SavageMaul => {
-            let actual = deal_damage(battle, 0, 3);
+            let ex = battle.units[unit_idx].x;
+            let ey = battle.units[unit_idx].y;
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.projectiles.push(Projectile {
+                from_x: ex as f64,
+                from_y: ey as f64,
+                to_x: px,
+                to_y: py,
+                progress: 0.0,
+                speed: 0.11,
+                arc_height: 0.3,
+                effect: ProjectileEffect::Damage(3),
+                owner_idx: unit_idx,
+                glyph: "🐕",
+                color: "#884400",
+                done: false,
+            });
             battle.units[unit_idx].hp = (battle.units[unit_idx].hp - 1).max(1);
             battle.units[unit_idx].hp =
                 (battle.units[unit_idx].hp + 1).min(battle.units[unit_idx].max_hp);
-            format!("{} — Savage maul! (-{} HP)", action.name(), actual)
+            format!("{} — Savage maul!", action.name())
         }
         RadicalAction::ArcingShot => {
             let dist = (battle.units[unit_idx].x - battle.units[0].x).abs()
                 + (battle.units[unit_idx].y - battle.units[0].y).abs();
-            let dmg = if dist >= 3 { 3 } else { 1 };
-            let actual = deal_damage(battle, 0, dmg);
-            format!("{} — An arcing shot! (-{} HP)", action.name(), actual)
+            let dmg = if dist >= 3 { 3 } else { 2 };
+            battle.arcing_projectiles.push(ArcingProjectile {
+                target_x: battle.units[0].x,
+                target_y: battle.units[0].y,
+                turns_remaining: 2,
+                effect: ProjectileEffect::Damage(dmg),
+                glyph: "🏹",
+                color: "#ff8844",
+                owner_is_player: false,
+            });
+            format!(
+                "{} — Launches an arcing shot! (lands in 2 turns)",
+                action.name()
+            )
         }
         RadicalAction::ConsumingBite => {
-            let actual = deal_damage(battle, 0, 2);
+            let ex = battle.units[unit_idx].x;
+            let ey = battle.units[unit_idx].y;
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.projectiles.push(Projectile {
+                from_x: ex as f64,
+                from_y: ey as f64,
+                to_x: px,
+                to_y: py,
+                progress: 0.0,
+                speed: 0.10,
+                arc_height: 0.3,
+                effect: ProjectileEffect::Damage(2),
+                owner_idx: unit_idx,
+                glyph: "🦷",
+                color: "#44aa44",
+                done: false,
+            });
             battle.units[unit_idx].max_hp += 1;
+            let heal = 2; // raw damage value
             battle.units[unit_idx].hp =
-                (battle.units[unit_idx].hp + actual).min(battle.units[unit_idx].max_hp);
-            format!("{} — Consuming bite! (-{} HP)", action.name(), actual)
+                (battle.units[unit_idx].hp + heal).min(battle.units[unit_idx].max_hp);
+            format!("{} — Consuming bite!", action.name())
         }
         RadicalAction::CloakingGuise => {
             battle.units[unit_idx].radical_dodge = true;
@@ -362,17 +611,52 @@ pub fn apply_radical_action(
             }
             battle.units[unit_idx].x = nx.clamp(0, battle.arena.width as i32 - 1);
             battle.units[unit_idx].y = ny.clamp(0, battle.arena.height as i32 - 1);
-            let actual = deal_damage(battle, 0, moved);
-            format!("{} — Blitz assault! (-{} HP)", action.name(), actual)
+            let dmg = moved.min(2);
+            let ex = battle.units[unit_idx].x;
+            let ey = battle.units[unit_idx].y;
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.projectiles.push(Projectile {
+                from_x: ex as f64,
+                from_y: ey as f64,
+                to_x: px,
+                to_y: py,
+                progress: 0.0,
+                speed: 0.13,
+                arc_height: 0.1,
+                effect: ProjectileEffect::Damage(dmg),
+                owner_idx: unit_idx,
+                glyph: "⚡",
+                color: "#ffff44",
+                done: false,
+            });
+            format!("{} — Blitz assault!", action.name())
         }
         RadicalAction::CrushingWheels => {
-            let actual = deal_damage(battle, 0, 2);
             let facing = battle.units[unit_idx].facing;
             battle.units[0].x =
                 (battle.units[0].x + facing.dx() * 3).clamp(0, battle.arena.width as i32 - 1);
             battle.units[0].y =
                 (battle.units[0].y + facing.dy() * 3).clamp(0, battle.arena.height as i32 - 1);
-            format!("{} — Crushing wheels! (-{} HP)", action.name(), actual)
+            let ex = battle.units[unit_idx].x;
+            let ey = battle.units[unit_idx].y;
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.projectiles.push(Projectile {
+                from_x: ex as f64,
+                from_y: ey as f64,
+                to_x: px,
+                to_y: py,
+                progress: 0.0,
+                speed: 0.11,
+                arc_height: 0.2,
+                effect: ProjectileEffect::Damage(2),
+                owner_idx: unit_idx,
+                glyph: "🛞",
+                color: "#666666",
+                done: false,
+            });
+            format!("{} — Crushing wheels!", action.name())
         }
         RadicalAction::ImperialCommand => {
             let ux = battle.units[unit_idx].x;
@@ -420,19 +704,26 @@ pub fn apply_radical_action(
             format!("{} — A magnifying aura!", action.name())
         }
         RadicalAction::NeedleStrike => {
-            let old_def = battle.units[0].defending;
-            let old_armor = battle.units[0].radical_armor;
-            battle.units[0].defending = false;
-            battle.units[0].radical_armor = 0;
-            let actual = deal_damage(battle, 0, 2);
-            battle.units[0].defending = old_def;
-            battle.units[0].radical_armor = old_armor;
-            format!("{} — Needle strike! (-{} HP)", action.name(), actual)
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.arcing_projectiles.push(ArcingProjectile {
+                target_x: px,
+                target_y: py,
+                turns_remaining: 1,
+                effect: ProjectileEffect::PiercingDamage(2),
+                glyph: "📌",
+                color: "#aaaaaa",
+                owner_is_player: false,
+            });
+            format!(
+                "{} — Needle strike incoming! (lands next turn)",
+                action.name()
+            )
         }
         RadicalAction::ArtisanTrap => {
             battle.units[0]
                 .statuses
-                .push(StatusInstance::new(StatusKind::Burn { damage: 2 }, 2));
+                .push(StatusInstance::new(StatusKind::Burn { damage: 1 }, 2));
             format!("{} — Artisan's trap!", action.name())
         }
         RadicalAction::CleansingLight => {

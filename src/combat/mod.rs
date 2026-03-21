@@ -276,11 +276,37 @@ pub enum BattleTile {
     MeditationStone,
     /// When an enemy dies on this tile, player gains 10 spirit.
     SoulTrap,
+    /// Pushable rock. Blocks movement. Slides when hit, damages entities it collides with.
+    Boulder,
+    /// Flowing water — pushes units 1 tile at end of each round.
+    FlowNorth,
+    FlowSouth,
+    FlowEast,
+    FlowWest,
+    /// Explodes when hit. 3 damage to adjacent units, chain-reacts with other barrels.
+    ExplosiveBarrel,
+    /// Floor that cracks on first step. Walkable until it collapses.
+    CrumblingFloor,
+    /// Cracked floor — collapses into Pit next time it is stepped on or at end of round.
+    CrackedFloor,
+    /// Collapsed pit. Impassable.
+    Pit,
+    /// Hidden spike trap. Deals 2 damage + Slow on trigger.
+    TrapTile,
+    /// Revealed spike trap. Permanent hazard: 2 damage + Slow on entry.
+    TrapTileRevealed,
 }
 
 impl BattleTile {
     pub fn is_walkable(self) -> bool {
-        !matches!(self, BattleTile::Obstacle | BattleTile::BambooThicket)
+        !matches!(
+            self,
+            BattleTile::Obstacle
+                | BattleTile::BambooThicket
+                | BattleTile::Boulder
+                | BattleTile::ExplosiveBarrel
+                | BattleTile::Pit
+        )
     }
 
     pub fn blocks_los(self) -> bool {
@@ -294,6 +320,10 @@ impl BattleTile {
         match self {
             BattleTile::Water | BattleTile::BrokenGround | BattleTile::Lava | BattleTile::Sand => 1,
             BattleTile::FrozenGround => 1,
+            BattleTile::FlowNorth
+            | BattleTile::FlowSouth
+            | BattleTile::FlowEast
+            | BattleTile::FlowWest => 1,
             _ => 0,
         }
     }
@@ -319,6 +349,17 @@ impl BattleTile {
             BattleTile::SpiritDrain => "Spirit Drain. -3 spirit/turn.",
             BattleTile::MeditationStone => "Meditation Stone. Wait to restore 10 spirit.",
             BattleTile::SoulTrap => "Soul Trap. Enemy death here grants +10 spirit.",
+            BattleTile::Boulder => "Boulder. Pushable when attacked. Damages what it hits.",
+            BattleTile::FlowNorth => "Flowing Water (↑). Pushes units north each round.",
+            BattleTile::FlowSouth => "Flowing Water (↓). Pushes units south each round.",
+            BattleTile::FlowEast => "Flowing Water (→). Pushes units east each round.",
+            BattleTile::FlowWest => "Flowing Water (←). Pushes units west each round.",
+            BattleTile::ExplosiveBarrel => "Explosive Barrel. Explodes when hit, 3 damage to adjacent.",
+            BattleTile::CrumblingFloor => "Crumbling Floor. Will crack when stepped on.",
+            BattleTile::CrackedFloor => "Cracked Floor. Will collapse into a pit!",
+            BattleTile::Pit => "Pit. Impassable.",
+            BattleTile::TrapTile => "Open ground. No special effects.",
+            BattleTile::TrapTileRevealed => "Spike Trap. 2 damage + Slow on entry.",
         }
     }
 }
@@ -518,6 +559,53 @@ pub enum TypingAction {
     },
 }
 
+// ── Projectile System ────────────────────────────────────────────────────────
+
+#[derive(Clone, Debug)]
+pub enum ProjectileEffect {
+    Damage(i32),
+    /// Damage that bypasses armor/defense (e.g. NeedleStrike).
+    PiercingDamage(i32),
+    SpellHit(SpellEffect),
+}
+
+#[derive(Clone, Debug)]
+pub struct Projectile {
+    pub from_x: f64,
+    pub from_y: f64,
+    pub to_x: i32,
+    pub to_y: i32,
+    pub progress: f64,
+    pub speed: f64,
+    pub arc_height: f64,
+    pub effect: ProjectileEffect,
+    pub owner_idx: usize,
+    pub glyph: &'static str,
+    pub color: &'static str,
+    pub done: bool,
+}
+
+impl Projectile {
+    pub fn current_pos(&self) -> (f64, f64) {
+        let t = self.progress;
+        let x = self.from_x + (self.to_x as f64 - self.from_x) * t;
+        let y_base = self.from_y + (self.to_y as f64 - self.from_y) * t;
+        let arc = -4.0 * self.arc_height * t * (t - 1.0);
+        (x, y_base - arc)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ArcingProjectile {
+    pub target_x: i32,
+    pub target_y: i32,
+    pub turns_remaining: i32,
+    pub effect: ProjectileEffect,
+    pub glyph: &'static str,
+    pub color: &'static str,
+    pub owner_is_player: bool,
+}
+
 /// Collapsed tactical phases per Oracle review (~5 core states).
 ///
 /// Transient UI state (cursor position, valid tiles, etc.) is stored
@@ -530,13 +618,11 @@ pub enum TacticalPhase {
     /// Player is selecting a target tile or unit.
     /// `mode` determines what happens after selection.
     Targeting {
-        /// What are we targeting for?
         mode: TargetMode,
-        /// Current cursor position on the grid.
         cursor_x: i32,
         cursor_y: i32,
-        /// Set of valid target positions.
         valid_targets: Vec<(i32, i32)>,
+        aoe_preview: Vec<(i32, i32)>,
     },
 
     /// An action is being resolved (animation / result display).
@@ -576,10 +662,13 @@ pub enum TacticalPhase {
 
     /// Battle is over — showing results before returning to exploration.
     End {
-        /// Did the player win?
         victory: bool,
-        /// Timer in frames before allowing keypress transition.
         timer: u8,
+    },
+
+    ProjectileAnimation {
+        message: String,
+        end_turn: bool,
     },
 }
 
@@ -683,6 +772,9 @@ pub struct TacticalBattle {
     pub radical_picker_open: bool,
     /// Cursor position in radical picker (0 = normal attack, 1+ = abilities).
     pub radical_picker_cursor: usize,
+    pub projectiles: Vec<Projectile>,
+    pub arcing_projectiles: Vec<ArcingProjectile>,
+    pub god_mode: bool,
 }
 
 impl TacticalBattle {

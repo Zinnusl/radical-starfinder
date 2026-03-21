@@ -3532,11 +3532,15 @@ impl Renderer {
         let box_x = (self.canvas_w - box_w) / 2.0;
         let box_y = 60.0;
 
-        self.ctx.set_fill_style_str("rgba(15,20,30,0.95)");
+        self.ctx.set_fill_style_str("rgba(10,8,20,0.96)");
         self.ctx.fill_rect(box_x, box_y, box_w, box_h);
-        self.ctx.set_stroke_style_str("#ffaa44");
+        self.ctx.set_stroke_style_str("rgba(255,170,68,0.5)");
         self.ctx.set_line_width(2.0);
         self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+        self.ctx.set_stroke_style_str("rgba(255,170,68,0.15)");
+        self.ctx.set_line_width(1.0);
+        self.ctx
+            .stroke_rect(box_x + 1.0, box_y + 1.0, box_w - 2.0, box_h - 2.0);
 
         let god_name = match altar_kind {
             crate::dungeon::AltarKind::Jade => "Jade Emperor",
@@ -3632,11 +3636,15 @@ impl Renderer {
         let box_x = (self.canvas_w - box_w) / 2.0;
         let box_y = 60.0;
 
-        self.ctx.set_fill_style_str("rgba(15,20,30,0.95)");
+        self.ctx.set_fill_style_str("rgba(10,8,20,0.96)");
         self.ctx.fill_rect(box_x, box_y, box_w, box_h);
-        self.ctx.set_stroke_style_str("#88aaff");
+        self.ctx.set_stroke_style_str("rgba(100,140,220,0.5)");
         self.ctx.set_line_width(2.0);
         self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+        self.ctx.set_stroke_style_str("rgba(100,140,220,0.15)");
+        self.ctx.set_line_width(1.0);
+        self.ctx
+            .stroke_rect(box_x + 1.0, box_y + 1.0, box_w - 2.0, box_h - 2.0);
 
         self.ctx.set_fill_style_str("#88aaff");
         self.ctx.set_font("bold 16px monospace");
@@ -3700,11 +3708,15 @@ impl Renderer {
         let box_x = (self.canvas_w - box_w) / 2.0;
         let box_y = 60.0;
 
-        self.ctx.set_fill_style_str("rgba(15,20,30,0.95)");
+        self.ctx.set_fill_style_str("rgba(10,8,20,0.96)");
         self.ctx.fill_rect(box_x, box_y, box_w, box_h);
-        self.ctx.set_stroke_style_str("#88aaff");
+        self.ctx.set_stroke_style_str("rgba(100,140,220,0.5)");
         self.ctx.set_line_width(2.0);
         self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+        self.ctx.set_stroke_style_str("rgba(100,140,220,0.15)");
+        self.ctx.set_line_width(1.0);
+        self.ctx
+            .stroke_rect(box_x + 1.0, box_y + 1.0, box_w - 2.0, box_h - 2.0);
 
         self.ctx.set_fill_style_str("#88aaff");
         self.ctx.set_font("bold 16px monospace");
@@ -3956,30 +3968,46 @@ impl Renderer {
         let box_x = 14.0;
         let box_y = 92.0;
 
-        self.ctx.set_fill_style_str("rgba(8,12,22,0.88)");
+        self.ctx.set_fill_style_str("rgba(10,8,20,0.92)");
         self.ctx.fill_rect(box_x, box_y, box_w, box_h);
-        self.ctx.set_stroke_style_str("#7f9cff");
+        self.ctx.set_stroke_style_str("rgba(100,80,140,0.4)");
         self.ctx.set_line_width(2.0);
         self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+        self.ctx.set_stroke_style_str("rgba(120,90,180,0.15)");
+        self.ctx.set_line_width(1.0);
+        self.ctx
+            .stroke_rect(box_x + 1.0, box_y + 1.0, box_w - 2.0, box_h - 2.0);
 
         self.ctx.set_text_align("left");
-        self.ctx.set_fill_style_str("#c8d8ff");
+        self.ctx.set_fill_style_str("#ffcc33");
         self.ctx.set_font("bold 14px monospace");
         self.ctx
             .fill_text(mode_title, box_x + 12.0, box_y + 20.0)
             .ok();
-        self.ctx.set_fill_style_str("#8fa8ff");
+        self.ctx.set_fill_style_str("#7784aa");
         self.ctx.set_font("10px monospace");
+        self.ctx.set_text_align("right");
         self.ctx
-            .fill_text("Help Overlay", box_x + box_w - 92.0, box_y + 20.0)
+            .fill_text("? to close", box_x + box_w - 12.0, box_y + 20.0)
             .ok();
 
-        self.ctx.set_fill_style_str("#dbe7ff");
+        self.ctx.set_stroke_style_str("rgba(100,80,140,0.3)");
+        self.ctx.set_line_width(1.0);
+        self.ctx.begin_path();
+        self.ctx.move_to(box_x + 10.0, box_y + 28.0);
+        self.ctx.line_to(box_x + box_w - 10.0, box_y + 28.0);
+        self.ctx.stroke();
+
+        self.ctx.set_text_align("left");
         self.ctx.set_font("11px monospace");
         for (idx, line) in lines.iter().enumerate() {
-            self.ctx
-                .fill_text(line, box_x + 12.0, box_y + 40.0 + idx as f64 * 16.0)
-                .ok();
+            let line_y = box_y + 42.0 + idx as f64 * 16.0;
+            if idx < 3 {
+                self.ctx.set_fill_style_str("#9aaad8");
+            } else {
+                self.ctx.set_fill_style_str("#dbe7ff");
+            }
+            self.ctx.fill_text(line, box_x + 12.0, line_y).ok();
         }
     }
 
@@ -3996,38 +4024,111 @@ impl Renderer {
 
         // ── Turn order queue strip (top of screen) ──────────────────────
         {
-            let tq_cell = 24.0_f64;
-            let tq_gap = 2.0;
+            let tq_cell = 28.0_f64;
+            let tq_gap = 3.0;
             let tq_count = battle.turn_queue.len();
             let tq_total_w = tq_count as f64 * (tq_cell + tq_gap) - tq_gap;
             let tq_x0 = (self.canvas_w - tq_total_w) / 2.0;
-            let tq_y = 2.0;
+            let tq_y = 1.0;
+            let tq_hp_h = 3.0; // HP pip height below each portrait
+
+            // Subtle background strip
+            self.ctx.set_fill_style_str("rgba(0,0,0,0.4)");
+            self.ctx.fill_rect(
+                tq_x0 - 4.0,
+                tq_y - 1.0,
+                tq_total_w + 8.0,
+                tq_cell + tq_hp_h + 4.0,
+            );
 
             for (qi, &uid) in battle.turn_queue.iter().enumerate() {
                 let sx = tq_x0 + qi as f64 * (tq_cell + tq_gap);
                 let unit = &battle.units[uid];
                 let is_current = qi == battle.turn_queue_pos;
 
-                // Background
+                // Background with rounded corners via path
+                let r = 4.0;
+                self.ctx.begin_path();
+                self.ctx.move_to(sx + r, tq_y);
+                self.ctx.line_to(sx + tq_cell - r, tq_y);
+                self.ctx
+                    .arc(
+                        sx + tq_cell - r,
+                        tq_y + r,
+                        r,
+                        -std::f64::consts::FRAC_PI_2,
+                        0.0,
+                    )
+                    .ok();
+                self.ctx.line_to(sx + tq_cell, tq_y + tq_cell - r);
+                self.ctx
+                    .arc(
+                        sx + tq_cell - r,
+                        tq_y + tq_cell - r,
+                        r,
+                        0.0,
+                        std::f64::consts::FRAC_PI_2,
+                    )
+                    .ok();
+                self.ctx.line_to(sx + r, tq_y + tq_cell);
+                self.ctx
+                    .arc(
+                        sx + r,
+                        tq_y + tq_cell - r,
+                        r,
+                        std::f64::consts::FRAC_PI_2,
+                        std::f64::consts::PI,
+                    )
+                    .ok();
+                self.ctx.line_to(sx, tq_y + r);
+                self.ctx
+                    .arc(
+                        sx + r,
+                        tq_y + r,
+                        r,
+                        std::f64::consts::PI,
+                        std::f64::consts::PI * 1.5,
+                    )
+                    .ok();
+                self.ctx.close_path();
+
                 let bg = if !unit.alive {
-                    "rgba(60,60,60,0.5)"
+                    "rgba(40,40,40,0.6)"
                 } else if unit.is_player() {
-                    "rgba(80,60,20,0.7)"
+                    if is_current {
+                        "rgba(100,75,20,0.85)"
+                    } else {
+                        "rgba(60,45,15,0.75)"
+                    }
+                } else if is_current {
+                    "rgba(100,25,25,0.85)"
                 } else {
-                    "rgba(80,20,20,0.7)"
+                    "rgba(60,20,20,0.7)"
                 };
                 self.ctx.set_fill_style_str(bg);
-                self.ctx.fill_rect(sx, tq_y, tq_cell, tq_cell);
+                self.ctx.fill();
 
-                // Current turn highlight
-                if is_current {
-                    self.ctx.set_stroke_style_str("#ffcc33");
-                    self.ctx.set_line_width(2.0);
-                    self.ctx.stroke_rect(sx, tq_y, tq_cell, tq_cell);
+                // Current turn glow
+                if is_current && unit.alive {
+                    let glow_pulse = ((anim_t * 4.0).sin() * 0.3 + 0.7).clamp(0.4, 1.0);
+                    let glow_color = if unit.is_player() {
+                        format!("rgba(255,204,50,{})", glow_pulse)
+                    } else {
+                        format!("rgba(255,80,80,{})", glow_pulse)
+                    };
+                    self.ctx.set_stroke_style_str(&glow_color);
+                    self.ctx.set_line_width(2.5);
+                    self.ctx.stroke();
+                    // Outer glow via shadow
+                    self.ctx.set_shadow_color(&glow_color);
+                    self.ctx.set_shadow_blur(6.0);
+                    self.ctx.stroke();
+                    self.ctx.set_shadow_blur(0.0);
+                    self.ctx.set_shadow_color("transparent");
                 } else {
-                    self.ctx.set_stroke_style_str("rgba(255,255,255,0.15)");
+                    self.ctx.set_stroke_style_str("rgba(255,255,255,0.12)");
                     self.ctx.set_line_width(0.5);
-                    self.ctx.stroke_rect(sx, tq_y, tq_cell, tq_cell);
+                    self.ctx.stroke();
                 }
 
                 // Unit glyph
@@ -4046,10 +4147,47 @@ impl Renderer {
                     "#ff6666"
                 };
                 self.ctx.set_fill_style_str(fg);
-                self.ctx.set_font("14px 'Noto Serif SC', 'SimSun', serif");
+                self.ctx.set_font("15px 'Noto Serif SC', 'SimSun', serif");
                 self.ctx.set_text_align("center");
                 self.ctx
                     .fill_text(glyph, sx + tq_cell / 2.0, tq_y + tq_cell / 2.0 + 5.0)
+                    .ok();
+
+                // HP pip under portrait
+                if unit.alive {
+                    let hp_frac = if unit.max_hp > 0 {
+                        (unit.hp as f64 / unit.max_hp as f64).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    let pip_y = tq_y + tq_cell + 1.0;
+                    self.ctx.set_fill_style_str("rgba(0,0,0,0.5)");
+                    self.ctx.fill_rect(sx + 2.0, pip_y, tq_cell - 4.0, tq_hp_h);
+                    let hp_color = if unit.is_player() {
+                        "#44cc55"
+                    } else if hp_frac > 0.5 {
+                        "#cc4444"
+                    } else {
+                        "#ff6644"
+                    };
+                    self.ctx.set_fill_style_str(hp_color);
+                    self.ctx
+                        .fill_rect(sx + 2.0, pip_y, (tq_cell - 4.0) * hp_frac, tq_hp_h);
+                } else {
+                    // Dead unit: X overlay
+                    self.ctx.set_fill_style_str("rgba(255,50,50,0.4)");
+                    self.ctx.set_font("bold 12px monospace");
+                    self.ctx
+                        .fill_text("✕", sx + tq_cell / 2.0, tq_y + tq_cell / 2.0 + 4.0)
+                        .ok();
+                }
+
+                // Turn order number (small, top-left corner)
+                self.ctx.set_fill_style_str("rgba(255,255,255,0.3)");
+                self.ctx.set_font("bold 7px monospace");
+                self.ctx.set_text_align("left");
+                self.ctx
+                    .fill_text(&format!("{}", qi + 1), sx + 2.0, tq_y + 8.0)
                     .ok();
             }
             self.ctx.set_text_align("left");
@@ -4103,6 +4241,25 @@ impl Renderer {
                     BattleTile::SpiritDrain => "arena_spirit_drain",
                     BattleTile::MeditationStone => "arena_meditation_stone",
                     BattleTile::SoulTrap => "arena_soul_trap",
+                    BattleTile::Boulder => "arena_obstacle_stone",
+                    BattleTile::FlowNorth
+                    | BattleTile::FlowSouth
+                    | BattleTile::FlowEast
+                    | BattleTile::FlowWest => "arena_water",
+                    BattleTile::ExplosiveBarrel => "arena_obstacle_stone",
+                    BattleTile::CrumblingFloor => "arena_broken_ground",
+                    BattleTile::CrackedFloor => "arena_broken_ground",
+                    BattleTile::Pit => "arena_obstacle_dark",
+                    BattleTile::TrapTile => match biome {
+                        ArenaBiome::Stone => "arena_floor_stone",
+                        ArenaBiome::Dark => "arena_floor_dark",
+                        ArenaBiome::Arcane => "arena_floor_arcane",
+                        ArenaBiome::Cursed => "arena_floor_cursed",
+                        ArenaBiome::Garden => "arena_floor_garden",
+                        ArenaBiome::Frozen => "arena_floor_frozen",
+                        ArenaBiome::Infernal => "arena_floor_infernal",
+                    },
+                    BattleTile::TrapTileRevealed => "arena_thorns",
                 };
 
                 if !self.draw_sprite_icon(sprite_key, sx, sy, cell) {
@@ -4126,6 +4283,17 @@ impl Renderer {
                         BattleTile::SpiritDrain => "#1a0a2a",
                         BattleTile::MeditationStone => "#4a4a5a",
                         BattleTile::SoulTrap => "#3a1a3a",
+                        BattleTile::Boulder => "#5a4a3a",
+                        BattleTile::FlowNorth
+                        | BattleTile::FlowSouth
+                        | BattleTile::FlowEast
+                        | BattleTile::FlowWest => "#1a3a5a",
+                        BattleTile::ExplosiveBarrel => "#6a3a1a",
+                        BattleTile::CrumblingFloor => "#3a3430",
+                        BattleTile::CrackedFloor => "#4a3a28",
+                        BattleTile::Pit => "#0a0a0a",
+                        BattleTile::TrapTile => "#3a3458",
+                        BattleTile::TrapTileRevealed => "#4a2a2a",
                     };
                     self.ctx.set_fill_style_str(fill);
                     self.ctx.fill_rect(sx, sy, cell, cell);
@@ -4135,6 +4303,66 @@ impl Renderer {
                         self.ctx
                             .fill_rect(sx + 4.0, sy + 4.0, cell - 8.0, cell - 8.0);
                     }
+
+                    if tile == BattleTile::Boulder {
+                        self.ctx.set_fill_style_str("#8a7a6a");
+                        self.ctx.set_font("bold 14px monospace");
+                        self.ctx.set_text_align("center");
+                        self.ctx
+                            .fill_text("●", sx + cell / 2.0, sy + cell / 2.0 + 5.0)
+                            .ok();
+                    }
+
+                    if tile == BattleTile::ExplosiveBarrel {
+                        self.ctx.set_fill_style_str("#ff6633");
+                        self.ctx.set_font("bold 14px monospace");
+                        self.ctx.set_text_align("center");
+                        self.ctx
+                            .fill_text("☢", sx + cell / 2.0, sy + cell / 2.0 + 5.0)
+                            .ok();
+                    }
+
+                    if tile == BattleTile::CrackedFloor {
+                        self.ctx.set_fill_style_str("rgba(200,180,120,0.7)");
+                        self.ctx.set_font("bold 12px monospace");
+                        self.ctx.set_text_align("center");
+                        self.ctx
+                            .fill_text("⚠", sx + cell / 2.0, sy + cell / 2.0 + 4.0)
+                            .ok();
+                    }
+
+                    if tile == BattleTile::Pit {
+                        self.ctx.set_fill_style_str("#2a2a2a");
+                        self.ctx
+                            .fill_rect(sx + 4.0, sy + 4.0, cell - 8.0, cell - 8.0);
+                    }
+
+                    if tile == BattleTile::TrapTileRevealed {
+                        self.ctx.set_fill_style_str("#cc3333");
+                        self.ctx.set_font("bold 14px monospace");
+                        self.ctx.set_text_align("center");
+                        self.ctx
+                            .fill_text("▲", sx + cell / 2.0, sy + cell / 2.0 + 5.0)
+                            .ok();
+                    }
+
+                    let flow_arrow = match tile {
+                        BattleTile::FlowNorth => Some("↑"),
+                        BattleTile::FlowSouth => Some("↓"),
+                        BattleTile::FlowEast => Some("→"),
+                        BattleTile::FlowWest => Some("←"),
+                        _ => None,
+                    };
+                    if let Some(arrow) = flow_arrow {
+                        let pulse = ((anim_t * 3.0).sin() * 0.15 + 0.6).max(0.3);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(100,180,255,{})", pulse));
+                        self.ctx.set_font("bold 16px monospace");
+                        self.ctx.set_text_align("center");
+                        self.ctx
+                            .fill_text(arrow, sx + cell / 2.0, sy + cell / 2.0 + 6.0)
+                            .ok();
+                    }
                 }
 
                 self.ctx.set_stroke_style_str("rgba(255,255,255,0.06)");
@@ -4143,6 +4371,32 @@ impl Renderer {
             }
         }
         self.ctx.set_image_smoothing_enabled(true);
+
+        // Trap proximity hint: show "?" on tiles adjacent to hidden traps
+        for gy in 0..battle.arena.height {
+            for gx in 0..battle.arena.width {
+                let x = gx as i32;
+                let y = gy as i32;
+                if battle.arena.tile(x, y) != Some(BattleTile::TrapTile) {
+                    continue;
+                }
+                for &(dx, dy) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+                    let nx = x + dx;
+                    let ny = y + dy;
+                    if battle.unit_at(nx, ny).is_some() {
+                        let sx = grid_x + gx as f64 * cell;
+                        let sy = grid_y + gy as f64 * cell;
+                        self.ctx.set_fill_style_str("rgba(255,200,50,0.5)");
+                        self.ctx.set_font("bold 12px monospace");
+                        self.ctx.set_text_align("center");
+                        self.ctx
+                            .fill_text("?", sx + cell / 2.0, sy + cell / 2.0 + 4.0)
+                            .ok();
+                        break;
+                    }
+                }
+            }
+        }
 
         // Grid border
         self.ctx.set_stroke_style_str("#665588");
@@ -4184,6 +4438,7 @@ impl Renderer {
             ref valid_targets,
             cursor_x,
             cursor_y,
+            ref aoe_preview,
             ..
         } = battle.phase
         {
@@ -4193,6 +4448,29 @@ impl Renderer {
                 self.ctx.set_fill_style_str("rgba(100,180,255,0.18)");
                 self.ctx.fill_rect(sx, sy, cell, cell);
             }
+
+            if aoe_preview.len() > 1 {
+                let aoe_pulse = ((anim_t * 5.0).sin() * 0.1 + 0.3).max(0.15);
+                for &(ax, ay) in aoe_preview {
+                    if ax >= 0
+                        && ay >= 0
+                        && (ax as usize) < battle.arena.width
+                        && (ay as usize) < battle.arena.height
+                    {
+                        let sx = grid_x + ax as f64 * cell;
+                        let sy = grid_y + ay as f64 * cell;
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(255,100,50,{})", aoe_pulse));
+                        self.ctx.fill_rect(sx, sy, cell, cell);
+                        self.ctx
+                            .set_stroke_style_str(&format!("rgba(255,140,60,{})", aoe_pulse + 0.2));
+                        self.ctx.set_line_width(1.5);
+                        self.ctx
+                            .stroke_rect(sx + 1.0, sy + 1.0, cell - 2.0, cell - 2.0);
+                    }
+                }
+            }
+
             let cx = grid_x + cursor_x as f64 * cell;
             let cy = grid_y + cursor_y as f64 * cell;
             let pulse = ((anim_t * 6.0).sin() * 0.15 + 0.55).max(0.3);
@@ -4299,20 +4577,29 @@ impl Renderer {
                 }
             }
 
-            // HP bar under unit
+            // HP bar under unit (thicker, with border)
             let bar_w = cell - 4.0;
-            let bar_h = 3.0;
+            let bar_h = 5.0;
             let bar_x = sx + 2.0;
-            let bar_y = sy + cell - 5.0;
+            let bar_y = sy + cell - 7.0;
             let hp_frac = if unit.max_hp > 0 {
                 (unit.hp as f64 / unit.max_hp as f64).clamp(0.0, 1.0)
             } else {
                 0.0
             };
+            self.ctx.set_fill_style_str("rgba(0,0,0,0.6)");
+            self.ctx
+                .fill_rect(bar_x - 0.5, bar_y - 0.5, bar_w + 1.0, bar_h + 1.0);
             self.ctx.set_fill_style_str(COL_HP_BG);
             self.ctx.fill_rect(bar_x, bar_y, bar_w, bar_h);
             let hp_color = if unit.is_player() {
-                COL_HP_BAR
+                if hp_frac > 0.6 {
+                    COL_HP_BAR
+                } else if hp_frac > 0.3 {
+                    "#ccaa22"
+                } else {
+                    "#cc4422"
+                }
             } else if hp_frac > 0.5 {
                 "#cc4444"
             } else {
@@ -4320,6 +4607,9 @@ impl Renderer {
             };
             self.ctx.set_fill_style_str(hp_color);
             self.ctx.fill_rect(bar_x, bar_y, bar_w * hp_frac, bar_h);
+            self.ctx.set_stroke_style_str("rgba(255,255,255,0.15)");
+            self.ctx.set_line_width(0.5);
+            self.ctx.stroke_rect(bar_x, bar_y, bar_w, bar_h);
 
             if let Some(wg) = unit.word_group {
                 const GROUP_COLORS: &[&str] = &[
@@ -4334,7 +4624,7 @@ impl Renderer {
 
             // Defending indicator
             if unit.defending {
-                self.ctx.set_fill_style_str("rgba(100,150,255,0.5)");
+                self.ctx.set_fill_style_str("rgba(100,150,255,0.6)");
                 self.ctx.set_font("10px monospace");
                 self.ctx.set_text_align("right");
                 self.ctx.fill_text("🛡", sx + cell - 1.0, sy + 10.0).ok();
@@ -4355,15 +4645,23 @@ impl Renderer {
                 self.ctx.fill_text(arrow, sx + 1.0, sy + 10.0).ok();
             }
 
-            // Active turn indicator
+            // Active turn indicator (brighter, with shadow glow)
             if i == battle.current_unit_idx() {
-                self.ctx.set_stroke_style_str("#ffffff");
-                self.ctx.set_line_width(1.5);
+                let glow_color = if unit.is_player() {
+                    "#ffcc33"
+                } else {
+                    "#ffffff"
+                };
+                self.ctx.set_shadow_color(glow_color);
+                self.ctx.set_shadow_blur(4.0);
+                self.ctx.set_stroke_style_str(glow_color);
+                self.ctx.set_line_width(2.0);
                 self.ctx
                     .stroke_rect(sx + 1.0, sy + 1.0, cell - 2.0, cell - 2.0);
+                self.ctx.set_shadow_blur(0.0);
+                self.ctx.set_shadow_color("transparent");
             }
 
-            // EnemyTurn pulsing highlight on the acting enemy
             if let TacticalPhase::EnemyTurn { unit_idx, .. } = battle.phase {
                 if i == unit_idx && !unit.is_player() {
                     let pulse = ((anim_t * 8.0).sin() * 0.3 + 0.7).clamp(0.3, 1.0);
@@ -4375,14 +4673,67 @@ impl Renderer {
                 }
             }
 
+            // Status effect icons (small colored dots/text above HP bar)
+            if !unit.statuses.is_empty() {
+                let max_show = 3;
+                let icon_size = 7.0;
+                let start_x = sx + 2.0;
+                let icon_y = bar_y - icon_size - 1.0;
+                for (si, status) in unit.statuses.iter().take(max_show).enumerate() {
+                    let ix = start_x + si as f64 * (icon_size + 1.0);
+                    self.ctx.set_fill_style_str(status.color());
+                    self.ctx.begin_path();
+                    self.ctx
+                        .arc(
+                            ix + icon_size / 2.0,
+                            icon_y + icon_size / 2.0,
+                            icon_size / 2.0,
+                            0.0,
+                            std::f64::consts::TAU,
+                        )
+                        .ok();
+                    self.ctx.fill();
+                    self.ctx.set_fill_style_str("rgba(0,0,0,0.7)");
+                    self.ctx.set_font("bold 5px monospace");
+                    self.ctx.set_text_align("center");
+                    let short = match status.kind {
+                        crate::status::StatusKind::Poison { .. } => "P",
+                        crate::status::StatusKind::Burn { .. } => "B",
+                        crate::status::StatusKind::Regen { .. } => "R",
+                        crate::status::StatusKind::Haste => "H",
+                        crate::status::StatusKind::Confused => "?",
+                        crate::status::StatusKind::Revealed => "E",
+                        crate::status::StatusKind::Envenomed => "V",
+                        crate::status::StatusKind::Empowered { .. } => "W",
+                        crate::status::StatusKind::SpiritShield => "S",
+                        crate::status::StatusKind::Freeze => "F",
+                        crate::status::StatusKind::Slow => "~",
+                        crate::status::StatusKind::Fear => "!",
+                        crate::status::StatusKind::Bleed { .. } => "X",
+                        crate::status::StatusKind::Thorns => "T",
+                    };
+                    self.ctx
+                        .fill_text(short, ix + icon_size / 2.0, icon_y + icon_size / 2.0 + 2.0)
+                        .ok();
+                }
+                if unit.statuses.len() > max_show {
+                    self.ctx.set_fill_style_str("rgba(255,255,255,0.5)");
+                    self.ctx.set_font("bold 6px monospace");
+                    let ix = start_x + max_show as f64 * (icon_size + 1.0);
+                    self.ctx
+                        .fill_text("+", ix + 2.0, icon_y + icon_size / 2.0 + 2.0)
+                        .ok();
+                }
+            }
+
             if !unit.is_player() {
                 if let Some(ref intent) = unit.intent {
                     let icon = match intent {
-                        EnemyIntent::Attack => "!",
-                        EnemyIntent::Approach => ">",
-                        EnemyIntent::RadicalAbility { .. } => "*",
-                        EnemyIntent::Retreat => "<",
-                        EnemyIntent::Idle => "-",
+                        EnemyIntent::Attack => "⚔",
+                        EnemyIntent::Approach => "→",
+                        EnemyIntent::RadicalAbility { .. } => "✦",
+                        EnemyIntent::Retreat => "←",
+                        EnemyIntent::Idle => "·",
                         EnemyIntent::Buff => "↑",
                         EnemyIntent::Heal => "+",
                         EnemyIntent::RangedAttack => "◎",
@@ -4399,10 +4750,17 @@ impl Renderer {
                         EnemyIntent::RangedAttack => "#ff8844",
                         EnemyIntent::Surround => "#ffff44",
                     };
+                    // Intent icon with background bubble
+                    self.ctx.set_fill_style_str("rgba(0,0,0,0.5)");
+                    self.ctx.begin_path();
+                    self.ctx
+                        .arc(sx + cell / 2.0, sy - 4.0, 6.0, 0.0, std::f64::consts::TAU)
+                        .ok();
+                    self.ctx.fill();
                     self.ctx.set_fill_style_str(intent_color);
-                    self.ctx.set_font("bold 10px monospace");
+                    self.ctx.set_font("bold 9px monospace");
                     self.ctx.set_text_align("center");
-                    self.ctx.fill_text(icon, sx + cell / 2.0, sy - 2.0).ok();
+                    self.ctx.fill_text(icon, sx + cell / 2.0, sy - 1.0).ok();
                 }
 
                 if let Some(ref elem) = unit.wuxing_element {
@@ -4431,7 +4789,7 @@ impl Renderer {
                     self.ctx.set_font("7px monospace");
                     self.ctx.set_text_align("left");
                     let pips = if unit.mastery_tier >= 3 { "***" } else { "**" };
-                    self.ctx.fill_text(pips, sx + 1.0, sy + cell - 7.0).ok();
+                    self.ctx.fill_text(pips, sx + 1.0, sy + cell - 9.0).ok();
                 }
 
                 if let Some(remaining) = unit.charge_remaining {
@@ -4439,10 +4797,67 @@ impl Renderer {
                     self.ctx.set_font("bold 8px monospace");
                     self.ctx.set_text_align("right");
                     self.ctx
-                        .fill_text(&format!("~{}", remaining), sx + cell - 1.0, sy + cell - 7.0)
+                        .fill_text(&format!("~{}", remaining), sx + cell - 1.0, sy + cell - 9.0)
                         .ok();
                 }
             }
+        }
+
+        // ── Projectiles ──────────────────────────────────────────────
+        for proj in &battle.projectiles {
+            let (px, py) = proj.current_pos();
+            let sx = grid_x + px * cell;
+            let sy = grid_y + py * cell;
+            self.ctx.set_shadow_color(proj.color);
+            self.ctx.set_shadow_blur(8.0);
+            self.ctx.set_fill_style_str(proj.color);
+            self.ctx.set_font("16px 'Noto Serif SC', 'SimSun', serif");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text(proj.glyph, sx + cell / 2.0, sy + cell / 2.0 + 5.0)
+                .ok();
+        }
+        self.ctx.set_shadow_blur(0.0);
+        self.ctx.set_shadow_color("transparent");
+
+        for arc in &battle.arcing_projectiles {
+            let sx = grid_x + arc.target_x as f64 * cell;
+            let sy = grid_y + arc.target_y as f64 * cell;
+            let urgent = arc.turns_remaining <= 1;
+            let pulse_speed = if urgent { 6.0 } else { 3.5 };
+            let pulse = ((anim_t * pulse_speed).sin() * 0.2 + 0.5).clamp(0.25, 0.7);
+
+            let (fill_r, fill_g, fill_b) = if urgent { (255, 60, 60) } else { (255, 200, 50) };
+            let fill_color = format!("rgba({},{},{},{})", fill_r, fill_g, fill_b, pulse * 0.55);
+            self.ctx.set_fill_style_str(&fill_color);
+            self.ctx.fill_rect(sx + 1.0, sy + 1.0, cell - 2.0, cell - 2.0);
+
+            let border_alpha = if urgent { pulse * 1.2 } else { pulse * 0.8 };
+            let border_color = format!("rgba({},{},{},{})", fill_r, fill_g, fill_b, border_alpha.min(1.0));
+            if urgent {
+                self.ctx.set_shadow_color(&format!("rgba({},{},{},0.8)", fill_r, fill_g, fill_b));
+                self.ctx.set_shadow_blur(8.0);
+            }
+            self.ctx.set_stroke_style_str(&border_color);
+            self.ctx.set_line_width(if urgent { 2.5 } else { 1.5 });
+            self.ctx.stroke_rect(sx + 1.0, sy + 1.0, cell - 2.0, cell - 2.0);
+            self.ctx.set_shadow_blur(0.0);
+            self.ctx.set_shadow_color("transparent");
+
+            self.ctx.set_fill_style_str(arc.color);
+            self.ctx.set_font("14px 'Noto Serif SC', 'SimSun', serif");
+            self.ctx.set_text_align("center");
+            self.ctx.fill_text(arc.glyph, sx + cell / 2.0, sy + cell / 2.0 + 2.0).ok();
+
+            let count_color = if urgent { "rgba(255,255,255,0.95)" } else { "rgba(255,255,200,0.8)" };
+            self.ctx.set_fill_style_str(count_color);
+            self.ctx.set_font("bold 11px monospace");
+            self.ctx.set_text_align("right");
+            self.ctx.fill_text(
+                &format!("{}", arc.turns_remaining),
+                sx + cell - 3.0,
+                sy + cell - 4.0,
+            ).ok();
         }
 
         // Right panel: info area
@@ -4450,55 +4865,124 @@ impl Renderer {
         let panel_w = self.canvas_w - panel_x - 8.0;
         let mut py = grid_y;
 
-        // Player HP
+        // Panel background
+        self.ctx.set_fill_style_str("rgba(10,8,20,0.7)");
+        self.ctx
+            .fill_rect(panel_x - 6.0, py - 4.0, panel_w + 8.0, grid_px + 8.0);
+        self.ctx.set_stroke_style_str("rgba(100,80,140,0.4)");
+        self.ctx.set_line_width(1.0);
+        self.ctx
+            .stroke_rect(panel_x - 6.0, py - 4.0, panel_w + 8.0, grid_px + 8.0);
+
+        let player_unit = &battle.units[0];
+        let p_bar_w = panel_w.min(130.0);
+
+        // ─ HP section ─
+        self.ctx.set_fill_style_str("#ffcc33");
+        self.ctx.set_font("bold 12px monospace");
+        self.ctx.set_text_align("left");
+        self.ctx.fill_text("HP", panel_x, py + 12.0).ok();
         self.ctx.set_fill_style_str("#cccccc");
         self.ctx.set_font("12px monospace");
-        self.ctx.set_text_align("left");
-        let player_unit = &battle.units[0];
+        self.ctx.set_text_align("right");
         self.ctx
             .fill_text(
-                &format!("HP {}/{}", player_unit.hp, player_unit.max_hp),
-                panel_x,
+                &format!("{}/{}", player_unit.hp, player_unit.max_hp),
+                panel_x + p_bar_w,
                 py + 12.0,
             )
             .ok();
-        py += 18.0;
+        self.ctx.set_text_align("left");
+        py += 16.0;
 
-        // Player HP bar (wide)
-        let p_bar_w = panel_w.min(120.0);
         let p_hp_frac = if player_unit.max_hp > 0 {
             (player_unit.hp as f64 / player_unit.max_hp as f64).clamp(0.0, 1.0)
         } else {
             0.0
         };
+        let hp_bar_h = 8.0;
+        self.ctx.set_fill_style_str("rgba(0,0,0,0.5)");
+        self.ctx
+            .fill_rect(panel_x - 1.0, py - 1.0, p_bar_w + 2.0, hp_bar_h + 2.0);
         self.ctx.set_fill_style_str(COL_HP_BG);
-        self.ctx.fill_rect(panel_x, py, p_bar_w, 6.0);
-        self.ctx.set_fill_style_str(COL_HP_BAR);
-        self.ctx.fill_rect(panel_x, py, p_bar_w * p_hp_frac, 6.0);
-        py += 14.0;
+        self.ctx.fill_rect(panel_x, py, p_bar_w, hp_bar_h);
+        let panel_hp_color = if p_hp_frac > 0.6 {
+            COL_HP_BAR
+        } else if p_hp_frac > 0.3 {
+            "#ccaa22"
+        } else {
+            "#cc4422"
+        };
+        self.ctx.set_fill_style_str(panel_hp_color);
+        self.ctx
+            .fill_rect(panel_x, py, p_bar_w * p_hp_frac, hp_bar_h);
+        self.ctx.set_stroke_style_str("rgba(255,255,255,0.12)");
+        self.ctx.set_line_width(0.5);
+        self.ctx.stroke_rect(panel_x, py, p_bar_w, hp_bar_h);
+        py += hp_bar_h + 6.0;
 
+        // ─ Focus section ─
         {
             let focus_frac = if battle.max_focus > 0 {
                 (battle.focus as f64 / battle.max_focus as f64).clamp(0.0, 1.0)
             } else {
                 0.0
             };
+            self.ctx.set_fill_style_str("#8888cc");
+            self.ctx.set_font("bold 10px monospace");
+            self.ctx.fill_text("Focus", panel_x, py + 10.0).ok();
             self.ctx.set_fill_style_str("#aaaacc");
             self.ctx.set_font("10px monospace");
+            self.ctx.set_text_align("right");
             self.ctx
                 .fill_text(
-                    &format!("Focus {}/{}", battle.focus, battle.max_focus),
-                    panel_x,
+                    &format!("{}/{}", battle.focus, battle.max_focus),
+                    panel_x + p_bar_w,
                     py + 10.0,
                 )
                 .ok();
+            self.ctx.set_text_align("left");
             py += 14.0;
-            self.ctx.set_fill_style_str("#333355");
-            self.ctx.fill_rect(panel_x, py, p_bar_w, 4.0);
+            let focus_bar_h = 5.0;
+            self.ctx.set_fill_style_str("rgba(0,0,0,0.4)");
+            self.ctx
+                .fill_rect(panel_x - 1.0, py - 1.0, p_bar_w + 2.0, focus_bar_h + 2.0);
+            self.ctx.set_fill_style_str("#222244");
+            self.ctx.fill_rect(panel_x, py, p_bar_w, focus_bar_h);
             self.ctx.set_fill_style_str("#6666cc");
-            self.ctx.fill_rect(panel_x, py, p_bar_w * focus_frac, 4.0);
-            py += 10.0;
+            self.ctx
+                .fill_rect(panel_x, py, p_bar_w * focus_frac, focus_bar_h);
+            self.ctx.set_stroke_style_str("rgba(255,255,255,0.08)");
+            self.ctx.set_line_width(0.5);
+            self.ctx.stroke_rect(panel_x, py, p_bar_w, focus_bar_h);
+            py += focus_bar_h + 6.0;
         }
+
+        // ─ Player status effects ─
+        if !player_unit.statuses.is_empty() {
+            self.ctx.set_font("9px monospace");
+            let mut status_x = panel_x;
+            for status in &player_unit.statuses {
+                let lbl = status.label();
+                self.ctx.set_fill_style_str(status.color());
+                self.ctx.fill_text(lbl, status_x, py + 9.0).ok();
+                status_x += lbl.len() as f64 * 5.5 + 6.0;
+                if status_x > panel_x + p_bar_w - 20.0 {
+                    py += 12.0;
+                    status_x = panel_x;
+                }
+            }
+            py += 14.0;
+        }
+
+        // ─ Separator ─
+        self.ctx.set_stroke_style_str("rgba(100,80,140,0.3)");
+        self.ctx.set_line_width(1.0);
+        self.ctx.begin_path();
+        self.ctx.move_to(panel_x, py);
+        self.ctx.line_to(panel_x + p_bar_w, py);
+        self.ctx.stroke();
+        py += 6.0;
 
         if !matches!(battle.weather, Weather::Clear) {
             let weather_label = battle.weather.name();
@@ -4541,14 +5025,14 @@ impl Renderer {
             } else if battle.turn_number >= warning {
                 "#ffaa33"
             } else {
-                "#888"
+                "#8888aa"
             };
             self.ctx.set_fill_style_str(turn_color);
             self.ctx.set_font("10px monospace");
             let label = if battle.turn_number >= threshold {
-                format!("Turn {} - EXHAUSTION!", battle.turn_number)
+                format!("Turn {} ─ EXHAUSTION!", battle.turn_number)
             } else if battle.turn_number >= warning {
-                format!("Turn {} - Ink restless...", battle.turn_number)
+                format!("Turn {} ─ Ink restless…", battle.turn_number)
             } else {
                 format!("Turn {}", battle.turn_number)
             };
@@ -4556,7 +5040,6 @@ impl Renderer {
             py += 16.0;
         }
 
-        // Enemy turn indicator in panel
         if let TacticalPhase::EnemyTurn { unit_idx, .. } = battle.phase {
             self.ctx.set_fill_style_str("#ff6666");
             self.ctx.set_font("bold 11px monospace");
@@ -4567,12 +5050,11 @@ impl Renderer {
                     "Enemy"
                 };
             self.ctx
-                .fill_text(&format!("{} acts...", enemy_name), panel_x, py + 10.0)
+                .fill_text(&format!("{} acts…", enemy_name), panel_x, py + 10.0)
                 .ok();
             py += 16.0;
         }
 
-        // Resolve phase message in panel
         if let TacticalPhase::Resolve { ref message, .. } = battle.phase {
             self.ctx.set_fill_style_str("#ffdd88");
             self.ctx.set_font("11px monospace");
@@ -4580,7 +5062,7 @@ impl Renderer {
             py += 16.0;
         }
 
-        // Combo streak
+        // Combo streak with glow
         if battle.combo_streak > 0 {
             let tier = battle.combo_tier_name();
             let combo_color = match battle.combo_streak {
@@ -4591,7 +5073,11 @@ impl Renderer {
                 _ => "#ff4422",
             };
             self.ctx.set_fill_style_str(combo_color);
-            self.ctx.set_font("bold 11px monospace");
+            self.ctx.set_font("bold 12px monospace");
+            if battle.combo_streak >= 5 {
+                self.ctx.set_shadow_color(combo_color);
+                self.ctx.set_shadow_blur(6.0);
+            }
             self.ctx
                 .fill_text(
                     &format!("{} x{}", tier, battle.combo_streak),
@@ -4599,15 +5085,25 @@ impl Renderer {
                     py + 10.0,
                 )
                 .ok();
+            self.ctx.set_shadow_blur(0.0);
+            self.ctx.set_shadow_color("transparent");
             py += 16.0;
         }
 
-        // Action menu (Command phase)
+        // Action menu (Command phase) — styled
         if matches!(battle.phase, TacticalPhase::Command) && battle.typing_action.is_none() {
+            py += 4.0;
+            self.ctx.set_stroke_style_str("rgba(100,80,140,0.3)");
+            self.ctx.set_line_width(1.0);
+            self.ctx.begin_path();
+            self.ctx.move_to(panel_x, py);
+            self.ctx.line_to(panel_x + p_bar_w, py);
+            self.ctx.stroke();
             py += 6.0;
+
             self.ctx.set_font("bold 11px monospace");
             self.ctx.set_fill_style_str("#ffcc33");
-            self.ctx.fill_text("Actions:", panel_x, py + 10.0).ok();
+            self.ctx.fill_text("─ Actions ─", panel_x, py + 10.0).ok();
             py += 16.0;
 
             let actions: &[(&str, &str, bool)] = &[
@@ -4622,8 +5118,14 @@ impl Renderer {
             ];
             self.ctx.set_font("11px monospace");
             for (hotkey, label, enabled) in actions {
-                let color = if *enabled { "#ddd" } else { "#555" };
-                self.ctx.set_fill_style_str(color);
+                if *enabled {
+                    self.ctx.set_fill_style_str("rgba(255,204,50,0.08)");
+                    self.ctx
+                        .fill_rect(panel_x - 2.0, py - 1.0, p_bar_w + 2.0, 14.0);
+                    self.ctx.set_fill_style_str("#dde0e8");
+                } else {
+                    self.ctx.set_fill_style_str("#444");
+                }
                 self.ctx
                     .fill_text(&format!("[{}] {}", hotkey, label), panel_x, py + 10.0)
                     .ok();
@@ -4631,7 +5133,7 @@ impl Renderer {
             }
 
             py += 4.0;
-            self.ctx.set_fill_style_str("#666");
+            self.ctx.set_fill_style_str("#555");
             self.ctx.set_font("9px monospace");
             self.ctx.fill_text("Esc=flee", panel_x, py + 10.0).ok();
             py += 14.0;
@@ -5046,33 +5548,68 @@ impl Renderer {
         let log_y = grid_y + grid_px + 8.0;
         let log_w = grid_px;
         let log_h = self.canvas_h - log_y - 8.0;
-        let max_lines = ((log_h - 8.0) / 13.0).floor() as usize;
+        let line_h = 14.0;
+        let max_lines = ((log_h - 10.0) / line_h).floor() as usize;
 
-        self.ctx.set_fill_style_str("rgba(0,0,0,0.4)");
+        self.ctx.set_fill_style_str("rgba(8,6,16,0.6)");
         self.ctx.fill_rect(log_x, log_y, log_w, log_h);
-        self.ctx.set_stroke_style_str("rgba(100,80,130,0.4)");
+        self.ctx.set_stroke_style_str("rgba(100,80,140,0.35)");
         self.ctx.set_line_width(1.0);
         self.ctx.stroke_rect(log_x, log_y, log_w, log_h);
 
-        self.ctx.set_fill_style_str("#999");
-        self.ctx.set_font("10px monospace");
+        // "LOG" label
+        self.ctx.set_fill_style_str("rgba(120,100,160,0.5)");
+        self.ctx.set_font("bold 8px monospace");
+        self.ctx.set_text_align("right");
+        self.ctx
+            .fill_text("LOG", log_x + log_w - 4.0, log_y + 10.0)
+            .ok();
         self.ctx.set_text_align("left");
+
+        self.ctx.set_font("10px monospace");
         let start = if battle.log.len() > max_lines {
             battle.log.len() - max_lines
         } else {
             0
         };
+        let total_showing = battle.log[start..].len();
         for (i, msg) in battle.log[start..].iter().enumerate() {
-            let alpha = if i + start + 3 >= battle.log.len() {
-                1.0
+            let recency = if total_showing > 0 {
+                i as f64 / total_showing as f64
             } else {
-                0.5
+                1.0
             };
+            let alpha = (recency * 0.6 + 0.4).min(1.0);
+            let color = if msg.contains("damage") || msg.contains("hit") || msg.contains("kill") {
+                format!("rgba(255,130,100,{})", alpha)
+            } else if msg.contains("heal") || msg.contains("restore") {
+                format!("rgba(100,220,100,{})", alpha)
+            } else if msg.contains("spell") || msg.contains("cast") {
+                format!("rgba(130,160,255,{})", alpha)
+            } else if msg.contains("move") || msg.contains("walk") {
+                format!("rgba(160,160,180,{})", alpha * 0.8)
+            } else {
+                format!("rgba(180,175,190,{})", alpha)
+            };
+            self.ctx.set_fill_style_str(&color);
             self.ctx
-                .set_fill_style_str(&format!("rgba(170,170,170,{})", alpha));
-            self.ctx
-                .fill_text(msg, log_x + 6.0, log_y + 12.0 + i as f64 * 13.0)
+                .fill_text(msg, log_x + 6.0, log_y + 12.0 + i as f64 * line_h)
                 .ok();
+        }
+
+        // Fade overlay at top of log when scrolled
+        if battle.log.len() > max_lines {
+            for fade_i in 0..3 {
+                let fade_alpha = 0.6 - fade_i as f64 * 0.2;
+                self.ctx
+                    .set_fill_style_str(&format!("rgba(8,6,16,{})", fade_alpha));
+                self.ctx.fill_rect(
+                    log_x + 1.0,
+                    log_y + 1.0 + fade_i as f64 * 6.0,
+                    log_w - 2.0,
+                    6.0,
+                );
+            }
         }
 
         // Exhaustion border pulse
@@ -5100,17 +5637,26 @@ impl Renderer {
 
         // End phase splash
         if let TacticalPhase::End { victory, .. } = battle.phase {
-            self.ctx.set_fill_style_str("rgba(0,0,0,0.7)");
+            self.ctx.set_fill_style_str("rgba(0,0,0,0.75)");
             self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
 
             let text = if victory { "VICTORY" } else { "DEFEAT" };
             let color = if victory { "#44dd88" } else { "#ff4444" };
+            let glow = if victory {
+                "rgba(68,221,136,0.5)"
+            } else {
+                "rgba(255,68,68,0.5)"
+            };
+            self.ctx.set_shadow_color(glow);
+            self.ctx.set_shadow_blur(20.0);
             self.ctx.set_fill_style_str(color);
             self.ctx.set_font("bold 48px monospace");
             self.ctx.set_text_align("center");
             self.ctx
                 .fill_text(text, self.canvas_w / 2.0, self.canvas_h / 2.0)
                 .ok();
+            self.ctx.set_shadow_blur(0.0);
+            self.ctx.set_shadow_color("transparent");
 
             self.ctx.set_fill_style_str("#aaa");
             self.ctx.set_font("14px monospace");
@@ -5249,12 +5795,23 @@ impl Renderer {
         let mm_w = level.width as f64 * mm_scale;
         let mm_h = level.height as f64 * mm_scale;
         let mm_x = self.canvas_w - mm_w - 8.0;
-        let mm_y = self.canvas_h - mm_h - 8.0;
+        let mm_y = self.canvas_h - mm_h - 22.0;
 
-        // Background
-        self.ctx.set_fill_style_str("rgba(0,0,0,0.6)");
+        self.ctx.set_fill_style_str("rgba(5,3,10,0.75)");
         self.ctx
-            .fill_rect(mm_x - 2.0, mm_y - 2.0, mm_w + 4.0, mm_h + 4.0);
+            .fill_rect(mm_x - 4.0, mm_y - 14.0, mm_w + 8.0, mm_h + 18.0);
+        self.ctx.set_stroke_style_str("rgba(100,80,140,0.5)");
+        self.ctx.set_line_width(1.0);
+        self.ctx
+            .stroke_rect(mm_x - 4.0, mm_y - 14.0, mm_w + 8.0, mm_h + 18.0);
+
+        self.ctx.set_fill_style_str("rgba(140,120,180,0.6)");
+        self.ctx.set_font("bold 8px monospace");
+        self.ctx.set_text_align("center");
+        self.ctx
+            .fill_text("MAP", mm_x + mm_w / 2.0, mm_y - 4.0)
+            .ok();
+        self.ctx.set_text_align("left");
 
         for ty in 0..level.height {
             for tx in 0..level.width {
@@ -5266,22 +5823,33 @@ impl Renderer {
                 if tile == Tile::Wall {
                     continue;
                 }
+                let px = mm_x + tx as f64 * mm_scale;
+                let py = mm_y + ty as f64 * mm_scale;
                 let color = if level.visible[idx] {
                     "rgba(150,140,180,0.7)"
                 } else {
                     "rgba(80,70,100,0.5)"
                 };
                 self.ctx.set_fill_style_str(color);
-                self.ctx.fill_rect(
-                    mm_x + tx as f64 * mm_scale,
-                    mm_y + ty as f64 * mm_scale,
-                    mm_scale,
-                    mm_scale,
-                );
+                self.ctx.fill_rect(px, py, mm_scale, mm_scale);
+
+                if level.revealed[idx] {
+                    let poi_color = match tile {
+                        Tile::StairsDown => Some(COL_STAIRS),
+                        Tile::Forge => Some(COL_FORGE),
+                        Tile::Shop => Some(COL_SHOP),
+                        Tile::Chest => Some(COL_CHEST),
+                        Tile::Altar(_) => Some("#cc88ff"),
+                        _ => None,
+                    };
+                    if let Some(c) = poi_color {
+                        self.ctx.set_fill_style_str(c);
+                        self.ctx.fill_rect(px, py, mm_scale, mm_scale);
+                    }
+                }
             }
         }
 
-        // Player dot
         self.ctx.set_fill_style_str(COL_PLAYER);
         self.ctx.fill_rect(
             mm_x + player.x as f64 * mm_scale - 0.5,
@@ -5769,29 +6337,50 @@ impl Renderer {
         let box_w = self.canvas_w - 80.0;
         let box_h = self.canvas_h - 80.0;
 
+        // Full-screen dim
         self.ctx.set_fill_style_str("rgba(0,0,0,0.88)");
         self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
 
-        self.ctx.set_fill_style_str("rgba(18,16,36,0.98)");
+        // Panel background
+        self.ctx.set_fill_style_str("rgba(10,8,20,0.98)");
         self.ctx.fill_rect(box_x, box_y, box_w, box_h);
-        self.ctx.set_stroke_style_str("#7b5ebd");
+        self.ctx.set_stroke_style_str("rgba(100,80,140,0.4)");
         self.ctx.set_line_width(2.0);
         self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
 
+        // Inner highlight border
+        self.ctx.set_stroke_style_str("rgba(120,90,180,0.15)");
+        self.ctx.set_line_width(1.0);
+        self.ctx
+            .stroke_rect(box_x + 1.0, box_y + 1.0, box_w - 2.0, box_h - 2.0);
+
+        // Title with shadow glow
         self.ctx.set_text_align("center");
         self.ctx.set_font("bold 22px monospace");
+        self.ctx.set_shadow_color("#cc99ff");
+        self.ctx.set_shadow_blur(12.0);
         self.ctx.set_fill_style_str("#cc99ff");
         self.ctx
-            .fill_text("Spellbook", self.canvas_w / 2.0, box_y + 28.0)
+            .fill_text("─── Spellbook ───", self.canvas_w / 2.0, box_y + 28.0)
             .ok();
+        self.ctx.set_shadow_blur(0.0);
+
         self.ctx.set_font("11px monospace");
-        self.ctx.set_fill_style_str("#9aaad8");
+        self.ctx.set_fill_style_str("#7784aa");
         self.ctx
             .fill_text("B / Esc to close", self.canvas_w / 2.0, box_y + 46.0)
             .ok();
 
+        // Separator line below title
+        self.ctx.set_stroke_style_str("rgba(100,80,140,0.3)");
+        self.ctx.set_line_width(1.0);
+        self.ctx.begin_path();
+        self.ctx.move_to(box_x + 16.0, box_y + 54.0);
+        self.ctx.line_to(box_x + box_w - 16.0, box_y + 54.0);
+        self.ctx.stroke();
+
         if player.spells.is_empty() {
-            self.ctx.set_fill_style_str("#888");
+            self.ctx.set_fill_style_str("#666");
             self.ctx.set_font("14px monospace");
             self.ctx.set_text_align("center");
             self.ctx
@@ -5808,24 +6397,48 @@ impl Renderer {
         let col_x = [box_x + 16.0, box_x + 16.0 + col_w];
         let mut col_y = [box_y + 66.0, box_y + 66.0];
         let max_y = box_y + box_h - 30.0;
+        let card_h = 60.0;
 
         for (idx, spell) in player.spells.iter().enumerate() {
             let col = if col_y[0] <= col_y[1] { 0 } else { 1 };
             let x = col_x[col];
             let y = &mut col_y[col];
 
-            if *y + 60.0 > max_y {
+            if *y + card_h + 4.0 > max_y {
                 continue;
             }
 
             let selected = idx == player.selected_spell;
+
+            // School-based accent color for the left border
+            let school_color = spell_school_color(&spell.effect);
+
+            // Card background
             if selected {
-                self.ctx.set_fill_style_str("rgba(204,153,255,0.1)");
-                self.ctx.fill_rect(x, *y - 4.0, col_w - 8.0, 56.0);
+                self.ctx.set_fill_style_str("rgba(204,153,255,0.12)");
+            } else {
+                self.ctx.set_fill_style_str("rgba(255,255,255,0.03)");
             }
+            self.ctx.fill_rect(x + 4.0, *y - 4.0, col_w - 16.0, card_h);
 
-            self.draw_sprite_icon(spell_sprite_key(&spell.effect), x + 4.0, *y - 2.0, 14.0);
+            // School-colored left accent bar
+            self.ctx.set_fill_style_str(school_color);
+            self.ctx.fill_rect(x + 4.0, *y - 4.0, 3.0, card_h);
 
+            // Card border (subtle)
+            if selected {
+                self.ctx.set_stroke_style_str("rgba(204,153,255,0.4)");
+            } else {
+                self.ctx.set_stroke_style_str("rgba(100,80,140,0.2)");
+            }
+            self.ctx.set_line_width(1.0);
+            self.ctx
+                .stroke_rect(x + 4.0, *y - 4.0, col_w - 16.0, card_h);
+
+            // Spell icon
+            self.draw_sprite_icon(spell_sprite_key(&spell.effect), x + 12.0, *y - 2.0, 14.0);
+
+            // Spell name
             self.ctx.set_font("bold 14px monospace");
             self.ctx
                 .set_fill_style_str(if selected { "#ffdd88" } else { "#dde7ff" });
@@ -5840,31 +6453,50 @@ impl Renderer {
                         spell.pinyin,
                         spell.effect.label()
                     ),
-                    x + 22.0,
+                    x + 30.0,
                     *y + 10.0,
                 )
                 .ok();
 
+            // Meaning
             self.ctx.set_font("11px monospace");
             self.ctx.set_fill_style_str("#aab8dd");
             self.ctx
-                .fill_text(&format!("\"{}\"", spell.meaning), x + 22.0, *y + 26.0)
+                .fill_text(&format!("\"{}\"", spell.meaning), x + 30.0, *y + 26.0)
                 .ok();
 
-            self.ctx.set_fill_style_str("#8899bb");
+            // Description
+            self.ctx.set_fill_style_str("#7889aa");
             self.ctx
-                .fill_text(&spell.effect.description(), x + 22.0, *y + 40.0)
+                .fill_text(&spell.effect.description(), x + 30.0, *y + 40.0)
                 .ok();
 
-            *y += 56.0;
+            // Spell index number (right side)
+            self.ctx.set_text_align("right");
+            self.ctx.set_font("10px monospace");
+            self.ctx.set_fill_style_str("#556688");
+            self.ctx
+                .fill_text(&format!("#{}", idx + 1), x + col_w - 20.0, *y + 10.0)
+                .ok();
+            self.ctx.set_text_align("left");
+
+            *y += card_h + 4.0;
         }
+
+        // Footer separator
+        self.ctx.set_stroke_style_str("rgba(100,80,140,0.3)");
+        self.ctx.set_line_width(1.0);
+        self.ctx.begin_path();
+        self.ctx.move_to(box_x + 16.0, box_y + box_h - 26.0);
+        self.ctx.line_to(box_x + box_w - 16.0, box_y + box_h - 26.0);
+        self.ctx.stroke();
 
         self.ctx.set_fill_style_str("#7784aa");
         self.ctx.set_font("11px monospace");
         self.ctx.set_text_align("center");
         self.ctx
             .fill_text(
-                "Use Q/E in exploration to switch selected spell. Press number keys in combat to cast.",
+                "Q/E switch spell in exploration  ·  Number keys cast in combat",
                 self.canvas_w / 2.0,
                 box_y + box_h - 12.0,
             )
@@ -5873,108 +6505,238 @@ impl Renderer {
 
     /// Draw the character codex overlay.
     pub fn draw_codex(&self, entries: &[&crate::codex::CodexEntry]) {
-        // Dim background
-        self.ctx.set_fill_style_str("rgba(0,0,0,0.85)");
+        let box_x = 30.0;
+        let box_y = 20.0;
+        let box_w = self.canvas_w - 60.0;
+        let box_h = self.canvas_h - 40.0;
+
+        self.ctx.set_fill_style_str("rgba(0,0,0,0.88)");
         self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
 
-        // Title
-        self.ctx.set_font("bold 20px monospace");
+        self.ctx.set_fill_style_str("rgba(10,8,20,0.98)");
+        self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+        self.ctx.set_stroke_style_str("rgba(100,80,140,0.4)");
+        self.ctx.set_line_width(2.0);
+        self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+        self.ctx.set_stroke_style_str("rgba(120,90,180,0.15)");
+        self.ctx.set_line_width(1.0);
+        self.ctx
+            .stroke_rect(box_x + 1.0, box_y + 1.0, box_w - 2.0, box_h - 2.0);
+
+        self.ctx.set_font("bold 22px monospace");
         self.ctx.set_text_align("center");
+        self.ctx.set_shadow_color("#ffcc33");
+        self.ctx.set_shadow_blur(10.0);
         self.ctx.set_fill_style_str("#ffcc33");
         self.ctx
-            .fill_text("📖 Character Codex", self.canvas_w / 2.0, 35.0)
+            .fill_text("─── Character Codex ───", self.canvas_w / 2.0, box_y + 28.0)
             .ok();
+        self.ctx.set_shadow_blur(0.0);
 
         self.ctx.set_font("11px monospace");
-        self.ctx.set_fill_style_str("#aaaaaa");
+        self.ctx.set_fill_style_str("#7784aa");
         self.ctx
             .fill_text(
                 &format!(
-                    "{} characters encountered — Press C or Esc to close",
+                    "{} characters encountered  ·  C / Esc to close",
                     entries.len()
                 ),
                 self.canvas_w / 2.0,
-                55.0,
+                box_y + 46.0,
             )
             .ok();
 
-        // Column headers
-        let y_start = 80.0;
-        let row_h = 20.0;
-        self.ctx.set_font("bold 12px monospace");
-        self.ctx.set_text_align("left");
-        self.ctx.set_fill_style_str("#888888");
-        self.ctx.fill_text("Char", 30.0, y_start).ok();
-        self.ctx.fill_text("Pinyin", 100.0, y_start).ok();
-        self.ctx.fill_text("Meaning", 240.0, y_start).ok();
-        self.ctx.fill_text("Seen", 450.0, y_start).ok();
-        self.ctx.fill_text("Acc%", 520.0, y_start).ok();
-
-        // Separator
-        self.ctx.set_stroke_style_str("#444444");
+        self.ctx.set_stroke_style_str("rgba(100,80,140,0.3)");
+        self.ctx.set_line_width(1.0);
         self.ctx.begin_path();
-        self.ctx.move_to(20.0, y_start + 6.0);
-        self.ctx.line_to(self.canvas_w - 20.0, y_start + 6.0);
+        self.ctx.move_to(box_x + 16.0, box_y + 54.0);
+        self.ctx.line_to(box_x + box_w - 16.0, box_y + 54.0);
         self.ctx.stroke();
 
-        // Entries (max ~23 rows that fit on screen)
-        let max_rows = ((self.canvas_h - y_start - 30.0) / row_h) as usize;
-        self.ctx.set_font("14px 'Noto Serif SC', 'SimSun', serif");
+        let y_start = box_y + 72.0;
+        let row_h = 22.0;
+        let left = box_x + 18.0;
+
+        self.ctx.set_font("bold 11px monospace");
+        self.ctx.set_text_align("left");
+        self.ctx.set_fill_style_str("#7784aa");
+        self.ctx.fill_text("CHAR", left, y_start).ok();
+        self.ctx.fill_text("PINYIN", left + 70.0, y_start).ok();
+        self.ctx.fill_text("MEANING", left + 210.0, y_start).ok();
+        self.ctx.fill_text("SEEN", left + 400.0, y_start).ok();
+        self.ctx.fill_text("ACCURACY", left + 450.0, y_start).ok();
+
+        self.ctx.set_stroke_style_str("rgba(100,80,140,0.25)");
+        self.ctx.begin_path();
+        self.ctx.move_to(box_x + 16.0, y_start + 6.0);
+        self.ctx.line_to(box_x + box_w - 16.0, y_start + 6.0);
+        self.ctx.stroke();
+
+        let max_rows = ((box_y + box_h - y_start - 40.0) / row_h) as usize;
         for (i, entry) in entries.iter().take(max_rows).enumerate() {
             let y = y_start + 10.0 + (i as f64 + 1.0) * row_h;
             let acc = entry.accuracy();
-            let color = if acc >= 0.8 {
-                "#66dd66"
-            } else if acc >= 0.5 {
-                "#dddd66"
-            } else {
-                "#dd6666"
-            };
 
-            // Hanzi
+            if i % 2 == 0 {
+                self.ctx.set_fill_style_str("rgba(255,255,255,0.02)");
+            } else {
+                self.ctx.set_fill_style_str("rgba(0,0,0,0.1)");
+            }
+            self.ctx
+                .fill_rect(box_x + 12.0, y - 14.0, box_w - 24.0, row_h);
+
             self.ctx.set_fill_style_str("#ffffff");
             self.ctx.set_font("16px 'Noto Serif SC', 'SimSun', serif");
-            self.ctx.fill_text(entry.hanzi, 30.0, y).ok();
+            self.ctx.fill_text(entry.hanzi, left, y).ok();
 
-            // Pinyin
             self.ctx.set_font("12px monospace");
             self.ctx.set_fill_style_str("#cccccc");
-            self.ctx.fill_text(entry.pinyin, 100.0, y).ok();
+            self.ctx.fill_text(entry.pinyin, left + 70.0, y).ok();
 
-            // Meaning
-            self.ctx.set_fill_style_str("#aaaacc");
-            // Truncate long meanings
+            self.ctx.set_fill_style_str("#aab8dd");
             let meaning = if entry.meaning.len() > 24 {
                 &entry.meaning[..24]
             } else {
                 entry.meaning
             };
-            self.ctx.fill_text(meaning, 240.0, y).ok();
+            self.ctx.fill_text(meaning, left + 210.0, y).ok();
 
-            // Times seen
             self.ctx.set_fill_style_str("#cccccc");
             self.ctx
-                .fill_text(&entry.times_seen.to_string(), 450.0, y)
+                .fill_text(&entry.times_seen.to_string(), left + 400.0, y)
                 .ok();
 
-            // Accuracy
-            self.ctx.set_fill_style_str(color);
+            let bar_x = left + 450.0;
+            let bar_w = 50.0;
+            let bar_h = 6.0;
+            let bar_y = y - 5.0;
+            self.ctx.set_fill_style_str("rgba(255,255,255,0.08)");
+            self.ctx.fill_rect(bar_x, bar_y, bar_w, bar_h);
+
+            let acc_color = if acc >= 0.8 {
+                "#44cc55"
+            } else if acc >= 0.5 {
+                "#ddbb33"
+            } else {
+                "#dd4444"
+            };
+            self.ctx.set_fill_style_str(acc_color);
+            self.ctx.fill_rect(bar_x, bar_y, bar_w * acc, bar_h);
+
+            self.ctx.set_stroke_style_str("rgba(100,80,140,0.3)");
+            self.ctx.set_line_width(1.0);
+            self.ctx.stroke_rect(bar_x, bar_y, bar_w, bar_h);
+
+            self.ctx.set_font("10px monospace");
+            self.ctx.set_fill_style_str(acc_color);
             self.ctx
-                .fill_text(&format!("{:.0}%", acc * 100.0), 520.0, y)
+                .fill_text(&format!("{:.0}%", acc * 100.0), bar_x + bar_w + 6.0, y)
                 .ok();
         }
 
         if entries.len() > max_rows {
             self.ctx.set_font("11px monospace");
             self.ctx.set_text_align("center");
-            self.ctx.set_fill_style_str("#666666");
+            self.ctx.set_fill_style_str("#556688");
             self.ctx
                 .fill_text(
-                    &format!("...and {} more", entries.len() - max_rows),
+                    &format!("… and {} more", entries.len() - max_rows),
                     self.canvas_w / 2.0,
-                    self.canvas_h - 10.0,
+                    box_y + box_h - 12.0,
                 )
                 .ok();
+        }
+    }
+
+    pub fn draw_console(&self, history: &[String], buffer: &str) {
+        let ctx = &self.ctx;
+        let w = self.canvas_w;
+        let h = self.canvas_h / 2.0;
+
+        ctx.set_fill_style_str("rgba(5,3,15,0.92)");
+        ctx.fill_rect(0.0, 0.0, w, h);
+
+        ctx.set_stroke_style_str("#39ff14");
+        ctx.set_line_width(2.0);
+        ctx.begin_path();
+        ctx.move_to(0.0, h);
+        ctx.line_to(w, h);
+        let _ = ctx.stroke();
+
+        ctx.set_fill_style_str("rgba(57,255,20,0.03)");
+        ctx.fill_rect(0.0, 0.0, w, 24.0);
+        ctx.set_stroke_style_str("rgba(57,255,20,0.2)");
+        ctx.set_line_width(1.0);
+        ctx.begin_path();
+        ctx.move_to(0.0, 24.0);
+        ctx.line_to(w, 24.0);
+        let _ = ctx.stroke();
+
+        ctx.set_fill_style_str("#39ff14");
+        ctx.set_font("bold 12px monospace");
+        ctx.set_text_align("left");
+        let _ = ctx.fill_text("RADICAL DUNGEON CONSOLE", 10.0, 16.0);
+        ctx.set_fill_style_str("#1a8a0a");
+        let _ = ctx.fill_text("│", 220.0, 16.0);
+        ctx.set_fill_style_str("#338822");
+        ctx.set_font("11px monospace");
+        let _ = ctx.fill_text("type 'help' for commands  ·  ` to close", 230.0, 16.0);
+
+        let font_size = 14.0;
+        let line_height = font_size + 4.0;
+        ctx.set_font(&format!("{}px monospace", font_size));
+
+        let input_y = h - 10.0;
+
+        ctx.set_fill_style_str("rgba(57,255,20,0.06)");
+        ctx.fill_rect(0.0, input_y - 16.0, w, 22.0);
+        ctx.set_stroke_style_str("rgba(57,255,20,0.25)");
+        ctx.set_line_width(1.0);
+        ctx.begin_path();
+        ctx.move_to(0.0, input_y - 16.0);
+        ctx.line_to(w, input_y - 16.0);
+        let _ = ctx.stroke();
+
+        ctx.set_fill_style_str("#39ff14");
+        ctx.set_font("bold 14px monospace");
+        let _ = ctx.fill_text(&format!("> {}_", buffer), 10.0, input_y);
+
+        ctx.set_font(&format!("{}px monospace", font_size));
+        let max_lines = ((h - 50.0) / line_height) as usize;
+        let start = if history.len() > max_lines {
+            history.len() - max_lines
+        } else {
+            0
+        };
+        for (i, line) in history[start..].iter().enumerate() {
+            let y = input_y - 22.0 - (history[start..].len() - 1 - i) as f64 * line_height;
+            if y > 28.0 {
+                let color = if line.starts_with("> ") {
+                    "#556655"
+                } else if line.starts_with("===") || line.starts_with("--- ") {
+                    "#ffcc33"
+                } else if line.starts_with("ERROR")
+                    || line.starts_with("Unknown")
+                    || line.starts_with("No ")
+                {
+                    "#ff5555"
+                } else if line.starts_with("Set ")
+                    || line.starts_with("Added")
+                    || line.starts_with("Healed")
+                    || line.starts_with("Restored")
+                    || line.starts_with("God mode")
+                    || line.starts_with("Teleported")
+                    || line.starts_with("Granted")
+                {
+                    "#55ff77"
+                } else if line.starts_with("  ") {
+                    "#88aa88"
+                } else {
+                    "#aaccaa"
+                };
+                ctx.set_fill_style_str(color);
+                let _ = ctx.fill_text(line, 10.0, y);
+            }
         }
     }
 }
@@ -6080,6 +6842,34 @@ fn spell_sprite_key(effect: &radical::SpellEffect) -> &'static str {
         radical::SpellEffect::Poison(_, _) => "spell_drain",
         radical::SpellEffect::FocusRestore(_) => "spell_heal",
         radical::SpellEffect::ArmorBreak => "spell_strike",
+        radical::SpellEffect::Dash(_) => "spell_reveal",
+        radical::SpellEffect::Pierce(_) => "spell_strike",
+        radical::SpellEffect::PullToward => "spell_reveal",
+        radical::SpellEffect::KnockBack(_) => "spell_strike",
+        radical::SpellEffect::Thorns(_) => "spell_shield",
+        radical::SpellEffect::Cone(_) => "spell_fire",
+        radical::SpellEffect::Wall(_) => "spell_shield",
+    }
+}
+
+fn spell_school_color(effect: &radical::SpellEffect) -> &'static str {
+    match effect {
+        radical::SpellEffect::FireAoe(_) | radical::SpellEffect::Cone(_) => "#ff6633",
+        radical::SpellEffect::Heal(_) | radical::SpellEffect::FocusRestore(_) => "#44dd66",
+        radical::SpellEffect::Reveal
+        | radical::SpellEffect::Teleport
+        | radical::SpellEffect::Dash(_)
+        | radical::SpellEffect::PullToward => "#66bbff",
+        radical::SpellEffect::Shield
+        | radical::SpellEffect::Wall(_)
+        | radical::SpellEffect::Thorns(_) => "#88aaff",
+        radical::SpellEffect::StrongHit(_)
+        | radical::SpellEffect::ArmorBreak
+        | radical::SpellEffect::Pierce(_)
+        | radical::SpellEffect::KnockBack(_) => "#ff9944",
+        radical::SpellEffect::Drain(_) | radical::SpellEffect::Poison(_, _) => "#aa66dd",
+        radical::SpellEffect::Stun | radical::SpellEffect::Slow(_) => "#66ddff",
+        radical::SpellEffect::Pacify => "#ffdd66",
     }
 }
 

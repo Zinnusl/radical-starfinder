@@ -48,6 +48,7 @@ impl Companion {
             Companion::Guard => "Guard 卫",
         }
     }
+
     pub fn icon(&self) -> &'static str {
         match self {
             Companion::Teacher => "📚",
@@ -1352,6 +1353,18 @@ pub struct GameState {
     /// When a boss triggers a sentence challenge mid-tactical-battle,
     /// the battle state is stashed here and restored after the challenge.
     pub saved_battle: Option<Box<combat::TacticalBattle>>,
+    /// Cheat console visible
+    pub show_console: bool,
+    /// Current console input buffer
+    pub console_buffer: String,
+    /// Console output history (lines of text)
+    pub console_history: Vec<String>,
+    /// Command history for up/down recall
+    pub console_cmd_history: Vec<String>,
+    /// Index into command history (None = new input)
+    pub console_cmd_index: Option<usize>,
+    /// God mode (invincible)
+    pub god_mode: bool,
 }
 
 impl GameState {
@@ -4122,8 +4135,8 @@ impl GameState {
                 self.player
                     .statuses
                     .push(crate::status::StatusInstance::new(
-                        crate::status::StatusKind::Poison { damage: 2 },
-                        3,
+                        crate::status::StatusKind::Poison { damage: 1 },
+                        2,
                     ));
                 format!("{} — A waning curse takes hold!", action.name())
             }
@@ -4342,7 +4355,7 @@ impl GameState {
                 self.player
                     .statuses
                     .push(crate::status::StatusInstance::new(
-                        crate::status::StatusKind::Burn { damage: 2 },
+                        crate::status::StatusKind::Burn { damage: 1 },
                         2,
                     ));
                 format!("{} — Trapped!", action.name())
@@ -5563,6 +5576,13 @@ impl GameState {
                     | SpellEffect::ArmorBreak => None,
                     SpellEffect::Teleport => None,
                     SpellEffect::Poison(_, _) => Some("Poison"),
+                    SpellEffect::Dash(_) => None,
+                    SpellEffect::Pierce(_) => Some("Strike"),
+                    SpellEffect::PullToward => None,
+                    SpellEffect::KnockBack(_) => Some("Strike"),
+                    SpellEffect::Thorns(_) => None,
+                    SpellEffect::Cone(_) => Some("Fire"),
+                    SpellEffect::Wall(_) => None,
                 };
                 let elementalist_resisted = enemy_idx < self.enemies.len()
                     && self.enemies[enemy_idx].boss_kind == Some(BossKind::Elementalist)
@@ -5918,6 +5938,151 @@ impl GameState {
                             }
                         }
                     }
+                    SpellEffect::Dash(dmg) => {
+                        let dmg = dmg * arcane_mult + spell_power;
+                        if enemy_idx < self.enemies.len() {
+                            if let Some((ex, ey)) = e_screen {
+                                self.particles.spawn_kill(ex, ey, &mut self.rng_state);
+                            }
+                            self.enemies[enemy_idx].hp -= dmg;
+                            let e_hanzi = self.enemies[enemy_idx].hanzi;
+                            if self.enemies[enemy_idx].hp <= 0 {
+                                let available = radical::radicals_for_floor(self.floor_num);
+                                let drop_idx = self.rng_next() as usize % available.len();
+                                self.player.add_radical(available[drop_idx].ch);
+                                self.message = format!(
+                                    "{}💨 Charged through {}! {} damage! Defeated! Got [{}]",
+                                    spell.hanzi, e_hanzi, dmg, available[drop_idx].ch
+                                );
+                                self.message_timer = 80;
+                                self.combat = CombatState::Explore;
+                                self.typing.clear();
+                            } else {
+                                self.message = format!(
+                                    "{}💨 Dashing strike hits {}! {} damage ({} HP left)",
+                                    spell.hanzi, e_hanzi, dmg, self.enemies[enemy_idx].hp
+                                );
+                                self.message_timer = 60;
+                            }
+                        } else {
+                            self.flash = Some((100, 210, 255, 0.2));
+                            self.message = format!("{}💨 You dash past in a blur!", spell.hanzi);
+                            self.message_timer = 60;
+                            self.combat = CombatState::Explore;
+                            self.typing.clear();
+                        }
+                    }
+                    SpellEffect::Pierce(dmg) => {
+                        let dmg = dmg * arcane_mult + spell_power;
+                        if enemy_idx < self.enemies.len() {
+                            if let Some((ex, ey)) = e_screen {
+                                self.particles.spawn_damage(ex, ey, &mut self.rng_state);
+                            }
+                            self.enemies[enemy_idx].hp -= dmg;
+                            let e_hanzi = self.enemies[enemy_idx].hanzi;
+                            if self.enemies[enemy_idx].hp <= 0 {
+                                let available = radical::radicals_for_floor(self.floor_num);
+                                let drop_idx = self.rng_next() as usize % available.len();
+                                self.player.add_radical(available[drop_idx].ch);
+                                self.message = format!(
+                                    "{}🔱 Piercing bolt skewers {}! {} damage! Defeated! Got [{}]",
+                                    spell.hanzi, e_hanzi, dmg, available[drop_idx].ch
+                                );
+                                self.message_timer = 80;
+                                self.combat = CombatState::Explore;
+                                self.typing.clear();
+                            } else {
+                                self.message = format!(
+                                    "{}🔱 Piercing bolt hits {}! {} damage ({} HP left)",
+                                    spell.hanzi, e_hanzi, dmg, self.enemies[enemy_idx].hp
+                                );
+                                self.message_timer = 60;
+                            }
+                        }
+                    }
+                    SpellEffect::PullToward => {
+                        if enemy_idx < self.enemies.len() {
+                            self.enemies[enemy_idx].stunned = true;
+                            let e_hanzi = self.enemies[enemy_idx].hanzi;
+                            self.message = format!(
+                                "{}🧲 {} is yanked toward you and dazed!",
+                                spell.hanzi, e_hanzi
+                            );
+                            self.message_timer = 60;
+                        }
+                    }
+                    SpellEffect::KnockBack(dmg) => {
+                        let dmg = dmg * arcane_mult + spell_power;
+                        if enemy_idx < self.enemies.len() {
+                            if let Some((ex, ey)) = e_screen {
+                                self.particles.spawn_damage(ex, ey, &mut self.rng_state);
+                            }
+                            self.enemies[enemy_idx].hp -= dmg;
+                            let e_hanzi = self.enemies[enemy_idx].hanzi;
+                            if self.enemies[enemy_idx].hp <= 0 {
+                                let available = radical::radicals_for_floor(self.floor_num);
+                                let drop_idx = self.rng_next() as usize % available.len();
+                                self.player.add_radical(available[drop_idx].ch);
+                                self.message = format!(
+                                    "{}🤜 {} sent flying! {} damage! Defeated! Got [{}]",
+                                    spell.hanzi, e_hanzi, dmg, available[drop_idx].ch
+                                );
+                                self.message_timer = 80;
+                                self.combat = CombatState::Explore;
+                                self.typing.clear();
+                            } else {
+                                self.message = format!(
+                                    "{}🤜 {} knocked back for {} damage! ({} HP left)",
+                                    spell.hanzi, e_hanzi, dmg, self.enemies[enemy_idx].hp
+                                );
+                                self.message_timer = 60;
+                            }
+                        }
+                    }
+                    SpellEffect::Thorns(turns) => {
+                        self.player.shield = true;
+                        self.particles
+                            .spawn_shield(p_screen.0, p_screen.1, &mut self.rng_state);
+                        self.message = format!(
+                            "{}🌿 Thorns grow around you for {} turns!",
+                            spell.hanzi, turns
+                        );
+                        self.message_timer = 60;
+                    }
+                    SpellEffect::Cone(dmg) => {
+                        let dmg = dmg * arcane_mult + spell_power;
+                        if enemy_idx < self.enemies.len() {
+                            if let Some((ex, ey)) = e_screen {
+                                self.particles.spawn_fire(ex, ey, &mut self.rng_state);
+                            }
+                            self.enemies[enemy_idx].hp -= dmg;
+                            let e_hanzi = self.enemies[enemy_idx].hanzi;
+                            if self.enemies[enemy_idx].hp <= 0 {
+                                let available = radical::radicals_for_floor(self.floor_num);
+                                let drop_idx = self.rng_next() as usize % available.len();
+                                self.player.add_radical(available[drop_idx].ch);
+                                self.message = format!(
+                                    "{}🔺 Cone blast engulfs {}! {} damage! Defeated! Got [{}]",
+                                    spell.hanzi, e_hanzi, dmg, available[drop_idx].ch
+                                );
+                                self.message_timer = 80;
+                                self.combat = CombatState::Explore;
+                                self.typing.clear();
+                            } else {
+                                self.message = format!(
+                                    "{}🔺 Cone blast hits {}! {} damage ({} HP left)",
+                                    spell.hanzi, e_hanzi, dmg, self.enemies[enemy_idx].hp
+                                );
+                                self.message_timer = 60;
+                            }
+                        }
+                    }
+                    SpellEffect::Wall(_) => {
+                        self.flash = Some((160, 140, 100, 0.15));
+                        self.message =
+                            format!("{}🧱 A wall of stone erupts from the ground!", spell.hanzi);
+                        self.message_timer = 60;
+                    }
                 }
 
                 if enemy_idx < self.enemies.len()
@@ -5962,7 +6127,10 @@ impl GameState {
         }
         let effect = self.player.spells[self.player.selected_spell].effect;
         match effect {
-            SpellEffect::Heal(_) | SpellEffect::Shield | SpellEffect::Reveal => {}
+            SpellEffect::Heal(_)
+            | SpellEffect::Shield
+            | SpellEffect::Reveal
+            | SpellEffect::Thorns(_) => {}
             _ => {
                 // Offensive spell — enter aiming mode instead of rejecting
                 let label = effect.label();
@@ -6018,6 +6186,13 @@ impl GameState {
                     .spawn_shield(p_screen.0, p_screen.1, &mut self.rng_state);
                 self.message =
                     format!("{} — Shield active! Next hit will be blocked.", spell.hanzi);
+                self.message_timer = 60;
+            }
+            SpellEffect::Thorns(turns) => {
+                self.player.shield = true;
+                self.particles
+                    .spawn_shield(p_screen.0, p_screen.1, &mut self.rng_state);
+                self.message = format!("{}🌿 Thorns active for {} turns!", spell.hanzi, turns);
                 self.message_timer = 60;
             }
             _ => unreachable!(),
@@ -6141,6 +6316,36 @@ impl GameState {
                         self.message =
                             format!("{}☯ {} stands down peacefully.", spell.hanzi, e_hanzi);
                     }
+                }
+                SpellEffect::Pierce(dmg) | SpellEffect::KnockBack(dmg) | SpellEffect::Cone(dmg) => {
+                    let dmg = dmg * arcane_mult + spell_power;
+                    self.particles
+                        .spawn_damage(e_screen.0, e_screen.1, &mut self.rng_state);
+                    self.enemies[enemy_idx].hp -= dmg;
+                    let e_hanzi = self.enemies[enemy_idx].hanzi;
+                    let icon = match effect {
+                        SpellEffect::Pierce(_) => "🔱",
+                        SpellEffect::KnockBack(_) => "🤜",
+                        SpellEffect::Cone(_) => "🔺",
+                        _ => "",
+                    };
+                    if self.enemies[enemy_idx].hp <= 0 {
+                        self.message = format!(
+                            "{}{} {} takes {} damage and is defeated!",
+                            spell.hanzi, icon, e_hanzi, dmg
+                        );
+                    } else {
+                        self.message = format!(
+                            "{}{} {} takes {} damage! ({} HP left)",
+                            spell.hanzi, icon, e_hanzi, dmg, self.enemies[enemy_idx].hp
+                        );
+                    }
+                }
+                SpellEffect::PullToward => {
+                    self.enemies[enemy_idx].stunned = true;
+                    let e_hanzi = self.enemies[enemy_idx].hanzi;
+                    self.message =
+                        format!("{}🧲 {} is pulled closer and dazed!", spell.hanzi, e_hanzi);
                 }
                 _ => {}
             }
@@ -7825,6 +8030,450 @@ impl GameState {
             let entries = self.codex.sorted_entries();
             self.renderer.draw_codex(&entries);
         }
+
+        if self.show_console {
+            self.renderer
+                .draw_console(&self.console_history, &self.console_buffer);
+        }
+    }
+
+    fn execute_console_command(&mut self, cmd: &str) {
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
+        if parts.is_empty() {
+            return;
+        }
+
+        let response = match parts[0] {
+            "help" => {
+                self.console_history.push("=== CHEAT CONSOLE ===".into());
+                self.console_history
+                    .push("help         - Show this help".into());
+                self.console_history
+                    .push("god          - Toggle god mode".into());
+                self.console_history
+                    .push("hp [n]       - Set HP to n (or full)".into());
+                self.console_history
+                    .push("gold [n]     - Add n gold (default 100)".into());
+                self.console_history
+                    .push("floor [n]    - Go to floor n".into());
+                self.console_history
+                    .push("reveal       - Reveal entire map".into());
+                self.console_history
+                    .push("kill_all     - Kill all enemies".into());
+                self.console_history
+                    .push("focus [n]    - Set focus in combat".into());
+                self.console_history
+                    .push("spirit [n]   - Set spirit to n".into());
+                self.console_history
+                    .push("clear        - Clear console".into());
+                self.console_history
+                    .push("stats        - Show player stats".into());
+                self.console_history
+                    .push("items        - List all item types".into());
+                self.console_history
+                    .push("give_item <name> - Give item by name".into());
+                self.console_history
+                    .push("radicals     - List all radicals".into());
+                self.console_history
+                    .push("give_radical <ch> - Give a radical".into());
+                self.console_history
+                    .push("spells       - List player spells".into());
+                self.console_history
+                    .push("give_spell <hanzi> - Give spell by hanzi".into());
+                self.console_history
+                    .push("fight <type> - Fight normal/elite/boss".into());
+                self.console_history
+                    .push("boss <name>  - Fight a specific boss".into());
+                return;
+            }
+            "god" => {
+                self.god_mode = !self.god_mode;
+                if let CombatState::TacticalBattle(ref mut battle) = self.combat {
+                    battle.god_mode = self.god_mode;
+                }
+                format!("God mode: {}", if self.god_mode { "ON" } else { "OFF" })
+            }
+            "hp" => {
+                let amount = parts.get(1).and_then(|s| s.parse::<i32>().ok());
+                match amount {
+                    Some(n) => {
+                        self.player.hp = n.min(self.player.max_hp);
+                        format!("HP set to {}/{}", self.player.hp, self.player.max_hp)
+                    }
+                    None => {
+                        self.player.hp = self.player.max_hp;
+                        format!("HP restored to {}", self.player.max_hp)
+                    }
+                }
+            }
+            "gold" => {
+                let amount = parts
+                    .get(1)
+                    .and_then(|s| s.parse::<i32>().ok())
+                    .unwrap_or(100);
+                self.player.gold += amount;
+                format!("Added {} gold (total: {})", amount, self.player.gold)
+            }
+            "floor" => {
+                if let Some(n) = parts.get(1).and_then(|s| s.parse::<i32>().ok()) {
+                    if n >= 1 {
+                        self.floor_num = n - 1;
+                        self.new_floor();
+                        format!("Warped to floor {}", self.floor_num)
+                    } else {
+                        "Floor must be >= 1".into()
+                    }
+                } else {
+                    format!("Current floor: {}. Usage: floor [n]", self.floor_num)
+                }
+            }
+            "reveal" => {
+                self.reveal_entire_floor();
+                for v in self.level.visible.iter_mut() {
+                    *v = true;
+                }
+                "Map revealed!".into()
+            }
+            "kill_all" => {
+                if let CombatState::TacticalBattle(ref mut battle) = self.combat {
+                    let mut killed = 0;
+                    for unit in battle.units.iter_mut() {
+                        if unit.is_enemy() && unit.alive {
+                            unit.hp = 0;
+                            unit.alive = false;
+                            killed += 1;
+                        }
+                    }
+                    format!("Killed {} tactical enemies", killed)
+                } else {
+                    let count = self.enemies.len();
+                    for e in self.enemies.iter_mut() {
+                        e.hp = 0;
+                    }
+                    self.enemies.clear();
+                    format!("Killed {} enemies", count)
+                }
+            }
+            "focus" => {
+                if let CombatState::TacticalBattle(ref mut battle) = self.combat {
+                    let amount = parts
+                        .get(1)
+                        .and_then(|s| s.parse::<i32>().ok())
+                        .unwrap_or(battle.max_focus);
+                    battle.focus = amount;
+                    format!("Focus set to {}/{}", battle.focus, battle.max_focus)
+                } else {
+                    "Not in tactical combat".into()
+                }
+            }
+            "spirit" => {
+                let amount = parts
+                    .get(1)
+                    .and_then(|s| s.parse::<i32>().ok())
+                    .unwrap_or(self.player.max_spirit);
+                self.player.spirit = amount.min(self.player.max_spirit);
+                format!(
+                    "Spirit set to {}/{}",
+                    self.player.spirit, self.player.max_spirit
+                )
+            }
+            "clear" => {
+                self.console_history.clear();
+                return;
+            }
+            "stats" => {
+                self.console_history.push(format!(
+                    "HP: {}/{}  Gold: {}  Floor: {}",
+                    self.player.hp, self.player.max_hp, self.player.gold, self.floor_num
+                ));
+                self.console_history.push(format!(
+                    "Spirit: {}/{}  Kills: {}  God: {}",
+                    self.player.spirit, self.player.max_spirit, self.total_kills, self.god_mode
+                ));
+                self.console_history.push(format!(
+                    "Radicals: {}  Spells: {}  Items: {}",
+                    self.player.radicals.len(),
+                    self.player.spells.len(),
+                    self.player.items.len()
+                ));
+                return;
+            }
+            "items" => {
+                let all: &[(&str, &str)] = &[
+                    ("HealthPotion", "Heal HP"),
+                    ("PoisonFlask", "Poison enemies"),
+                    ("RevealScroll", "Reveal map"),
+                    ("TeleportScroll", "Teleport"),
+                    ("HastePotion", "Grant haste"),
+                    ("StunBomb", "Stun enemies"),
+                    ("RiceBall", "Restore spirit"),
+                    ("MeditationIncense", "Block spirit drain"),
+                    ("AncestralWine", "Full spirit restore"),
+                    ("SmokeScreen", "Smoke + haste"),
+                    ("FireCracker", "AoE damage"),
+                    ("IronSkinElixir", "Shield + regen"),
+                    ("ClarityTea", "Cleanse debuffs"),
+                    ("GoldIngot", "Gain gold"),
+                    ("ThunderTalisman", "High damage"),
+                    ("JadeSalve", "Regen over time"),
+                    ("SerpentFang", "Envenom weapon"),
+                    ("WardingCharm", "Shield + spirit shield"),
+                    ("InkBomb", "Stun + confuse"),
+                    ("PhoenixPlume", "Auto-revive"),
+                ];
+                self.console_history.push("=== ITEM TYPES ===".into());
+                for (name, desc) in all {
+                    self.console_history
+                        .push(format!("  {} - {}", name, desc));
+                }
+                return;
+            }
+            "give_item" => {
+                use crate::player::Item;
+                if let Some(name) = parts.get(1) {
+                    let lower = name.to_lowercase();
+                    let item = match lower.as_str() {
+                        "healthpotion" => Some(Item::HealthPotion(5 + self.floor_num)),
+                        "poisonflask" => Some(Item::PoisonFlask(2, 3)),
+                        "revealscroll" => Some(Item::RevealScroll),
+                        "teleportscroll" => Some(Item::TeleportScroll),
+                        "hastepotion" => Some(Item::HastePotion(5)),
+                        "stunbomb" => Some(Item::StunBomb),
+                        "riceball" => Some(Item::RiceBall(40)),
+                        "meditationincense" => Some(Item::MeditationIncense(5)),
+                        "ancestralwine" => Some(Item::AncestralWine(3)),
+                        "smokescreen" => Some(Item::SmokeScreen(4)),
+                        "firecracker" => Some(Item::FireCracker(3 + self.floor_num / 2)),
+                        "ironskinelixir" => Some(Item::IronSkinElixir(5)),
+                        "claritytea" => Some(Item::ClarityTea),
+                        "goldingot" => Some(Item::GoldIngot(8 + self.floor_num * 2)),
+                        "thundertalisman" => Some(Item::ThunderTalisman(5 + self.floor_num)),
+                        "jadesalve" => Some(Item::JadeSalve(2)),
+                        "serpentfang" => Some(Item::SerpentFang),
+                        "wardingcharm" => Some(Item::WardingCharm(5)),
+                        "inkbomb" => Some(Item::InkBomb),
+                        "phoenixplume" => Some(Item::PhoenixPlume(5)),
+                        _ => None,
+                    };
+                    match item {
+                        Some(it) => {
+                            let name_str = it.name().to_string();
+                            if self.player.add_item(it, ItemState::Normal) {
+                                format!("Added {}", name_str)
+                            } else {
+                                "Inventory full!".into()
+                            }
+                        }
+                        None => format!("Unknown item '{}'. Type 'items' to list.", name),
+                    }
+                } else {
+                    "Usage: give_item <name>".into()
+                }
+            }
+            "radicals" => {
+                self.console_history.push("=== RADICALS ===".into());
+                for r in radical::RADICALS.iter() {
+                    let tag = if r.rare { " [rare]" } else { "" };
+                    self.console_history
+                        .push(format!("  {} ({}) - {}{}", r.ch, r.name, r.meaning, tag));
+                }
+                return;
+            }
+            "give_radical" => {
+                if let Some(ch) = parts.get(1) {
+                    if let Some(r) = radical::RADICALS.iter().find(|r| r.ch == *ch) {
+                        self.player.add_radical(r.ch);
+                        format!("Added radical {} ({})", r.ch, r.meaning)
+                    } else {
+                        format!("Unknown radical '{}'. Type 'radicals' to list.", ch)
+                    }
+                } else {
+                    "Usage: give_radical <char>".into()
+                }
+            }
+            "spells" => {
+                if self.player.spells.is_empty() {
+                    self.console_history.push("No spells.".into());
+                } else {
+                    self.console_history.push("=== SPELLS ===".into());
+                    for (i, s) in self.player.spells.iter().enumerate() {
+                        let sel = if i == self.player.selected_spell {
+                            " ◀"
+                        } else {
+                            ""
+                        };
+                        self.console_history.push(format!(
+                            "  {} {} ({}) - {:?}{}",
+                            s.hanzi, s.pinyin, s.meaning, s.effect, sel
+                        ));
+                    }
+                }
+                return;
+            }
+            "give_spell" => {
+                if let Some(hanzi) = parts.get(1) {
+                    if let Some(recipe) = radical::RECIPES
+                        .iter()
+                        .find(|r| r.output_hanzi == *hanzi)
+                    {
+                        self.player.add_spell(Spell {
+                            hanzi: recipe.output_hanzi,
+                            pinyin: recipe.output_pinyin,
+                            meaning: recipe.output_meaning,
+                            effect: recipe.effect,
+                        });
+                        format!(
+                            "Added spell {} ({} - {})",
+                            recipe.output_hanzi, recipe.output_pinyin, recipe.output_meaning
+                        )
+                    } else {
+                        format!("No recipe for '{}'. Check radical.rs RECIPES.", hanzi)
+                    }
+                } else {
+                    "Usage: give_spell <hanzi>".into()
+                }
+            }
+            "fight" => {
+                if let Some(kind) = parts.get(1) {
+                    let lower = kind.to_lowercase();
+                    let pool = vocab::vocab_for_floor(self.floor_num);
+                    if pool.is_empty() {
+                        "No vocab entries for this floor!".into()
+                    } else {
+                        let entry = pool[self.rng_next() as usize % pool.len()];
+                        let px = self.player.x;
+                        let py = self.player.y;
+                        match lower.as_str() {
+                            "normal" => {
+                                let e = Enemy::from_vocab(entry, px + 1, py, self.floor_num);
+                                let label = format!("Fight: {} ({})", e.hanzi, e.meaning);
+                                self.enemies.push(e);
+                                let idx = self.enemies.len() - 1;
+                                let battle = combat::transition::enter_combat(
+                                    &self.player,
+                                    &self.enemies,
+                                    &[idx],
+                                    self.floor_num,
+                                    self.current_room_modifier(),
+                                    &self.srs,
+                                );
+                                self.combat = CombatState::TacticalBattle(Box::new(battle));
+                                self.typing.clear();
+                                label
+                            }
+                            "elite" => {
+                                let elite_pool: Vec<&VocabEntry> =
+                                    pool.iter().filter(|v| vocab::is_elite(v)).copied().collect();
+                                let ep = if elite_pool.is_empty() {
+                                    entry
+                                } else {
+                                    elite_pool[self.rng_next() as usize % elite_pool.len()]
+                                };
+                                let e = Enemy::from_vocab(ep, px + 1, py, self.floor_num);
+                                let label = format!("Fight elite: {} ({})", e.hanzi, e.meaning);
+                                self.enemies.push(e);
+                                let idx = self.enemies.len() - 1;
+                                let battle = combat::transition::enter_combat(
+                                    &self.player,
+                                    &self.enemies,
+                                    &[idx],
+                                    self.floor_num,
+                                    self.current_room_modifier(),
+                                    &self.srs,
+                                );
+                                self.combat = CombatState::TacticalBattle(Box::new(battle));
+                                self.typing.clear();
+                                label
+                            }
+                            "boss" => {
+                                let e =
+                                    Enemy::boss_from_vocab(entry, px + 1, py, self.floor_num);
+                                let label = format!("Fight boss: {} ({})", e.hanzi, e.meaning);
+                                self.enemies.push(e);
+                                let idx = self.enemies.len() - 1;
+                                let battle = combat::transition::enter_combat(
+                                    &self.player,
+                                    &self.enemies,
+                                    &[idx],
+                                    self.floor_num,
+                                    self.current_room_modifier(),
+                                    &self.srs,
+                                );
+                                self.combat = CombatState::TacticalBattle(Box::new(battle));
+                                self.typing.clear();
+                                label
+                            }
+                            _ => format!(
+                                "Unknown fight type '{}'. Use: normal, elite, boss",
+                                kind
+                            ),
+                        }
+                    }
+                } else {
+                    "Usage: fight <normal|elite|boss>".into()
+                }
+            }
+            "boss" => {
+                if let Some(name) = parts.get(1) {
+                    let lower = name.to_lowercase();
+                    let boss_kind = match lower.as_str() {
+                        "gatekeeper" => Some((BossKind::Gatekeeper, 5)),
+                        "scholar" => Some((BossKind::Scholar, 10)),
+                        "elementalist" => Some((BossKind::Elementalist, 15)),
+                        "mimicking" => Some((BossKind::MimicKing, 20)),
+                        "inksage" => Some((BossKind::InkSage, 25)),
+                        "radicalthief" => Some((BossKind::RadicalThief, 30)),
+                        _ => None,
+                    };
+                    match boss_kind {
+                        Some((_kind, floor)) => {
+                            let pool = vocab::vocab_for_floor(floor);
+                            let entry = if pool.is_empty() {
+                                &vocab::VOCAB[0]
+                            } else {
+                                pool[self.rng_next() as usize % pool.len()]
+                            };
+                            let px = self.player.x;
+                            let py = self.player.y;
+                            let e = Enemy::boss_from_vocab(entry, px + 1, py, floor);
+                            let label = format!(
+                                "Boss fight: {} ({}) - {}",
+                                e.hanzi,
+                                e.meaning,
+                                _kind.title()
+                            );
+                            self.enemies.push(e);
+                            let idx = self.enemies.len() - 1;
+                            let battle = combat::transition::enter_combat(
+                                &self.player,
+                                &self.enemies,
+                                &[idx],
+                                floor,
+                                self.current_room_modifier(),
+                                &self.srs,
+                            );
+                            self.combat = CombatState::TacticalBattle(Box::new(battle));
+                            self.typing.clear();
+                            label
+                        }
+                        None => format!(
+                            "Unknown boss '{}'. Options: Gatekeeper, Scholar, Elementalist, MimicKing, InkSage, RadicalThief",
+                            name
+                        ),
+                    }
+                } else {
+                    "Usage: boss <name> (Gatekeeper/Scholar/Elementalist/MimicKing/InkSage/RadicalThief)".into()
+                }
+            }
+            other => {
+                format!("Unknown command: '{}'. Type 'help' for commands.", other)
+            }
+        };
+        self.console_history.push(format!("> {}", cmd));
+        self.console_history.push(response);
+        while self.console_history.len() > 100 {
+            self.console_history.remove(0);
+        }
     }
 }
 
@@ -7879,6 +8528,13 @@ fn spell_category(effect: &SpellEffect) -> &'static str {
         SpellEffect::Poison(_, _) => "drain",
         SpellEffect::FocusRestore(_) => "heal",
         SpellEffect::ArmorBreak => "strike",
+        SpellEffect::Dash(_) => "utility",
+        SpellEffect::Pierce(_) => "strike",
+        SpellEffect::PullToward => "utility",
+        SpellEffect::KnockBack(_) => "strike",
+        SpellEffect::Thorns(_) => "shield",
+        SpellEffect::Cone(_) => "fire",
+        SpellEffect::Wall(_) => "shield",
     }
 }
 
@@ -8672,6 +9328,12 @@ pub fn init_game() -> Result<(), JsValue> {
         theft_catches: 0,
         shop_banned: false,
         saved_battle: None,
+        show_console: false,
+        console_buffer: String::new(),
+        console_history: Vec::new(),
+        console_cmd_history: Vec::new(),
+        console_cmd_index: None,
+        god_mode: false,
     }));
 
     // Initial setup
@@ -8693,6 +9355,70 @@ pub fn init_game() -> Result<(), JsValue> {
             // Resume audio context on first interaction (browser requirement)
             if let Some(ref audio) = s.audio {
                 audio.resume();
+            }
+
+            // Cheat console toggle
+            if key == "`" || key == "Dead" {
+                event.prevent_default();
+                s.show_console = !s.show_console;
+                if s.show_console {
+                    s.console_buffer.clear();
+                }
+                s.render();
+                return;
+            }
+
+            // Console input handling — intercepts ALL keys when console is open
+            if s.show_console {
+                event.prevent_default();
+                match key.as_str() {
+                    "Escape" => {
+                        s.show_console = false;
+                    }
+                    "Enter" => {
+                        let cmd = s.console_buffer.trim().to_string();
+                        if !cmd.is_empty() {
+                            s.console_cmd_history.push(cmd.clone());
+                            s.console_cmd_index = None;
+                            s.execute_console_command(&cmd);
+                            s.console_buffer.clear();
+                        }
+                    }
+                    "Backspace" => {
+                        s.console_buffer.pop();
+                    }
+                    "ArrowUp" => {
+                        if !s.console_cmd_history.is_empty() {
+                            let idx = match s.console_cmd_index {
+                                Some(i) => i.saturating_sub(1),
+                                None => s.console_cmd_history.len() - 1,
+                            };
+                            s.console_cmd_index = Some(idx);
+                            s.console_buffer = s.console_cmd_history[idx].clone();
+                        }
+                    }
+                    "ArrowDown" => {
+                        if let Some(idx) = s.console_cmd_index {
+                            if idx + 1 < s.console_cmd_history.len() {
+                                let new_idx = idx + 1;
+                                s.console_cmd_index = Some(new_idx);
+                                s.console_buffer = s.console_cmd_history[new_idx].clone();
+                            } else {
+                                s.console_cmd_index = None;
+                                s.console_buffer.clear();
+                            }
+                        }
+                    }
+                    _ => {
+                        if key.len() == 1 {
+                            s.console_buffer.push_str(&key);
+                        } else if key == "Space" {
+                            s.console_buffer.push(' ');
+                        }
+                    }
+                }
+                s.render();
+                return;
             }
 
             if key == "?" || key == "/" {

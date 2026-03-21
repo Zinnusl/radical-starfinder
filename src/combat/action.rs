@@ -40,6 +40,19 @@ pub fn move_unit(
         battle.pending_spirit_delta += 15;
         messages.push("🌊 The Spirit Well restores your energy! (+15 spirit)".to_string());
     }
+    // TrapTile: trigger hidden or revealed spike trap
+    let dest_tile = battle.arena.tile(dest_x, dest_y);
+    if dest_tile == Some(BattleTile::TrapTile) || dest_tile == Some(BattleTile::TrapTileRevealed) {
+        let mut trap_msgs =
+            crate::combat::terrain::trigger_trap(battle, unit_idx, dest_x, dest_y);
+        messages.append(&mut trap_msgs);
+    }
+    // CrumblingFloor / CrackedFloor: step-on interaction
+    {
+        let mut crumble_msgs =
+            crate::combat::terrain::step_on_crumbling(battle, dest_x, dest_y);
+        messages.append(&mut crumble_msgs);
+    }
     messages
 }
 
@@ -73,6 +86,9 @@ pub fn wait(battle: &mut TacticalBattle, unit_idx: usize) {
 /// Deal damage to a unit, accounting for defending status and armor.
 /// Returns actual damage dealt.
 pub fn deal_damage(battle: &mut TacticalBattle, target_idx: usize, raw_damage: i32) -> i32 {
+    if target_idx == 0 && battle.god_mode {
+        return 0;
+    }
     let unit = &mut battle.units[target_idx];
     let mut damage = raw_damage;
 
@@ -161,6 +177,18 @@ pub fn deal_damage_from(
     if target.thorn_armor_turns > 0 {
         attacker_damage += 1;
         retaliation_msg = Some("Thorn armor retaliates for 1 damage!".to_string());
+    }
+    if target
+        .statuses
+        .iter()
+        .any(|s| matches!(s.kind, crate::status::StatusKind::Thorns))
+    {
+        attacker_damage += 2;
+        let msg = match retaliation_msg {
+            Some(prev) => format!("{} Thorns aura retaliates for 2 damage!", prev),
+            None => "Thorns aura retaliates for 2 damage!".to_string(),
+        };
+        retaliation_msg = Some(msg);
     }
     if target.radical_counter {
         attacker_damage += 2;

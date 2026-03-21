@@ -4,10 +4,14 @@
 #[derive(Clone, Debug)]
 pub enum StatusKind {
     /// Damage per turn for N turns
-    Poison { damage: i32 },
+    Poison {
+        damage: i32,
+    },
     /// Heal per turn for N turns
     #[allow(dead_code)]
-    Regen { heal: i32 },
+    Regen {
+        heal: i32,
+    },
     /// Player gets extra actions (enemy_turn skipped on even ticks)
     Haste,
     /// Player movement is randomized
@@ -19,9 +23,13 @@ pub enum StatusKind {
     /// Weapon coated in poison: attacks apply Poison
     Envenomed,
     /// Weapon coated in flame/magic: bonus damage
-    Empowered { amount: i32 },
+    Empowered {
+        amount: i32,
+    },
     /// Burn damage over time
-    Burn { damage: i32 },
+    Burn {
+        damage: i32,
+    },
     /// Blocks spirit drain for N turns (overworld).
     SpiritShield,
     /// Frozen: skip next turn, then clears
@@ -31,7 +39,10 @@ pub enum StatusKind {
     /// Fear: forced to move away from source
     Fear,
     /// Bleeding: damage per turn (stacks)
-    Bleed { damage: i32 },
+    Bleed {
+        damage: i32,
+    },
+    Thorns,
 }
 
 /// An active status effect with remaining duration.
@@ -64,6 +75,7 @@ impl StatusInstance {
             StatusKind::Slow => "🐌Slw",
             StatusKind::Fear => "😨Fer",
             StatusKind::Bleed { .. } => "🩸Bld",
+            StatusKind::Thorns => "🌿Thn",
         }
     }
 
@@ -82,6 +94,7 @@ impl StatusInstance {
             StatusKind::Slow => "#aaaaaa",
             StatusKind::Fear => "#660066",
             StatusKind::Bleed { .. } => "#aa0000",
+            StatusKind::Thorns => "#44cc44",
         }
     }
 

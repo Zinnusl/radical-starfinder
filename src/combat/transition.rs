@@ -248,6 +248,9 @@ pub fn enter_combat(
         selected_radical_ability: None,
         radical_picker_open: false,
         radical_picker_cursor: 0,
+        projectiles: Vec::new(),
+        arcing_projectiles: Vec::new(),
+        god_mode: false,
     }
 }
 
@@ -255,7 +258,6 @@ pub fn enter_combat(
 fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
     let mut arena = TacticalArena::new(size, size, biome);
 
-    // Simple deterministic obstacle placement based on floor.
     let obstacle_count = 3 + (floor / 3).min(6) as usize;
     let seed = floor as u64;
     for i in 0..obstacle_count {
@@ -265,7 +267,6 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
             .wrapping_mul(2246822519);
         let x = ((hash >> 16) % size as u64) as i32;
         let y = (1 + (hash >> 8) % (size as u64 - 3)) as i32;
-        // Don't place obstacles on spawn points.
         if y <= 0 || y >= (size as i32 - 1) {
             continue;
         }
@@ -276,7 +277,6 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
         arena.set_tile(x, y, BattleTile::Obstacle);
     }
 
-    // Sprinkle biome-specific terrain on higher floors.
     if floor >= 3 {
         let terrain_count = (floor / 5).min(4) as usize
             + match biome {
@@ -344,6 +344,125 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
                 },
             };
             arena.set_tile(x, y, tile);
+        }
+    }
+
+    if floor >= 2 {
+        let boulder_count = 1 + ((floor / 4) as usize).min(3);
+        let boulder_seed = seed.wrapping_mul(7919).wrapping_add(42);
+        for i in 0..boulder_count {
+            let hash = boulder_seed
+                .wrapping_mul(48271)
+                .wrapping_add(i as u64)
+                .wrapping_mul(16807);
+            let x = ((hash >> 16) % size as u64) as i32;
+            let y = (2 + (hash >> 8) % (size as u64 - 4)) as i32;
+            let mid = size as i32 / 2;
+            if y >= (size as i32 - 2) && (x - mid).abs() <= 1 {
+                continue;
+            }
+            if arena.tile(x, y) != Some(BattleTile::Open) {
+                continue;
+            }
+            arena.set_tile(x, y, BattleTile::Boulder);
+        }
+    }
+
+    // Interactive terrain: explosive barrels, crumbling floors, trap tiles
+    if floor >= 3 {
+        let interactive_seed = seed.wrapping_mul(9901).wrapping_add(77);
+        // Explosive barrels: 1-2 per arena
+        let barrel_count = 1 + ((interactive_seed >> 4) % 2) as usize;
+        for i in 0..barrel_count {
+            let hash = interactive_seed
+                .wrapping_mul(6469)
+                .wrapping_add(i as u64)
+                .wrapping_mul(22123);
+            let x = ((hash >> 16) % size as u64) as i32;
+            let y = (2 + (hash >> 8) % (size as u64 - 4)) as i32;
+            let mid = size as i32 / 2;
+            if y >= (size as i32 - 2) && (x - mid).abs() <= 1 {
+                continue;
+            }
+            if arena.tile(x, y) != Some(BattleTile::Open) {
+                continue;
+            }
+            arena.set_tile(x, y, BattleTile::ExplosiveBarrel);
+        }
+
+        // Crumbling floors: 1-2 per arena
+        let crumble_count = 1 + ((interactive_seed >> 12) % 2) as usize;
+        for i in 0..crumble_count {
+            let hash = interactive_seed
+                .wrapping_mul(8461)
+                .wrapping_add((i + barrel_count) as u64)
+                .wrapping_mul(30011);
+            let x = ((hash >> 16) % size as u64) as i32;
+            let y = (1 + (hash >> 8) % (size as u64 - 3)) as i32;
+            if arena.tile(x, y) != Some(BattleTile::Open) {
+                continue;
+            }
+            arena.set_tile(x, y, BattleTile::CrumblingFloor);
+        }
+
+        // Trap tiles: 1-3 per arena
+        let trap_count = 1 + ((interactive_seed >> 20) % 3) as usize;
+        for i in 0..trap_count {
+            let hash = interactive_seed
+                .wrapping_mul(11003)
+                .wrapping_add((i + barrel_count + crumble_count) as u64)
+                .wrapping_mul(40037);
+            let x = ((hash >> 16) % size as u64) as i32;
+            let y = (1 + (hash >> 8) % (size as u64 - 3)) as i32;
+            let mid = size as i32 / 2;
+            if y >= (size as i32 - 2) && (x - mid).abs() <= 1 {
+                continue;
+            }
+            if arena.tile(x, y) != Some(BattleTile::Open) {
+                continue;
+            }
+            arena.set_tile(x, y, BattleTile::TrapTile);
+        }
+    }
+
+    if floor >= 4 {
+        let flow_seed = seed.wrapping_mul(6271).wrapping_add(99);
+        let flow_hash = flow_seed.wrapping_mul(31337);
+        let should_place = flow_hash % 3 != 0;
+        if should_place {
+            let dir = flow_hash % 4;
+            let (flow_tile, is_horizontal) = match dir {
+                0 => (BattleTile::FlowNorth, false),
+                1 => (BattleTile::FlowSouth, false),
+                2 => (BattleTile::FlowEast, true),
+                _ => (BattleTile::FlowWest, true),
+            };
+            let channel_len = 3 + (floor / 6).min(3) as i32;
+            if is_horizontal {
+                let y = (2 + (flow_hash >> 8) % (size as u64 - 4)) as i32;
+                let start_x = ((flow_hash >> 16) % (size as u64 / 2)) as i32;
+                for dx in 0..channel_len {
+                    let x = start_x + dx;
+                    if x >= size as i32 {
+                        break;
+                    }
+                    if arena.tile(x, y) == Some(BattleTile::Open) {
+                        arena.set_tile(x, y, flow_tile);
+                    }
+                }
+            } else {
+                let x = (2 + (flow_hash >> 8) % (size as u64 - 4)) as i32;
+                let start_y = (1 + (flow_hash >> 16) % (size as u64 / 2)) as i32;
+                for dy in 0..channel_len {
+                    let y = start_y + dy;
+                    if y >= size as i32 - 1 {
+                        break;
+                    }
+                    if arena.tile(x, y) == Some(BattleTile::Open) {
+                        arena.set_tile(x, y, flow_tile);
+                    }
+                }
+            }
         }
     }
 

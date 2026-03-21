@@ -611,6 +611,31 @@ pub fn path_toward(
         let d = manhattan(rx, ry, target_x, target_y);
         let mut score = -d * 10;
 
+        if let Some(tile) = battle.arena.tile(rx, ry) {
+            if matches!(
+                tile,
+                crate::combat::BattleTile::FlowNorth
+                    | crate::combat::BattleTile::FlowSouth
+                    | crate::combat::BattleTile::FlowEast
+                    | crate::combat::BattleTile::FlowWest
+            ) {
+                score -= 30;
+            }
+            if tile == crate::combat::BattleTile::TrapTileRevealed {
+                score -= 40;
+            }
+        }
+        // Avoid tiles adjacent to explosive barrels
+        for &(dx, dy) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+            let nx = rx + dx;
+            let ny = ry + dy;
+            if let Some(adj) = battle.arena.tile(nx, ny) {
+                if adj == crate::combat::BattleTile::ExplosiveBarrel {
+                    score -= 50;
+                }
+            }
+        }
+
         if !close_in {
             let mut dist_to_allies = 0;
             for (i, other) in battle.units.iter().enumerate() {
@@ -653,8 +678,32 @@ pub fn path_away(
 
     for &(rx, ry) in &reachable {
         let d = manhattan(rx, ry, target_x, target_y);
-        if d > best_dist || (d == best_dist && (rx, ry) < best_tile) {
-            best_dist = d;
+        let mut adj_d = d;
+        if let Some(tile) = battle.arena.tile(rx, ry) {
+            if matches!(
+                tile,
+                crate::combat::BattleTile::FlowNorth
+                    | crate::combat::BattleTile::FlowSouth
+                    | crate::combat::BattleTile::FlowEast
+                    | crate::combat::BattleTile::FlowWest
+            ) {
+                adj_d -= 3;
+            }
+            if tile == crate::combat::BattleTile::TrapTileRevealed {
+                adj_d -= 4;
+            }
+        }
+        for &(dx, dy) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+            let nx = rx + dx;
+            let ny = ry + dy;
+            if let Some(adj) = battle.arena.tile(nx, ny) {
+                if adj == crate::combat::BattleTile::ExplosiveBarrel {
+                    adj_d -= 5;
+                }
+            }
+        }
+        if adj_d > best_dist || (adj_d == best_dist && (rx, ry) < best_tile) {
+            best_dist = adj_d;
             best_tile = (rx, ry);
         }
     }

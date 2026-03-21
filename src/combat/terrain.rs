@@ -36,6 +36,10 @@ pub fn apply_terrain_interactions(
                             battle.arena.set_steam(x, y, 2);
                             messages.push(format!("Steam erupts at ({},{})!", x, y));
                         }
+                        BattleTile::ExplosiveBarrel => {
+                            let mut barrel_msgs = explode_barrel(battle, x, y);
+                            messages.append(&mut barrel_msgs);
+                        }
                         _ => {}
                     }
                 }
@@ -167,9 +171,17 @@ pub fn apply_knockback(
         .tile(dest_x, dest_y)
         .unwrap_or(BattleTile::Open);
 
-    if dest_tile == BattleTile::Obstacle {
+    if dest_tile == BattleTile::Obstacle || dest_tile == BattleTile::Pit {
         let actual = deal_damage(battle, target_idx, 1);
         messages.push(format!("Slammed into obstacle for {} damage!", actual));
+        return messages;
+    }
+
+    if dest_tile == BattleTile::ExplosiveBarrel {
+        let actual = deal_damage(battle, target_idx, 1);
+        messages.push(format!("Slammed into a barrel for {} damage!", actual));
+        let mut barrel_msgs = explode_barrel(battle, dest_x, dest_y);
+        messages.append(&mut barrel_msgs);
         return messages;
     }
 
@@ -236,6 +248,18 @@ pub fn apply_knockback(
                 messages.push(format!("Slid to ({},{})!", slide_x, slide_y));
             }
         }
+        BattleTile::ExplosiveBarrel => {
+            messages.push(format!(
+                "{} knocked into a barrel!",
+                battle.units[target_idx].hanzi
+            ));
+            let mut barrel_msgs = explode_barrel(battle, dest_x, dest_y);
+            messages.append(&mut barrel_msgs);
+        }
+        BattleTile::TrapTile | BattleTile::TrapTileRevealed => {
+            let mut trap_msgs = trigger_trap(battle, target_idx, dest_x, dest_y);
+            messages.append(&mut trap_msgs);
+        }
         _ => {
             messages.push(format!("{} knocked back!", battle.units[target_idx].hanzi));
         }
@@ -276,6 +300,106 @@ pub fn apply_scorched_damage(battle: &mut TacticalBattle) -> Vec<String> {
         if tile == Some(BattleTile::SpiritDrain) && battle.units[i].is_player() {
             battle.pending_spirit_delta -= 3;
             messages.push("⚫ The spirit drain saps your energy! (-3 spirit)".to_string());
+        }
+    }
+    messages
+}
+
+pub fn explode_barrel(battle: &mut TacticalBattle, bx: i32, by: i32) -> Vec<String> {
+    let mut messages = Vec::new();
+    if battle.arena.tile(bx, by) != Some(BattleTile::ExplosiveBarrel) {
+        return messages;
+    }
+    battle.arena.set_tile(bx, by, BattleTile::Scorched);
+    messages.push(format!("💥 Barrel explodes at ({},{})!", bx, by));
+
+    let deltas: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+    for &(dx, dy) in &deltas {
+        let nx = bx + dx;
+        let ny = by + dy;
+        if let Some(idx) = battle.unit_at(nx, ny) {
+            let actual = deal_damage(battle, idx, 3);
+            let name = if battle.units[idx].is_player() {
+                "You".to_string()
+            } else {
+                battle.units[idx].hanzi.to_string()
+            };
+            messages.push(format!(
+                "{} caught in explosion! (-{} HP)",
+                name, actual
+            ));
+        }
+    }
+
+    let mut chain_targets = Vec::new();
+    for &(dx, dy) in &deltas {
+        let nx = bx + dx;
+        let ny = by + dy;
+        if battle.arena.tile(nx, ny) == Some(BattleTile::ExplosiveBarrel) {
+            chain_targets.push((nx, ny));
+        }
+    }
+    for (cx, cy) in chain_targets {
+        messages.push("Chain reaction!".to_string());
+        let mut chain_msgs = explode_barrel(battle, cx, cy);
+        messages.append(&mut chain_msgs);
+    }
+
+    messages
+}
+
+pub fn trigger_trap(
+    battle: &mut TacticalBattle,
+    unit_idx: usize,
+    tx: i32,
+    ty: i32,
+) -> Vec<String> {
+    let mut messages = Vec::new();
+    let tile = battle.arena.tile(tx, ty);
+    if tile != Some(BattleTile::TrapTile) && tile != Some(BattleTile::TrapTileRevealed) {
+        return messages;
+    }
+    battle.arena.set_tile(tx, ty, BattleTile::TrapTileRevealed);
+    let actual = deal_damage(battle, unit_idx, 2);
+    let name = if battle.units[unit_idx].is_player() {
+        "You".to_string()
+    } else {
+        battle.units[unit_idx].hanzi.to_string()
+    };
+    messages.push(format!("▲ {} triggers a spike trap! (-{} HP)", name, actual));
+    use crate::status::{StatusInstance, StatusKind};
+    battle.units[unit_idx]
+        .statuses
+        .push(StatusInstance::new(StatusKind::Slow, 2));
+    messages.push(format!("{} is slowed!", name));
+    messages
+}
+
+pub fn step_on_crumbling(battle: &mut TacticalBattle, x: i32, y: i32) -> Vec<String> {
+    let mut messages = Vec::new();
+    let tile = battle.arena.tile(x, y);
+    if tile == Some(BattleTile::CrumblingFloor) {
+        battle.arena.set_tile(x, y, BattleTile::CrackedFloor);
+        messages.push("The floor cracks beneath your feet!".to_string());
+    } else if tile == Some(BattleTile::CrackedFloor) {
+        battle.arena.set_tile(x, y, BattleTile::Pit);
+        messages.push("The floor collapses into a pit!".to_string());
+    }
+    messages
+}
+
+pub fn decay_cracked_floors(battle: &mut TacticalBattle) -> Vec<String> {
+    let mut messages = Vec::new();
+    let w = battle.arena.width as i32;
+    let h = battle.arena.height as i32;
+    for y in 0..h {
+        for x in 0..w {
+            if battle.arena.tile(x, y) == Some(BattleTile::CrackedFloor) {
+                if battle.unit_at(x, y).is_none() {
+                    battle.arena.set_tile(x, y, BattleTile::Pit);
+                    messages.push(format!("Cracked floor collapses at ({},{})!", x, y));
+                }
+            }
         }
     }
     messages

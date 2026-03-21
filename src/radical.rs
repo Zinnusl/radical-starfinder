@@ -48,6 +48,20 @@ pub enum SpellEffect {
     FocusRestore(i32),
     /// Strip enemy radical armor
     ArmorBreak,
+    /// Dash in a straight line, damaging enemies in the path
+    Dash(i32),
+    /// Piercing line projectile hitting all enemies in a straight line
+    Pierce(i32),
+    /// Pull target enemy toward the player
+    PullToward,
+    /// Knock target back and deal damage
+    KnockBack(i32),
+    /// Gain a thorns aura for N turns — counter-attack when hit
+    Thorns(i32),
+    /// Cone AoE: 3-wide expanding cone in a direction
+    Cone(i32),
+    /// Create a wall of obstacles (length tiles)
+    Wall(i32),
 }
 
 impl SpellEffect {
@@ -66,6 +80,13 @@ impl SpellEffect {
             SpellEffect::Poison(_, _) => "☠ Poison",
             SpellEffect::FocusRestore(_) => "🧘 Focus",
             SpellEffect::ArmorBreak => "💥 Shatter",
+            SpellEffect::Dash(_) => "💨 Dash",
+            SpellEffect::Pierce(_) => "🔱 Pierce",
+            SpellEffect::PullToward => "🧲 Pull",
+            SpellEffect::KnockBack(_) => "🤜 Push",
+            SpellEffect::Thorns(_) => "🌿 Thorns",
+            SpellEffect::Cone(_) => "🔺 Cone",
+            SpellEffect::Wall(_) => "🧱 Wall",
         }
     }
 
@@ -96,6 +117,43 @@ impl SpellEffect {
             SpellEffect::FocusRestore(amt) => format!("Restores {} mental focus.", amt),
             SpellEffect::ArmorBreak => {
                 "Destroys target's radical armor, leaving them vulnerable.".to_string()
+            }
+            SpellEffect::Dash(dmg) => {
+                format!(
+                    "Dash in a straight line, dealing {} damage to enemies in the path.",
+                    dmg
+                )
+            }
+            SpellEffect::Pierce(dmg) => {
+                format!(
+                    "Fire a piercing bolt that hits all enemies in a line for {} damage.",
+                    dmg
+                )
+            }
+            SpellEffect::PullToward => "Pull target enemy toward you by up to 3 tiles.".to_string(),
+            SpellEffect::KnockBack(dmg) => {
+                format!(
+                    "Knock target back 2 tiles and deal {} damage. Extra damage if they hit a wall.",
+                    dmg
+                )
+            }
+            SpellEffect::Thorns(turns) => {
+                format!(
+                    "Gain a thorns aura for {} turns. Enemies that hit you take 2 counter-damage.",
+                    turns
+                )
+            }
+            SpellEffect::Cone(dmg) => {
+                format!(
+                    "Blast a cone of energy dealing {} damage to all enemies in a 3-wide arc.",
+                    dmg
+                )
+            }
+            SpellEffect::Wall(len) => {
+                format!(
+                    "Raise a wall of {} obstacle tiles perpendicular to your aim direction.",
+                    len
+                )
             }
         }
     }
@@ -291,6 +349,54 @@ pub const RADICALS: &[Radical] = &[
         ch: "鸟",
         name: "niǎo",
         meaning: "bird",
+        rare: false,
+    },
+    Radical {
+        ch: "言",
+        name: "yán",
+        meaning: "speech",
+        rare: false,
+    },
+    Radical {
+        ch: "门",
+        name: "mén",
+        meaning: "door/gate",
+        rare: false,
+    },
+    Radical {
+        ch: "犬",
+        name: "quǎn",
+        meaning: "dog",
+        rare: false,
+    },
+    Radical {
+        ch: "禾",
+        name: "hé",
+        meaning: "grain",
+        rare: false,
+    },
+    Radical {
+        ch: "车",
+        name: "chē",
+        meaning: "vehicle",
+        rare: false,
+    },
+    Radical {
+        ch: "又",
+        name: "yòu",
+        meaning: "again/claw",
+        rare: false,
+    },
+    Radical {
+        ch: "白",
+        name: "bái",
+        meaning: "white",
+        rare: false,
+    },
+    Radical {
+        ch: "气",
+        name: "qì",
+        meaning: "air/energy",
         rare: false,
     },
     // ── Rare radicals (boss drops) ──────────────────────────────────────────
@@ -688,6 +794,329 @@ pub const RECIPES: &[Recipe] = &[
         output_meaning: "exquisite",
         effect: SpellEffect::StrongHit(10),
     },
+    Recipe {
+        inputs: &["马", "力"],
+        output_hanzi: "驰",
+        output_pinyin: "chí",
+        output_meaning: "gallop/charge",
+        effect: SpellEffect::Dash(3),
+    },
+    Recipe {
+        inputs: &["风", "刀"],
+        output_hanzi: "刮",
+        output_pinyin: "guā",
+        output_meaning: "scrape/gust",
+        effect: SpellEffect::Dash(2),
+    },
+    // --- Pierce recipes ---
+    Recipe {
+        inputs: &["刀", "金"],
+        output_hanzi: "刺",
+        output_pinyin: "cì",
+        output_meaning: "to pierce",
+        effect: SpellEffect::Pierce(3),
+    },
+    Recipe {
+        inputs: &["竹", "刀"],
+        output_hanzi: "箭",
+        output_pinyin: "jiàn",
+        output_meaning: "arrow",
+        effect: SpellEffect::Pierce(2),
+    },
+    // --- PullToward recipes ---
+    Recipe {
+        inputs: &["手", "力"],
+        output_hanzi: "拉",
+        output_pinyin: "lā",
+        output_meaning: "to pull",
+        effect: SpellEffect::PullToward,
+    },
+    Recipe {
+        inputs: &["水", "手"],
+        output_hanzi: "汲",
+        output_pinyin: "jí",
+        output_meaning: "to draw water",
+        effect: SpellEffect::PullToward,
+    },
+    // --- KnockBack recipes ---
+    Recipe {
+        inputs: &["手", "大"],
+        output_hanzi: "推",
+        output_pinyin: "tuī",
+        output_meaning: "to push",
+        effect: SpellEffect::KnockBack(3),
+    },
+    Recipe {
+        inputs: &["石", "力"],
+        output_hanzi: "砸",
+        output_pinyin: "zá",
+        output_meaning: "to smash",
+        effect: SpellEffect::KnockBack(4),
+    },
+    // --- Thorns recipes ---
+    Recipe {
+        inputs: &["竹", "虫"],
+        output_hanzi: "蔑",
+        output_pinyin: "miè",
+        output_meaning: "bamboo thorn",
+        effect: SpellEffect::Thorns(3),
+    },
+    Recipe {
+        inputs: &["木", "小"],
+        output_hanzi: "棘",
+        output_pinyin: "jí",
+        output_meaning: "thorns/bramble",
+        effect: SpellEffect::Thorns(4),
+    },
+    // --- Cone recipes ---
+    Recipe {
+        inputs: &["火", "大"],
+        output_hanzi: "炎",
+        output_pinyin: "yán",
+        output_meaning: "blaze",
+        effect: SpellEffect::Cone(3),
+    },
+    Recipe {
+        inputs: &["风", "火"],
+        output_hanzi: "烽",
+        output_pinyin: "fēng",
+        output_meaning: "beacon fire",
+        effect: SpellEffect::Cone(4),
+    },
+    // --- Wall recipes ---
+    Recipe {
+        inputs: &["土", "山"],
+        output_hanzi: "堤",
+        output_pinyin: "dī",
+        output_meaning: "embankment",
+        effect: SpellEffect::Wall(3),
+    },
+    Recipe {
+        inputs: &["石", "土"],
+        output_hanzi: "砌",
+        output_pinyin: "qì",
+        output_meaning: "to build/stack",
+        effect: SpellEffect::Wall(3),
+    },
+    // --- Rare recipes (stronger variants) ---
+    Recipe {
+        inputs: &["雷", "金"],
+        output_hanzi: "锋",
+        output_pinyin: "fēng",
+        output_meaning: "sharp edge",
+        effect: SpellEffect::Pierce(5),
+    },
+    Recipe {
+        inputs: &["龙", "石"],
+        output_hanzi: "壁",
+        output_pinyin: "bì",
+        output_meaning: "dragon wall",
+        effect: SpellEffect::Wall(5),
+    },
+    // ── HSK 2 recipes (using new radicals: 言门犬禾车又白气) ──────────────
+    Recipe {
+        inputs: &["言", "口"],
+        output_hanzi: "话",
+        output_pinyin: "huà",
+        output_meaning: "speech/words",
+        effect: SpellEffect::Stun,
+    },
+    Recipe {
+        inputs: &["言", "心"],
+        output_hanzi: "诚",
+        output_pinyin: "chéng",
+        output_meaning: "sincere",
+        effect: SpellEffect::Pacify,
+    },
+    Recipe {
+        inputs: &["言", "刀"],
+        output_hanzi: "诀",
+        output_pinyin: "jué",
+        output_meaning: "incantation",
+        effect: SpellEffect::Pierce(4),
+    },
+    Recipe {
+        inputs: &["门", "口"],
+        output_hanzi: "问",
+        output_pinyin: "wèn",
+        output_meaning: "to ask",
+        effect: SpellEffect::Reveal,
+    },
+    Recipe {
+        inputs: &["门", "日"],
+        output_hanzi: "间",
+        output_pinyin: "jiān",
+        output_meaning: "space/between",
+        effect: SpellEffect::Teleport,
+    },
+    Recipe {
+        inputs: &["门", "心"],
+        output_hanzi: "闷",
+        output_pinyin: "mèn",
+        output_meaning: "stifled/stuffy",
+        effect: SpellEffect::Slow(3),
+    },
+    Recipe {
+        inputs: &["犬", "口"],
+        output_hanzi: "吠",
+        output_pinyin: "fèi",
+        output_meaning: "to bark",
+        effect: SpellEffect::KnockBack(2),
+    },
+    Recipe {
+        inputs: &["犬", "火"],
+        output_hanzi: "狱",
+        output_pinyin: "yù",
+        output_meaning: "prison/hell",
+        effect: SpellEffect::FireAoe(6),
+    },
+    Recipe {
+        inputs: &["犬", "言"],
+        output_hanzi: "狺",
+        output_pinyin: "yín",
+        output_meaning: "snarling",
+        effect: SpellEffect::Thorns(4),
+    },
+    Recipe {
+        inputs: &["禾", "日"],
+        output_hanzi: "香",
+        output_pinyin: "xiāng",
+        output_meaning: "fragrant",
+        effect: SpellEffect::Heal(6),
+    },
+    Recipe {
+        inputs: &["禾", "刀"],
+        output_hanzi: "利",
+        output_pinyin: "lì",
+        output_meaning: "sharp/benefit",
+        effect: SpellEffect::StrongHit(6),
+    },
+    Recipe {
+        inputs: &["禾", "火"],
+        output_hanzi: "秋",
+        output_pinyin: "qiū",
+        output_meaning: "autumn",
+        effect: SpellEffect::Cone(3),
+    },
+    Recipe {
+        inputs: &["车", "力"],
+        output_hanzi: "轧",
+        output_pinyin: "yà",
+        output_meaning: "to crush/roll over",
+        effect: SpellEffect::Dash(4),
+    },
+    Recipe {
+        inputs: &["车", "风"],
+        output_hanzi: "飙",
+        output_pinyin: "biāo",
+        output_meaning: "whirlwind",
+        effect: SpellEffect::KnockBack(3),
+    },
+    Recipe {
+        inputs: &["又", "木"],
+        output_hanzi: "权",
+        output_pinyin: "quán",
+        output_meaning: "authority/power",
+        effect: SpellEffect::ArmorBreak,
+    },
+    Recipe {
+        inputs: &["又", "鸟"],
+        output_hanzi: "鸡",
+        output_pinyin: "jī",
+        output_meaning: "rooster",
+        effect: SpellEffect::Pierce(2),
+    },
+    Recipe {
+        inputs: &["又", "贝"],
+        output_hanzi: "贰",
+        output_pinyin: "èr",
+        output_meaning: "double/duplicate",
+        effect: SpellEffect::FocusRestore(4),
+    },
+    Recipe {
+        inputs: &["白", "水"],
+        output_hanzi: "泉",
+        output_pinyin: "quán",
+        output_meaning: "spring/fountain",
+        effect: SpellEffect::Heal(8),
+    },
+    Recipe {
+        inputs: &["白", "王"],
+        output_hanzi: "皇",
+        output_pinyin: "huáng",
+        output_meaning: "emperor",
+        effect: SpellEffect::StrongHit(8),
+    },
+    Recipe {
+        inputs: &["白", "月"],
+        output_hanzi: "皎",
+        output_pinyin: "jiǎo",
+        output_meaning: "bright moonlight",
+        effect: SpellEffect::Shield,
+    },
+    Recipe {
+        inputs: &["气", "水"],
+        output_hanzi: "氽",
+        output_pinyin: "tǔn",
+        output_meaning: "to float/boil",
+        effect: SpellEffect::Poison(2, 4),
+    },
+    Recipe {
+        inputs: &["气", "山"],
+        output_hanzi: "岚",
+        output_pinyin: "lán",
+        output_meaning: "mountain mist",
+        effect: SpellEffect::Slow(4),
+    },
+    Recipe {
+        inputs: &["气", "力"],
+        output_hanzi: "劲",
+        output_pinyin: "jìn",
+        output_meaning: "strength/force",
+        effect: SpellEffect::Dash(3),
+    },
+    Recipe {
+        inputs: &["门", "马"],
+        output_hanzi: "闯",
+        output_pinyin: "chuǎng",
+        output_meaning: "to rush/charge",
+        effect: SpellEffect::Dash(5),
+    },
+    Recipe {
+        inputs: &["白", "气", "火"],
+        output_hanzi: "炽",
+        output_pinyin: "chì",
+        output_meaning: "blazing",
+        effect: SpellEffect::Cone(5),
+    },
+    Recipe {
+        inputs: &["言", "禾", "心"],
+        output_hanzi: "谢",
+        output_pinyin: "xiè",
+        output_meaning: "to thank/wither",
+        effect: SpellEffect::Drain(6),
+    },
+    Recipe {
+        inputs: &["车", "门", "金"],
+        output_hanzi: "锁",
+        output_pinyin: "suǒ",
+        output_meaning: "lock/chain",
+        effect: SpellEffect::PullToward,
+    },
+    Recipe {
+        inputs: &["犬", "龙"],
+        output_hanzi: "獒",
+        output_pinyin: "áo",
+        output_meaning: "mastiff",
+        effect: SpellEffect::KnockBack(6),
+    },
+    Recipe {
+        inputs: &["气", "雷"],
+        output_hanzi: "霆",
+        output_pinyin: "tíng",
+        output_meaning: "thunderbolt",
+        effect: SpellEffect::Pierce(6),
+    },
 ];
 
 /// Try to forge a character from a set of radicals. Order-independent.
@@ -772,16 +1201,17 @@ pub fn craftable_recipes(player_radicals: &[&str]) -> Vec<usize> {
 }
 
 /// Number of common (non-rare) radicals.
-const COMMON_RADICAL_COUNT: usize = 32;
+const COMMON_RADICAL_COUNT: usize = 41;
 
 /// Get a subset of radicals available for a given floor.
 /// Earlier floors have fewer radicals. Excludes rare radicals.
 pub fn radicals_for_floor(floor: i32) -> &'static [Radical] {
     let count = match floor {
         1 => 10,
-        2 => 15,
-        3 => 20,
-        4 => 25,
+        2 => 16,
+        3 => 22,
+        4 => 28,
+        5 => 34,
         _ => COMMON_RADICAL_COUNT,
     };
     &RADICALS[..count.min(COMMON_RADICAL_COUNT)]

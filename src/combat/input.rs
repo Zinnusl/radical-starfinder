@@ -13,7 +13,8 @@ use crate::combat::radical::apply_radical_action;
 use crate::combat::terrain::{apply_knockback, apply_terrain_interactions, TerrainSource};
 use crate::combat::turn::advance_turn;
 use crate::combat::{
-    BattleTile, TacticalBattle, TacticalPhase, TargetMode, TypingAction, Weather, WuxingElement,
+    BattleTile, Projectile, ProjectileEffect, TacticalBattle, TacticalPhase, TargetMode,
+    TypingAction, Weather, WuxingElement,
 };
 use crate::enemy::BossKind;
 use crate::radical::SpellEffect;
@@ -462,7 +463,8 @@ fn handle_spell_menu(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
                 SpellEffect::Heal(_)
                 | SpellEffect::Shield
                 | SpellEffect::Reveal
-                | SpellEffect::FocusRestore(_) => {
+                | SpellEffect::FocusRestore(_)
+                | SpellEffect::Thorns(_) => {
                     let px = battle.units[0].x;
                     let py = battle.units[0].y;
                     battle.typing_action = Some(TypingAction::SpellCast {
@@ -481,8 +483,17 @@ fn handle_spell_menu(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
                     let py = battle.units[0].y;
                     let los_tiles = tiles_in_range_with_los(&battle.arena, px, py, range);
 
-                    let valid: Vec<(i32, i32)> = if matches!(effect, SpellEffect::FireAoe(_)) {
+                    let valid: Vec<(i32, i32)> = if matches!(
+                        effect,
+                        SpellEffect::FireAoe(_)
+                            | SpellEffect::Poison(_, _)
+                            | SpellEffect::Cone(_)
+                            | SpellEffect::Wall(_)
+                            | SpellEffect::Pierce(_)
+                    ) {
                         los_tiles
+                    } else if matches!(effect, SpellEffect::Dash(_)) {
+                        dash_target_tiles(battle, px, py, range)
                     } else {
                         los_tiles
                             .into_iter()
@@ -501,11 +512,13 @@ fn handle_spell_menu(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
                     }
 
                     let (cx, cy) = valid[0];
+                    let preview = compute_aoe_preview(&effect, cx, cy, px, py);
                     battle.phase = TacticalPhase::Targeting {
                         mode: TargetMode::Spell { spell_idx },
                         cursor_x: cx,
                         cursor_y: cy,
                         valid_targets: valid,
+                        aoe_preview: preview,
                     };
                 }
             }
@@ -770,8 +783,158 @@ fn spell_range(effect: &SpellEffect) -> i32 {
         SpellEffect::Teleport => 4,
         SpellEffect::Poison(_, _) => 2,
         SpellEffect::ArmorBreak => 2,
+        SpellEffect::Dash(_) => 5,
+        SpellEffect::Pierce(_) => 6,
+        SpellEffect::PullToward => 4,
+        SpellEffect::KnockBack(_) => 2,
+        SpellEffect::Thorns(_) => 0,
+        SpellEffect::Cone(_) => 3,
+        SpellEffect::Wall(_) => 4,
         _ => 1,
     }
+}
+
+fn compute_aoe_preview(
+    effect: &SpellEffect,
+    cx: i32,
+    cy: i32,
+    px: i32,
+    py: i32,
+) -> Vec<(i32, i32)> {
+    match effect {
+        SpellEffect::FireAoe(_) => {
+            // Cross pattern: center + 4 cardinal neighbors
+            vec![
+                (cx, cy),
+                (cx - 1, cy),
+                (cx + 1, cy),
+                (cx, cy - 1),
+                (cx, cy + 1),
+            ]
+        }
+        SpellEffect::Poison(_, _) => {
+            // Small cloud: center + 2 adjacent
+            vec![(cx, cy), (cx + 1, cy), (cx, cy + 1)]
+        }
+        SpellEffect::Dash(_) => line_between(px, py, cx, cy),
+        SpellEffect::Pierce(_) => {
+            let dx = (cx - px).signum();
+            let dy = (cy - py).signum();
+            if dx == 0 && dy == 0 {
+                vec![(cx, cy)]
+            } else {
+                let mut tiles = Vec::new();
+                let (mut x, mut y) = (px, py);
+                for _ in 0..6 {
+                    x += dx;
+                    y += dy;
+                    tiles.push((x, y));
+                }
+                tiles
+            }
+        }
+        SpellEffect::Cone(_) => {
+            let dx = (cx - px).signum();
+            let dy = (cy - py).signum();
+            let mut tiles = Vec::new();
+            if dx != 0 && dy == 0 {
+                // Horizontal cone
+                tiles.push((px + dx, py));
+                tiles.push((px + dx * 2, py));
+                tiles.push((px + dx * 2, py - 1));
+                tiles.push((px + dx * 2, py + 1));
+                tiles.push((px + dx * 3, py));
+                tiles.push((px + dx * 3, py - 1));
+                tiles.push((px + dx * 3, py + 1));
+            } else if dy != 0 && dx == 0 {
+                // Vertical cone
+                tiles.push((px, py + dy));
+                tiles.push((px, py + dy * 2));
+                tiles.push((px - 1, py + dy * 2));
+                tiles.push((px + 1, py + dy * 2));
+                tiles.push((px, py + dy * 3));
+                tiles.push((px - 1, py + dy * 3));
+                tiles.push((px + 1, py + dy * 3));
+            } else {
+                tiles.push((cx, cy));
+            }
+            tiles
+        }
+        SpellEffect::Wall(_) => {
+            let dx = (cx - px).signum();
+            let dy = (cy - py).signum();
+            let mut tiles = Vec::new();
+            if dx != 0 && dy == 0 {
+                // Horizontal aim → vertical wall
+                tiles.push((cx, cy - 1));
+                tiles.push((cx, cy));
+                tiles.push((cx, cy + 1));
+            } else if dy != 0 && dx == 0 {
+                // Vertical aim → horizontal wall
+                tiles.push((cx - 1, cy));
+                tiles.push((cx, cy));
+                tiles.push((cx + 1, cy));
+            } else {
+                tiles.push((cx, cy));
+            }
+            tiles
+        }
+        _ => vec![(cx, cy)],
+    }
+}
+
+fn line_between(x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<(i32, i32)> {
+    let mut tiles = Vec::new();
+    let dx = (x1 - x0).signum();
+    let dy = (y1 - y0).signum();
+    if dx == 0 && dy == 0 {
+        return vec![(x0, y0)];
+    }
+    let (mut x, mut y) = (x0, y0);
+    loop {
+        x += dx;
+        y += dy;
+        tiles.push((x, y));
+        if x == x1 && y == y1 {
+            break;
+        }
+        if tiles.len() > 20 {
+            break;
+        }
+    }
+    tiles
+}
+
+fn dash_target_tiles(battle: &TacticalBattle, px: i32, py: i32, range: i32) -> Vec<(i32, i32)> {
+    let mut targets = Vec::new();
+    let directions = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+    for &(dx, dy) in &directions {
+        let mut last_open = None;
+        for dist in 1..=range {
+            let tx = px + dx * dist;
+            let ty = py + dy * dist;
+            if tx < 0
+                || ty < 0
+                || tx >= battle.arena.width as i32
+                || ty >= battle.arena.height as i32
+            {
+                break;
+            }
+            match battle.arena.tile(tx, ty) {
+                Some(t) if !t.is_walkable() => break,
+                None => break,
+                _ => {
+                    last_open = Some((tx, ty));
+                }
+            }
+        }
+        if let Some(tile) = last_open {
+            if tile != (px, py) {
+                targets.push(tile);
+            }
+        }
+    }
+    targets
 }
 
 fn spell_effect_school(effect: &SpellEffect) -> &'static str {
@@ -789,6 +952,13 @@ fn spell_effect_school(effect: &SpellEffect) -> &'static str {
         SpellEffect::Poison(_, _) => "poison",
         SpellEffect::FocusRestore(_) => "focus",
         SpellEffect::ArmorBreak => "force",
+        SpellEffect::Dash(_) => "wind",
+        SpellEffect::Pierce(_) => "force",
+        SpellEffect::PullToward => "wind",
+        SpellEffect::KnockBack(_) => "force",
+        SpellEffect::Thorns(_) => "poison",
+        SpellEffect::Cone(_) => "fire",
+        SpellEffect::Wall(_) => "shield",
     }
 }
 
@@ -807,17 +977,48 @@ fn enter_move_targeting(battle: &mut TacticalBattle) {
         cursor_x: cx,
         cursor_y: cy,
         valid_targets: valid,
+        aoe_preview: vec![],
     };
 }
 
 fn enter_attack_targeting(battle: &mut TacticalBattle) {
     let player = &battle.units[0];
     let adjacent = battle.adjacent_enemies(player.x, player.y);
+    let px = player.x;
+    let py = player.y;
+
     if adjacent.is_empty() {
-        battle.log_message("No adjacent enemies to attack.");
+        let deltas = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+        let interactable_tiles: Vec<(i32, i32)> = deltas
+            .iter()
+            .filter_map(|&(dx, dy)| {
+                let nx = px + dx;
+                let ny = py + dy;
+                if matches!(
+                    battle.arena.tile(nx, ny),
+                    Some(BattleTile::Boulder) | Some(BattleTile::ExplosiveBarrel)
+                ) {
+                    Some((nx, ny))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if interactable_tiles.is_empty() {
+            battle.log_message("No adjacent enemies to attack.");
+            return;
+        }
+        let (cx, cy) = interactable_tiles[0];
+        battle.phase = TacticalPhase::Targeting {
+            mode: TargetMode::Attack,
+            cursor_x: cx,
+            cursor_y: cy,
+            valid_targets: interactable_tiles,
+            aoe_preview: vec![],
+        };
         return;
     }
-    // Build valid target positions from adjacent enemies.
+
     let valid: Vec<(i32, i32)> = adjacent
         .iter()
         .map(|&idx| (battle.units[idx].x, battle.units[idx].y))
@@ -828,6 +1029,7 @@ fn enter_attack_targeting(battle: &mut TacticalBattle) {
         cursor_x: cx,
         cursor_y: cy,
         valid_targets: valid,
+        aoe_preview: vec![],
     };
 }
 
@@ -841,6 +1043,7 @@ fn handle_targeting(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
             cursor_x,
             cursor_y,
             valid_targets,
+            ..
         } => (mode.clone(), *cursor_x, *cursor_y, valid_targets.clone()),
         _ => return BattleEvent::None,
     };
@@ -864,11 +1067,22 @@ fn handle_targeting(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
             if let TacticalPhase::Targeting {
                 cursor_x: cx,
                 cursor_y: cy,
+                aoe_preview,
+                ref mode,
                 ..
             } = &mut battle.phase
             {
                 *cx = new_cursor.0;
                 *cy = new_cursor.1;
+                if let TargetMode::Spell { spell_idx } = mode {
+                    if *spell_idx < battle.available_spells.len() {
+                        let (_, _, effect) = battle.available_spells[*spell_idx];
+                        let ppx = battle.units[0].x;
+                        let ppy = battle.units[0].y;
+                        *aoe_preview =
+                            compute_aoe_preview(&effect, new_cursor.0, new_cursor.1, ppx, ppy);
+                    }
+                }
             }
             BattleEvent::None
         }
@@ -945,7 +1159,66 @@ fn confirm_target(battle: &mut TacticalBattle, mode: &TargetMode, tx: i32, ty: i
             BattleEvent::None
         }
         TargetMode::Attack => {
-            // Find the enemy unit at this position.
+            if battle.arena.tile(tx, ty) == Some(BattleTile::Boulder) {
+                let px = battle.units[0].x;
+                let py = battle.units[0].y;
+                let dx = tx - px;
+                let dy = ty - py;
+                let msgs = crate::combat::tick::push_boulder(battle, tx, ty, dx, dy);
+                for msg in &msgs {
+                    battle.log_message(msg);
+                }
+                battle.player_acted = true;
+                if battle.player_dead() {
+                    battle.phase = TacticalPhase::End {
+                        victory: false,
+                        timer: 60,
+                    };
+                    return BattleEvent::None;
+                }
+                if battle.all_enemies_dead() {
+                    battle.phase = TacticalPhase::End {
+                        victory: true,
+                        timer: 60,
+                    };
+                    return BattleEvent::None;
+                }
+                battle.phase = TacticalPhase::Resolve {
+                    message: "Pushed boulder!".to_string(),
+                    timer: 15,
+                    end_turn: true,
+                };
+                return BattleEvent::None;
+            }
+
+            if battle.arena.tile(tx, ty) == Some(BattleTile::ExplosiveBarrel) {
+                let msgs = crate::combat::terrain::explode_barrel(battle, tx, ty);
+                for msg in &msgs {
+                    battle.log_message(msg);
+                }
+                battle.player_acted = true;
+                if battle.player_dead() {
+                    battle.phase = TacticalPhase::End {
+                        victory: false,
+                        timer: 60,
+                    };
+                    return BattleEvent::None;
+                }
+                if battle.all_enemies_dead() {
+                    battle.phase = TacticalPhase::End {
+                        victory: true,
+                        timer: 60,
+                    };
+                    return BattleEvent::None;
+                }
+                battle.phase = TacticalPhase::Resolve {
+                    message: "Barrel explodes!".to_string(),
+                    timer: 15,
+                    end_turn: true,
+                };
+                return BattleEvent::None;
+            }
+
             if let Some(target_idx) = battle.unit_at(tx, ty) {
                 // Check if enemy has shields first.
                 if !battle.units[target_idx].radical_actions.is_empty()
@@ -1417,76 +1690,83 @@ fn resolve_spell_cast(
             unit.hp = (unit.hp + amt).min(unit.max_hp);
             format!("Healed for {} HP!", healed)
         }
-        SpellEffect::Reveal => "The battlefield pulses with insight!".to_string(),
+        SpellEffect::Reveal => {
+            let mut revealed = 0;
+            for i in 0..battle.arena.tiles.len() {
+                if battle.arena.tiles[i] == BattleTile::TrapTile {
+                    battle.arena.tiles[i] = BattleTile::TrapTileRevealed;
+                    revealed += 1;
+                }
+            }
+            if revealed > 0 {
+                format!(
+                    "The battlefield pulses with insight! {} hidden traps revealed!",
+                    revealed
+                )
+            } else {
+                "The battlefield pulses with insight!".to_string()
+            }
+        }
         SpellEffect::Shield => {
             battle.units[0].defending = true;
             "A barrier forms around you!".to_string()
         }
-        SpellEffect::StrongHit(dmg) => {
-            if let Some(idx) = battle.unit_at(target_x, target_y) {
-                if battle.units[idx].is_enemy() {
-                    let resist = boss::elementalist_resistance(battle, idx, "force");
-                    let bonus = tile_spell_bonus(battle, idx);
-                    let final_dmg = ((dmg + bonus) as f64 * resist).ceil() as i32;
-                    let actual = deal_damage(battle, idx, final_dmg);
-                    if battle.units[idx].alive {
-                        let px = battle.units[0].x;
-                        let py = battle.units[0].y;
-                        let kb_msgs = apply_knockback(battle, idx, px, py);
-                        for m in &kb_msgs {
-                            battle.log_message(m);
-                        }
-                    }
-                    format!("Powerful strike! {} damage!", actual)
-                } else {
-                    "No target there.".to_string()
-                }
-            } else {
-                "The strike hits empty ground.".to_string()
-            }
+        SpellEffect::StrongHit(_dmg) => {
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.projectiles.push(Projectile {
+                from_x: px as f64,
+                from_y: py as f64,
+                to_x: target_x,
+                to_y: target_y,
+                progress: 0.0,
+                speed: 0.10,
+                arc_height: 0.3,
+                effect: ProjectileEffect::SpellHit(effect),
+                owner_idx: 0,
+                glyph: "⚔",
+                color: "#ffcc33",
+                done: false,
+            });
+            "Powerful strike launched!".to_string()
         }
-        SpellEffect::Drain(dmg) => {
-            if let Some(idx) = battle.unit_at(target_x, target_y) {
-                if battle.units[idx].is_enemy() {
-                    let resist = boss::elementalist_resistance(battle, idx, "drain");
-                    let bonus = tile_spell_bonus(battle, idx);
-                    let final_dmg = ((dmg + bonus) as f64 * resist).ceil() as i32;
-                    let actual = deal_damage(battle, idx, final_dmg);
-                    let unit = &mut battle.units[0];
-                    unit.hp = (unit.hp + actual).min(unit.max_hp);
-                    format!("Drained {} HP from enemy!", actual)
-                } else {
-                    "No target there.".to_string()
-                }
-            } else {
-                "The drain dissipates.".to_string()
-            }
+        SpellEffect::Drain(_dmg) => {
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.projectiles.push(Projectile {
+                from_x: px as f64,
+                from_y: py as f64,
+                to_x: target_x,
+                to_y: target_y,
+                progress: 0.0,
+                speed: 0.07,
+                arc_height: 0.5,
+                effect: ProjectileEffect::SpellHit(effect),
+                owner_idx: 0,
+                glyph: "🩸",
+                color: "#aa44ff",
+                done: false,
+            });
+            "Draining force launched!".to_string()
         }
         SpellEffect::Stun => {
-            if let Some(idx) = battle.unit_at(target_x, target_y) {
-                if battle.units[idx].is_enemy() {
-                    let resist = boss::elementalist_resistance(battle, idx, "lightning");
-                    if resist < 1.0 {
-                        "The stun is resisted!".to_string()
-                    } else {
-                        battle.units[idx].stunned = true;
-                        let stun_msg = format!("{} is stunned!", battle.units[idx].hanzi);
-                        let terrain_msgs = apply_terrain_interactions(
-                            battle,
-                            TerrainSource::LightningSpell,
-                            &[(target_x, target_y)],
-                        );
-                        for tm in &terrain_msgs {
-                            battle.log_message(tm);
-                        }
-                        stun_msg
-                    }
-                } else {
-                    "No target there.".to_string()
-                }
-            } else {
-                "The stun fades.".to_string()
-            }
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.projectiles.push(Projectile {
+                from_x: px as f64,
+                from_y: py as f64,
+                to_x: target_x,
+                to_y: target_y,
+                progress: 0.0,
+                speed: 0.12,
+                arc_height: 0.2,
+                effect: ProjectileEffect::SpellHit(effect),
+                owner_idx: 0,
+                glyph: "⚡",
+                color: "#44ddff",
+                done: false,
+            });
+            "Lightning bolt launched!".to_string()
         }
         SpellEffect::Pacify => {
             if let Some(idx) = battle.unit_at(target_x, target_y) {
@@ -1501,19 +1781,24 @@ fn resolve_spell_cast(
                 "Peace finds no one.".to_string()
             }
         }
-        SpellEffect::Slow(turns) => {
-            if let Some(idx) = battle.unit_at(target_x, target_y) {
-                if battle.units[idx].is_enemy() {
-                    battle.units[idx]
-                        .statuses
-                        .push(StatusInstance::new(StatusKind::Slow, turns));
-                    format!("{} is slowed for {} turns!", battle.units[idx].hanzi, turns)
-                } else {
-                    "No target there.".to_string()
-                }
-            } else {
-                "The chill dissipates.".to_string()
-            }
+        SpellEffect::Slow(_turns) => {
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.projectiles.push(Projectile {
+                from_x: px as f64,
+                from_y: py as f64,
+                to_x: target_x,
+                to_y: target_y,
+                progress: 0.0,
+                speed: 0.06,
+                arc_height: 0.4,
+                effect: ProjectileEffect::SpellHit(effect),
+                owner_idx: 0,
+                glyph: "❄",
+                color: "#88ccff",
+                done: false,
+            });
+            "Freezing bolt launched!".to_string()
         }
         SpellEffect::Teleport => {
             if let Some(idx) = battle.unit_at(target_x, target_y) {
@@ -1532,23 +1817,24 @@ fn resolve_spell_cast(
                 "The spell finds no anchor.".to_string()
             }
         }
-        SpellEffect::Poison(dmg, turns) => {
-            if let Some(idx) = battle.unit_at(target_x, target_y) {
-                if battle.units[idx].is_enemy() {
-                    battle.units[idx].statuses.push(StatusInstance::new(
-                        StatusKind::Poison { damage: dmg },
-                        turns,
-                    ));
-                    format!(
-                        "{} is poisoned! ({} dmg for {} turns)",
-                        battle.units[idx].hanzi, dmg, turns
-                    )
-                } else {
-                    "No target there.".to_string()
-                }
-            } else {
-                "The poison dissipates.".to_string()
-            }
+        SpellEffect::Poison(_dmg, _turns) => {
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.projectiles.push(Projectile {
+                from_x: px as f64,
+                from_y: py as f64,
+                to_x: target_x,
+                to_y: target_y,
+                progress: 0.0,
+                speed: 0.06,
+                arc_height: 0.6,
+                effect: ProjectileEffect::SpellHit(effect),
+                owner_idx: 0,
+                glyph: "☠",
+                color: "#44ff44",
+                done: false,
+            });
+            "Poison bolt launched!".to_string()
         }
         SpellEffect::FocusRestore(amt) => {
             battle.focus = (battle.focus + amt).min(battle.max_focus);
@@ -1569,6 +1855,183 @@ fn resolve_spell_cast(
             } else {
                 "The force hits nothing.".to_string()
             }
+        }
+        SpellEffect::Dash(dmg) => {
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            let path = line_between(px, py, target_x, target_y);
+            let mut hits = 0;
+            for &(tx, ty) in &path {
+                if let Some(idx) = battle.unit_at(tx, ty) {
+                    if battle.units[idx].is_enemy() && battle.units[idx].alive {
+                        deal_damage(battle, idx, dmg);
+                        hits += 1;
+                    }
+                }
+            }
+            battle.units[0].x = target_x;
+            battle.units[0].y = target_y;
+            battle.player_moved = true;
+            if hits > 0 {
+                format!("Dashed through {} enemies for {} damage each!", hits, dmg)
+            } else {
+                "Dashed to new position!".to_string()
+            }
+        }
+        SpellEffect::Pierce(dmg) => {
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            let dx = (target_x - px).signum();
+            let dy = (target_y - py).signum();
+            let mut hits = 0;
+            let (mut x, mut y) = (px, py);
+            for _ in 0..6 {
+                x += dx;
+                y += dy;
+                if x < 0
+                    || y < 0
+                    || x >= battle.arena.width as i32
+                    || y >= battle.arena.height as i32
+                {
+                    break;
+                }
+                if let Some(BattleTile::Obstacle) = battle.arena.tile(x, y) {
+                    break;
+                }
+                if let Some(idx) = battle.unit_at(x, y) {
+                    if battle.units[idx].is_enemy() && battle.units[idx].alive {
+                        deal_damage(battle, idx, dmg);
+                        hits += 1;
+                    }
+                }
+            }
+            if hits > 0 {
+                format!("Piercing bolt hits {} enemies for {} each!", hits, dmg)
+            } else {
+                "The bolt pierces through empty air.".to_string()
+            }
+        }
+        SpellEffect::PullToward => {
+            if let Some(idx) = battle.unit_at(target_x, target_y) {
+                if battle.units[idx].is_enemy() {
+                    let px = battle.units[0].x;
+                    let py = battle.units[0].y;
+                    let ex = battle.units[idx].x;
+                    let ey = battle.units[idx].y;
+                    let dx = (px - ex).signum();
+                    let dy = (py - ey).signum();
+                    let mut dest_x = ex;
+                    let mut dest_y = ey;
+                    for _ in 0..3 {
+                        let nx = dest_x + dx;
+                        let ny = dest_y + dy;
+                        if !battle.arena.in_bounds(nx, ny) {
+                            break;
+                        }
+                        if let Some(t) = battle.arena.tile(nx, ny) {
+                            if !t.is_walkable() {
+                                break;
+                            }
+                        }
+                        if battle.unit_at(nx, ny).is_some() && !(nx == px && ny == py) {
+                            break;
+                        }
+                        if nx == px && ny == py {
+                            break;
+                        }
+                        dest_x = nx;
+                        dest_y = ny;
+                    }
+                    let pulled = (ex - dest_x).abs() + (ey - dest_y).abs();
+                    battle.units[idx].x = dest_x;
+                    battle.units[idx].y = dest_y;
+                    format!(
+                        "Pulled {} {} tiles closer!",
+                        battle.units[idx].hanzi, pulled
+                    )
+                } else {
+                    "No target there.".to_string()
+                }
+            } else {
+                "The pull finds no anchor.".to_string()
+            }
+        }
+        SpellEffect::KnockBack(dmg) => {
+            if let Some(idx) = battle.unit_at(target_x, target_y) {
+                if battle.units[idx].is_enemy() {
+                    let px = battle.units[0].x;
+                    let py = battle.units[0].y;
+                    deal_damage(battle, idx, dmg);
+                    let kb1 = apply_knockback(battle, idx, px, py);
+                    for m in &kb1 {
+                        battle.log_message(m);
+                    }
+                    if battle.units[idx].alive {
+                        let kb2 = apply_knockback(battle, idx, px, py);
+                        for m in &kb2 {
+                            battle.log_message(m);
+                        }
+                    }
+                    format!(
+                        "Knocked {} back with {} damage!",
+                        battle.units[idx].hanzi, dmg
+                    )
+                } else {
+                    "No target there.".to_string()
+                }
+            } else {
+                "The force hits nothing.".to_string()
+            }
+        }
+        SpellEffect::Thorns(turns) => {
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Thorns, turns));
+            format!("Thorns aura active for {} turns!", turns)
+        }
+        SpellEffect::Cone(dmg) => {
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            let preview = compute_aoe_preview(&effect, target_x, target_y, px, py);
+            let school = spell_effect_school(&effect);
+            let mut total_hits = 0;
+            for &(cx, cy) in &preview {
+                if let Some(idx) = battle.unit_at(cx, cy) {
+                    if battle.units[idx].is_enemy() {
+                        let resist = boss::elementalist_resistance(battle, idx, school);
+                        let bonus = tile_spell_bonus(battle, idx);
+                        let final_dmg = ((dmg + bonus) as f64 * resist).ceil() as i32;
+                        deal_damage(battle, idx, final_dmg);
+                        total_hits += 1;
+                    }
+                }
+            }
+            format!("Cone blast hits {} enemies for {} damage!", total_hits, dmg)
+        }
+        SpellEffect::Wall(len) => {
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            let dx = (target_x - px).signum();
+            let dy = (target_y - py).signum();
+            let mut placed = 0;
+            let half = len / 2;
+            for i in -half..=half {
+                let (wx, wy) = if dx != 0 && dy == 0 {
+                    (target_x, target_y + i)
+                } else if dy != 0 && dx == 0 {
+                    (target_x + i, target_y)
+                } else {
+                    (target_x + i, target_y)
+                };
+                if battle.arena.in_bounds(wx, wy)
+                    && battle.unit_at(wx, wy).is_none()
+                    && battle.arena.tile(wx, wy) != Some(BattleTile::Obstacle)
+                {
+                    battle.arena.set_tile(wx, wy, BattleTile::Obstacle);
+                    placed += 1;
+                }
+            }
+            format!("Raised a wall of {} stone pillars!", placed)
         }
     };
 
@@ -1595,11 +2058,18 @@ fn resolve_spell_cast(
         return BattleEvent::None;
     }
 
-    battle.phase = TacticalPhase::Resolve {
-        message: msg,
-        timer: 30,
-        end_turn: true,
-    };
+    if !battle.projectiles.is_empty() {
+        battle.phase = TacticalPhase::ProjectileAnimation {
+            message: msg,
+            end_turn: true,
+        };
+    } else {
+        battle.phase = TacticalPhase::Resolve {
+            message: msg,
+            timer: 30,
+            end_turn: true,
+        };
+    }
     BattleEvent::None
 }
 
