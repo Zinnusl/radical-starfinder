@@ -24,6 +24,14 @@ pub enum StatusKind {
     Burn { damage: i32 },
     /// Blocks spirit drain for N turns (overworld).
     SpiritShield,
+    /// Frozen: skip next turn, then clears
+    Freeze,
+    /// Slow: movement reduced by 1
+    Slow,
+    /// Fear: forced to move away from source
+    Fear,
+    /// Bleeding: damage per turn (stacks)
+    Bleed { damage: i32 },
 }
 
 /// An active status effect with remaining duration.
@@ -52,6 +60,10 @@ impl StatusInstance {
             StatusKind::Envenomed => "☠Wep",
             StatusKind::Empowered { .. } => "💪Pow",
             StatusKind::SpiritShield => "🌕Spr",
+            StatusKind::Freeze => "❄Frz",
+            StatusKind::Slow => "🐌Slw",
+            StatusKind::Fear => "😨Fer",
+            StatusKind::Bleed { .. } => "🩸Bld",
         }
     }
 
@@ -66,13 +78,23 @@ impl StatusInstance {
             StatusKind::Envenomed => "#00ff00",
             StatusKind::Empowered { .. } => "#ff4400",
             StatusKind::SpiritShield => "#8844ff",
+            StatusKind::Freeze => "#00ffff",
+            StatusKind::Slow => "#aaaaaa",
+            StatusKind::Fear => "#660066",
+            StatusKind::Bleed { .. } => "#aa0000",
         }
     }
 
     pub fn is_negative(&self) -> bool {
         matches!(
             self.kind,
-            StatusKind::Poison { .. } | StatusKind::Burn { .. } | StatusKind::Confused
+            StatusKind::Poison { .. }
+                | StatusKind::Burn { .. }
+                | StatusKind::Confused
+                | StatusKind::Freeze
+                | StatusKind::Slow
+                | StatusKind::Fear
+                | StatusKind::Bleed { .. }
         )
     }
 }
@@ -86,6 +108,7 @@ pub fn tick_statuses(statuses: &mut Vec<StatusInstance>) -> (i32, i32) {
         match s.kind {
             StatusKind::Poison { damage: d } => damage += d,
             StatusKind::Burn { damage: d } => damage += d,
+            StatusKind::Bleed { damage: d } => damage += d,
             StatusKind::Regen { heal: h } => heal += h,
             _ => {}
         }

@@ -14,12 +14,28 @@ struct VocabRow {
 fn main() {
     println!("cargo:rerun-if-changed=data/hsk30.csv");
     println!("cargo:rerun-if-changed=data/cedict_ts.u8");
+    println!("cargo:rerun-if-changed=data/ids.txt");
+    println!("cargo:rerun-if-changed=data/unique_chars.txt");
 
     if let Err(err) = generate_vocab_data() {
         println!("cargo:warning=build.rs vocab generation warning: {}", err);
         if let Ok(out_dir) = env::var("OUT_DIR") {
             let out_path = Path::new(&out_dir).join("vocab_data.rs");
             let _ = fs::write(out_path, "pub static VOCAB: &[VocabEntry] = &[];\n");
+        }
+    }
+
+    if let Err(err) = generate_decomposition_data() {
+        println!(
+            "cargo:warning=build.rs decomposition generation warning: {}",
+            err
+        );
+        if let Ok(out_dir) = env::var("OUT_DIR") {
+            let out_path = Path::new(&out_dir).join("decomposition_data.rs");
+            let _ = fs::write(
+                out_path,
+                "pub fn get_components(_hanzi: &str) -> Vec<&'static str> { vec![] }\n",
+            );
         }
     }
 }
@@ -531,4 +547,386 @@ fn apply_compat_overrides(
         _ => {}
     }
     (pinyin, meaning)
+}
+
+fn generate_decomposition_data() -> Result<(), String> {
+    let radicals_str = "火 水 力 心 口 目 手 木 田 日 月 人 女 子 禾 十 金 土 又 寸 刀 言 足 糸 门 马 鸟 雨 石 虫 贝 山 犬 弓 食 衣 竹 走 车 王 大 小 工 白";
+    let known_radicals: HashSet<char> = radicals_str
+        .split_whitespace()
+        .filter_map(|s| s.chars().next())
+        .collect();
+
+    let variant_map: HashMap<char, char> = [
+        // === Standard radical variants (simplified forms) ===
+        ('氵', '水'),
+        ('扌', '手'),
+        ('讠', '言'),
+        ('钅', '金'),
+        ('亻', '人'),
+        ('忄', '心'),
+        ('饣', '食'),
+        ('衤', '衣'),
+        ('刂', '刀'),
+        ('犭', '犬'),
+        ('灬', '火'),
+        ('⺼', '月'),
+        ('⺮', '竹'),
+        ('纟', '糸'),
+        ('艹', '木'), // grass radical → 木 (plant)
+        ('辶', '走'),
+        ('阝', '山'),
+        ('礻', '衣'),
+        ('⻊', '足'),
+        ('⺈', '刀'),
+        ('⺡', '水'),
+        ('⺢', '水'),
+        ('⺣', '火'),
+        ('⺩', '王'),
+        ('⻗', '雨'),
+        ('⻝', '食'),
+        ('⻟', '食'),
+        ('⻖', '山'),
+        ('⻏', '山'),
+        ('⻞', '食'),
+        ('冫', '水'),
+        ('宀', '门'), // roof → 门 (shelter)
+        ('彳', '足'),
+        // REMOVED: ('攵', '手') — 攵 (rap/tap) ≠ ⺙; over-mapped
+        ('夂', '足'),
+        ('夊', '足'),
+        // === Sub-component → known radical mappings ===
+        ('甲', '田'),
+        ('止', '足'),
+        // REMOVED: ('夕', '月') — 夕 (evening) is distinct from 月 (moon); caused wrong decomp for 外, 多, 名
+        // REMOVED: ('囗', '口') — 囗 (enclosure) ≠ 口 (mouth); caused wrong decomp for 回, 四, 国
+        ('户', '门'),
+        ('巾', '衣'),
+        ('父', '人'),
+        ('斤', '刀'),
+        ('耂', '人'),
+        ('卜', '十'),
+        ('屮', '木'),
+        // REMOVED: ('巳', '虫') — 巳 ≠ 己; caused wrong decomp for 起 (己→虫 is wrong)
+        ('尸', '人'),
+        ('勹', '力'),
+        ('匕', '刀'),
+        ('卩', '人'),
+        // REMOVED: ('厶', '心') — 厶 (private) has no real link to 心; caused wrong decomp for 去, 动, 会, 能
+        ('㐅', '十'),
+        ('立', '人'),
+        ('朩', '木'),
+        // === Intermediate character → radical mappings (stop decomposition) ===
+        // These prevent over-decomposition by treating multi-stroke components as units
+        ('矢', '大'), // 矢 (arrow) → 大 (IDS: 𠂉+大); used in 知, 医, 候
+        ('隹', '鸟'), // 隹 (short-tailed bird) → 鸟 (bird); used in 准, 谁, 难
+        ('覀', '口'), // 覀 (cover/west top) → 口 (seen in 要, 票); HC treats as unit
+        ('豕', '犬'), // 豕 (pig) → 犬 (animal); used in 家
+        ('欠', '力'), // 欠 (yawn/lack) → 力 (effort); used in 次, 欢, 歌
+        ('殳', '手'), // 殳 (weapon) → 手 (strike); used in 没
+        ('⺙', '手'), // ⺙ (knock radical) → 手; used in 做, 放, 教 (distinct from 攵)
+        ('戈', '刀'), // 戈 (halberd) → 刀 (blade); used in 我, 找
+        ('广', '门'), // 广 (shelter) → 门 (building); used in 床, 店
+        ('穴', '门'), // 穴 (cave) → 门 (opening); used in 穿
+        ('疒', '人'), // 疒 (sickness) → 人 (affects person); used in 病
+        ('龵', '手'), // 龵 (hand-top) → 手; used in 看
+        ('示', '衣'), // 示 (altar/show) → 衣 (display); used in 票
+        ('甘', '口'), // 甘 (sweet) → 口 (taste); used in 期
+        ('曰', '日'), // 曰 (say) → 日 (similar shape); used in 最
+        ('自', '目'), // 自 (self/nose) → 目 (face); used in 息
+        ('罒', '目'), // 罒 (net-top) → 目 (eyes); used in 慢
+        ('𧾷', '足'), // ⻊ variant → 足; used in 跑, 跟, 路
+        ('士', '十'), // 士 (scholar) → 十; used in 喜
+        ('匚', '工'), // 匚 (box) → 工 (container); used in 医
+        ('弋', '弓'), // 弋 (shoot) → 弓 (projectile); used in 试
+        ('冂', '门'), // 冂 (border) → 门 (enclosure); used in 再, 南
+        ('龶', '十'), // 龶 → 十; used in 青
+        ('疋', '足'), // 疋 (bolt of cloth / foot) → 足; used in 蛋
+        ('爫', '手'), // 爫 (claw-top) → 手 (grasp); used in 爱, 菜
+        ('⺺', '力'), // ⺺ → 力; used in 事
+        ('⺌', '小'), // ⺌ (small-top) → 小; used in 常
+        ('冖', '门'), // 冖 (cover) → 门 (shelter); used in 学, 觉
+        ('见', '目'), // 见 (see) → 目 (eye); used in 现, 觉
+        ('𠂇', '手'), // 𠂇 (left hand) → 手; used in 有, 左, 友
+        ('⺍', '火'), // ⺍ (small-fire) → 火; used in 兴, 觉
+    ]
+    .into_iter()
+    .collect();
+
+    let ids_text = fs::read_to_string("data/ids.txt")
+        .map_err(|e| format!("failed to read data/ids.txt: {e}"))?;
+
+    let mut ids_map: HashMap<char, String> = HashMap::new();
+    for line in ids_text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() >= 3 {
+            let character = cols[1].chars().next().unwrap_or('\0');
+            let first_decomposition = cols[2].to_string();
+            if character != '\0' {
+                ids_map.insert(character, first_decomposition);
+            }
+        }
+    }
+
+    let unique_chars_text = fs::read_to_string("data/unique_chars.txt")
+        .map_err(|e| format!("failed to read data/unique_chars.txt: {e}"))?;
+
+    let unique_chars: Vec<char> = unique_chars_text
+        .lines()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| s.chars().next())
+        .collect();
+
+    // Manual overrides: checked FIRST (before IDS decomposition).
+    // For chars that are atomic (no IDS decomposition) or whose IDS decomposition
+    // produces wrong results vs hanzicraft.com.
+    let manual_overrides: HashMap<char, Vec<char>> = [
+        // === Truly atomic chars (HC shows no sub-radicals) ===
+        ('一', vec!['刀']),
+        ('二', vec!['刀']),
+        ('七', vec!['刀']),
+        ('八', vec!['刀']),
+        ('九', vec!['力']),
+        ('也', vec!['水']),
+        ('几', vec!['木']),
+        ('出', vec!['山']),
+        ('比', vec!['人']),
+        ('毛', vec!['衣']),
+        ('气', vec!['力']),
+        ('生', vec!['土', '禾']),
+        ('用', vec!['工']),
+        ('回', vec!['口']),
+        ('肉', vec!['食']),
+        ('身', vec!['人']),
+        ('飞', vec!['鸟']),
+        // === Chars whose IDS decomposition is wrong per HC ===
+        ('三', vec!['十']),       // HC: 一+二, but we want a combat skill
+        ('上', vec!['土']),       // HC: ⺊+一 → 土 fits
+        ('不', vec!['大']),       // HC: 一+丿+卜
+        ('下', vec!['十']),       // HC: 一+卜 → 十 via 卜
+        ('东', vec!['木', '小']), // HC: 乚+一+小, but means "east" → 木+小
+        ('五', vec!['工']),       // HC: 一+力+一
+        ('书', vec!['言']),       // HC: 丨+丶 → book = 言
+        ('买', vec!['贝']),       // HC: ㇖+大+⺀ → buy = 贝
+        ('了', vec!['刀']),       // HC: ㇇+亅
+        ('儿', vec!['人']),       // HC: 儿
+        ('元', vec!['人']),       // HC: 二+儿
+        ('先', vec!['人', '足']), // HC: ⺧+儿
+        ('六', vec!['大']),       // HC: 亠+八
+        ('兴', vec!['火']),       // HC: ⺍+一+八
+        ('再', vec!['又', '门']), // HC: 一+冂+土 → 冂→门
+        ('写', vec!['言']),       // HC: 冖+一 → writing = 言
+        ('开', vec!['门']),       // HC: 一+廾 → open = 门
+        ('半', vec!['刀', '十']), // HC: 二+丨+丷
+        ('干', vec!['十', '木']), // HC: 干 (atomic)
+        ('年', vec!['禾']),       // HC: 丿+一+十+㇗+丨
+        ('米', vec!['禾']),       // HC: 米 (atomic) → grain = 禾
+        ('非', vec!['大']),       // HC: 非 (atomic)
+        ('页', vec!['人']),       // HC: 页 (atomic)
+        ('高', vec!['口']),       // HC: 高 (atomic) → tall structure has 口
+        ('面', vec!['口']),       // HC: 面 (atomic) → face has 口
+        ('风', vec!['力']),       // HC: 风 (atomic) → wind = 力
+        ('网', vec!['糸']),       // HC: 网 (atomic) → net = 糸
+        ('牛', vec!['力', '土']), // HC: 牛 (atomic)
+        ('文', vec!['手']),       // HC: 文 (atomic) → writing = 手
+        ('见', vec!['目']),       // HC: 见 (atomic) → see = 目
+        ('旁', vec!['门', '土']), // HC: 亠+丷+冖+方
+        ('方', vec!['土']),       // HC: 方 (atomic)
+        ('觉', vec!['目', '火']), // HC: ⺍+冖+见 → ⺍=火, 见=目
+        ('我', vec!['手', '刀']), // HC: 手+戈
+        // === IDS gives wrong components; override with HC-correct radicals ===
+        ('事', vec!['十', '口', '力']), // HC: 十+口+丨+⺺+亅 → 十, 口, ⺺→力
+        ('果', vec!['田', '木']),       // HC: 田+木 (IDS wrongly gives 日+木)
+        ('课', vec!['言', '田', '木']), // HC: 讠+田+木 (via 果→田+木)
+        ('住', vec!['人', '王']),       // HC: 亻+王+丶 (IDS goes 主→亠+土, wrong)
+        ('到', vec!['走', '刀']),       // HC: 至+刂 → 至 has 足/走 semantics
+        ('条', vec!['足', '木']),       // HC: 夂+朩 → 夂=足, 朩=木 (IDS uses 朩[GT])
+        ('重', vec!['十', '田']),       // HC: ㇒+十+里 → 十, 里→田
+        ('起', vec!['走']),             // HC: 走+己 (己 is atomic, not a known radical)
+        ('多', vec!['大']),             // HC: 多 (atomic) — was wrongly getting 月 via 夕→月
+        ('外', vec!['大', '十']),       // HC: 夕+卜 → 卜→十; 夕 not a radical
+        ('名', vec!['口']),             // HC: 夕+口 → 口 (夕 removed from variant_map)
+        ('会', vec!['人']),             // HC: 人+二+厶 → just 人 (厶 no longer maps)
+        ('去', vec!['土']),             // HC: 土+厶 → just 土 (厶 removed)
+        ('动', vec!['力']),             // HC: 二+厶+力 → just 力 (厶 removed)
+        ('包', vec!['力']),             // HC: 勹+巳 → 勹=力 (巳 removed)
+        ('能', vec!['月']),             // HC: 厶+月 → 月 (厶removed)
+        ('四', vec!['口']),             // HC: 囗+儿 → treat as 口
+        ('国', vec!['口', '王']),       // HC: 囗+玉 → 口+王
+        ('西', vec!['口']),             // HC: 西 = 覀 area → 口
+        ('北', vec!['刀']),             // HC: 北 (atomic)
+        ('里', vec!['田']),             // HC: 里 (has 甲→田 inside)
+        ('正', vec!['足']),             // HC: 一+止 → 止=足
+        ('老', vec!['人', '刀']),       // HC: 老 (has 耂=人, 匕=刀 inside)
+        ('行', vec!['足']),             // HC: 行 (atomic) → travel = 足
+        ('来', vec!['木']),             // HC: 木+一+丷 → just 木
+        ('本', vec!['木']),             // HC: 木+一 → just 木
+        // === Chars that IDS decomposes but misses components per HC ===
+        ('体', vec!['人', '木']),       // HC: 亻+木+一 (IDS only found 人)
+        ('妹', vec!['女', '木']),       // HC: 女+木+一
+        ('姐', vec!['女', '月']),       // HC: 女+月+一
+        ('真', vec!['十', '目']),       // HC: 十+目+一+八
+        ('睡', vec!['目', '十']),       // HC: 目+㇒+十+士+艹
+        ('晚', vec!['日', '刀', '口']), // HC: 日+⺈+口+丨+乚 → ⺈=刀
+        ('跑', vec!['足', '力']),       // HC: ⻊+勹+巳 → 足+力
+        ('跟', vec!['足']),             // HC: ⻊+艮
+        ('路', vec!['足', '口']),       // HC: ⻊+夂+口
+        ('新', vec!['人', '十', '刀']), // HC: 立+十+小+斤 → 立=人, 斤=刀, 十
+        ('知', vec!['大', '口']),       // HC: 矢+口 → 矢=大
+        ('穿', vec!['门']),             // HC: 穴+牙 → 穴=门
+        ('师', vec!['衣']),             // HC: 一+巾 → 巾=衣
+        ('帮', vec!['山', '衣']),       // HC: 一+二+丨+阝+巾 → 阝=山, 巾=衣
+        ('常', vec!['口', '衣', '小']), // HC: ⺌+冖+口+巾 → ⺌=小, 口, 巾=衣
+        ('票', vec!['口', '衣']),       // HC: 覀+示 → 覀=口, 示=衣
+        ('站', vec!['人', '口']),       // HC: 立+⺊+口 → 立=人, 口
+        ('钱', vec!['金', '刀']),       // HC: 钅+戋 → 金, 戋 has blade
+        ('错', vec!['金', '木', '日']), // HC: 钅+艹+一+日 → 金, 艹=木, 日
+        ('谢', vec!['言', '人', '寸']), // HC: 讠+身+寸 → 身=人
+        ('哥', vec!['口']),             // HC: 哥 (atomic) → has 口
+        ('朋', vec!['月']),             // HC: 朋 (atomic)
+        ('歌', vec!['口', '力']),       // HC: 哥+欠 → 口+力
+        ('医', vec!['工', '大']),       // HC: 匚+矢 → 匚=工, 矢=大
+        ('那', vec!['山']),             // HC: ㇆+二+丨+阝 → 阝=山
+        ('都', vec!['人', '日', '山']), // HC: 耂+日+阝 → 耂=人, 日, 阝=山
+        ('候', vec!['人', '大']),       // HC: 亻+丨+矢 → 人, 矢=大
+        ('假', vec!['人', '又']),       // HC: 亻+尸+二+又
+        ('次', vec!['水', '力']),       // HC: 冫+欠 → 水+力
+        ('岁', vec!['山']),             // HC: 山+夕 → 山 (夕 not mapped)
+        ('图', vec!['口']),             // HC: 囗+夂+⺀
+        ('备', vec!['足', '田']),       // HC: 夂+田 → 足+田
+        ('床', vec!['门', '木']),       // HC: 广+木 → 门+木
+        ('店', vec!['门', '口']),       // HC: 广+⺊+口 → 门+口
+        ('房', vec!['门']),             // HC: 户+方 → 门
+        ('病', vec!['人']),             // HC: 疒+一+人+冂
+        ('看', vec!['手', '目']),       // HC: 龵+目 → 手+目
+        ('考', vec!['人']),             // HC: 耂+一+㇉ → 人
+        ('爱', vec!['手', '又']),       // HC: 爫+冖+𠂇+又 → 手+又
+        ('菜', vec!['木', '手']),       // HC: 艹+爫+木 → 木+手
+        ('话', vec!['言', '口']),       // HC: 讠+舌 → 言, 舌 has 口
+        ('请', vec!['言', '月']),       // HC: 讠+青 → 言, 青→月
+        ('谁', vec!['言', '鸟']),       // HC: 讠+隹 → 言, 隹=鸟
+        ('难', vec!['又', '鸟']),       // HC: 又+隹 → 又, 隹=鸟
+        ('准', vec!['水', '鸟']),       // HC: 冫+隹 → 水+鸟
+        ('样', vec!['木']),             // HC: 木+羊 → just 木
+        ('楼', vec!['木', '女']),       // HC: 木+米+女 → 木, 女 (米→禾 would add)
+        ('期', vec!['口', '月']),       // HC: 甘+一+八+月 → 甘=口, 月
+        ('星', vec!['日']),             // HC: 日+生 → just 日
+        ('电', vec!['日']),             // HC: 日+丨+乚 → just 日
+        ('饿', vec!['食', '手', '刀']), // HC: 饣+手+戈 → 食, 手, 戈=刀
+        ('馆', vec!['食', '门']),       // HC: 饣+宀+㠯 → 食, 宀=门
+        ('语', vec!['言', '口']),       // HC: 讠+一+力+一+口
+        ('读', vec!['言', '十', '大']), // HC: 讠+十+㇖+大+⺀
+        ('识', vec!['言', '口']),       // HC: 讠+口+八
+        ('诉', vec!['言', '刀']),       // HC: 讠+斤+丶 → 斤=刀
+        ('院', vec!['山', '门']),       // HC: 阝+宀+二+儿
+        ('脑', vec!['月']),             // HC: 月+亠+凵+乂
+        ('学', vec!['子', '门']),       // HC: ⺍+冖+子 → 子, 冖=门
+        ('习', vec!['水']),             // HC: ㇆+亠
+        ('蛋', vec!['足', '虫']),       // HC: 疋+虫 → 疋=足, 虫
+        ('试', vec!['言', '弓', '工']), // HC: 讠+弋+工 → 弋=弓
+        ('视', vec!['衣', '目']),       // HC: 礻+见 → 衣, 见=目
+        ('么', vec!['口']),             // HC: 丿+厶 (both strokes) → question particle, 口 fits
+        ('放', vec!['手']),             // HC: 方+⺙ → ⺙=手 (IDS uses 攵 which we don't map)
+    ]
+    .into_iter()
+    .collect();
+
+    let mut out = String::new();
+    out.push_str("// @generated by build.rs; do not edit by hand.\n");
+    out.push_str("pub fn get_components(hanzi: &str) -> Vec<&'static str> {\n");
+    out.push_str("    let ch = hanzi.chars().next().unwrap_or('\\0');\n");
+    out.push_str("    match ch {\n");
+
+    for &ch in &unique_chars {
+        // Manual overrides take precedence over IDS decomposition
+        let deduplicated = if let Some(overrides) = manual_overrides.get(&ch) {
+            overrides.clone()
+        } else {
+            let mut visited = HashSet::new();
+            let raw_components =
+                decompose(ch, &ids_map, &known_radicals, &variant_map, &mut visited);
+
+            let mut deduped = Vec::new();
+            for comp in raw_components {
+                if !deduped.contains(&comp) {
+                    deduped.push(comp);
+                }
+                if deduped.len() >= 4 {
+                    break;
+                }
+            }
+            deduped
+        };
+
+        if !deduplicated.is_empty() {
+            out.push_str(&format!("        '{}' => vec![", ch));
+            for (i, comp) in deduplicated.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str(&format!("\"{}\"", comp));
+            }
+            out.push_str("],\n");
+        }
+    }
+
+    out.push_str("        _ => vec![],\n");
+    out.push_str("    }\n");
+    out.push_str("}\n");
+
+    let out_dir = env::var("OUT_DIR").map_err(|e| format!("OUT_DIR not set: {e}"))?;
+    let out_path = Path::new(&out_dir).join("decomposition_data.rs");
+    fs::write(out_path, out)
+        .map_err(|e| format!("failed to write generated decomposition_data.rs: {e}"))?;
+
+    Ok(())
+}
+
+fn decompose(
+    ch: char,
+    ids_map: &HashMap<char, String>,
+    known_radicals: &HashSet<char>,
+    variant_map: &HashMap<char, char>,
+    visited: &mut HashSet<char>,
+) -> Vec<char> {
+    let normalized = variant_map.get(&ch).copied().unwrap_or(ch);
+
+    if known_radicals.contains(&normalized) {
+        return vec![normalized];
+    }
+
+    if visited.contains(&ch) {
+        return vec![];
+    }
+    visited.insert(ch);
+
+    if let Some(ids) = ids_map.get(&ch) {
+        let mut result = Vec::new();
+        for component_char in ids.chars() {
+            if ('\u{2FF0}'..='\u{2FFB}').contains(&component_char) {
+                continue;
+            }
+            let sub = decompose(
+                component_char,
+                ids_map,
+                known_radicals,
+                variant_map,
+                visited,
+            );
+            for r in sub {
+                if !result.contains(&r) {
+                    result.push(r);
+                }
+            }
+        }
+        visited.remove(&ch);
+        return result;
+    }
+
+    visited.remove(&ch);
+    vec![]
 }

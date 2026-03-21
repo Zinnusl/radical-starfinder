@@ -35,7 +35,7 @@ pub fn player_base_movement() -> i32 {
     3
 }
 
-pub fn player_movement(form: PlayerForm, statuses: &[crate::status::StatusInstance]) -> i32 {
+pub fn player_movement(_form: PlayerForm, statuses: &[crate::status::StatusInstance]) -> i32 {
     let mut mv = player_base_movement();
     if has_haste(statuses) {
         mv += 1;

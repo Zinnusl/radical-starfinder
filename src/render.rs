@@ -4383,6 +4383,10 @@ impl Renderer {
                         EnemyIntent::RadicalAbility { .. } => "*",
                         EnemyIntent::Retreat => "<",
                         EnemyIntent::Idle => "-",
+                        EnemyIntent::Buff => "↑",
+                        EnemyIntent::Heal => "+",
+                        EnemyIntent::RangedAttack => "◎",
+                        EnemyIntent::Surround => "◇",
                     };
                     let intent_color = match intent {
                         EnemyIntent::Attack => "#ff4444",
@@ -4390,6 +4394,10 @@ impl Renderer {
                         EnemyIntent::RadicalAbility { .. } => "#cc44ff",
                         EnemyIntent::Retreat => "#44aaff",
                         EnemyIntent::Idle => "#888888",
+                        EnemyIntent::Buff => "#44ff88",
+                        EnemyIntent::Heal => "#44ff44",
+                        EnemyIntent::RangedAttack => "#ff8844",
+                        EnemyIntent::Surround => "#ffff44",
                     };
                     self.ctx.set_fill_style_str(intent_color);
                     self.ctx.set_font("bold 10px monospace");
@@ -4718,6 +4726,76 @@ impl Renderer {
             self.ctx.set_font("9px monospace");
             self.ctx
                 .fill_text("Enter=use  Esc=back", panel_x, py + 10.0)
+                .ok();
+            py += 14.0;
+        }
+
+        if battle.radical_picker_open && matches!(battle.phase, TacticalPhase::Command) {
+            py += 6.0;
+            let total_options = 1 + battle.player_radical_abilities.len();
+            self.ctx.set_fill_style_str("rgba(0,0,0,0.6)");
+            self.ctx.fill_rect(
+                panel_x - 4.0,
+                py,
+                panel_w.min(200.0),
+                16.0 + total_options as f64 * 18.0 + 36.0,
+            );
+            self.ctx.set_fill_style_str("#88ccff");
+            self.ctx.set_font("bold 11px monospace");
+            self.ctx.fill_text("Attack With:", panel_x, py + 12.0).ok();
+            py += 18.0;
+
+            let cursor = battle.radical_picker_cursor;
+            self.ctx.set_font("11px monospace");
+
+            let selected = cursor == 0;
+            if selected {
+                self.ctx.set_fill_style_str("rgba(136,204,255,0.2)");
+                self.ctx
+                    .fill_rect(panel_x - 2.0, py - 2.0, panel_w.min(196.0), 16.0);
+                self.ctx.set_fill_style_str("#88ccff");
+            } else {
+                self.ctx.set_fill_style_str("#aaa");
+            }
+            self.ctx
+                .fill_text("\u{2694} Normal Attack", panel_x, py + 10.0)
+                .ok();
+            py += 18.0;
+
+            for (i, (radical, ability)) in battle.player_radical_abilities.iter().enumerate() {
+                let selected = cursor == i + 1;
+                if selected {
+                    self.ctx.set_fill_style_str("rgba(136,204,255,0.2)");
+                    self.ctx
+                        .fill_rect(panel_x - 2.0, py - 2.0, panel_w.min(196.0), 16.0);
+                    self.ctx.set_fill_style_str("#88ccff");
+                } else {
+                    self.ctx.set_fill_style_str("#aaa");
+                }
+                self.ctx
+                    .fill_text(
+                        &format!("{} {}", radical, ability.name()),
+                        panel_x,
+                        py + 10.0,
+                    )
+                    .ok();
+                py += 18.0;
+            }
+
+            if cursor > 0 && cursor <= battle.player_radical_abilities.len() {
+                let (_, ability) = &battle.player_radical_abilities[cursor - 1];
+                self.ctx.set_fill_style_str("#667799");
+                self.ctx.set_font("9px monospace");
+                self.ctx
+                    .fill_text(ability.description(), panel_x, py + 10.0)
+                    .ok();
+                py += 14.0;
+            }
+
+            self.ctx.set_fill_style_str("#666");
+            self.ctx.set_font("9px monospace");
+            self.ctx
+                .fill_text("Enter=select  Esc=back", panel_x, py + 10.0)
                 .ok();
             py += 14.0;
         }
@@ -5997,6 +6075,11 @@ fn spell_sprite_key(effect: &radical::SpellEffect) -> &'static str {
         radical::SpellEffect::Drain(_) => "spell_drain",
         radical::SpellEffect::Stun => "spell_stun",
         radical::SpellEffect::Pacify => "spell_pacify",
+        radical::SpellEffect::Slow(_) => "spell_stun",
+        radical::SpellEffect::Teleport => "spell_reveal",
+        radical::SpellEffect::Poison(_, _) => "spell_drain",
+        radical::SpellEffect::FocusRestore(_) => "spell_heal",
+        radical::SpellEffect::ArmorBreak => "spell_strike",
     }
 }
 

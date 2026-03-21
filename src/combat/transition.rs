@@ -55,6 +55,9 @@ pub fn enter_combat(
         statuses: player.statuses.clone(),
         stunned: false,
         radical_armor: 0,
+        radical_counter: false,
+        marked_extra_damage: 0,
+        thorn_armor_turns: 0,
         radical_dodge: false,
         radical_multiply: false,
         fortify_stacks: 0,
@@ -144,6 +147,9 @@ pub fn enter_combat(
                 statuses: e.statuses.clone(),
                 stunned: e.stunned,
                 radical_armor: e.radical_armor,
+                radical_counter: false,
+                marked_extra_damage: 0,
+                thorn_armor_turns: 0,
                 radical_dodge: e.radical_dodge,
                 radical_multiply: e.radical_multiply,
                 fortify_stacks: 0,
@@ -231,6 +237,17 @@ pub fn enter_combat(
         chengyu_history: Vec::new(),
         intents_calculated: false,
         pending_spirit_delta: 0,
+        player_radical_abilities: player
+            .radicals
+            .iter()
+            .filter_map(|r| {
+                crate::enemy::PlayerRadicalAbility::from_radical(r).map(|ability| (*r, ability))
+            })
+            .collect(),
+        consumed_radicals: Vec::new(),
+        selected_radical_ability: None,
+        radical_picker_open: false,
+        radical_picker_cursor: 0,
     }
 }
 
@@ -377,12 +394,6 @@ pub fn enemies_from_sentence(sentence: &SentenceEntry, floor: i32) -> Vec<Enemy>
             }
         })
         .collect()
-}
-
-pub fn sentence_arena_size(char_count: usize) -> usize {
-    let base = arena_size_for_encounter(false, false);
-    let extra = (char_count / 3).min(4);
-    base + extra
 }
 
 /// Sync battle results back to the player and enemies.

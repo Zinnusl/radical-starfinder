@@ -4,7 +4,7 @@
 //! `handle_input()` which dispatches based on the current `TacticalPhase`.
 
 use crate::combat::action::{deal_damage, deal_damage_from, defend, flank_bonus, move_unit, wait};
-use crate::combat::ai::{choose_action, step_away, step_toward, AiAction};
+use crate::combat::ai::{choose_action, AiAction};
 use crate::combat::boss;
 use crate::combat::grid::{
     manhattan, reachable_tiles, tiles_in_range_with_los, weather_adjusted_range,
@@ -80,6 +80,11 @@ pub fn handle_input(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
         return handle_item_menu(battle, key);
     }
 
+    // If radical picker is open, route to radical picker handler.
+    if battle.radical_picker_open {
+        return handle_radical_picker(battle, key);
+    }
+
     // If we're in a typing action, route to typing handler.
     if battle.typing_action.is_some() {
         return handle_typing(battle, key);
@@ -97,16 +102,48 @@ pub fn handle_input(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
 // ── Command phase ────────────────────────────────────────────────────────────
 
 fn handle_command(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
+    if battle.units[0]
+        .statuses
+        .iter()
+        .any(|s| matches!(s.kind, crate::status::StatusKind::Freeze))
+    {
+        battle.log_message("You are frozen solid! Turn skipped.");
+        battle.player_acted = true;
+        battle.player_moved = true;
+        return try_end_player_turn(battle);
+    }
+
     match key {
         "m" | "M" if !battle.player_moved => {
             enter_move_targeting(battle);
             BattleEvent::None
         }
         "a" | "A" if !battle.player_acted => {
-            enter_attack_targeting(battle);
+            if battle.units[0]
+                .statuses
+                .iter()
+                .any(|s| matches!(s.kind, crate::status::StatusKind::Fear))
+            {
+                battle.log_message("You're too afraid to attack!");
+                return BattleEvent::None;
+            }
+            if battle.player_radical_abilities.is_empty() {
+                enter_attack_targeting(battle);
+            } else {
+                battle.radical_picker_open = true;
+                battle.radical_picker_cursor = 0;
+            }
             BattleEvent::None
         }
         "s" | "S" if !battle.player_acted => {
+            if battle.units[0]
+                .statuses
+                .iter()
+                .any(|s| matches!(s.kind, crate::status::StatusKind::Fear))
+            {
+                battle.log_message("Fear grips you! Cannot cast spells!");
+                return BattleEvent::None;
+            }
             if battle.available_spells.is_empty() {
                 battle.log_message("No spells available.");
             } else {
@@ -266,6 +303,7 @@ fn handle_look(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
         };
         if let Some(tile) = battle.arena.tile(nx, ny) {
             let mut desc = tile.description().to_string();
+            let mut log_msgs = Vec::new();
             for unit in &battle.units {
                 if unit.alive && unit.x == nx && unit.y == ny {
                     if unit.is_player() {
@@ -277,10 +315,53 @@ fn handle_look(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
                             unit.hanzi
                         };
                         desc.push_str(&format!(" | {} HP:{}/{}", name, unit.hp, unit.max_hp));
+
+                        let ai_behavior = match unit.ai {
+                            crate::enemy::AiBehavior::Chase => "Chase",
+                            crate::enemy::AiBehavior::Retreat => "Retreat",
+                            crate::enemy::AiBehavior::Ambush => "Ambush",
+                            crate::enemy::AiBehavior::Sentinel => "Sentinel",
+                            crate::enemy::AiBehavior::Kiter => "Kiter",
+                            crate::enemy::AiBehavior::Pack => "Pack",
+                        };
+                        desc.push_str(&format!(" | AI: {}", ai_behavior));
+
+                        if !unit.radical_actions.is_empty() {
+                            let mut by_radical: Vec<(&str, Vec<&str>)> = Vec::new();
+                            for skill in &unit.radical_actions {
+                                let rad = skill.radical();
+                                if let Some(entry) = by_radical.iter_mut().find(|(r, _)| *r == rad)
+                                {
+                                    entry.1.push(skill.name());
+                                } else {
+                                    by_radical.push((rad, vec![skill.name()]));
+                                }
+                            }
+                            let grouped: Vec<String> = by_radical
+                                .iter()
+                                .map(|(rad, names)| format!("{}: {}", rad, names.join(", ")))
+                                .collect();
+                            desc.push_str(&format!(" | Skills: {}", grouped.join(" | ")));
+                            for skill in &unit.radical_actions {
+                                log_msgs.push(format!(
+                                    "[{}] {}: {}",
+                                    skill.radical(),
+                                    skill.name(),
+                                    skill.description()
+                                ));
+                            }
+                        }
+
+                        if let Some(intent) = &unit.intent {
+                            desc.push_str(&format!(" | Intent: {}", intent.label()));
+                        }
                     }
                 }
             }
             battle.log_message(&desc);
+            for msg in log_msgs {
+                battle.log_message(&msg);
+            }
         }
     }
     BattleEvent::None
@@ -378,7 +459,10 @@ fn handle_spell_menu(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
             battle.spell_menu_open = false;
 
             match effect {
-                SpellEffect::Heal(_) | SpellEffect::Shield | SpellEffect::Reveal => {
+                SpellEffect::Heal(_)
+                | SpellEffect::Shield
+                | SpellEffect::Reveal
+                | SpellEffect::FocusRestore(_) => {
                     let px = battle.units[0].x;
                     let py = battle.units[0].y;
                     battle.typing_action = Some(TypingAction::SpellCast {
@@ -455,6 +539,36 @@ fn handle_item_menu(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
             let menu_idx = battle.item_cursor;
             battle.item_menu_open = false;
             use_item_in_combat(battle, menu_idx, orig_idx, &item)
+        }
+        _ => BattleEvent::None,
+    }
+}
+
+fn handle_radical_picker(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
+    let total_options = 1 + battle.player_radical_abilities.len(); // 0=normal, 1+=abilities
+    match key {
+        "Escape" => {
+            battle.radical_picker_open = false;
+            BattleEvent::None
+        }
+        "ArrowUp" => {
+            battle.radical_picker_cursor = battle.radical_picker_cursor.saturating_sub(1);
+            BattleEvent::None
+        }
+        "ArrowDown" => {
+            battle.radical_picker_cursor =
+                (battle.radical_picker_cursor + 1).min(total_options.saturating_sub(1));
+            BattleEvent::None
+        }
+        "Enter" => {
+            battle.radical_picker_open = false;
+            if battle.radical_picker_cursor == 0 {
+                battle.selected_radical_ability = None;
+            } else {
+                battle.selected_radical_ability = Some(battle.radical_picker_cursor - 1);
+            }
+            enter_attack_targeting(battle);
+            BattleEvent::None
         }
         _ => BattleEvent::None,
     }
@@ -652,6 +766,10 @@ fn spell_range(effect: &SpellEffect) -> i32 {
         SpellEffect::Drain(_) => 1,
         SpellEffect::Stun => 3,
         SpellEffect::Pacify => 3,
+        SpellEffect::Slow(_) => 3,
+        SpellEffect::Teleport => 4,
+        SpellEffect::Poison(_, _) => 2,
+        SpellEffect::ArmorBreak => 2,
         _ => 1,
     }
 }
@@ -666,6 +784,11 @@ fn spell_effect_school(effect: &SpellEffect) -> &'static str {
         SpellEffect::Shield => "shield",
         SpellEffect::Reveal => "reveal",
         SpellEffect::Pacify => "pacify",
+        SpellEffect::Slow(_) => "ice",
+        SpellEffect::Teleport => "wind",
+        SpellEffect::Poison(_, _) => "poison",
+        SpellEffect::FocusRestore(_) => "focus",
+        SpellEffect::ArmorBreak => "force",
     }
 }
 
@@ -984,6 +1107,23 @@ fn resolve_basic_attack(
     let target_hanzi = battle.units[target_idx].hanzi;
 
     if correct {
+        if battle.units[target_idx].radical_dodge {
+            battle.units[target_idx].radical_dodge = false;
+            battle.last_answer = Some((target_hanzi, true));
+            battle.log_message(format!(
+                "{} dodges the attack!",
+                battle.units[target_idx].hanzi
+            ));
+            battle.player_acted = true;
+            battle.typing_action = None;
+            battle.phase = TacticalPhase::Resolve {
+                message: "Dodged!".to_string(),
+                timer: 20,
+                end_turn: true,
+            };
+            return BattleEvent::None;
+        }
+
         battle.last_answer = Some((target_hanzi, true));
         battle.combo_streak += 1;
         let combo = battle.combo_multiplier();
@@ -1020,6 +1160,18 @@ fn resolve_basic_attack(
         battle.log_message(&msg);
         if let Some(wl) = wuxing_label {
             battle.log_message(wl);
+        }
+
+        if let Some(ability_idx) = battle.selected_radical_ability.take() {
+            if ability_idx < battle.player_radical_abilities.len() {
+                let (radical_str, ability) = battle.player_radical_abilities[ability_idx];
+                let ability_msg = crate::combat::radical::apply_player_radical_ability(
+                    battle, 0, target_idx, ability,
+                );
+                battle.log_message(&ability_msg);
+                battle.consumed_radicals.push(radical_str);
+                battle.player_radical_abilities.remove(ability_idx);
+            }
         }
 
         if crate::status::has_envenomed(&battle.units[0].statuses) {
@@ -1113,6 +1265,7 @@ fn resolve_basic_attack(
         if partial {
             battle.last_answer = Some((target_hanzi, false));
             battle.combo_streak = 0;
+            battle.selected_radical_ability = None;
             let base_damage = battle.units[0].damage;
             let half_dmg = (base_damage / 2).max(1);
             let actual = deal_damage(battle, target_idx, half_dmg);
@@ -1140,6 +1293,7 @@ fn resolve_basic_attack(
         } else {
             battle.last_answer = Some((target_hanzi, false));
             battle.combo_streak = 0;
+            battle.selected_radical_ability = None;
             let miss_msg = format!("Wrong! '{}' is incorrect.", input);
             battle.log_message(&miss_msg);
 
@@ -1345,6 +1499,75 @@ fn resolve_spell_cast(
                 }
             } else {
                 "Peace finds no one.".to_string()
+            }
+        }
+        SpellEffect::Slow(turns) => {
+            if let Some(idx) = battle.unit_at(target_x, target_y) {
+                if battle.units[idx].is_enemy() {
+                    battle.units[idx]
+                        .statuses
+                        .push(StatusInstance::new(StatusKind::Slow, turns));
+                    format!("{} is slowed for {} turns!", battle.units[idx].hanzi, turns)
+                } else {
+                    "No target there.".to_string()
+                }
+            } else {
+                "The chill dissipates.".to_string()
+            }
+        }
+        SpellEffect::Teleport => {
+            if let Some(idx) = battle.unit_at(target_x, target_y) {
+                if battle.units[idx].is_enemy() {
+                    let (px, py) = (battle.units[0].x, battle.units[0].y);
+                    let (ex, ey) = (battle.units[idx].x, battle.units[idx].y);
+                    battle.units[0].x = ex;
+                    battle.units[0].y = ey;
+                    battle.units[idx].x = px;
+                    battle.units[idx].y = py;
+                    format!("Swapped positions with {}!", battle.units[idx].hanzi)
+                } else {
+                    "No target there.".to_string()
+                }
+            } else {
+                "The spell finds no anchor.".to_string()
+            }
+        }
+        SpellEffect::Poison(dmg, turns) => {
+            if let Some(idx) = battle.unit_at(target_x, target_y) {
+                if battle.units[idx].is_enemy() {
+                    battle.units[idx].statuses.push(StatusInstance::new(
+                        StatusKind::Poison { damage: dmg },
+                        turns,
+                    ));
+                    format!(
+                        "{} is poisoned! ({} dmg for {} turns)",
+                        battle.units[idx].hanzi, dmg, turns
+                    )
+                } else {
+                    "No target there.".to_string()
+                }
+            } else {
+                "The poison dissipates.".to_string()
+            }
+        }
+        SpellEffect::FocusRestore(amt) => {
+            battle.focus = (battle.focus + amt).min(battle.max_focus);
+            format!("Focus restored by {}!", amt)
+        }
+        SpellEffect::ArmorBreak => {
+            if let Some(idx) = battle.unit_at(target_x, target_y) {
+                if battle.units[idx].is_enemy() {
+                    let stripped = battle.units[idx].radical_armor;
+                    battle.units[idx].radical_armor = 0;
+                    format!(
+                        "{}'s armor shattered! ({} armor removed)",
+                        battle.units[idx].hanzi, stripped
+                    )
+                } else {
+                    "No target there.".to_string()
+                }
+            } else {
+                "The force hits nothing.".to_string()
             }
         }
     };
@@ -1630,6 +1853,22 @@ pub fn execute_enemy_turn_action(battle: &mut TacticalBattle, unit_idx: usize) -
         unit.hp = (unit.hp + status_heal).min(unit.max_hp);
     }
 
+    if battle.units[unit_idx].thorn_armor_turns > 0 {
+        battle.units[unit_idx].thorn_armor_turns -= 1;
+    }
+
+    if battle.units[unit_idx]
+        .statuses
+        .iter()
+        .any(|s| matches!(s.kind, crate::status::StatusKind::Freeze))
+    {
+        battle.log_message(format!(
+            "{} is frozen and can't act!",
+            enemy_display_name(battle, unit_idx)
+        ));
+        return BattleEvent::None;
+    }
+
     // Check stunned.
     if battle.units[unit_idx].stunned {
         battle.units[unit_idx].stunned = false;
@@ -1656,7 +1895,10 @@ pub fn execute_enemy_turn_action(battle: &mut TacticalBattle, unit_idx: usize) -
         } else {
             battle.units[unit_idx].charge_remaining = None;
             let name = enemy_display_name(battle, unit_idx);
-            let dmg = ((battle.units[unit_idx].damage as f64) * 1.75).ceil() as i32;
+            let dmg = (((battle.units[unit_idx].damage + battle.units[unit_idx].fortify_stacks)
+                as f64)
+                * 1.75)
+                .ceil() as i32;
             let (actual, wuxing_label) = deal_damage_from(battle, unit_idx, 0, dmg);
             battle.log_message(format!(
                 "{} unleashes charged attack for {} damage!",
@@ -1678,48 +1920,10 @@ pub fn execute_enemy_turn_action(battle: &mut TacticalBattle, unit_idx: usize) -
     let name = enemy_display_name(battle, unit_idx);
 
     match action {
-        AiAction::MoveToward { x, y } => {
-            let (fx, fy) = (battle.units[unit_idx].x, battle.units[unit_idx].y);
-            if let Some((nx, ny)) = step_toward(battle, fx, fy, x, y) {
-                move_unit(battle, unit_idx, nx, ny);
-            }
-            let dist = manhattan(
-                battle.units[unit_idx].x,
-                battle.units[unit_idx].y,
-                battle.units[0].x,
-                battle.units[0].y,
-            );
-            if dist <= 1 {
-                let dmg = battle.units[unit_idx].damage + boss::ink_sage_bonus(battle, unit_idx);
-                let multiply = battle.units[unit_idx].radical_multiply;
-                let hits = if multiply { 2 } else { 1 };
-                battle.units[unit_idx].radical_multiply = false;
-                for _ in 0..hits {
-                    let (actual, wuxing_label) = deal_damage_from(battle, unit_idx, 0, dmg);
-                    battle.log_message(format!("{} attacks for {} damage!", name, actual));
-                    if let Some(wl) = wuxing_label {
-                        battle.log_message(wl);
-                    }
-                }
-                if dmg >= 3 && battle.units[0].alive {
-                    let ex = battle.units[unit_idx].x;
-                    let ey = battle.units[unit_idx].y;
-                    let kb_msgs = apply_knockback(battle, 0, ex, ey);
-                    for m in &kb_msgs {
-                        battle.log_message(m);
-                    }
-                }
-            }
-        }
-        AiAction::MoveAway { x, y } => {
-            let (fx, fy) = (battle.units[unit_idx].x, battle.units[unit_idx].y);
-            if let Some((nx, ny)) = step_away(battle, fx, fy, x, y) {
-                move_unit(battle, unit_idx, nx, ny);
-                battle.log_message(format!("{} retreats.", name));
-            }
-        }
         AiAction::MeleeAttack { target_unit } => {
-            let dmg = battle.units[unit_idx].damage + boss::ink_sage_bonus(battle, unit_idx);
+            let dmg = battle.units[unit_idx].damage
+                + battle.units[unit_idx].fortify_stacks
+                + boss::ink_sage_bonus(battle, unit_idx);
             let multiply = battle.units[unit_idx].radical_multiply;
             let hits = if multiply { 2 } else { 1 };
             battle.units[unit_idx].radical_multiply = false;
@@ -1748,6 +1952,47 @@ pub fn execute_enemy_turn_action(battle: &mut TacticalBattle, unit_idx: usize) -
         }
         AiAction::Wait => {
             // Enemy waits — do nothing.
+        }
+        AiAction::MoveToTile { path } => {
+            for &(nx, ny) in &path {
+                move_unit(battle, unit_idx, nx, ny);
+            }
+        }
+        AiAction::MoveAndAttack { path, target_unit } => {
+            for &(nx, ny) in &path {
+                move_unit(battle, unit_idx, nx, ny);
+            }
+            let dmg = battle.units[unit_idx].damage
+                + battle.units[unit_idx].fortify_stacks
+                + boss::ink_sage_bonus(battle, unit_idx);
+            let multiply = battle.units[unit_idx].radical_multiply;
+            let hits = if multiply { 2 } else { 1 };
+            battle.units[unit_idx].radical_multiply = false;
+            for _ in 0..hits {
+                let (actual, wuxing_label) = deal_damage_from(battle, unit_idx, target_unit, dmg);
+                battle.log_message(format!("{} attacks for {} damage!", name, actual));
+                if let Some(wl) = wuxing_label {
+                    battle.log_message(wl);
+                }
+            }
+            if dmg >= 3 && battle.units[target_unit].alive {
+                let ex = battle.units[unit_idx].x;
+                let ey = battle.units[unit_idx].y;
+                let kb_msgs = apply_knockback(battle, target_unit, ex, ey);
+                for m in &kb_msgs {
+                    battle.log_message(m);
+                }
+            }
+        }
+        AiAction::MoveAndRadical { path, action_idx } => {
+            for &(nx, ny) in &path {
+                move_unit(battle, unit_idx, nx, ny);
+            }
+            if action_idx < battle.units[unit_idx].radical_actions.len() {
+                let radical = battle.units[unit_idx].radical_actions[action_idx];
+                let msg = apply_radical_action(battle, unit_idx, radical);
+                battle.log_message(msg);
+            }
         }
     }
 

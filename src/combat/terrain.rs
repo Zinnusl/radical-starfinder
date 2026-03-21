@@ -1,22 +1,11 @@
 use crate::combat::action::deal_damage;
 use crate::combat::{BattleTile, TacticalBattle, Weather};
-use crate::radical::SpellEffect;
 use std::collections::VecDeque;
 
 pub enum TerrainSource {
     FireSpell,
     LightningSpell,
     Earthquake,
-}
-
-impl TerrainSource {
-    pub fn from_spell_effect(effect: &SpellEffect) -> Option<Self> {
-        match effect {
-            SpellEffect::FireAoe(_) => Some(TerrainSource::FireSpell),
-            SpellEffect::Stun => Some(TerrainSource::LightningSpell),
-            _ => None,
-        }
-    }
 }
 
 pub fn apply_terrain_interactions(

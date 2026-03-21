@@ -4034,7 +4034,7 @@ impl GameState {
     /// Returns a description string of what happened.
     fn apply_radical_action(&mut self, enemy_idx: usize, action: RadicalAction) -> String {
         match action {
-            RadicalAction::FireBreath => {
+            RadicalAction::SpreadingWildfire => {
                 self.player
                     .statuses
                     .push(crate::status::StatusInstance::new(
@@ -4043,105 +4043,326 @@ impl GameState {
                     ));
                 format!("{} — You catch fire!", action.name())
             }
-            RadicalAction::WaterShield => {
-                let e = &mut self.enemies[enemy_idx];
-                e.hp = (e.hp + 2).min(e.max_hp);
-                format!("{} — Enemy heals 2 HP!", action.name())
-            }
-            RadicalAction::PowerStrike => {
-                self.player.hp -= 2;
-                format!("{} — Extra 2 damage!", action.name())
-            }
-            RadicalAction::SelfHeal => {
-                let e = &mut self.enemies[enemy_idx];
-                e.hp = (e.hp + 3).min(e.max_hp);
-                format!("{} — Enemy heals 3 HP!", action.name())
-            }
-            RadicalAction::WarCry => {
-                self.player.spirit = (self.player.spirit - 10).max(0);
-                format!("{} — Your spirit drains! (-10 spirit)", action.name())
-            }
-            RadicalAction::TrueSight => {
-                if self.player.shield {
-                    self.player.shield = false;
-                    format!("{} — Your shield shatters!", action.name())
-                } else {
-                    format!("{} — The eye sees through you!", action.name())
-                }
-            }
-            RadicalAction::Disarm => {
-                self.player.tone_bonus_damage = (self.player.tone_bonus_damage - 1).max(0);
-                format!("{} — Your grip weakens!", action.name())
-            }
-            RadicalAction::Root => {
-                // Use Poison status as a proxy for "rooted" — 1 damage for 1 turn
+            RadicalAction::ErosiveFlow => {
                 self.player
                     .statuses
                     .push(crate::status::StatusInstance::new(
-                        crate::status::StatusKind::Poison { damage: 1 },
-                        1,
+                        crate::status::StatusKind::Slow,
+                        3,
                     ));
-                format!("{} — Roots bind your feet!", action.name())
+                format!("{} — Water erodes your defenses!", action.name())
             }
-            RadicalAction::Fortify => {
-                self.enemies[enemy_idx].damage += 1;
-                format!("{} — Enemy grows stronger!", action.name())
+            RadicalAction::OverwhelmingForce => {
+                self.player.hp -= 2;
+                format!("{} — A crushing blow! (-2 HP)", action.name())
             }
-            RadicalAction::Radiance => {
-                // Temporarily reduce player's next spell power
-                self.player.spell_power_temp_bonus -= 1;
-                format!("{} — Blinding light weakens your focus!", action.name())
-            }
-            RadicalAction::ShadowStep => {
-                self.enemies[enemy_idx].radical_dodge = true;
-                format!("{} — The enemy fades into shadow!", action.name())
-            }
-            RadicalAction::CallAlly => {
-                // Alert all enemies on the floor
-                for e in &mut self.enemies {
-                    if e.is_alive() {
-                        e.alert = true;
-                    }
-                }
-                format!("{} — All monsters become alert!", action.name())
-            }
-            RadicalAction::Charm => {
+            RadicalAction::DoubtSeed => {
                 self.player
                     .statuses
                     .push(crate::status::StatusInstance::new(
                         crate::status::StatusKind::Confused,
                         2,
                     ));
-                format!("{} — Your mind clouds with confusion!", action.name())
+                format!("{} — Your mind clouds with doubt!", action.name())
             }
-            RadicalAction::Swift => {
-                // Extra counter-attack: deal enemy damage again
+            RadicalAction::DevouringMaw => {
+                self.player.hp -= 1;
+                if self.player.shield {
+                    self.player.shield = false;
+                }
+                format!("{} — Devoured! (-1 HP)", action.name())
+            }
+            RadicalAction::WitnessMark => {
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Fear,
+                        1,
+                    ));
+                format!("{} — You feel exposed!", action.name())
+            }
+            RadicalAction::SleightReversal => {
+                self.player.hp -= 1;
+                format!("{} — Switched around! (-1 HP)", action.name())
+            }
+            RadicalAction::RootingGrasp => {
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Slow,
+                        2,
+                    ));
+                self.enemies[enemy_idx].radical_armor += 1;
+                format!("{} — Roots bind you!", action.name())
+            }
+            RadicalAction::HarvestReaping => {
+                let threshold = (self.player.max_hp as f32 * 0.4) as i32;
+                let dmg = if self.player.hp < threshold { 3 } else { 1 };
+                self.player.hp -= dmg;
+                format!("{} — Reaped! (-{} HP)", action.name(), dmg)
+            }
+            RadicalAction::RevealingDawn => {
+                let e = &mut self.enemies[enemy_idx];
+                e.statuses.retain(|s| {
+                    !matches!(
+                        s.kind,
+                        crate::status::StatusKind::Burn { .. }
+                            | crate::status::StatusKind::Poison { .. }
+                            | crate::status::StatusKind::Bleed { .. }
+                            | crate::status::StatusKind::Slow
+                            | crate::status::StatusKind::Confused
+                            | crate::status::StatusKind::Freeze
+                            | crate::status::StatusKind::Fear
+                    )
+                });
+                e.hp = (e.hp + 2).min(e.max_hp);
+                format!("{} — Bathed in cleansing light!", action.name())
+            }
+            RadicalAction::WaningCurse => {
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Poison { damage: 2 },
+                        3,
+                    ));
+                format!("{} — A waning curse takes hold!", action.name())
+            }
+            RadicalAction::MortalResilience => {
+                let e = &mut self.enemies[enemy_idx];
+                e.damage += 1;
+                e.radical_armor += 1;
+                format!("{} — Enemy grows desperate!", action.name())
+            }
+            RadicalAction::MaternalShield => {
+                self.enemies[enemy_idx].radical_dodge = true;
+                self.enemies[enemy_idx].radical_armor += 1;
+                format!("{} — Takes a protective stance!", action.name())
+            }
+            RadicalAction::PotentialBurst => {
+                self.player.hp -= 1;
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Bleed { damage: 1 },
+                        1,
+                    ));
+                format!("{} — Latent energy erupts! (-1 HP)", action.name())
+            }
+            RadicalAction::ChasingChaff => {
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Confused,
+                        1,
+                    ));
+                format!("{} — Chaff clouds your vision!", action.name())
+            }
+            RadicalAction::CrossroadsGambit => {
+                let seed = (self.floor_num as usize)
+                    .wrapping_mul(31)
+                    .wrapping_add(enemy_idx)
+                    % 2;
+                if seed == 0 {
+                    self.player.hp -= 3;
+                    format!("{} — A bad bet! (-3 HP)", action.name())
+                } else {
+                    format!("{} — The gambit fails!", action.name())
+                }
+            }
+            RadicalAction::RigidStance => {
+                self.enemies[enemy_idx].radical_armor += 3;
+                format!("{} — Metal scales form!", action.name())
+            }
+            RadicalAction::GroundingWeight => {
+                self.player.hp -= 1;
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Slow,
+                        3,
+                    ));
+                format!("{} — The earth drags you down! (-1 HP)", action.name())
+            }
+            RadicalAction::EchoStrike => {
                 let dmg = self.enemies[enemy_idx].damage;
                 self.player.hp -= dmg;
-                format!(
-                    "{} — A swift follow-up strike for {} damage!",
-                    action.name(),
-                    dmg
-                )
+                format!("{} — An echo strikes for {} damage!", action.name(), dmg)
             }
-            RadicalAction::Leech => {
-                let dmg = self.enemies[enemy_idx].damage;
-                let e = &mut self.enemies[enemy_idx];
-                e.hp = (e.hp + dmg).min(e.max_hp);
-                format!("{} — Enemy drains {} life force!", action.name(), dmg)
+            RadicalAction::PreciseExecution => {
+                let threshold = (self.player.max_hp as f32 * 0.25) as i32;
+                let dmg = if self.player.hp < threshold { 4 } else { 1 };
+                self.player.hp -= dmg;
+                format!("{} — Executed! (-{} HP)", action.name(), dmg)
             }
-            RadicalAction::Multiply => {
-                self.enemies[enemy_idx].radical_multiply = true;
-                format!("{} — The next attack will strike twice!", action.name())
+            RadicalAction::CleavingCut => {
+                self.player.hp -= 2;
+                self.player.max_hp = (self.player.max_hp - 1).max(1);
+                format!("{} — A deep cut! (-2 HP, -1 Max HP)", action.name())
             }
-            RadicalAction::Armor => {
-                self.enemies[enemy_idx].radical_armor += 2;
-                format!("{} — Metal scales deflect your blows!", action.name())
+            RadicalAction::BindingOath => {
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Slow,
+                        3,
+                    ));
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Confused,
+                        1,
+                    ));
+                format!("{} — Bound by oath!", action.name())
             }
-            RadicalAction::Earthquake => {
+            RadicalAction::PursuingSteps => {
                 self.player.hp -= 1;
-                self.trigger_shake(12);
-                format!("{} — The ground shakes! (-1 HP)", action.name())
+                self.enemies[enemy_idx].alert = true;
+                format!("{} — Relentless pursuit! (-1 HP)", action.name())
+            }
+            RadicalAction::EntanglingWeb => {
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Slow,
+                        3,
+                    ));
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Bleed { damage: 1 },
+                        2,
+                    ));
+                format!("{} — Caught in a web!", action.name())
+            }
+            RadicalAction::ThresholdSeal => {
+                self.enemies[enemy_idx].radical_armor += 3;
+                format!("{} — A barrier seals the way!", action.name())
+            }
+            RadicalAction::CavalryCharge => {
+                self.player.hp -= 2;
+                self.trigger_shake(8);
+                format!("{} — Trampled! (-2 HP)", action.name())
+            }
+            RadicalAction::SoaringEscape => {
+                self.enemies[enemy_idx].radical_dodge = true;
+                format!("{} — The enemy takes flight!", action.name())
+            }
+            RadicalAction::DownpourBarrage => {
+                self.player.hp -= 1;
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Bleed { damage: 1 },
+                        3,
+                    ));
+                format!("{} — Pierced by rain! (-1 HP)", action.name())
+            }
+            RadicalAction::PetrifyingGaze => {
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Slow,
+                        3,
+                    ));
+                self.enemies[enemy_idx].radical_armor += 2;
+                format!("{} — Turned to stone!", action.name())
+            }
+            RadicalAction::ParasiticSwarm => {
+                self.player.hp -= 1;
+                let e = &mut self.enemies[enemy_idx];
+                e.hp = (e.hp + 2).min(e.max_hp);
+                format!("{} — Swarmed! (-1 HP, Enemy heals 2)", action.name())
+            }
+            RadicalAction::MercenaryPact => {
+                let e = &mut self.enemies[enemy_idx];
+                e.hp -= 2;
+                for em in &mut self.enemies {
+                    if em.is_alive() {
+                        em.alert = true;
+                    }
+                }
+                format!("{} — A rallying cry!", action.name())
+            }
+            RadicalAction::ImmovablePeak => {
+                self.enemies[enemy_idx].radical_armor += 3;
+                format!("{} — Immovable as a mountain!", action.name())
+            }
+            RadicalAction::SavageMaul => {
+                self.player.hp -= 3;
+                format!("{} — Mauled! (-3 HP)", action.name())
+            }
+            RadicalAction::ArcingShot => {
+                self.player.hp -= 2;
+                format!("{} — Struck from above! (-2 HP)", action.name())
+            }
+            RadicalAction::ConsumingBite => {
+                self.player.hp -= 2;
+                let e = &mut self.enemies[enemy_idx];
+                e.max_hp += 1;
+                e.hp = (e.hp + 2).min(e.max_hp);
+                format!("{} — Bitten! (-2 HP, Enemy +Max HP)", action.name())
+            }
+            RadicalAction::CloakingGuise => {
+                self.enemies[enemy_idx].radical_dodge = true;
+                format!("{} — The enemy vanishes!", action.name())
+            }
+            RadicalAction::FlexibleCounter => {
+                self.enemies[enemy_idx].radical_dodge = true;
+                self.enemies[enemy_idx].radical_armor += 1;
+                format!("{} — Ready to counter!", action.name())
+            }
+            RadicalAction::BlitzAssault => {
+                self.player.hp -= 2;
+                self.trigger_shake(6);
+                format!("{} — Blitzed! (-2 HP)", action.name())
+            }
+            RadicalAction::CrushingWheels => {
+                self.player.hp -= 2;
+                self.trigger_shake(10);
+                format!("{} — Crushed! (-2 HP)", action.name())
+            }
+            RadicalAction::ImperialCommand => {
+                for em in &mut self.enemies {
+                    if em.is_alive() {
+                        em.alert = true;
+                        em.damage += 1;
+                    }
+                }
+                format!("{} — A commanding presence!", action.name())
+            }
+            RadicalAction::MagnifyingAura => {
+                self.enemies[enemy_idx].damage += 1;
+                format!("{} — An empowering aura!", action.name())
+            }
+            RadicalAction::NeedleStrike => {
+                self.player.hp -= 2;
+                format!("{} — Pierced! (-2 HP)", action.name())
+            }
+            RadicalAction::ArtisanTrap => {
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Burn { damage: 2 },
+                        2,
+                    ));
+                format!("{} — Trapped!", action.name())
+            }
+            RadicalAction::CleansingLight => {
+                let e = &mut self.enemies[enemy_idx];
+                e.statuses.retain(|s| {
+                    !matches!(
+                        s.kind,
+                        crate::status::StatusKind::Burn { .. }
+                            | crate::status::StatusKind::Poison { .. }
+                            | crate::status::StatusKind::Bleed { .. }
+                            | crate::status::StatusKind::Slow
+                            | crate::status::StatusKind::Confused
+                            | crate::status::StatusKind::Freeze
+                            | crate::status::StatusKind::Fear
+                    )
+                });
+                e.hp = (e.hp + 3).min(e.max_hp);
+                format!("{} — Bathed in cleansing light!", action.name())
             }
         }
     }
@@ -5336,7 +5557,12 @@ impl GameState {
                     SpellEffect::Heal(_)
                     | SpellEffect::Reveal
                     | SpellEffect::Shield
-                    | SpellEffect::Pacify => None,
+                    | SpellEffect::Pacify
+                    | SpellEffect::Slow(_)
+                    | SpellEffect::FocusRestore(_)
+                    | SpellEffect::ArmorBreak => None,
+                    SpellEffect::Teleport => None,
+                    SpellEffect::Poison(_, _) => Some("Poison"),
                 };
                 let elementalist_resisted = enemy_idx < self.enemies.len()
                     && self.enemies[enemy_idx].boss_kind == Some(BossKind::Elementalist)
@@ -5598,6 +5824,97 @@ impl GameState {
                                 self.message_timer = 80;
                                 self.combat = CombatState::Explore;
                                 self.typing.clear();
+                            }
+                        }
+                    }
+                    SpellEffect::Slow(turns) => {
+                        if enemy_idx < self.enemies.len() {
+                            let e_hanzi = self.enemies[enemy_idx].hanzi;
+                            self.enemies[enemy_idx].stunned = true; // overworld: stun as proxy for slow
+                            self.flash = Some((150, 200, 255, 0.15));
+                            self.message = format!(
+                                "{}🐌 {} is slowed for {} turns! It loses its next action.",
+                                spell.hanzi, e_hanzi, turns
+                            );
+                            self.message_timer = 60;
+                        }
+                    }
+                    SpellEffect::Teleport => {
+                        // Overworld: blink past the enemy
+                        self.flash = Some((100, 210, 255, 0.2));
+                        self.message = format!(
+                            "{}💨 You vanish in a gust of wind and reappear safely!",
+                            spell.hanzi
+                        );
+                        self.message_timer = 60;
+                        self.combat = CombatState::Explore;
+                        self.typing.clear();
+                    }
+                    SpellEffect::Poison(dmg, turns) => {
+                        if enemy_idx < self.enemies.len() {
+                            let applied_dmg = dmg * turns * arcane_mult + spell_power;
+                            if let Some((ex, ey)) = e_screen {
+                                self.particles.spawn_drain(ex, ey, &mut self.rng_state);
+                            }
+                            self.enemies[enemy_idx].hp -= applied_dmg;
+                            let e_hanzi = self.enemies[enemy_idx].hanzi;
+                            if self.enemies[enemy_idx].hp <= 0 {
+                                let available = radical::radicals_for_floor(self.floor_num);
+                                let drop_idx = self.rng_next() as usize % available.len();
+                                self.player.add_radical(available[drop_idx].ch);
+                                self.message = format!(
+                                    "{}☠ Venom courses through {}! {} poison damage! Defeated! Got [{}]",
+                                    spell.hanzi, e_hanzi, applied_dmg, available[drop_idx].ch
+                                );
+                                self.message_timer = 80;
+                                self.combat = CombatState::Explore;
+                                self.typing.clear();
+                            } else {
+                                self.message = format!(
+                                    "{}☠ Poison seeps into {}! {} damage ({} HP left)",
+                                    spell.hanzi, e_hanzi, applied_dmg, self.enemies[enemy_idx].hp
+                                );
+                                self.message_timer = 60;
+                            }
+                        }
+                    }
+                    SpellEffect::FocusRestore(amt) => {
+                        let amt = amt * arcane_mult + spell_power;
+                        self.player.hp = (self.player.hp + amt).min(self.player.max_hp);
+                        self.particles
+                            .spawn_heal(p_screen.0, p_screen.1, &mut self.rng_state);
+                        self.flash = Some((80, 180, 255, 0.15));
+                        self.message = format!(
+                            "{}🧘 Mental focus restored! +{} HP (now {}/{})",
+                            spell.hanzi, amt, self.player.hp, self.player.max_hp
+                        );
+                        self.message_timer = 60;
+                    }
+                    SpellEffect::ArmorBreak => {
+                        if enemy_idx < self.enemies.len() {
+                            let dmg = 2 * arcane_mult + spell_power;
+                            if let Some((ex, ey)) = e_screen {
+                                self.particles.spawn_kill(ex, ey, &mut self.rng_state);
+                            }
+                            self.enemies[enemy_idx].hp -= dmg;
+                            let e_hanzi = self.enemies[enemy_idx].hanzi;
+                            if self.enemies[enemy_idx].hp <= 0 {
+                                let available = radical::radicals_for_floor(self.floor_num);
+                                let drop_idx = self.rng_next() as usize % available.len();
+                                self.player.add_radical(available[drop_idx].ch);
+                                self.message = format!(
+                                    "{}💥 Armor-breaking strike shatters {}! {} damage! Defeated! Got [{}]",
+                                    spell.hanzi, e_hanzi, dmg, available[drop_idx].ch
+                                );
+                                self.message_timer = 80;
+                                self.combat = CombatState::Explore;
+                                self.typing.clear();
+                            } else {
+                                self.message = format!(
+                                    "{}💥 Armor-breaking force hits {}! {} damage ({} HP left)",
+                                    spell.hanzi, e_hanzi, dmg, self.enemies[enemy_idx].hp
+                                );
+                                self.message_timer = 60;
                             }
                         }
                     }
@@ -7557,32 +7874,22 @@ fn spell_category(effect: &SpellEffect) -> &'static str {
         SpellEffect::Drain(_) => "drain",
         SpellEffect::Stun => "stun",
         SpellEffect::Pacify => "utility",
+        SpellEffect::Slow(_) => "stun",
+        SpellEffect::Teleport => "utility",
+        SpellEffect::Poison(_, _) => "drain",
+        SpellEffect::FocusRestore(_) => "heal",
+        SpellEffect::ArmorBreak => "strike",
     }
 }
 
 fn combat_prompt_for(enemy: &Enemy, listening_mode: ListenMode, mirror_hint: bool) -> String {
-    if !enemy.components.is_empty() {
-        let comp = enemy.components[0];
-        let pinyin = vocab::vocab_entry_by_hanzi(comp)
-            .map(|e| e.pinyin)
-            .unwrap_or("???");
-        return format!("Shielded by {}! Type {} to break.", comp, pinyin);
-    }
-
     let pinyin_hint = if mirror_hint {
         format!(" (Hint: {})", enemy.pinyin)
     } else {
         String::new()
     };
 
-    if listening_mode == ListenMode::ToneOnly && !enemy.is_elite {
-        format!(
-            "🎵 What tone is {}? Type 1-4...{}",
-            enemy.meaning, pinyin_hint
-        )
-    } else if listening_mode == ListenMode::FullAudio && !enemy.is_elite {
-        format!("🎧 Listen! Type the pinyin you hear...{}", pinyin_hint)
-    } else if enemy.is_elite {
+    if enemy.is_elite {
         let target = enemy
             .hanzi
             .chars()
@@ -7594,6 +7901,19 @@ fn combat_prompt_for(enemy: &Enemy, listening_mode: ListenMode, mirror_hint: boo
             "Compound foe {} ({}) — break it syllable by syllable. Start with {} = {}.{}",
             enemy.hanzi, enemy.meaning, target, expected, pinyin_hint
         )
+    } else if !enemy.components.is_empty() {
+        let comp = enemy.components[0];
+        let pinyin = vocab::vocab_entry_by_hanzi(comp)
+            .map(|e| e.pinyin)
+            .unwrap_or("???");
+        format!("Shielded by {}! Type {} to break.", comp, pinyin)
+    } else if listening_mode == ListenMode::ToneOnly {
+        format!(
+            "🎵 What tone is {}? Type 1-4...{}",
+            enemy.meaning, pinyin_hint
+        )
+    } else if listening_mode == ListenMode::FullAudio {
+        format!("🎧 Listen! Type the pinyin you hear...{}", pinyin_hint)
     } else {
         format!(
             "Type pinyin for {} ({}){}",
@@ -7705,9 +8025,20 @@ fn enemy_look_text(enemy: &Enemy) -> String {
 
     let actions = enemy.radical_actions();
     if !actions.is_empty() {
-        let action_list: Vec<&str> = actions.iter().map(|a| a.name()).collect();
-        // Append to the look description
-        text.push_str(&format!(" | Abilities: {}", action_list.join(", ")));
+        let mut by_radical: Vec<(&str, Vec<&str>)> = Vec::new();
+        for action in &actions {
+            let rad = action.radical();
+            if let Some(entry) = by_radical.iter_mut().find(|(r, _)| *r == rad) {
+                entry.1.push(action.name());
+            } else {
+                by_radical.push((rad, vec![action.name()]));
+            }
+        }
+        let grouped: Vec<String> = by_radical
+            .iter()
+            .map(|(rad, names)| format!("{}: {}", rad, names.join(", ")))
+            .collect();
+        text.push_str(&format!(" | Abilities: {}", grouped.join(" | ")));
     }
 
     text
@@ -10078,6 +10409,13 @@ pub fn init_game() -> Result<(), JsValue> {
                             battle.available_spells.remove(spell_idx);
                         }
                     }
+
+                    for consumed in &battle.consumed_radicals {
+                        if let Some(pos) = gs.player.radicals.iter().position(|r| r == consumed) {
+                            gs.player.radicals.remove(pos);
+                        }
+                    }
+                    battle.consumed_radicals.clear();
 
                     match result {
                         combat::input::BattleEvent::Flee => {

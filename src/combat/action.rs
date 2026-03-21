@@ -84,6 +84,11 @@ pub fn deal_damage(battle: &mut TacticalBattle, target_idx: usize, raw_damage: i
 
     damage = damage.max(1);
 
+    if unit.marked_extra_damage > 0 {
+        damage += unit.marked_extra_damage;
+        unit.marked_extra_damage = 0;
+    }
+
     let reading_bonus = word_group_order_bonus(battle, target_idx, damage);
     damage += reading_bonus;
 
@@ -148,6 +153,41 @@ pub fn deal_damage_from(
     } else {
         None
     };
+
+    let target = &mut battle.units[target_idx];
+    let mut attacker_damage = 0;
+    let mut retaliation_msg = None;
+
+    if target.thorn_armor_turns > 0 {
+        attacker_damage += 1;
+        retaliation_msg = Some("Thorn armor retaliates for 1 damage!".to_string());
+    }
+    if target.radical_counter {
+        attacker_damage += 2;
+        target.radical_counter = false;
+        let msg = if retaliation_msg.is_some() {
+            format!(
+                "{} Radical Counter strikes back for 2 damage!",
+                retaliation_msg.unwrap()
+            )
+        } else {
+            "Radical Counter strikes back for 2 damage!".to_string()
+        };
+        retaliation_msg = Some(msg);
+    }
+
+    if attacker_damage > 0 {
+        let attacker = &mut battle.units[attacker_idx];
+        attacker.hp -= attacker_damage;
+        if attacker.hp <= 0 {
+            attacker.hp = 0;
+            attacker.alive = false;
+        }
+        if let Some(msg) = retaliation_msg {
+            battle.log_message(msg);
+        }
+    }
+
     (actual, label)
 }
 

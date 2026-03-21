@@ -38,6 +38,16 @@ pub enum SpellEffect {
     Stun,
     /// Convince a foe to stand down
     Pacify,
+    /// Apply Slow status for N turns
+    Slow(i32),
+    /// Swap positions with target enemy
+    Teleport,
+    /// Apply poison damage over time
+    Poison(i32, i32),
+    /// Restore mental focus
+    FocusRestore(i32),
+    /// Strip enemy radical armor
+    ArmorBreak,
 }
 
 impl SpellEffect {
@@ -51,6 +61,11 @@ impl SpellEffect {
             SpellEffect::Drain(_) => "🩸 Drain",
             SpellEffect::Stun => "⚡ Stun",
             SpellEffect::Pacify => "☯ Pacify",
+            SpellEffect::Slow(_) => "❄ Slow",
+            SpellEffect::Teleport => "🌀 Swap",
+            SpellEffect::Poison(_, _) => "☠ Poison",
+            SpellEffect::FocusRestore(_) => "🧘 Focus",
+            SpellEffect::ArmorBreak => "💥 Shatter",
         }
     }
 
@@ -67,6 +82,20 @@ impl SpellEffect {
             SpellEffect::Stun => "Stuns the current enemy, skipping their next attack.".to_string(),
             SpellEffect::Pacify => {
                 "Convinces a foe to stand down, ending the fight peacefully.".to_string()
+            }
+            SpellEffect::Slow(turns) => {
+                format!("Slows target for {} turns, reducing their movement.", turns)
+            }
+            SpellEffect::Teleport => "Swap positions with target enemy.".to_string(),
+            SpellEffect::Poison(dmg, turns) => {
+                format!(
+                    "Poisons target for {} damage/turn over {} turns.",
+                    dmg, turns
+                )
+            }
+            SpellEffect::FocusRestore(amt) => format!("Restores {} mental focus.", amt),
+            SpellEffect::ArmorBreak => {
+                "Destroys target's radical armor, leaving them vulnerable.".to_string()
             }
         }
     }
@@ -329,7 +358,7 @@ pub const RECIPES: &[Recipe] = &[
         output_hanzi: "鸣",
         output_pinyin: "míng",
         output_meaning: "cry of a bird",
-        effect: SpellEffect::FireAoe(2),
+        effect: SpellEffect::Slow(2),
     },
     Recipe {
         inputs: &["口", "日"],
@@ -357,7 +386,7 @@ pub const RECIPES: &[Recipe] = &[
         output_hanzi: "霜",
         output_pinyin: "shuāng",
         output_meaning: "frost",
-        effect: SpellEffect::FireAoe(4),
+        effect: SpellEffect::Slow(3),
     },
     Recipe {
         inputs: &["火", "土"],
@@ -407,7 +436,7 @@ pub const RECIPES: &[Recipe] = &[
         output_hanzi: "思",
         output_pinyin: "sī",
         output_meaning: "to ponder",
-        effect: SpellEffect::Heal(3),
+        effect: SpellEffect::FocusRestore(3),
     },
     Recipe {
         inputs: &["田", "木"],
@@ -421,7 +450,7 @@ pub const RECIPES: &[Recipe] = &[
         output_hanzi: "枫",
         output_pinyin: "fēng",
         output_meaning: "maple tree",
-        effect: SpellEffect::Heal(3),
+        effect: SpellEffect::Teleport,
     },
     Recipe {
         inputs: &["力", "口", "木"],
@@ -449,14 +478,14 @@ pub const RECIPES: &[Recipe] = &[
         output_hanzi: "崩",
         output_pinyin: "bēng",
         output_meaning: "to collapse",
-        effect: SpellEffect::Heal(3),
+        effect: SpellEffect::ArmorBreak,
     },
     Recipe {
         inputs: &["米", "大"],
         output_hanzi: "类",
         output_pinyin: "lèi",
         output_meaning: "kind/type",
-        effect: SpellEffect::Heal(3),
+        effect: SpellEffect::FocusRestore(2),
     },
     Recipe {
         inputs: &["月", "田", "心"],
@@ -506,7 +535,7 @@ pub const RECIPES: &[Recipe] = &[
         output_hanzi: "岚",
         output_pinyin: "lán",
         output_meaning: "mountain mist",
-        effect: SpellEffect::Shield,
+        effect: SpellEffect::Teleport,
     },
     Recipe {
         inputs: &["人", "王"],
@@ -542,7 +571,7 @@ pub const RECIPES: &[Recipe] = &[
         output_hanzi: "如",
         output_pinyin: "rú",
         output_meaning: "as if/like",
-        effect: SpellEffect::StrongHit(3),
+        effect: SpellEffect::Slow(2),
     },
     Recipe {
         inputs: &["刀", "口"],
@@ -564,14 +593,14 @@ pub const RECIPES: &[Recipe] = &[
         output_hanzi: "呗",
         output_pinyin: "bài",
         output_meaning: "to chant",
-        effect: SpellEffect::Drain(3),
+        effect: SpellEffect::Poison(1, 4),
     },
     Recipe {
         inputs: &["虫", "马"],
         output_hanzi: "蚂",
         output_pinyin: "mǎ",
         output_meaning: "ant",
-        effect: SpellEffect::Drain(3),
+        effect: SpellEffect::Poison(2, 3),
     },
     // ── Stun (skip enemy turn) ──────────────────────────────────────────────
     Recipe {
@@ -622,7 +651,7 @@ pub const RECIPES: &[Recipe] = &[
         output_hanzi: "鬼火",
         output_pinyin: "guǐ huǒ",
         output_meaning: "will-o-wisp",
-        effect: SpellEffect::Drain(6),
+        effect: SpellEffect::Poison(3, 3),
     },
     Recipe {
         inputs: &["玉", "心"],

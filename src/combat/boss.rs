@@ -106,7 +106,7 @@ fn scholar_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<String
 // ── Elementalist ─────────────────────────────────────────────────────────────
 // Adapts resistance to last spell school. Terrain shifts every 4th turn.
 
-fn elementalist_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<String> {
+fn elementalist_action(battle: &mut TacticalBattle, _unit_idx: usize) -> Option<String> {
     let turn = battle.turn_number;
 
     if turn % 4 == 0 {
@@ -224,6 +224,9 @@ fn mimic_king_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<Str
             statuses: Vec::new(),
             stunned: false,
             radical_armor: 0,
+            radical_counter: false,
+            marked_extra_damage: 0,
+            thorn_armor_turns: 0,
             radical_dodge: false,
             radical_multiply: false,
             fortify_stacks: 0,

@@ -1,18 +1,19 @@
 use crate::combat::action::deal_damage;
 use crate::combat::terrain::{apply_terrain_interactions, TerrainSource};
 use crate::combat::TacticalBattle;
-use crate::enemy::RadicalAction;
+use crate::enemy::{PlayerRadicalAbility, RadicalAction};
 use crate::status::{StatusInstance, StatusKind};
 
-/// Apply a radical action from enemy `unit_idx` to the tactical battle.
-/// Returns a log message describing what happened.
 pub fn apply_radical_action(
     battle: &mut TacticalBattle,
     unit_idx: usize,
     action: RadicalAction,
 ) -> String {
     match action {
-        RadicalAction::FireBreath => {
+        RadicalAction::SpreadingWildfire => {
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Burn { damage: 1 }, 3));
             let ux = battle.units[unit_idx].x;
             let uy = battle.units[unit_idx].y;
             let facing = battle.units[unit_idx].facing;
@@ -20,114 +21,896 @@ pub fn apply_radical_action(
             for i in 1..=3 {
                 fire_tiles.push((ux + facing.dx() * i, uy + facing.dy() * i));
             }
+            let terrain_msgs =
+                apply_terrain_interactions(battle, TerrainSource::FireSpell, &fire_tiles);
+            for tm in terrain_msgs {
+                battle.log_message(&tm);
+            }
+            format!("{} — Spreads wildfire!", action.name())
+        }
+        RadicalAction::ErosiveFlow => {
+            battle.units[0].radical_armor = battle.units[0].radical_armor.saturating_sub(1);
             battle.units[0]
                 .statuses
-                .push(StatusInstance::new(StatusKind::Burn { damage: 1 }, 3));
+                .push(StatusInstance::new(StatusKind::Slow, 3));
+            format!("{} — Armor eroded and slowed!", action.name())
+        }
+        RadicalAction::OverwhelmingForce => {
+            let missing = battle.units[unit_idx].max_hp - battle.units[unit_idx].hp;
+            let dmg = 1 + missing / 2;
+            let actual = deal_damage(battle, 0, dmg);
+            format!(
+                "{} — Strikes with overwhelming force! (-{} HP)",
+                action.name(),
+                actual
+            )
+        }
+        RadicalAction::DoubtSeed => {
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Confused, 2));
+            format!("{} — Sows a seed of doubt!", action.name())
+        }
+        RadicalAction::DevouringMaw => {
+            let actual = deal_damage(battle, 0, 1);
+            let mut stole_dodge = false;
+            let mut stole_armor = 0;
+
+            let player = &mut battle.units[0];
+            if player.radical_dodge {
+                player.radical_dodge = false;
+                stole_dodge = true;
+            } else if player.radical_counter {
+                player.radical_counter = false;
+            } else if player.radical_armor > 0 {
+                stole_armor = player.radical_armor;
+                player.radical_armor = 0;
+            } else if player.defending {
+                player.defending = false;
+            }
+
+            if stole_dodge {
+                battle.units[unit_idx].radical_dodge = true;
+            }
+            if stole_armor > 0 {
+                battle.units[unit_idx].radical_armor += stole_armor;
+            }
+            format!("{} — Devours protection! (-{} HP)", action.name(), actual)
+        }
+        RadicalAction::WitnessMark => {
+            battle.units[0].marked_extra_damage = 3;
+            format!("{} — You are marked!", action.name())
+        }
+        RadicalAction::SleightReversal => {
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.units[0].x = battle.units[unit_idx].x;
+            battle.units[0].y = battle.units[unit_idx].y;
+            battle.units[unit_idx].x = px;
+            battle.units[unit_idx].y = py;
+            format!("{} — Positions swapped!", action.name())
+        }
+        RadicalAction::RootingGrasp => {
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Slow, 2));
+            battle.units[unit_idx].radical_armor += 1;
+            format!("{} — Grasping roots!", action.name())
+        }
+        RadicalAction::HarvestReaping => {
+            let p_hp = battle.units[0].hp;
+            let p_max = battle.units[0].max_hp;
+            let dmg = if p_hp * 100 < p_max * 40 { 3 } else { 1 };
+            let actual = deal_damage(battle, 0, dmg);
+            format!("{} — Reaps the harvest! (-{} HP)", action.name(), actual)
+        }
+        RadicalAction::RevealingDawn => {
+            battle.units[unit_idx].statuses.retain(|s| !s.is_negative());
+            let ux = battle.units[unit_idx].x;
+            let uy = battle.units[unit_idx].y;
+            for i in 1..battle.units.len() {
+                if battle.units[i].alive {
+                    let dist = (battle.units[i].x - ux).abs() + (battle.units[i].y - uy).abs();
+                    if dist <= 3 {
+                        battle.units[i].statuses.retain(|s| {
+                            !matches!(
+                                s.kind,
+                                StatusKind::Burn { .. }
+                                    | StatusKind::Poison { .. }
+                                    | StatusKind::Bleed { .. }
+                            )
+                        });
+                    }
+                }
+            }
+            format!("{} — A revealing dawn!", action.name())
+        }
+        RadicalAction::WaningCurse => {
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Poison { damage: 2 }, 3));
+            format!("{} — A waning curse!", action.name())
+        }
+        RadicalAction::MortalResilience => {
+            let max_hp = battle.units[unit_idx].max_hp;
+            let hp = battle.units[unit_idx].hp;
+            if hp * 3 <= max_hp {
+                battle.units[unit_idx].hp = hp.max(1);
+                battle.units[unit_idx].damage += 2;
+                format!("{} — Pushed to the brink!", action.name())
+            } else {
+                battle.units[unit_idx].radical_armor += 1;
+                format!("{} — Steels themselves!", action.name())
+            }
+        }
+        RadicalAction::MaternalShield => {
+            battle.units[unit_idx].radical_counter = true;
+            battle.units[unit_idx].thorn_armor_turns = 3;
+            format!("{} — A protective shield forms!", action.name())
+        }
+        RadicalAction::PotentialBurst => {
+            let actual = deal_damage(battle, 0, 1);
+            battle.units[0].marked_extra_damage += 2;
+            format!("{} — Potential bursts! (-{} HP)", action.name(), actual)
+        }
+        RadicalAction::ChasingChaff => {
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Confused, 1));
+            format!("{} — Chases the chaff!", action.name())
+        }
+        RadicalAction::CrossroadsGambit => {
+            let seed = (battle.turn_number as u64)
+                .wrapping_mul(31)
+                .wrapping_add(unit_idx as u64)
+                .wrapping_mul(17)
+                % 2;
+            if seed == 0 {
+                let actual = deal_damage(battle, 0, 4);
+                format!("{} — The gambit succeeds! (-{} HP)", action.name(), actual)
+            } else {
+                battle.units[unit_idx].stunned = true;
+                format!("{} — The gambit fails! (Stunned)", action.name())
+            }
+        }
+        RadicalAction::RigidStance => {
+            battle.units[unit_idx].radical_armor += 4;
+            battle.units[unit_idx].radical_dodge = false;
+            format!("{} — Takes a rigid stance!", action.name())
+        }
+        RadicalAction::GroundingWeight => {
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Slow, 3));
+            let actual = deal_damage(battle, 0, 1);
+            format!("{} — A crushing weight! (-{} HP)", action.name(), actual)
+        }
+        RadicalAction::EchoStrike => {
+            let dmg = battle.units[unit_idx].damage;
+            let actual = deal_damage(battle, 0, dmg);
+            format!("{} — An echoing strike! (-{} HP)", action.name(), actual)
+        }
+        RadicalAction::PreciseExecution => {
+            let p_hp = battle.units[0].hp;
+            let p_max = battle.units[0].max_hp;
+            let dmg = if p_hp * 100 < p_max * 25 { 4 } else { 1 };
+            let actual = deal_damage(battle, 0, dmg);
+            format!("{} — Precise execution! (-{} HP)", action.name(), actual)
+        }
+        RadicalAction::CleavingCut => {
+            let actual = deal_damage(battle, 0, 2);
+            battle.units[0].max_hp = battle.units[0].max_hp.saturating_sub(1).max(1);
+            battle.units[0].hp = battle.units[0].hp.min(battle.units[0].max_hp);
+            format!(
+                "{} — A cleaving cut! (-{} HP, Max HP -1)",
+                action.name(),
+                actual
+            )
+        }
+        RadicalAction::BindingOath => {
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Slow, 3));
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Confused, 1));
+            format!("{} — Bound by oath!", action.name())
+        }
+        RadicalAction::PursuingSteps => {
+            let mut nx = battle.units[unit_idx].x;
+            let mut ny = battle.units[unit_idx].y;
+            for _ in 0..2 {
+                let px = battle.units[0].x;
+                let py = battle.units[0].y;
+                let dx = (px - nx).signum();
+                let dy = (py - ny).signum();
+                if (px - nx).abs() > (py - ny).abs() {
+                    nx += dx;
+                } else {
+                    ny += dy;
+                }
+            }
+            battle.units[unit_idx].x = nx.clamp(0, battle.arena.width as i32 - 1);
+            battle.units[unit_idx].y = ny.clamp(0, battle.arena.height as i32 - 1);
+            let actual = deal_damage(battle, 0, 1);
+            format!("{} — Pursues and strikes! (-{} HP)", action.name(), actual)
+        }
+        RadicalAction::EntanglingWeb => {
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Slow, 3));
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Bleed { damage: 1 }, 2));
+            format!("{} — Caught in a web!", action.name())
+        }
+        RadicalAction::ThresholdSeal => {
+            battle.units[unit_idx].radical_armor += 3;
+            battle.units[unit_idx]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Slow, 1));
+            format!("{} — Seals the threshold!", action.name())
+        }
+        RadicalAction::CavalryCharge => {
+            let dist = (battle.units[unit_idx].x - battle.units[0].x).abs()
+                + (battle.units[unit_idx].y - battle.units[0].y).abs();
+            let dmg = dist.min(4);
+            let actual = deal_damage(battle, 0, dmg);
+            let facing = battle.units[unit_idx].facing;
+            battle.units[0].x =
+                (battle.units[0].x + facing.dx() * 2).clamp(0, battle.arena.width as i32 - 1);
+            battle.units[0].y =
+                (battle.units[0].y + facing.dy() * 2).clamp(0, battle.arena.height as i32 - 1);
+            format!("{} — A devastating charge! (-{} HP)", action.name(), actual)
+        }
+        RadicalAction::SoaringEscape => {
+            battle.units[unit_idx].radical_dodge = true;
+            battle.units[unit_idx].stored_movement += 2;
+            format!("{} — Takes to the skies!", action.name())
+        }
+        RadicalAction::DownpourBarrage => {
+            let actual = deal_damage(battle, 0, 1);
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Bleed { damage: 1 }, 3));
+            format!("{} — A barrage of rain! (-{} HP)", action.name(), actual)
+        }
+        RadicalAction::PetrifyingGaze => {
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Slow, 3));
+            battle.units[unit_idx].radical_armor += 2;
+            format!("{} — Petrifying gaze!", action.name())
+        }
+        RadicalAction::ParasiticSwarm => {
+            let actual = deal_damage(battle, 0, 1);
+            let heal = actual + 1;
+            battle.units[unit_idx].hp =
+                (battle.units[unit_idx].hp + heal).min(battle.units[unit_idx].max_hp);
+            format!("{} — A swarm drains you! (-{} HP)", action.name(), actual)
+        }
+        RadicalAction::MercenaryPact => {
+            let u_hp = battle.units[unit_idx].hp;
+            battle.units[unit_idx].hp = (u_hp - 2).max(1);
+            let ux = battle.units[unit_idx].x;
+            let uy = battle.units[unit_idx].y;
+            for i in 1..battle.units.len() {
+                if battle.units[i].alive {
+                    let dist = (battle.units[i].x - ux).abs() + (battle.units[i].y - uy).abs();
+                    if dist <= 3 {
+                        battle.units[i].damage += 1;
+                        battle.units[i].radical_armor += 1;
+                    }
+                }
+            }
+            format!("{} — Blood paid for power!", action.name())
+        }
+        RadicalAction::ImmovablePeak => {
+            battle.units[unit_idx].radical_armor += 3;
+            battle.units[unit_idx].fortify_stacks += 1;
+            format!("{} — Unyielding as a mountain!", action.name())
+        }
+        RadicalAction::SavageMaul => {
+            let actual = deal_damage(battle, 0, 3);
+            battle.units[unit_idx].hp = (battle.units[unit_idx].hp - 1).max(1);
+            battle.units[unit_idx].hp =
+                (battle.units[unit_idx].hp + 1).min(battle.units[unit_idx].max_hp);
+            format!("{} — Savage maul! (-{} HP)", action.name(), actual)
+        }
+        RadicalAction::ArcingShot => {
+            let dist = (battle.units[unit_idx].x - battle.units[0].x).abs()
+                + (battle.units[unit_idx].y - battle.units[0].y).abs();
+            let dmg = if dist >= 3 { 3 } else { 1 };
+            let actual = deal_damage(battle, 0, dmg);
+            format!("{} — An arcing shot! (-{} HP)", action.name(), actual)
+        }
+        RadicalAction::ConsumingBite => {
+            let actual = deal_damage(battle, 0, 2);
+            battle.units[unit_idx].max_hp += 1;
+            battle.units[unit_idx].hp =
+                (battle.units[unit_idx].hp + actual).min(battle.units[unit_idx].max_hp);
+            format!("{} — Consuming bite! (-{} HP)", action.name(), actual)
+        }
+        RadicalAction::CloakingGuise => {
+            battle.units[unit_idx].radical_dodge = true;
+            battle.units[unit_idx].fortify_stacks += 1;
+            format!("{} — Concealed from sight!", action.name())
+        }
+        RadicalAction::FlexibleCounter => {
+            battle.units[unit_idx].radical_counter = true;
+            battle.units[unit_idx].thorn_armor_turns = 2;
+            format!("{} — Readies a counter!", action.name())
+        }
+        RadicalAction::BlitzAssault => {
+            let mut nx = battle.units[unit_idx].x;
+            let mut ny = battle.units[unit_idx].y;
+            let mut moved = 0;
+            for _ in 0..3 {
+                let px = battle.units[0].x;
+                let py = battle.units[0].y;
+                if nx == px && ny == py {
+                    break;
+                }
+                let dx = (px - nx).signum();
+                let dy = (py - ny).signum();
+                if (px - nx).abs() > (py - ny).abs() {
+                    nx += dx;
+                } else {
+                    ny += dy;
+                }
+                moved += 1;
+            }
+            battle.units[unit_idx].x = nx.clamp(0, battle.arena.width as i32 - 1);
+            battle.units[unit_idx].y = ny.clamp(0, battle.arena.height as i32 - 1);
+            let actual = deal_damage(battle, 0, moved);
+            format!("{} — Blitz assault! (-{} HP)", action.name(), actual)
+        }
+        RadicalAction::CrushingWheels => {
+            let actual = deal_damage(battle, 0, 2);
+            let facing = battle.units[unit_idx].facing;
+            battle.units[0].x =
+                (battle.units[0].x + facing.dx() * 3).clamp(0, battle.arena.width as i32 - 1);
+            battle.units[0].y =
+                (battle.units[0].y + facing.dy() * 3).clamp(0, battle.arena.height as i32 - 1);
+            format!("{} — Crushing wheels! (-{} HP)", action.name(), actual)
+        }
+        RadicalAction::ImperialCommand => {
+            let ux = battle.units[unit_idx].x;
+            let uy = battle.units[unit_idx].y;
+            let mut best_ally = None;
+            let mut best_dist = i32::MAX;
+            for i in 1..battle.units.len() {
+                if i != unit_idx && battle.units[i].alive {
+                    let dist = (battle.units[i].x - ux).abs() + (battle.units[i].y - uy).abs();
+                    if dist < best_dist {
+                        best_dist = dist;
+                        best_ally = Some(i);
+                    }
+                }
+            }
+            if let Some(ally_idx) = best_ally {
+                battle.units[ally_idx].damage += 2;
+                let px = battle.units[0].x;
+                let py = battle.units[0].y;
+                let ax = battle.units[ally_idx].x;
+                let ay = battle.units[ally_idx].y;
+                let dx = (px - ax).signum();
+                let dy = (py - ay).signum();
+                if (px - ax).abs() > (py - ay).abs() {
+                    battle.units[ally_idx].x = (ax + dx).clamp(0, battle.arena.width as i32 - 1);
+                } else {
+                    battle.units[ally_idx].y = (ay + dy).clamp(0, battle.arena.height as i32 - 1);
+                }
+                format!("{} — Issues an imperial command!", action.name())
+            } else {
+                format!("{} — Command echoed in silence!", action.name())
+            }
+        }
+        RadicalAction::MagnifyingAura => {
+            let ux = battle.units[unit_idx].x;
+            let uy = battle.units[unit_idx].y;
+            for i in 1..battle.units.len() {
+                if battle.units[i].alive {
+                    let dist = (battle.units[i].x - ux).abs() + (battle.units[i].y - uy).abs();
+                    if dist <= 3 {
+                        battle.units[i].damage += 1;
+                    }
+                }
+            }
+            format!("{} — A magnifying aura!", action.name())
+        }
+        RadicalAction::NeedleStrike => {
+            let old_def = battle.units[0].defending;
+            let old_armor = battle.units[0].radical_armor;
+            battle.units[0].defending = false;
+            battle.units[0].radical_armor = 0;
+            let actual = deal_damage(battle, 0, 2);
+            battle.units[0].defending = old_def;
+            battle.units[0].radical_armor = old_armor;
+            format!("{} — Needle strike! (-{} HP)", action.name(), actual)
+        }
+        RadicalAction::ArtisanTrap => {
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Burn { damage: 2 }, 2));
+            format!("{} — Artisan's trap!", action.name())
+        }
+        RadicalAction::CleansingLight => {
+            battle.units[unit_idx].statuses.retain(|s| !s.is_negative());
+            battle.units[unit_idx].hp =
+                (battle.units[unit_idx].hp + 3).min(battle.units[unit_idx].max_hp);
+            format!("{} — Cleansed by light!", action.name())
+        }
+    }
+}
+
+pub fn apply_player_radical_ability(
+    battle: &mut TacticalBattle,
+    attacker_idx: usize,
+    target_idx: usize,
+    ability: PlayerRadicalAbility,
+) -> String {
+    let target_alive = target_idx < battle.units.len() && battle.units[target_idx].alive;
+
+    match ability {
+        PlayerRadicalAbility::FireStrike => {
+            let bonus = deal_damage(battle, target_idx, 2);
+            if target_alive {
+                battle.units[target_idx]
+                    .statuses
+                    .push(StatusInstance::new(StatusKind::Burn { damage: 1 }, 2));
+            }
+            format!(
+                "{} — +{} fire damage, target burning!",
+                ability.name(),
+                bonus
+            )
+        }
+        PlayerRadicalAbility::TidalSurge => {
+            if target_alive {
+                battle.units[target_idx]
+                    .statuses
+                    .push(StatusInstance::new(StatusKind::Slow, 2));
+            }
+            battle.focus = (battle.focus + 2).min(battle.max_focus);
+            format!("{} — Target slowed, +2 Focus!", ability.name())
+        }
+        PlayerRadicalAbility::PowerStrike => {
+            let bonus = battle.units[attacker_idx].damage / 2;
+            let actual = deal_damage(battle, target_idx, bonus.max(1));
+            format!("{} — Powerful blow! +{} damage!", ability.name(), actual)
+        }
+        PlayerRadicalAbility::Insight => {
+            crate::combat::ai::calculate_all_intents(battle);
+            format!("{} — All enemy intents revealed!", ability.name())
+        }
+        PlayerRadicalAbility::Devour => {
+            let base = battle.units[attacker_idx].damage;
+            let heal = (base / 2).max(1);
+            battle.units[attacker_idx].hp =
+                (battle.units[attacker_idx].hp + heal).min(battle.units[attacker_idx].max_hp);
+            format!("{} — Drained {} HP from the enemy!", ability.name(), heal)
+        }
+        PlayerRadicalAbility::TrueStrike => {
+            if target_alive {
+                let old_armor = battle.units[target_idx].radical_armor;
+                let old_def = battle.units[target_idx].defending;
+                battle.units[target_idx].radical_armor = 0;
+                battle.units[target_idx].defending = false;
+                let actual = deal_damage(battle, target_idx, 2);
+                battle.units[target_idx].radical_armor = old_armor;
+                battle.units[target_idx].defending = old_def;
+                format!(
+                    "{} — Pierced all defenses! +{} damage!",
+                    ability.name(),
+                    actual
+                )
+            } else {
+                format!("{} — True strike!", ability.name())
+            }
+        }
+        PlayerRadicalAbility::SwiftHands => {
+            battle.player_acted = false;
+            format!("{} — Free action! Attack again!", ability.name())
+        }
+        PlayerRadicalAbility::Entangle => {
+            if target_alive {
+                battle.units[target_idx]
+                    .statuses
+                    .push(StatusInstance::new(StatusKind::Slow, 3));
+            }
+            battle.units[attacker_idx].radical_armor += 1;
+            format!("{} — Target entangled, +1 armor!", ability.name())
+        }
+        PlayerRadicalAbility::Reap => {
+            if target_alive {
+                let ratio =
+                    battle.units[target_idx].hp as f64 / battle.units[target_idx].max_hp as f64;
+                if ratio < 0.4 {
+                    let actual = deal_damage(battle, target_idx, 3);
+                    format!("{} — Reaped the weak! +{} damage!", ability.name(), actual)
+                } else {
+                    format!("{} — Target too healthy to reap.", ability.name())
+                }
+            } else {
+                format!("{} — Nothing to reap.", ability.name())
+            }
+        }
+        PlayerRadicalAbility::SolarFlare => {
+            battle.units[attacker_idx]
+                .statuses
+                .retain(|s| !s.is_negative());
+            let actual = deal_damage(battle, target_idx, 2);
+            format!("{} — Debuffs cleared, +{} damage!", ability.name(), actual)
+        }
+        PlayerRadicalAbility::MoonVenom => {
+            if target_alive {
+                battle.units[target_idx]
+                    .statuses
+                    .push(StatusInstance::new(StatusKind::Poison { damage: 2 }, 3));
+            }
+            format!("{} — Target poisoned!", ability.name())
+        }
+        PlayerRadicalAbility::Resilience => {
+            let unit = &mut battle.units[attacker_idx];
+            unit.max_hp += 2;
+            unit.hp += 2;
+            format!("{} — Gained 2 temporary HP!", ability.name())
+        }
+        PlayerRadicalAbility::Guardian => {
+            battle.units[attacker_idx].radical_counter = true;
+            battle.units[attacker_idx].thorn_armor_turns = 2;
+            format!("{} — Counter stance! Thorn armor active!", ability.name())
+        }
+        PlayerRadicalAbility::GrowingStrike => {
+            if target_alive {
+                battle.units[target_idx].marked_extra_damage += 2;
+            }
+            format!("{} — Target marked for +2 damage!", ability.name())
+        }
+        PlayerRadicalAbility::Harvest => {
+            battle.combo_streak += 2;
+            format!(
+                "{} — Combo extended by 2! ({}x)",
+                ability.name(),
+                battle.combo_streak
+            )
+        }
+        PlayerRadicalAbility::Gamble => {
+            let roll = (battle.turn_number as u64)
+                .wrapping_mul(2654435761)
+                .wrapping_add(target_idx as u64 * 7)
+                % 100;
+            if roll < 50 {
+                let base = battle.units[attacker_idx].damage;
+                let actual = deal_damage(battle, target_idx, base * 2);
+                format!("{} — JACKPOT! Triple damage! +{}", ability.name(), actual)
+            } else {
+                format!("{} — Bad luck! Attack whiffed!", ability.name())
+            }
+        }
+        PlayerRadicalAbility::Shatter => {
+            if target_alive {
+                battle.units[target_idx].radical_armor = 0;
+                battle.units[target_idx].fortify_stacks = 0;
+            }
+            let actual = deal_damage(battle, target_idx, 1);
+            format!("{} — Armor shattered! +{} damage!", ability.name(), actual)
+        }
+        PlayerRadicalAbility::Earthquake => {
+            if target_alive {
+                battle.units[target_idx].stunned = true;
+                let px = battle.units[attacker_idx].x;
+                let py = battle.units[attacker_idx].y;
+                let tx = battle.units[target_idx].x;
+                let ty = battle.units[target_idx].y;
+                let dx = (tx - px).signum();
+                let dy = (ty - py).signum();
+                for _ in 0..2 {
+                    let nx = battle.units[target_idx].x + dx;
+                    let ny = battle.units[target_idx].y + dy;
+                    if nx >= 0
+                        && ny >= 0
+                        && nx < battle.arena.width as i32
+                        && ny < battle.arena.height as i32
+                        && battle
+                            .arena
+                            .tile(nx, ny)
+                            .map(|t| t.is_walkable())
+                            .unwrap_or(false)
+                        && battle.unit_at(nx, ny).is_none()
+                    {
+                        battle.units[target_idx].x = nx;
+                        battle.units[target_idx].y = ny;
+                    }
+                }
+            }
+            format!(
+                "{} — Ground shakes! Target pushed and stunned!",
+                ability.name()
+            )
+        }
+        PlayerRadicalAbility::DoubleStrike => {
+            let base = battle.units[attacker_idx].damage;
+            let actual = deal_damage(battle, target_idx, base);
+            format!("{} — Double strike! +{} damage!", ability.name(), actual)
+        }
+        PlayerRadicalAbility::Execution => {
+            if target_alive {
+                let ratio =
+                    battle.units[target_idx].hp as f64 / battle.units[target_idx].max_hp as f64;
+                if ratio <= 0.25 {
+                    battle.units[target_idx].hp = 0;
+                    battle.units[target_idx].alive = false;
+                    format!("{} — EXECUTED!", ability.name())
+                } else {
+                    format!("{} — Target too healthy (need <=25% HP).", ability.name())
+                }
+            } else {
+                format!("{} — Nothing to execute.", ability.name())
+            }
+        }
+        PlayerRadicalAbility::DeepCut => {
+            if target_alive {
+                battle.units[target_idx]
+                    .statuses
+                    .push(StatusInstance::new(StatusKind::Bleed { damage: 2 }, 2));
+                battle.units[target_idx].max_hp = (battle.units[target_idx].max_hp - 1).max(1);
+            }
+            format!("{} — Deep wound! Bleeding, -1 max HP!", ability.name())
+        }
+        PlayerRadicalAbility::Intimidate => {
+            if target_alive {
+                battle.units[target_idx]
+                    .statuses
+                    .push(StatusInstance::new(StatusKind::Confused, 2));
+            }
+            format!("{} — Target confused for 2 turns!", ability.name())
+        }
+        PlayerRadicalAbility::Lunge => {
+            let actual = deal_damage(battle, target_idx, 2);
+            battle.player_moved = false;
+            format!(
+                "{} — Lunge! +{} damage, free movement!",
+                ability.name(),
+                actual
+            )
+        }
+        PlayerRadicalAbility::Ensnare => {
+            if target_alive {
+                battle.units[target_idx]
+                    .statuses
+                    .push(StatusInstance::new(StatusKind::Slow, 3));
+                battle.units[target_idx]
+                    .statuses
+                    .push(StatusInstance::new(StatusKind::Bleed { damage: 1 }, 2));
+            }
+            format!("{} — Target ensnared! Slow + Bleed!", ability.name())
+        }
+        PlayerRadicalAbility::Fortify => {
+            battle.units[attacker_idx].radical_armor += 3;
+            format!("{} — Fortified! +3 armor!", ability.name())
+        }
+        PlayerRadicalAbility::Charge => {
+            if target_alive {
+                let px = battle.units[attacker_idx].x;
+                let py = battle.units[attacker_idx].y;
+                let tx = battle.units[target_idx].x;
+                let ty = battle.units[target_idx].y;
+                let dx = (tx - px).signum();
+                let dy = (ty - py).signum();
+                for _ in 0..3 {
+                    let nx = battle.units[target_idx].x + dx;
+                    let ny = battle.units[target_idx].y + dy;
+                    if nx >= 0
+                        && ny >= 0
+                        && nx < battle.arena.width as i32
+                        && ny < battle.arena.height as i32
+                        && battle
+                            .arena
+                            .tile(nx, ny)
+                            .map(|t| t.is_walkable())
+                            .unwrap_or(false)
+                        && battle.unit_at(nx, ny).is_none()
+                    {
+                        battle.units[target_idx].x = nx;
+                        battle.units[target_idx].y = ny;
+                    }
+                }
+            }
+            format!("{} — Target knocked back!", ability.name())
+        }
+        PlayerRadicalAbility::Windstep => {
+            battle.units[attacker_idx].stored_movement += 2;
+            format!("{} — +2 movement stored!", ability.name())
+        }
+        PlayerRadicalAbility::Downpour => {
+            let tx = battle.units[target_idx].x;
+            let ty = battle.units[target_idx].y;
+            let mut splashed = 0;
+            let splash_targets: Vec<usize> = (1..battle.units.len())
+                .filter(|&i| {
+                    i != target_idx
+                        && battle.units[i].alive
+                        && battle.units[i].is_enemy()
+                        && (battle.units[i].x - tx).abs() + (battle.units[i].y - ty).abs() <= 1
+                })
+                .collect();
+            for si in splash_targets {
+                deal_damage(battle, si, 1);
+                splashed += 1;
+            }
+            format!(
+                "{} — Splash! Hit {} adjacent enemies!",
+                ability.name(),
+                splashed
+            )
+        }
+        PlayerRadicalAbility::Concuss => {
+            if target_alive {
+                battle.units[target_idx].stunned = true;
+            }
+            format!("{} — Target stunned!", ability.name())
+        }
+        PlayerRadicalAbility::Infest => {
+            if target_alive {
+                battle.units[target_idx]
+                    .statuses
+                    .push(StatusInstance::new(StatusKind::Poison { damage: 1 }, 3));
+                battle.units[target_idx]
+                    .statuses
+                    .push(StatusInstance::new(StatusKind::Slow, 1));
+            }
+            format!("{} — Target infested! Poison + Slow!", ability.name())
+        }
+        PlayerRadicalAbility::Plunder => {
+            if !target_alive {
+                format!("{} — Plundered! Bonus gold!", ability.name())
+            } else {
+                format!("{} — Kill to claim bonus gold.", ability.name())
+            }
+        }
+        PlayerRadicalAbility::Bulwark => {
+            battle.units[attacker_idx].radical_armor += 2;
+            battle.units[attacker_idx].fortify_stacks += 1;
+            format!("{} — +2 armor, +1 fortify!", ability.name())
+        }
+        PlayerRadicalAbility::Frenzy => {
+            let actual = deal_damage(battle, target_idx, 1);
+            battle.units[attacker_idx].hp =
+                (battle.units[attacker_idx].hp + 1).min(battle.units[attacker_idx].max_hp);
+            format!("{} — Frenzied! +{} damage, heal 1!", ability.name(), actual)
+        }
+        PlayerRadicalAbility::Snipe => {
+            let actual = deal_damage(battle, target_idx, 2);
+            format!("{} — Sniped! +{} damage!", ability.name(), actual)
+        }
+        PlayerRadicalAbility::Nourish => {
+            battle.units[attacker_idx].hp =
+                (battle.units[attacker_idx].hp + 3).min(battle.units[attacker_idx].max_hp);
+            format!("{} — Nourished! +3 HP!", ability.name())
+        }
+        PlayerRadicalAbility::Evade => {
+            battle.units[attacker_idx].radical_dodge = true;
+            format!("{} — Will dodge next attack!", ability.name())
+        }
+        PlayerRadicalAbility::Riposte => {
+            battle.units[attacker_idx].radical_counter = true;
+            battle.units[attacker_idx].thorn_armor_turns = 2;
+            format!(
+                "{} — Riposte stance! Counter + thorn armor!",
+                ability.name()
+            )
+        }
+        PlayerRadicalAbility::HitAndRun => {
+            battle.player_moved = false;
+            format!("{} — Free movement!", ability.name())
+        }
+        PlayerRadicalAbility::Bulldoze => {
+            if target_alive {
+                let px = battle.units[attacker_idx].x;
+                let py = battle.units[attacker_idx].y;
+                let tx = battle.units[target_idx].x;
+                let ty = battle.units[target_idx].y;
+                let dx = (tx - px).signum();
+                let dy = (ty - py).signum();
+                let mut tiles_pushed = 0;
+                for _ in 0..2 {
+                    let nx = battle.units[target_idx].x + dx;
+                    let ny = battle.units[target_idx].y + dy;
+                    if nx >= 0
+                        && ny >= 0
+                        && nx < battle.arena.width as i32
+                        && ny < battle.arena.height as i32
+                        && battle
+                            .arena
+                            .tile(nx, ny)
+                            .map(|t| t.is_walkable())
+                            .unwrap_or(false)
+                        && battle.unit_at(nx, ny).is_none()
+                    {
+                        battle.units[target_idx].x = nx;
+                        battle.units[target_idx].y = ny;
+                        tiles_pushed += 1;
+                    }
+                }
+                if tiles_pushed > 0 {
+                    let actual = deal_damage(battle, target_idx, tiles_pushed);
+                    format!(
+                        "{} — Bulldozed {} tiles! +{} damage!",
+                        ability.name(),
+                        tiles_pushed,
+                        actual
+                    )
+                } else {
+                    format!("{} — Target against wall!", ability.name())
+                }
+            } else {
+                format!("{} — Nothing to push.", ability.name())
+            }
+        }
+        PlayerRadicalAbility::Inspire => {
+            battle.units[attacker_idx].damage += 1;
+            format!("{} — Inspired! +1 damage!", ability.name())
+        }
+        PlayerRadicalAbility::Cleave => {
+            let px = battle.units[attacker_idx].x;
+            let py = battle.units[attacker_idx].y;
+            let adj: Vec<usize> = (1..battle.units.len())
+                .filter(|&i| {
+                    i != target_idx
+                        && battle.units[i].alive
+                        && battle.units[i].is_enemy()
+                        && (battle.units[i].x - px).abs() + (battle.units[i].y - py).abs() <= 1
+                })
+                .collect();
+            let base = battle.units[attacker_idx].damage;
+            let mut hit_count = 0;
+            for ai in adj {
+                deal_damage(battle, ai, base);
+                hit_count += 1;
+            }
+            format!(
+                "{} — Cleaved {} additional enemies!",
+                ability.name(),
+                hit_count
+            )
+        }
+        PlayerRadicalAbility::PreciseStab => {
+            if target_alive {
+                let old_armor = battle.units[target_idx].radical_armor;
+                let old_def = battle.units[target_idx].defending;
+                battle.units[target_idx].radical_armor = 0;
+                battle.units[target_idx].defending = false;
+                let actual = deal_damage(battle, target_idx, 2);
+                battle.units[target_idx].radical_armor = old_armor;
+                battle.units[target_idx].defending = old_def;
+                format!(
+                    "{} — Precise stab! +{} armor-piercing!",
+                    ability.name(),
+                    actual
+                )
+            } else {
+                format!("{} — Precise stab!", ability.name())
+            }
+        }
+        PlayerRadicalAbility::Sabotage => {
+            let tx = battle.units[target_idx].x;
+            let ty = battle.units[target_idx].y;
+            let fire_tiles = vec![(tx - 1, ty), (tx + 1, ty), (tx, ty - 1), (tx, ty + 1)];
             let terrain_msgs =
                 apply_terrain_interactions(battle, TerrainSource::FireSpell, &fire_tiles);
             for tm in &terrain_msgs {
                 battle.log_message(tm);
             }
-            format!("{} — You catch fire!", action.name())
+            format!("{} — Fire terrain placed!", ability.name())
         }
-        RadicalAction::WaterShield => {
-            let unit = &mut battle.units[unit_idx];
-            unit.hp = (unit.hp + 2).min(unit.max_hp);
-            format!("{} — Enemy heals 2 HP!", action.name())
-        }
-        RadicalAction::PowerStrike => {
-            let actual = deal_damage(battle, 0, 2);
-            format!("{} — Extra {} damage!", action.name(), actual)
-        }
-        RadicalAction::SelfHeal => {
-            let unit = &mut battle.units[unit_idx];
-            unit.hp = (unit.hp + 3).min(unit.max_hp);
-            format!("{} — Enemy heals 3 HP!", action.name())
-        }
-        RadicalAction::WarCry => {
-            // WarCry affects spirit which lives on Player, not BattleUnit.
-            // In tactical mode, we just deal 1 damage as a substitute.
-            let actual = deal_damage(battle, 0, 1);
-            format!("{} — War cry shakes you! (-{} HP)", action.name(), actual)
-        }
-        RadicalAction::TrueSight => {
-            // Strip defending status from player.
-            battle.units[0].defending = false;
-            format!("{} — Your guard is broken!", action.name())
-        }
-        RadicalAction::Disarm => {
-            battle.units[0].damage = (battle.units[0].damage - 1).max(1);
-            format!("{} — Your grip weakens!", action.name())
-        }
-        RadicalAction::Root => {
-            battle.units[0]
+        PlayerRadicalAbility::Purify => {
+            battle.focus = (battle.focus + 3).min(battle.max_focus);
+            battle.units[attacker_idx]
                 .statuses
-                .push(StatusInstance::new(StatusKind::Poison { damage: 1 }, 1));
-            format!("{} — Roots bind your feet!", action.name())
-        }
-        RadicalAction::Fortify => {
-            battle.units[unit_idx].fortify_stacks += 1;
-            battle.units[unit_idx].damage += 1;
-            format!("{} — Enemy grows stronger!", action.name())
-        }
-        RadicalAction::Radiance => {
-            battle.units[0]
-                .statuses
-                .push(StatusInstance::new(StatusKind::Confused, 1));
-            format!("{} — Blinding light!", action.name())
-        }
-        RadicalAction::ShadowStep => {
-            battle.units[unit_idx].radical_dodge = true;
-            format!("{} — The enemy fades into shadow!", action.name())
-        }
-        RadicalAction::CallAlly => {
-            // In tactical battle, CallAlly has no effect (no overworld enemies).
-            format!("{} — A rallying cry echoes!", action.name())
-        }
-        RadicalAction::Charm => {
-            battle.units[0]
-                .statuses
-                .push(StatusInstance::new(StatusKind::Confused, 2));
-            format!("{} — Your mind clouds!", action.name())
-        }
-        RadicalAction::Swift => {
-            let dmg = battle.units[unit_idx].damage;
-            let actual = deal_damage(battle, 0, dmg);
-            format!("{} — Swift follow-up for {} damage!", action.name(), actual)
-        }
-        RadicalAction::Leech => {
-            let dmg = battle.units[unit_idx].damage;
-            let actual = deal_damage(battle, 0, dmg);
-            let unit = &mut battle.units[unit_idx];
-            unit.hp = (unit.hp + actual).min(unit.max_hp);
-            format!("{} — Drains {} life force!", action.name(), actual)
-        }
-        RadicalAction::Multiply => {
-            battle.units[unit_idx].radical_multiply = true;
-            format!("{} — Next attack strikes twice!", action.name())
-        }
-        RadicalAction::Armor => {
-            battle.units[unit_idx].radical_armor += 2;
-            format!("{} — Metal scales form!", action.name())
-        }
-        RadicalAction::Earthquake => {
-            let ux = battle.units[unit_idx].x;
-            let uy = battle.units[unit_idx].y;
-            let mut affected = Vec::new();
-            for dy in -2..=2i32 {
-                for dx in -2..=2i32 {
-                    if dx.abs() + dy.abs() <= 2 {
-                        affected.push((ux + dx, uy + dy));
-                    }
-                }
-            }
-            let actual = deal_damage(battle, 0, 1);
-            let terrain_msgs =
-                apply_terrain_interactions(battle, TerrainSource::Earthquake, &affected);
-            for tm in &terrain_msgs {
-                battle.log_message(tm);
-            }
-            format!("{} — The ground shakes! (-{} HP)", action.name(), actual)
+                .retain(|s| !s.is_negative());
+            format!("{} — Purified! +3 Focus, debuffs cleared!", ability.name())
         }
     }
 }

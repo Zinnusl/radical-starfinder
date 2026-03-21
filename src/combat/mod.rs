@@ -29,11 +29,11 @@ impl WuxingElement {
     /// Derive element from radical, if it matches one of the five.
     pub fn from_radical(radical: &str) -> Option<Self> {
         match radical {
-            "水" => Some(Self::Water),
+            "水" | "雨" => Some(Self::Water),
             "火" => Some(Self::Fire),
-            "金" => Some(Self::Metal),
-            "木" => Some(Self::Wood),
-            "土" => Some(Self::Earth),
+            "金" | "刀" => Some(Self::Metal),
+            "木" | "竹" => Some(Self::Wood),
+            "土" | "石" | "山" => Some(Self::Earth),
             _ => None,
         }
     }
@@ -56,26 +56,6 @@ impl WuxingElement {
             (Some(a), Some(d)) if a.beats(d) => 1.5,
             (Some(a), Some(d)) if d.beats(a) => 0.75,
             _ => 1.0,
-        }
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Water => "水 Water",
-            Self::Fire => "火 Fire",
-            Self::Metal => "金 Metal",
-            Self::Wood => "木 Wood",
-            Self::Earth => "土 Earth",
-        }
-    }
-
-    pub fn emoji(self) -> &'static str {
-        match self {
-            Self::Water => "💧",
-            Self::Fire => "🔥",
-            Self::Metal => "⚔",
-            Self::Wood => "🌿",
-            Self::Earth => "🪨",
         }
     }
 }
@@ -107,26 +87,6 @@ impl Weather {
             Self::SpiritualInk => "Spiritual Ink",
         }
     }
-
-    pub fn description(self) -> &'static str {
-        match self {
-            Self::Clear => "Normal conditions.",
-            Self::Rain => "Water spreads. Fire weakened. Lightning chains further.",
-            Self::Fog => "Reduced visibility. Spell range shortened.",
-            Self::Sandstorm => "Movement costs +1. Attacks may miss.",
-            Self::SpiritualInk => "Spell power +1. Focus regenerates faster.",
-        }
-    }
-
-    pub fn emoji(self) -> &'static str {
-        match self {
-            Self::Clear => "☀",
-            Self::Rain => "🌧",
-            Self::Fog => "🌫",
-            Self::Sandstorm => "🏜",
-            Self::SpiritualInk => "🖋",
-        }
-    }
 }
 
 // ── Enemy Intent (Telegraphed Attacks) ───────────────────────────────────────
@@ -139,24 +99,23 @@ pub enum EnemyIntent {
     /// Will move toward the player.
     Approach,
     /// Will use a radical ability.
+    #[allow(dead_code)]
     RadicalAbility { name: &'static str },
     /// Will retreat / move away.
     Retreat,
     /// Will wait / do nothing.
     Idle,
+    /// Will use a self-buff.
+    Buff,
+    /// Will heal self.
+    Heal,
+    /// Will use a ranged radical action.
+    RangedAttack,
+    /// Pack behavior, moving to surround player.
+    Surround,
 }
 
 impl EnemyIntent {
-    pub fn emoji(&self) -> &'static str {
-        match self {
-            Self::Attack => "⚔",
-            Self::Approach => "➡",
-            Self::RadicalAbility { .. } => "✦",
-            Self::Retreat => "←",
-            Self::Idle => "💤",
-        }
-    }
-
     pub fn label(&self) -> &'static str {
         match self {
             Self::Attack => "Attacking",
@@ -164,6 +123,10 @@ impl EnemyIntent {
             Self::RadicalAbility { name } => name,
             Self::Retreat => "Retreating",
             Self::Idle => "Idle",
+            Self::Buff => "Buffing",
+            Self::Heal => "Healing",
+            Self::RangedAttack => "Ranged Atk",
+            Self::Surround => "Surrounding",
         }
     }
 }
@@ -470,6 +433,12 @@ pub struct BattleUnit {
     pub stunned: bool,
     /// Temporary armor from radical action (reduces next player hit).
     pub radical_armor: i32,
+    /// Counter stance: reflect 2 damage to next attacker.
+    pub radical_counter: bool,
+    /// Extra damage marked on this unit (from WeakPoint). Reset after being hit.
+    pub marked_extra_damage: i32,
+    /// Thorn armor: attackers take 1 damage. Turns remaining.
+    pub thorn_armor_turns: i32,
     /// Will dodge next attack (ShadowStep).
     pub radical_dodge: bool,
     /// Next attack hits twice (Multiply).
@@ -506,7 +475,16 @@ impl BattleUnit {
 
     /// Effective movement points this turn (base + stored).
     pub fn effective_movement(&self) -> i32 {
-        self.movement + self.stored_movement
+        let base = self.movement + self.stored_movement;
+        if self
+            .statuses
+            .iter()
+            .any(|s| matches!(s.kind, crate::status::StatusKind::Slow))
+        {
+            (base / 2).max(1)
+        } else {
+            base
+        }
     }
 }
 
@@ -525,6 +503,7 @@ pub enum TypingAction {
         effect: SpellEffect,
     },
     /// Breaking an enemy's component shield.
+    #[allow(dead_code)]
     ShieldBreak {
         target_unit: usize,
         component: &'static str,
@@ -614,6 +593,7 @@ pub enum TargetMode {
     /// Selecting a spell target tile/unit (transitions to typing).
     Spell { spell_idx: usize },
     /// Selecting an enemy to break a component shield (transitions to typing).
+    #[allow(dead_code)]
     ShieldBreak,
 }
 
@@ -693,22 +673,22 @@ pub struct TacticalBattle {
     pub intents_calculated: bool,
     /// Accumulated spirit delta from tile effects (applied by game.rs each tick).
     pub pending_spirit_delta: i32,
+    /// Player radical abilities available this combat.
+    pub player_radical_abilities: Vec<(&'static str, crate::enemy::PlayerRadicalAbility)>,
+    /// Radicals consumed during this battle (the radical char strings).
+    pub consumed_radicals: Vec<&'static str>,
+    /// Currently selected radical ability for the next attack (index into player_radical_abilities).
+    pub selected_radical_ability: Option<usize>,
+    /// Whether the radical picker menu is open.
+    pub radical_picker_open: bool,
+    /// Cursor position in radical picker (0 = normal attack, 1+ = abilities).
+    pub radical_picker_cursor: usize,
 }
 
 impl TacticalBattle {
     /// Index of the unit whose turn it currently is.
     pub fn current_unit_idx(&self) -> usize {
         self.turn_queue[self.turn_queue_pos]
-    }
-
-    /// Reference to the unit whose turn it currently is.
-    pub fn current_unit(&self) -> &BattleUnit {
-        &self.units[self.current_unit_idx()]
-    }
-
-    /// Is it the player's turn?
-    pub fn is_player_turn(&self) -> bool {
-        self.current_unit().is_player()
     }
 
     /// Push a message to the battle log.

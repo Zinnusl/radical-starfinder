@@ -48,197 +48,592 @@ impl BossKind {
     }
 }
 
-fn get_components(hanzi: &str) -> Vec<&'static str> {
-    match hanzi {
-        "\u{660e}" => vec!["\u{65e5}", "\u{6708}"], // 明 = 日 + 月
-        "\u{597d}" => vec!["\u{5973}", "\u{5b50}"], // 好 = 女 + 子
-        "\u{6797}" => vec!["\u{6728}", "\u{6728}"], // 林 = 木 + 木
-        "\u{4f11}" => vec!["\u{4eba}", "\u{6728}"], // 休 = 人 + 木
-        "\u{770b}" => vec!["\u{624b}", "\u{76ee}"], // 看 = 手 + 目
-        "\u{4f53}" => vec!["\u{4eba}", "\u{672c}"], // 体 = 人 + 本
-        "\u{7537}" => vec!["\u{7530}", "\u{529b}"], // 男 = 田 + 力
-        "\u{601d}" => vec!["\u{7530}", "\u{5fc3}"], // 思 = 田 + 心
-        "\u{674e}" => vec!["\u{6728}", "\u{5b50}"], // 李 = 木 + 子
-        "\u{65e9}" => vec!["\u{65e5}", "\u{5341}"], // 早 = 日 + 十
-        "\u{9999}" => vec!["\u{79be}", "\u{65e5}"], // 香 = 禾 + 日
-        "\u{674f}" => vec!["\u{6728}", "\u{53e3}"], // 杏 = 木 + 口
-        "\u{5446}" => vec!["\u{53e3}", "\u{6728}"], // 呆 = 口 + 木
-        "\u{68ee}" => vec!["\u{6728}", "\u{6797}"], // 森 = 木 + 林
-        "\u{6676}" => vec!["\u{65e5}", "\u{65e5}", "\u{65e5}"], // 晶 = 日+日+日
-        "\u{4f17}" => vec!["\u{4eba}", "\u{4eba}", "\u{4eba}"], // 众 = 人+人+人
-        "\u{54c1}" => vec!["\u{53e3}", "\u{53e3}", "\u{53e3}"], // 品 = 口+口+口
-        "\u{706b}" => vec!["\u{706b}"],             // 火 = 火
-        "\u{6c34}" => vec!["\u{6c34}"],             // 水 = 水
-        "\u{571f}" => vec!["\u{571f}"],             // 土 = 土
-        "\u{91d1}" => vec!["\u{91d1}"],             // 金 = 金
-        "\u{6728}" => vec!["\u{6728}"],             // 木 = 木
-        "\u{65e5}" => vec!["\u{65e5}"],             // 日 = 日
-        "\u{6708}" => vec!["\u{6708}"],             // 月 = 月
-        "\u{5fc3}" => vec!["\u{5fc3}"],             // 心 = 心
-        "\u{529b}" => vec!["\u{529b}"],             // 力 = 力
-        "\u{53e3}" => vec!["\u{53e3}"],             // 口 = 口
-        "\u{76ee}" => vec!["\u{76ee}"],             // 目 = 目
-        "\u{624b}" => vec!["\u{624b}"],             // 手 = 手
-        "\u{7530}" => vec!["\u{7530}"],             // 田 = 田
-        "\u{4eba}" => vec!["\u{4eba}"],             // 人 = 人
-        "\u{5973}" => vec!["\u{5973}"],             // 女 = 女
-        "\u{5b50}" => vec!["\u{5b50}"],             // 子 = 子
-        "\u{79be}" => vec!["\u{79be}"],             // 禾 = 禾
-        "\u{5341}" => vec!["\u{5341}"],             // 十 = 十
-        "\u{60f3}" => vec!["\u{6728}", "\u{76ee}", "\u{5fc3}"], // 想 = 木+目+心
-        "\u{7167}" => vec!["\u{65e5}", "\u{53e3}", "\u{5200}"], // 照 = 日+口+刀
-        "\u{8bdd}" => vec!["\u{53e3}", "\u{5341}"], // 话 = 口 + 十(simplified)
-        "\u{52a8}" => vec!["\u{529b}"],             // 动 = 力
-        "\u{52a9}" => vec!["\u{529b}"],             // 助 = 力
-        "\u{529e}" => vec!["\u{529b}"],             // 办 = 力
-        "\u{70e7}" => vec!["\u{706b}"],             // 烧 = 火
-        "\u{706f}" => vec!["\u{706b}"],             // 灯 = 火
-        "\u{7076}" => vec!["\u{706b}"],             // 灶 = 火
-        "\u{6cb3}" => vec!["\u{6c34}"],             // 河 = 水(氵)
-        "\u{6d77}" => vec!["\u{6c34}"],             // 海 = 水
-        "\u{6e56}" => vec!["\u{6c34}"],             // 湖 = 水
-        "\u{6cc9}" => vec!["\u{6c34}"],             // 泉 = 水
-        "\u{6c60}" => vec!["\u{6c34}"],             // 池 = 水
-        "\u{82b1}" => vec!["\u{6728}"],             // 花 = 木(艹→木)
-        "\u{8349}" => vec!["\u{6728}"],             // 草 = 木
-        "\u{6811}" => vec!["\u{6728}"],             // 树 = 木
-        "\u{6839}" => vec!["\u{6728}"],             // 根 = 木
-        "\u{679c}" => vec!["\u{6728}", "\u{7530}"], // 果 = 木 + 田
-        "\u{76f8}" => vec!["\u{6728}", "\u{76ee}"], // 相 = 木 + 目
-        "\u{677e}" => vec!["\u{6728}"],             // 松 = 木
-        "\u{6751}" => vec!["\u{6728}"],             // 村 = 木
-        "\u{5fc5}" => vec!["\u{5fc3}"],             // 必 = 心
-        "\u{5fd8}" => vec!["\u{5fc3}"],             // 忘 = 心
-        "\u{5feb}" => vec!["\u{5fc3}"],             // 快 = 心
-        "\u{6124}" => vec!["\u{5fc3}"],             // 愤 = 心
-        "\u{60c5}" => vec!["\u{5fc3}"],             // 情 = 心
-        "\u{559c}" => vec!["\u{53e3}"],             // 喜 = 口
-        "\u{5403}" => vec!["\u{53e3}"],             // 吃 = 口
-        "\u{5582}" => vec!["\u{53e3}"],             // 喂 = 口
-        "\u{53eb}" => vec!["\u{53e3}"],             // 叫 = 口
-        "\u{5427}" => vec!["\u{53e3}"],             // 吧 = 口
-        "\u{7741}" => vec!["\u{76ee}"],             // 睁 = 目
-        "\u{7761}" => vec!["\u{76ee}"],             // 睡 = 目
-        "\u{773c}" => vec!["\u{76ee}"],             // 眼 = 目
-        "\u{7709}" => vec!["\u{76ee}"],             // 眉 = 目
-        "\u{62c9}" => vec!["\u{624b}"],             // 拉 = 手(扌)
-        "\u{6253}" => vec!["\u{624b}"],             // 打 = 手
-        "\u{62a5}" => vec!["\u{624b}"],             // 报 = 手
-        "\u{62b1}" => vec!["\u{624b}"],             // 抱 = 手
-        _ => vec![],
-    }
-}
+include!(concat!(env!("OUT_DIR"), "/decomposition_data.rs"));
 
 /// Special abilities derived from hanzi semantic components.
+/// Each radical maps to exactly ONE skill (1:1 mapping).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RadicalAction {
-    /// 火 fire — burn damage over time
-    FireBreath,
-    /// 水 water — shield (enemy heals 2 HP)
-    WaterShield,
-    /// 力 strength — extra damage (+2)
-    PowerStrike,
-    /// 心 heart — self heal 3 HP
-    SelfHeal,
-    /// 口 mouth — intimidate (player loses 1 spirit if spirit system exists, else just flavor)
-    WarCry,
-    /// 目 eye — reveal player shield status (removes shield)
-    TrueSight,
-    /// 手 hand — disarm (remove player weapon_state bonus for 1 fight, just +1 damage for now)
-    Disarm,
-    /// 木 wood — root (player takes +1 damage next wrong answer)
-    Root,
-    /// 田 field — fortify (enemy gains +1 damage permanently for this fight)
-    Fortify,
-    /// 日 sun — blind (next correct answer deals half damage)
-    Radiance,
-    /// 月 moon — dodge next attack
-    ShadowStep,
-    /// 人 person — summon an ally (just flavor text, no actual summon — too complex)
-    CallAlly,
-    /// 女 woman — charm (player skips next attack input)
-    Charm,
-    /// 子 child — enemy gets an extra counterattack
-    Swift,
-    /// 禾 grain — leech (heal equal to damage dealt)
-    Leech,
-    /// 十 ten — next attack hits twice  
-    Multiply,
-    /// 金 metal — armor (reduce next player hit by 2)
-    Armor,
-    /// 土 earth — earthquake (screen shake + 1 damage)
-    Earthquake,
+    /// 火 fire — Burn DoT, spreading fire terrain
+    SpreadingWildfire,
+    /// 水 water — Reduce defense, Slow
+    ErosiveFlow,
+    /// 力 strength — Damage scales with missing HP
+    OverwhelmingForce,
+    /// 心 heart — Confuse for 2 turns
+    DoubtSeed,
+    /// 口 mouth — Deal 1 damage, steal a buff
+    DevouringMaw,
+    /// 目 eye — Mark: all attacks auto-hit +crit
+    WitnessMark,
+    /// 手 hand — Swap positions with target
+    SleightReversal,
+    /// 木 wood — Slow 2 turns, +1 armor to self
+    RootingGrasp,
+    /// 田 field — Execute if HP<40%, else 1 dmg
+    HarvestReaping,
+    /// 日 sun — Clear own debuffs, buff allies
+    RevealingDawn,
+    /// 月 moon — Poison DoT 2 dmg for 3 turns
+    WaningCurse,
+    /// 人 person — If low HP: survive at 1, +2 dmg
+    MortalResilience,
+    /// 女 woman — Counter + thorn armor
+    MaternalShield,
+    /// 子 child — 1 dmg + mark for +2 future dmg
+    PotentialBurst,
+    /// 禾 grain — Confused 1 turn (miss chance)
+    ChasingChaff,
+    /// 十 cross — 50/50: 4 dmg or stun self
+    CrossroadsGambit,
+    /// 金 metal — +4 armor, can't dodge
+    RigidStance,
+    /// 土 earth — Slow 3 turns + 1 dmg
+    GroundingWeight,
+    /// 又 again — Repeat base damage attack
+    EchoStrike,
+    /// 寸 inch — Execute if HP<25%, else 1 dmg
+    PreciseExecution,
+    /// 刀 knife — 2 dmg + reduce max HP by 1
+    CleavingCut,
+    /// 言 speech — Slow 3 + Confused 1
+    BindingOath,
+    /// 足 foot — Dash to player + 1 dmg
+    PursuingSteps,
+    /// 糸 silk — Slow 3 + Bleed 1 for 2 turns
+    EntanglingWeb,
+    /// 门 gate — +3 armor, Slow self 1 turn
+    ThresholdSeal,
+    /// 马 horse — Dmg scales with distance, knockback 2
+    CavalryCharge,
+    /// 鸟 bird — Dodge + stored movement +2
+    SoaringEscape,
+    /// 雨 rain — 1 dmg + Bleed 1 for 3 turns
+    DownpourBarrage,
+    /// 石 stone — Slow 3 + give self +2 armor
+    PetrifyingGaze,
+    /// 虫 insect — 1 dmg, heal self for dealt+1
+    ParasiticSwarm,
+    /// 贝 shell — Self -2 HP, buff nearby allies
+    MercenaryPact,
+    /// 山 mountain — +3 armor, +1 fortify
+    ImmovablePeak,
+    /// 犬 beast — 3 dmg, self-dmg 1, heal 1
+    SavageMaul,
+    /// 弓 bow — Ranged: 3 dmg at dist>=3, else 1
+    ArcingShot,
+    /// 食 food — 2 dmg, heal for dealt, +1 max HP
+    ConsumingBite,
+    /// 衣 clothing — Dodge + fortify (stealth)
+    CloakingGuise,
+    /// 竹 bamboo — Counter + thorn armor 2 turns
+    FlexibleCounter,
+    /// 走 walk — Move 3 tiles toward player, dmg per tile
+    BlitzAssault,
+    /// 车 vehicle — 2 dmg + push 3 tiles
+    CrushingWheels,
+    /// 王 king — Force nearest ally to gain +2 dmg, approach player
+    ImperialCommand,
+    /// 大 big — All nearby allies +1 dmg, self +1 dmg
+    MagnifyingAura,
+    /// 小 small — 2 dmg ignoring all armor
+    NeedleStrike,
+    /// 工 craft — Burn 2 for 2 turns (delayed trap)
+    ArtisanTrap,
+    /// 白 white — Remove debuffs from self, heal 3
+    CleansingLight,
 }
 
 impl RadicalAction {
+    pub fn radical(self) -> &'static str {
+        match self {
+            Self::SpreadingWildfire => "火",
+            Self::ErosiveFlow => "水",
+            Self::OverwhelmingForce => "力",
+            Self::DoubtSeed => "心",
+            Self::DevouringMaw => "口",
+            Self::WitnessMark => "目",
+            Self::SleightReversal => "手",
+            Self::RootingGrasp => "木",
+            Self::HarvestReaping => "田",
+            Self::RevealingDawn => "日",
+            Self::WaningCurse => "月",
+            Self::MortalResilience => "人",
+            Self::MaternalShield => "女",
+            Self::PotentialBurst => "子",
+            Self::ChasingChaff => "禾",
+            Self::CrossroadsGambit => "十",
+            Self::RigidStance => "金",
+            Self::GroundingWeight => "土",
+            Self::EchoStrike => "又",
+            Self::PreciseExecution => "寸",
+            Self::CleavingCut => "刀",
+            Self::BindingOath => "言",
+            Self::PursuingSteps => "足",
+            Self::EntanglingWeb => "糸",
+            Self::ThresholdSeal => "门",
+            Self::CavalryCharge => "马",
+            Self::SoaringEscape => "鸟",
+            Self::DownpourBarrage => "雨",
+            Self::PetrifyingGaze => "石",
+            Self::ParasiticSwarm => "虫",
+            Self::MercenaryPact => "贝",
+            Self::ImmovablePeak => "山",
+            Self::SavageMaul => "犬",
+            Self::ArcingShot => "弓",
+            Self::ConsumingBite => "食",
+            Self::CloakingGuise => "衣",
+            Self::FlexibleCounter => "竹",
+            Self::BlitzAssault => "走",
+            Self::CrushingWheels => "车",
+            Self::ImperialCommand => "王",
+            Self::MagnifyingAura => "大",
+            Self::NeedleStrike => "小",
+            Self::ArtisanTrap => "工",
+            Self::CleansingLight => "白",
+        }
+    }
+
     pub fn from_radical(radical: &str) -> Option<Self> {
         match radical {
-            "火" => Some(Self::FireBreath),
-            "水" => Some(Self::WaterShield),
-            "力" => Some(Self::PowerStrike),
-            "心" => Some(Self::SelfHeal),
-            "口" => Some(Self::WarCry),
-            "目" => Some(Self::TrueSight),
-            "手" => Some(Self::Disarm),
-            "木" => Some(Self::Root),
-            "田" => Some(Self::Fortify),
-            "日" => Some(Self::Radiance),
-            "月" => Some(Self::ShadowStep),
-            "人" => Some(Self::CallAlly),
-            "女" => Some(Self::Charm),
-            "子" => Some(Self::Swift),
-            "禾" => Some(Self::Leech),
-            "十" => Some(Self::Multiply),
-            "金" => Some(Self::Armor),
-            "土" => Some(Self::Earthquake),
+            "火" => Some(Self::SpreadingWildfire),
+            "水" => Some(Self::ErosiveFlow),
+            "力" => Some(Self::OverwhelmingForce),
+            "心" => Some(Self::DoubtSeed),
+            "口" => Some(Self::DevouringMaw),
+            "目" => Some(Self::WitnessMark),
+            "手" => Some(Self::SleightReversal),
+            "木" => Some(Self::RootingGrasp),
+            "田" => Some(Self::HarvestReaping),
+            "日" => Some(Self::RevealingDawn),
+            "月" => Some(Self::WaningCurse),
+            "人" => Some(Self::MortalResilience),
+            "女" => Some(Self::MaternalShield),
+            "子" => Some(Self::PotentialBurst),
+            "禾" => Some(Self::ChasingChaff),
+            "十" => Some(Self::CrossroadsGambit),
+            "金" => Some(Self::RigidStance),
+            "土" => Some(Self::GroundingWeight),
+            "又" => Some(Self::EchoStrike),
+            "寸" => Some(Self::PreciseExecution),
+            "刀" => Some(Self::CleavingCut),
+            "言" => Some(Self::BindingOath),
+            "足" => Some(Self::PursuingSteps),
+            "糸" => Some(Self::EntanglingWeb),
+            "门" => Some(Self::ThresholdSeal),
+            "马" => Some(Self::CavalryCharge),
+            "鸟" => Some(Self::SoaringEscape),
+            "雨" => Some(Self::DownpourBarrage),
+            "石" => Some(Self::PetrifyingGaze),
+            "虫" => Some(Self::ParasiticSwarm),
+            "贝" => Some(Self::MercenaryPact),
+            "山" => Some(Self::ImmovablePeak),
+            "犬" => Some(Self::SavageMaul),
+            "弓" => Some(Self::ArcingShot),
+            "食" => Some(Self::ConsumingBite),
+            "衣" => Some(Self::CloakingGuise),
+            "竹" => Some(Self::FlexibleCounter),
+            "走" => Some(Self::BlitzAssault),
+            "车" => Some(Self::CrushingWheels),
+            "王" => Some(Self::ImperialCommand),
+            "大" => Some(Self::MagnifyingAura),
+            "小" => Some(Self::NeedleStrike),
+            "工" => Some(Self::ArtisanTrap),
+            "白" => Some(Self::CleansingLight),
             _ => None,
         }
     }
 
     pub fn name(self) -> &'static str {
         match self {
-            Self::FireBreath => "🔥 Fire Breath",
-            Self::WaterShield => "💧 Water Shield",
-            Self::PowerStrike => "💪 Power Strike",
-            Self::SelfHeal => "💚 Self Heal",
-            Self::WarCry => "📢 War Cry",
-            Self::TrueSight => "👁 True Sight",
-            Self::Disarm => "🤚 Disarm",
-            Self::Root => "🌿 Root",
-            Self::Fortify => "🏰 Fortify",
-            Self::Radiance => "☀ Radiance",
-            Self::ShadowStep => "🌙 Shadow Step",
-            Self::CallAlly => "👥 Call Ally",
-            Self::Charm => "💕 Charm",
-            Self::Swift => "⚡ Swift",
-            Self::Leech => "🌾 Leech",
-            Self::Multiply => "✕ Multiply",
-            Self::Armor => "🛡 Armor",
-            Self::Earthquake => "🌍 Earthquake",
+            Self::SpreadingWildfire => "\u{1F525} Spreading Wildfire",
+            Self::ErosiveFlow => "\u{1F4A7} Erosive Flow",
+            Self::OverwhelmingForce => "\u{1F4AA} Overwhelming Force",
+            Self::DoubtSeed => "\u{1F49C} Doubt Seed",
+            Self::DevouringMaw => "\u{1F444} Devouring Maw",
+            Self::WitnessMark => "\u{1F441} Witness Mark",
+            Self::SleightReversal => "\u{270B} Sleight Reversal",
+            Self::RootingGrasp => "\u{1F33F} Rooting Grasp",
+            Self::HarvestReaping => "\u{1F33E} Harvest Reaping",
+            Self::RevealingDawn => "\u{2600} Revealing Dawn",
+            Self::WaningCurse => "\u{1F319} Waning Curse",
+            Self::MortalResilience => "\u{1F464} Mortal Resilience",
+            Self::MaternalShield => "\u{1F495} Maternal Shield",
+            Self::PotentialBurst => "\u{26A1} Potential Burst",
+            Self::ChasingChaff => "\u{1F33E} Chasing Chaff",
+            Self::CrossroadsGambit => "\u{2715} Crossroads Gambit",
+            Self::RigidStance => "\u{1F6E1} Rigid Stance",
+            Self::GroundingWeight => "\u{1F30D} Grounding Weight",
+            Self::EchoStrike => "\u{1F504} Echo Strike",
+            Self::PreciseExecution => "\u{1F4CF} Precise Execution",
+            Self::CleavingCut => "\u{1F5E1} Cleaving Cut",
+            Self::BindingOath => "\u{1F4DC} Binding Oath",
+            Self::PursuingSteps => "\u{1F463} Pursuing Steps",
+            Self::EntanglingWeb => "\u{1F578} Entangling Web",
+            Self::ThresholdSeal => "\u{1F6AA} Threshold Seal",
+            Self::CavalryCharge => "\u{1F434} Cavalry Charge",
+            Self::SoaringEscape => "\u{1F426} Soaring Escape",
+            Self::DownpourBarrage => "\u{1F327} Downpour Barrage",
+            Self::PetrifyingGaze => "\u{1FAA8} Petrifying Gaze",
+            Self::ParasiticSwarm => "\u{1F41B} Parasitic Swarm",
+            Self::MercenaryPact => "\u{1F41A} Mercenary Pact",
+            Self::ImmovablePeak => "\u{26F0} Immovable Peak",
+            Self::SavageMaul => "\u{1F415} Savage Maul",
+            Self::ArcingShot => "\u{1F3F9} Arcing Shot",
+            Self::ConsumingBite => "\u{1F356} Consuming Bite",
+            Self::CloakingGuise => "\u{1F458} Cloaking Guise",
+            Self::FlexibleCounter => "\u{1F38B} Flexible Counter",
+            Self::BlitzAssault => "\u{1F4A8} Blitz Assault",
+            Self::CrushingWheels => "\u{1F6DE} Crushing Wheels",
+            Self::ImperialCommand => "\u{1F451} Imperial Command",
+            Self::MagnifyingAura => "\u{1F53A} Magnifying Aura",
+            Self::NeedleStrike => "\u{1F53B} Needle Strike",
+            Self::ArtisanTrap => "\u{2699} Artisan's Trap",
+            Self::CleansingLight => "\u{2728} Cleansing Light",
         }
     }
 
     #[allow(dead_code)]
     pub fn description(self) -> &'static str {
         match self {
-            Self::FireBreath => "Burns you for 1 damage over 3 turns",
-            Self::WaterShield => "Heals self for 2 HP",
-            Self::PowerStrike => "Deals 2 extra damage",
-            Self::SelfHeal => "Heals self for 3 HP",
-            Self::WarCry => "Drains 10 spirit energy",
-            Self::TrueSight => "Strips your shield",
-            Self::Disarm => "Weakens your next attack by 1",
-            Self::Root => "Roots you — next wrong answer deals +1 damage",
-            Self::Fortify => "Enemy damage increased by 1",
-            Self::Radiance => "Blinds you — next correct hit deals half damage",
-            Self::ShadowStep => "Dodges your next attack",
-            Self::CallAlly => "Rallies nearby monsters",
-            Self::Charm => "Confuses your next input",
-            Self::Swift => "Strikes again immediately",
-            Self::Leech => "Heals equal to damage dealt",
-            Self::Multiply => "Next attack strikes twice",
-            Self::Armor => "Reduces your next hit by 2",
-            Self::Earthquake => "Shakes the ground for 1 damage",
+            Self::SpreadingWildfire => "Burns for 1 damage over 3 turns, creates fire terrain",
+            Self::ErosiveFlow => "Reduces defense, Slows for 3 turns",
+            Self::OverwhelmingForce => "Damage scales with missing HP",
+            Self::DoubtSeed => "Confuses for 2 turns",
+            Self::DevouringMaw => "Deals 1 damage and steals a buff",
+            Self::WitnessMark => "Marks target: attacks auto-hit with +2 damage",
+            Self::SleightReversal => "Swaps positions with target",
+            Self::RootingGrasp => "Slows for 2 turns, gains +1 armor",
+            Self::HarvestReaping => "Execute if HP<40%, else 1 damage",
+            Self::RevealingDawn => "Clears own debuffs, buffs nearby allies",
+            Self::WaningCurse => "Poison DoT: 2 damage for 3 turns",
+            Self::MortalResilience => "If low HP: survive at 1 HP, gain +2 damage",
+            Self::MaternalShield => "Gains counter-attack and thorn armor",
+            Self::PotentialBurst => "Deals 1 damage + marks for +2 future damage",
+            Self::ChasingChaff => "Confuses for 1 turn (miss chance)",
+            Self::CrossroadsGambit => "50/50: deal 4 damage or stun self",
+            Self::RigidStance => "Gains +4 armor, cannot dodge",
+            Self::GroundingWeight => "Slows for 3 turns + 1 damage",
+            Self::EchoStrike => "Repeats base damage attack",
+            Self::PreciseExecution => "Execute if HP<25%, else 1 damage",
+            Self::CleavingCut => "Deals 2 damage + reduces max HP by 1",
+            Self::BindingOath => "Slows for 3 turns + Confuses for 1 turn",
+            Self::PursuingSteps => "Dashes to player + 1 damage",
+            Self::EntanglingWeb => "Slows for 3 turns + Bleed 1 for 2 turns",
+            Self::ThresholdSeal => "Gains +3 armor, Slows self 1 turn",
+            Self::CavalryCharge => "Damage scales with distance, knockback 2",
+            Self::SoaringEscape => "Dodges next attack + gains +2 movement",
+            Self::DownpourBarrage => "Deals 1 damage + Bleed 1 for 3 turns",
+            Self::PetrifyingGaze => "Slows for 3 turns + gains +2 armor",
+            Self::ParasiticSwarm => "Deals 1 damage, heals self for dealt+1",
+            Self::MercenaryPact => "Self -2 HP, buffs nearby allies +1 damage",
+            Self::ImmovablePeak => "Gains +3 armor and +1 fortify",
+            Self::SavageMaul => "Deals 3 damage, self-damage 1, heals 1",
+            Self::ArcingShot => "Ranged: 3 damage at distance>=3, else 1",
+            Self::ConsumingBite => "Deals 2 damage, heals for dealt, +1 max HP",
+            Self::CloakingGuise => "Dodges next attack + gains fortify",
+            Self::FlexibleCounter => "Gains counter-attack + thorn armor 2 turns",
+            Self::BlitzAssault => "Moves 3 tiles toward player, damage per tile moved",
+            Self::CrushingWheels => "Deals 2 damage + pushes 3 tiles",
+            Self::ImperialCommand => "Nearest ally gains +2 damage and approaches player",
+            Self::MagnifyingAura => "All nearby allies and self gain +1 damage",
+            Self::NeedleStrike => "Deals 2 damage ignoring all armor",
+            Self::ArtisanTrap => "Burns for 2 damage over 2 turns",
+            Self::CleansingLight => "Removes all debuffs, heals 3 HP",
+        }
+    }
+}
+
+/// Player-facing abilities derived from collected radicals.
+/// Each radical maps to exactly ONE ability (1:1 mapping).
+/// These empower the player's attack when chosen from the radical picker.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlayerRadicalAbility {
+    /// 火 fire — Bonus fire damage + burn
+    FireStrike,
+    /// 水 water — Slow target, restore focus
+    TidalSurge,
+    /// 力 strength — +50% base damage
+    PowerStrike,
+    /// 心 heart — Reveal all enemy intents
+    Insight,
+    /// 口 mouth — Heal for 50% of damage dealt
+    Devour,
+    /// 目 eye — Ignore armor, cannot miss
+    TrueStrike,
+    /// 手 hand — Attack doesn't consume action
+    SwiftHands,
+    /// 木 wood — Slow target, gain temp armor
+    Entangle,
+    /// 田 field — Bonus damage vs low HP targets
+    Reap,
+    /// 日 sun — Clear own debuffs + bonus damage
+    SolarFlare,
+    /// 月 moon — Apply poison DoT
+    MoonVenom,
+    /// 人 person — Gain temp HP after attack
+    Resilience,
+    /// 女 woman — Gain counter + thorn armor
+    Guardian,
+    /// 子 child — Mark target for bonus future damage
+    GrowingStrike,
+    /// 禾 grain — Extend combo streak by 2
+    Harvest,
+    /// 十 cross — Double damage or miss entirely
+    Gamble,
+    /// 金 metal — Armor-piercing: ignore all armor
+    Shatter,
+    /// 土 earth — Push target 2 tiles + stun
+    Earthquake,
+    /// 又 again — Attack hits twice
+    DoubleStrike,
+    /// 寸 inch — Execute: kill if target HP <= 25%
+    Execution,
+    /// 刀 knife — Bleed target + reduce max HP
+    DeepCut,
+    /// 言 speech — Confuse target 2 turns
+    Intimidate,
+    /// 足 foot — Dash to target + bonus damage
+    Lunge,
+    /// 糸 silk — Slow + bleed target
+    Ensnare,
+    /// 门 gate — Gain +3 armor after attack
+    Fortify,
+    /// 马 horse — Knockback target 3 tiles
+    Charge,
+    /// 鸟 bird — Gain +2 movement next turn
+    Windstep,
+    /// 雨 rain — AoE: splash 1 damage to adjacent enemies
+    Downpour,
+    /// 石 stone — Stun target 1 turn
+    Concuss,
+    /// 虫 insect — Poison + weaken target
+    Infest,
+    /// 贝 shell — Gain gold on kill (bonus loot)
+    Plunder,
+    /// 山 mountain — Gain +2 armor, +1 fortify
+    Bulwark,
+    /// 犬 beast — Bonus damage + self-heal 1
+    Frenzy,
+    /// 弓 bow — Attack at range (skip adjacency)
+    Snipe,
+    /// 食 food — Heal 3 HP after attack
+    Nourish,
+    /// 衣 clothing — Dodge next incoming attack
+    Evade,
+    /// 竹 bamboo — Counter next attack + thorn 2 turns
+    Riposte,
+    /// 走 walk — Free movement after attack
+    HitAndRun,
+    /// 车 vehicle — Push target + deal damage per tile pushed
+    Bulldoze,
+    /// 王 king — All attacks this turn deal +1 damage
+    Inspire,
+    /// 大 big — AoE: hit all adjacent enemies
+    Cleave,
+    /// 小 small — Ignore armor, +2 bonus damage
+    PreciseStab,
+    /// 工 craft — Place fire terrain around target
+    Sabotage,
+    /// 白 white — Restore 3 focus + clear debuffs
+    Purify,
+}
+
+impl PlayerRadicalAbility {
+    pub fn radical(self) -> &'static str {
+        match self {
+            Self::FireStrike => "火",
+            Self::TidalSurge => "水",
+            Self::PowerStrike => "力",
+            Self::Insight => "心",
+            Self::Devour => "口",
+            Self::TrueStrike => "目",
+            Self::SwiftHands => "手",
+            Self::Entangle => "木",
+            Self::Reap => "田",
+            Self::SolarFlare => "日",
+            Self::MoonVenom => "月",
+            Self::Resilience => "人",
+            Self::Guardian => "女",
+            Self::GrowingStrike => "子",
+            Self::Harvest => "禾",
+            Self::Gamble => "十",
+            Self::Shatter => "金",
+            Self::Earthquake => "土",
+            Self::DoubleStrike => "又",
+            Self::Execution => "寸",
+            Self::DeepCut => "刀",
+            Self::Intimidate => "言",
+            Self::Lunge => "足",
+            Self::Ensnare => "糸",
+            Self::Fortify => "门",
+            Self::Charge => "马",
+            Self::Windstep => "鸟",
+            Self::Downpour => "雨",
+            Self::Concuss => "石",
+            Self::Infest => "虫",
+            Self::Plunder => "贝",
+            Self::Bulwark => "山",
+            Self::Frenzy => "犬",
+            Self::Snipe => "弓",
+            Self::Nourish => "食",
+            Self::Evade => "衣",
+            Self::Riposte => "竹",
+            Self::HitAndRun => "走",
+            Self::Bulldoze => "车",
+            Self::Inspire => "王",
+            Self::Cleave => "大",
+            Self::PreciseStab => "小",
+            Self::Sabotage => "工",
+            Self::Purify => "白",
+        }
+    }
+
+    pub fn from_radical(radical: &str) -> Option<Self> {
+        match radical {
+            "火" => Some(Self::FireStrike),
+            "水" => Some(Self::TidalSurge),
+            "力" => Some(Self::PowerStrike),
+            "心" => Some(Self::Insight),
+            "口" => Some(Self::Devour),
+            "目" => Some(Self::TrueStrike),
+            "手" => Some(Self::SwiftHands),
+            "木" => Some(Self::Entangle),
+            "田" => Some(Self::Reap),
+            "日" => Some(Self::SolarFlare),
+            "月" => Some(Self::MoonVenom),
+            "人" => Some(Self::Resilience),
+            "女" => Some(Self::Guardian),
+            "子" => Some(Self::GrowingStrike),
+            "禾" => Some(Self::Harvest),
+            "十" => Some(Self::Gamble),
+            "金" => Some(Self::Shatter),
+            "土" => Some(Self::Earthquake),
+            "又" => Some(Self::DoubleStrike),
+            "寸" => Some(Self::Execution),
+            "刀" => Some(Self::DeepCut),
+            "言" => Some(Self::Intimidate),
+            "足" => Some(Self::Lunge),
+            "糸" => Some(Self::Ensnare),
+            "门" => Some(Self::Fortify),
+            "马" => Some(Self::Charge),
+            "鸟" => Some(Self::Windstep),
+            "雨" => Some(Self::Downpour),
+            "石" => Some(Self::Concuss),
+            "虫" => Some(Self::Infest),
+            "贝" => Some(Self::Plunder),
+            "山" => Some(Self::Bulwark),
+            "犬" => Some(Self::Frenzy),
+            "弓" => Some(Self::Snipe),
+            "食" => Some(Self::Nourish),
+            "衣" => Some(Self::Evade),
+            "竹" => Some(Self::Riposte),
+            "走" => Some(Self::HitAndRun),
+            "车" => Some(Self::Bulldoze),
+            "王" => Some(Self::Inspire),
+            "大" => Some(Self::Cleave),
+            "小" => Some(Self::PreciseStab),
+            "工" => Some(Self::Sabotage),
+            "白" => Some(Self::Purify),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::FireStrike => "\u{1F525} Fire Strike",
+            Self::TidalSurge => "\u{1F4A7} Tidal Surge",
+            Self::PowerStrike => "\u{1F4AA} Power Strike",
+            Self::Insight => "\u{1F49C} Insight",
+            Self::Devour => "\u{1F444} Devour",
+            Self::TrueStrike => "\u{1F441} True Strike",
+            Self::SwiftHands => "\u{270B} Swift Hands",
+            Self::Entangle => "\u{1F33F} Entangle",
+            Self::Reap => "\u{1F33E} Reap",
+            Self::SolarFlare => "\u{2600} Solar Flare",
+            Self::MoonVenom => "\u{1F319} Moon Venom",
+            Self::Resilience => "\u{1F464} Resilience",
+            Self::Guardian => "\u{1F495} Guardian",
+            Self::GrowingStrike => "\u{26A1} Growing Strike",
+            Self::Harvest => "\u{1F33E} Harvest",
+            Self::Gamble => "\u{2715} Gamble",
+            Self::Shatter => "\u{1F6E1} Shatter",
+            Self::Earthquake => "\u{1F30D} Earthquake",
+            Self::DoubleStrike => "\u{1F504} Double Strike",
+            Self::Execution => "\u{1F4CF} Execution",
+            Self::DeepCut => "\u{1F5E1} Deep Cut",
+            Self::Intimidate => "\u{1F4DC} Intimidate",
+            Self::Lunge => "\u{1F463} Lunge",
+            Self::Ensnare => "\u{1F578} Ensnare",
+            Self::Fortify => "\u{1F6AA} Fortify",
+            Self::Charge => "\u{1F434} Charge",
+            Self::Windstep => "\u{1F426} Windstep",
+            Self::Downpour => "\u{1F327} Downpour",
+            Self::Concuss => "\u{1FAA8} Concuss",
+            Self::Infest => "\u{1F41B} Infest",
+            Self::Plunder => "\u{1F41A} Plunder",
+            Self::Bulwark => "\u{26F0} Bulwark",
+            Self::Frenzy => "\u{1F415} Frenzy",
+            Self::Snipe => "\u{1F3F9} Snipe",
+            Self::Nourish => "\u{1F356} Nourish",
+            Self::Evade => "\u{1F458} Evade",
+            Self::Riposte => "\u{1F38B} Riposte",
+            Self::HitAndRun => "\u{1F4A8} Hit & Run",
+            Self::Bulldoze => "\u{1F6DE} Bulldoze",
+            Self::Inspire => "\u{1F451} Inspire",
+            Self::Cleave => "\u{1F53A} Cleave",
+            Self::PreciseStab => "\u{1F53B} Precise Stab",
+            Self::Sabotage => "\u{2699} Sabotage",
+            Self::Purify => "\u{2728} Purify",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::FireStrike => "+2 fire damage, Burn 1 dmg for 2 turns",
+            Self::TidalSurge => "Slow target 2 turns, restore 2 Focus",
+            Self::PowerStrike => "+50% base damage on this attack",
+            Self::Insight => "Reveal all enemy intents for 3 turns",
+            Self::Devour => "Heal for 50% of damage dealt",
+            Self::TrueStrike => "Ignores armor, cannot miss",
+            Self::SwiftHands => "Attack doesn't consume your action",
+            Self::Entangle => "Slow target 3 turns, +1 temp armor",
+            Self::Reap => "+3 bonus damage if target HP < 40%",
+            Self::SolarFlare => "Clear your debuffs, +2 bonus damage",
+            Self::MoonVenom => "Poison: 2 dmg for 3 turns",
+            Self::Resilience => "Gain 2 temporary HP after attack",
+            Self::Guardian => "Gain counter-attack + thorn armor 2 turns",
+            Self::GrowingStrike => "Mark target: +2 damage from all sources",
+            Self::Harvest => "Extend combo streak by +2",
+            Self::Gamble => "50/50: triple damage or miss entirely",
+            Self::Shatter => "Destroy all target armor, +1 damage",
+            Self::Earthquake => "Push target 2 tiles + stun 1 turn",
+            Self::DoubleStrike => "Attack hits a second time for base damage",
+            Self::Execution => "Instant kill if target HP <= 25%",
+            Self::DeepCut => "Bleed 2 dmg for 2 turns, -1 max HP",
+            Self::Intimidate => "Confuse target for 2 turns",
+            Self::Lunge => "+2 damage, gain free movement after",
+            Self::Ensnare => "Slow 3 turns + Bleed 1 for 2 turns",
+            Self::Fortify => "Gain +3 armor after attacking",
+            Self::Charge => "Knockback target 3 tiles",
+            Self::Windstep => "Gain +2 stored movement",
+            Self::Downpour => "Splash 1 damage to all adjacent enemies",
+            Self::Concuss => "Stun target for 1 turn",
+            Self::Infest => "Poison 1 for 3 turns + Slow 1 turn",
+            Self::Plunder => "Bonus gold if this kills the target",
+            Self::Bulwark => "Gain +2 armor and +1 fortify",
+            Self::Frenzy => "+1 bonus damage, heal 1 HP",
+            Self::Snipe => "Can target non-adjacent enemies in LoS",
+            Self::Nourish => "Heal 3 HP after attacking",
+            Self::Evade => "Dodge the next incoming attack",
+            Self::Riposte => "Counter next attack + thorn armor 2 turns",
+            Self::HitAndRun => "Gain free movement after attack",
+            Self::Bulldoze => "Push target 2 tiles, 1 dmg per tile",
+            Self::Inspire => "+1 damage to all attacks this turn",
+            Self::Cleave => "Hit all adjacent enemies for base damage",
+            Self::PreciseStab => "Ignore armor, +2 bonus damage",
+            Self::Sabotage => "Create fire terrain around target",
+            Self::Purify => "Restore 3 Focus, clear your debuffs",
         }
     }
 }
@@ -631,15 +1026,19 @@ mod tests {
         use super::RadicalAction;
         assert_eq!(
             RadicalAction::from_radical("火"),
-            Some(RadicalAction::FireBreath)
+            Some(RadicalAction::SpreadingWildfire)
         );
         assert_eq!(
             RadicalAction::from_radical("水"),
-            Some(RadicalAction::WaterShield)
+            Some(RadicalAction::ErosiveFlow)
         );
         assert_eq!(
             RadicalAction::from_radical("心"),
-            Some(RadicalAction::SelfHeal)
+            Some(RadicalAction::DoubtSeed)
+        );
+        assert_eq!(
+            RadicalAction::from_radical("又"),
+            Some(RadicalAction::EchoStrike)
         );
         assert_eq!(RadicalAction::from_radical("xyz"), None);
     }
@@ -652,19 +1051,29 @@ mod tests {
         let enemy = Enemy::from_vocab(entry, 0, 0, 1);
         let actions = enemy.radical_actions();
         use super::RadicalAction;
-        assert!(actions.contains(&RadicalAction::Charm)); // 女
-        assert!(actions.contains(&RadicalAction::Swift)); // 子
-        assert_eq!(actions.len(), 2);
+        assert!(actions.contains(&RadicalAction::MaternalShield)); // 女
+        assert!(actions.contains(&RadicalAction::PotentialBurst)); // 子
+        assert_eq!(actions.len(), 2); // 1 per radical, 好 has 2 radicals
     }
 
     #[test]
-    fn enemy_without_mapped_components_has_no_actions() {
+    fn enemy_with_generated_components_has_actions() {
         use crate::vocab::VOCAB;
-        // Find an enemy whose components don't map to any action
-        // Use a vocab entry not in get_components (returns empty vec)
-        let entry = VOCAB.iter().find(|e| e.hanzi == "大").unwrap();
-        let enemy = Enemy::from_vocab(entry, 0, 0, 1);
-        let actions = enemy.radical_actions();
-        assert!(actions.is_empty());
+        // Most HSK characters should have at least some components now
+        let mut chars_with_actions = 0;
+        let total = VOCAB.iter().take(100).count();
+        for entry in VOCAB.iter().take(100) {
+            let enemy = Enemy::from_vocab(entry, 0, 0, 1);
+            if !enemy.radical_actions().is_empty() {
+                chars_with_actions += 1;
+            }
+        }
+        // At least 60% of chars should have radical actions with our expanded system
+        assert!(
+            chars_with_actions > total / 2,
+            "Only {}/{} had actions",
+            chars_with_actions,
+            total
+        );
     }
 }
