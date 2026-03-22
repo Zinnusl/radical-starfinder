@@ -610,7 +610,9 @@ pub fn choose_action(battle: &TacticalBattle, unit_idx: usize) -> AiAction {
             } else {
                 if dist <= 1 {
                     AiAction::MeleeAttack { target_unit: 0 }
-                } else if let Some(path) = path_toward(battle, unit_idx, player.x, player.y, false)
+                } else if let Some(path) = path_toward_ally(battle, unit_idx) {
+                    AiAction::MoveToTile { path }
+                } else if let Some(path) = path_toward(battle, unit_idx, player.x, player.y, true)
                 {
                     AiAction::MoveToTile { path }
                 } else {
@@ -745,6 +747,31 @@ pub fn path_away(
     }
 
     build_path(battle, unit.x, unit.y, best_tile.0, best_tile.1, movement)
+}
+
+/// Pack AI: move toward the nearest ally to group up before attacking.
+fn path_toward_ally(battle: &TacticalBattle, unit_idx: usize) -> Option<Vec<(i32, i32)>> {
+    let unit = &battle.units[unit_idx];
+
+    // Find nearest alive enemy ally.
+    let mut nearest_ally: Option<(i32, i32)> = None;
+    let mut best_dist = i32::MAX;
+    for (i, other) in battle.units.iter().enumerate() {
+        if i != unit_idx && other.alive && other.is_enemy() {
+            let d = manhattan(unit.x, unit.y, other.x, other.y);
+            if d < best_dist {
+                best_dist = d;
+                nearest_ally = Some((other.x, other.y));
+            }
+        }
+    }
+
+    let (ax, ay) = nearest_ally?;
+    if best_dist <= 1 {
+        return None; // Already adjacent.
+    }
+
+    path_toward(battle, unit_idx, ax, ay, true)
 }
 
 fn build_path(

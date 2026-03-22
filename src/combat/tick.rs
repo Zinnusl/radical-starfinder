@@ -1,11 +1,13 @@
 use crate::combat::action::deal_damage;
 use crate::combat::ai::calculate_all_intents;
 use crate::combat::input::{execute_enemy_turn_action, BattleEvent};
-use crate::combat::terrain::{apply_scorched_damage, decay_cracked_floors};
+use crate::combat::terrain::{apply_scorched_damage, decay_cracked_floors, tick_terrain};
 use crate::combat::turn::advance_turn;
 use crate::combat::{
-    AudioEvent, BattleTile, ProjectileEffect, TacticalBattle, TacticalPhase, Weather,
+    ArenaEvent, ArenaBiome, AudioEvent, BattleTile, ProjectileEffect, TacticalBattle,
+    TacticalPhase, Weather,
 };
+use crate::dungeon::Rng;
 use crate::status::tick_statuses;
 
 const _RESOLVE_FRAMES: u8 = 30; // ~500ms at 60fps
@@ -13,6 +15,22 @@ const ENEMY_TURN_FRAMES: u8 = 24; // ~400ms
 const END_DELAY_FRAMES: u8 = 60; // ~1s before key accepted
 
 pub fn tick_battle(battle: &mut TacticalBattle) -> BattleEvent {
+    // Decrement event message fade timer (per-frame)
+    if battle.event_message_timer > 0 {
+        battle.event_message_timer -= 1;
+        if battle.event_message_timer == 0 {
+            battle.event_message = None;
+        }
+    }
+
+    // Decrement spell combo notification fade timer (per-frame)
+    if battle.combo_message_timer > 0 {
+        battle.combo_message_timer -= 1;
+        if battle.combo_message_timer == 0 {
+            battle.combo_message = None;
+        }
+    }
+
     if !battle.intents_calculated {
         calculate_all_intents(battle);
     }
@@ -204,18 +222,19 @@ fn apply_projectile_spell(
     effect: &crate::radical::SpellEffect,
 ) {
     use crate::radical::SpellEffect;
+    let sp = battle.player_stance.spell_power_mod();
     match effect {
         SpellEffect::StrongHit(dmg) => {
             if let Some(idx) = battle.unit_at(tx, ty) {
                 if battle.units[idx].is_enemy() {
-                    deal_damage(battle, idx, *dmg);
+                    deal_damage(battle, idx, (*dmg + sp).max(1));
                 }
             }
         }
         SpellEffect::Drain(dmg) => {
             if let Some(idx) = battle.unit_at(tx, ty) {
                 if battle.units[idx].is_enemy() {
-                    let actual = deal_damage(battle, idx, *dmg);
+                    let actual = deal_damage(battle, idx, (*dmg + sp).max(1));
                     let unit = &mut battle.units[0];
                     unit.hp = (unit.hp + actual).min(unit.max_hp);
                 }
@@ -266,14 +285,14 @@ fn apply_projectile_spell(
         SpellEffect::Pierce(dmg) => {
             if let Some(idx) = battle.unit_at(tx, ty) {
                 if battle.units[idx].is_enemy() {
-                    deal_damage(battle, idx, *dmg);
+                    deal_damage(battle, idx, (*dmg + sp).max(1));
                 }
             }
         }
         SpellEffect::KnockBack(dmg) => {
             if let Some(idx) = battle.unit_at(tx, ty) {
                 if battle.units[idx].is_enemy() {
-                    deal_damage(battle, idx, *dmg);
+                    deal_damage(battle, idx, (*dmg + sp).max(1));
                     let px = battle.units[0].x;
                     let py = battle.units[0].y;
                     if battle.units[idx].alive {
@@ -316,6 +335,8 @@ fn advance_and_set_phase(battle: &mut TacticalBattle) -> BattleEvent {
         for msg in &crumble_msgs {
             battle.log_message(msg);
         }
+
+        tick_terrain(battle);
 
         let flow_msgs = apply_flow_water(battle);
         for msg in &flow_msgs {
@@ -367,6 +388,18 @@ fn advance_and_set_phase(battle: &mut TacticalBattle) -> BattleEvent {
         // ── Companion Passive Abilities ──────────────────────────────────
         let companion_msgs = apply_companion_passives(battle);
         for msg in &companion_msgs {
+            battle.log_message(msg);
+        }
+
+        // ── Enemy Synergies (round start) ───────────────────────────────
+        let synergy_msgs = crate::combat::synergy::apply_round_start_synergies(battle);
+        for msg in &synergy_msgs {
+            battle.log_message(msg);
+        }
+
+        // ── Arena Events ────────────────────────────────────────────────
+        let arena_event_msgs = tick_arena_events(battle);
+        for msg in &arena_event_msgs {
             battle.log_message(msg);
         }
 
@@ -842,6 +875,509 @@ fn apply_companion_passives(battle: &mut TacticalBattle) -> Vec<String> {
                     }
                 }
             }
+        }
+    }
+
+    messages
+}
+
+// ── Arena Event System ──────────────────────────────────────────────────────
+
+const ALL_EVENTS: [ArenaEvent; 12] = [
+    ArenaEvent::RisingWater,
+    ArenaEvent::EarthTremor,
+    ArenaEvent::SpiritSurge,
+    ArenaEvent::WindGust,
+    ArenaEvent::LightningStrike,
+    ArenaEvent::LavaFlow,
+    ArenaEvent::HealingMist,
+    ArenaEvent::FrostSnap,
+    ArenaEvent::SandstormBurst,
+    ArenaEvent::SpiritualEcho,
+    ArenaEvent::WildGrowth,
+    ArenaEvent::VolcanicVent,
+];
+
+/// Pick a random arena event, weighting by biome affinity.
+fn pick_arena_event(rng: &mut Rng, biome: ArenaBiome) -> ArenaEvent {
+    // Base weight 10 for every event; biome-favored events get +20.
+    let mut weights: [u32; 12] = [10; 12];
+    match biome {
+        ArenaBiome::Stone | ArenaBiome::Dark | ArenaBiome::Cursed => {
+            weights[1] += 20; // EarthTremor
+            weights[4] += 20; // LightningStrike
+        }
+        ArenaBiome::Frozen => {
+            weights[7] += 20; // FrostSnap
+            weights[3] += 20; // WindGust
+        }
+        ArenaBiome::Infernal => {
+            weights[5] += 20; // LavaFlow
+            weights[11] += 20; // VolcanicVent
+        }
+        ArenaBiome::Garden => {
+            weights[10] += 20; // WildGrowth
+            weights[6] += 20; // HealingMist
+        }
+        ArenaBiome::Arcane => {
+            weights[2] += 20; // SpiritSurge
+            weights[9] += 20; // SpiritualEcho
+        }
+    }
+    let total: u32 = weights.iter().sum();
+    let roll = rng.range(0, total as i32) as u32;
+    let mut acc = 0u32;
+    for (i, &w) in weights.iter().enumerate() {
+        acc += w;
+        if roll < acc {
+            return ALL_EVENTS[i];
+        }
+    }
+    ALL_EVENTS[0]
+}
+
+/// Process arena event timer at end-of-round. Returns messages to log.
+pub fn tick_arena_events(battle: &mut TacticalBattle) -> Vec<String> {
+    let mut messages = Vec::new();
+
+    if battle.arena_event_timer > 1 {
+        battle.arena_event_timer -= 1;
+
+        // When timer reaches 1, preview the upcoming event
+        if battle.arena_event_timer == 1 {
+            let seed = battle.turn_number as u64 * 7919 + 42;
+            let mut rng = Rng::new(seed);
+            let event = pick_arena_event(&mut rng, battle.arena.biome);
+            battle.pending_event = Some(event);
+            messages.push(format!("⚠ {} incoming!", event.name()));
+        }
+        return messages;
+    }
+
+    // Timer is 1 — fire the event
+    let event = match battle.pending_event.take() {
+        Some(e) => e,
+        None => return messages,
+    };
+
+    // Show event name as big message
+    battle.event_message = Some(format!("🌀 {}", event.name()));
+    battle.event_message_timer = 90; // ~1.5s at 60fps
+
+    let seed = battle.turn_number as u64 * 6271 + 137;
+    let mut rng = Rng::new(seed);
+    let event_msgs = execute_arena_event(battle, event, &mut rng);
+    for msg in &event_msgs {
+        messages.push(msg.clone());
+    }
+
+    // Reset timer: boss arenas get events every 2 rounds, normal every 2-4
+    let next_timer = if battle.is_boss_battle {
+        2
+    } else {
+        rng.range(2, 5) as u32
+    };
+    battle.arena_event_timer = next_timer;
+
+    messages
+}
+
+fn execute_arena_event(
+    battle: &mut TacticalBattle,
+    event: ArenaEvent,
+    rng: &mut Rng,
+) -> Vec<String> {
+    let mut messages = Vec::new();
+    let w = battle.arena.width as i32;
+    let h = battle.arena.height as i32;
+
+    match event {
+        ArenaEvent::RisingWater => {
+            let mut new_water = Vec::new();
+            for y in 0..h {
+                for x in 0..w {
+                    if battle.arena.tile(x, y) == Some(BattleTile::Water) {
+                        for &(dx, dy) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+                            let nx = x + dx;
+                            let ny = y + dy;
+                            if battle.arena.tile(nx, ny) == Some(BattleTile::Open) {
+                                new_water.push((nx, ny));
+                            }
+                        }
+                    }
+                }
+            }
+            for (wx, wy) in &new_water {
+                battle.arena.set_tile(*wx, *wy, BattleTile::Water);
+            }
+            // Apply Wet to units standing on new water tiles
+            for (wx, wy) in &new_water {
+                if let Some(idx) = battle.unit_at(*wx, *wy) {
+                    if battle.units[idx].alive {
+                        let already_wet = battle.units[idx]
+                            .statuses
+                            .iter()
+                            .any(|s| matches!(s.kind, crate::status::StatusKind::Wet));
+                        if !already_wet {
+                            battle.units[idx]
+                                .statuses
+                                .push(crate::status::StatusInstance::new(
+                                    crate::status::StatusKind::Wet,
+                                    3,
+                                ));
+                        }
+                    }
+                }
+            }
+            if !new_water.is_empty() {
+                messages.push(format!(
+                    "🌊 Rising Water! {} tiles flooded!",
+                    new_water.len()
+                ));
+                battle.audio_events.push(AudioEvent::WaterSplash);
+            } else {
+                messages.push("🌊 Rising Water! But no tiles to flood.".to_string());
+            }
+        }
+
+        ArenaEvent::EarthTremor => {
+            let count = rng.range(3, 6);
+            let mut affected = 0;
+            for _ in 0..count {
+                let x = rng.range(0, w);
+                let y = rng.range(0, h);
+                if battle.arena.tile(x, y) == Some(BattleTile::Open)
+                    && battle.unit_at(x, y).is_none()
+                {
+                    let tile = if rng.range(0, 2) == 0 {
+                        BattleTile::CrumblingFloor
+                    } else {
+                        BattleTile::CrackedFloor
+                    };
+                    battle.arena.set_tile(x, y, tile);
+                    affected += 1;
+                }
+            }
+            messages.push(format!("🪨 Earth Tremor! {} tiles crumble!", affected));
+        }
+
+        ArenaEvent::SpiritSurge => {
+            let count = rng.range(2, 4);
+            let mut placed = 0;
+            for _ in 0..count {
+                let x = rng.range(0, w);
+                let y = rng.range(0, h);
+                if battle.arena.tile(x, y) == Some(BattleTile::Open) {
+                    battle.arena.set_tile(x, y, BattleTile::InkPool);
+                    placed += 1;
+                }
+            }
+            messages.push(format!(
+                "🔮 Spirit Surge! {} InkPool tiles appear!",
+                placed
+            ));
+        }
+
+        ArenaEvent::WindGust => {
+            let dirs: [(i32, i32); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
+            let dir_names = ["north", "south", "west", "east"];
+            let dir_idx = rng.range(0, 4) as usize;
+            let (dx, dy) = dirs[dir_idx];
+            let dir_name = dir_names[dir_idx];
+
+            let mut pushes: Vec<(usize, i32, i32)> = Vec::new();
+            for idx in 0..battle.units.len() {
+                if !battle.units[idx].alive {
+                    continue;
+                }
+                let nx = battle.units[idx].x + dx;
+                let ny = battle.units[idx].y + dy;
+                if battle.arena.in_bounds(nx, ny)
+                    && battle
+                        .arena
+                        .tile(nx, ny)
+                        .map_or(false, |t| t.is_walkable())
+                    && battle.unit_at(nx, ny).is_none()
+                {
+                    pushes.push((idx, nx, ny));
+                }
+            }
+            // Deduplicate destinations
+            let mut valid_pushes = Vec::new();
+            for &(idx, nx, ny) in &pushes {
+                let conflict = valid_pushes
+                    .iter()
+                    .any(|&(_, ox, oy): &(usize, i32, i32)| ox == nx && oy == ny);
+                if !conflict {
+                    valid_pushes.push((idx, nx, ny));
+                }
+            }
+            for (idx, nx, ny) in valid_pushes {
+                battle.units[idx].x = nx;
+                battle.units[idx].y = ny;
+            }
+            messages.push(format!("💨 Wind Gust blows everyone {}!", dir_name));
+        }
+
+        ArenaEvent::LightningStrike => {
+            let mut target_x = rng.range(0, w);
+            let mut target_y = rng.range(0, h);
+            for _ in 0..20 {
+                if battle
+                    .arena
+                    .tile(target_x, target_y)
+                    .map_or(false, |t| t.is_walkable())
+                {
+                    break;
+                }
+                target_x = rng.range(0, w);
+                target_y = rng.range(0, h);
+            }
+
+            if let Some(idx) = battle.unit_at(target_x, target_y) {
+                let actual = deal_damage(battle, idx, 3);
+                let name = if battle.units[idx].is_player() {
+                    "You".to_string()
+                } else {
+                    battle.units[idx].hanzi.to_string()
+                };
+                messages.push(format!(
+                    "⚡ Lightning strikes ({},{})! {} takes {} damage!",
+                    target_x, target_y, name, actual
+                ));
+            } else {
+                messages.push(format!(
+                    "⚡ Lightning strikes ({},{})!",
+                    target_x, target_y
+                ));
+            }
+
+            // Chain to units on adjacent Water tiles
+            for &(ddx, ddy) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+                let cx = target_x + ddx;
+                let cy = target_y + ddy;
+                if battle.arena.tile(cx, cy) == Some(BattleTile::Water) {
+                    if let Some(idx) = battle.unit_at(cx, cy) {
+                        let actual = deal_damage(battle, idx, 2);
+                        let name = if battle.units[idx].is_player() {
+                            "You".to_string()
+                        } else {
+                            battle.units[idx].hanzi.to_string()
+                        };
+                        messages.push(format!(
+                            "⚡ Lightning chains through water! {} takes {} damage!",
+                            name, actual
+                        ));
+                    }
+                }
+            }
+        }
+
+        ArenaEvent::LavaFlow => {
+            let count = rng.range(2, 4);
+            let mut placed = 0;
+            for _ in 0..count {
+                let edge = rng.range(0, 4);
+                let (x, y) = match edge {
+                    0 => (rng.range(0, w), 0),
+                    1 => (rng.range(0, w), h - 1),
+                    2 => (0, rng.range(0, h)),
+                    _ => (w - 1, rng.range(0, h)),
+                };
+                if battle.arena.tile(x, y) == Some(BattleTile::Open)
+                    || battle.arena.tile(x, y) == Some(BattleTile::Grass)
+                {
+                    battle.arena.set_tile(x, y, BattleTile::Lava);
+                    placed += 1;
+                    if let Some(idx) = battle.unit_at(x, y) {
+                        let actual = deal_damage(battle, idx, 2);
+                        let name = if battle.units[idx].is_player() {
+                            "You".to_string()
+                        } else {
+                            battle.units[idx].hanzi.to_string()
+                        };
+                        messages.push(format!(
+                            "🌋 {} is caught in lava! {} damage!",
+                            name, actual
+                        ));
+                    }
+                }
+            }
+            messages.push(format!(
+                "🌋 Lava Flow! {} tiles erupt at the edges!",
+                placed
+            ));
+            battle.audio_events.push(AudioEvent::LavaRumble);
+        }
+
+        ArenaEvent::HealingMist => {
+            for idx in 0..battle.units.len() {
+                if battle.units[idx].alive {
+                    let unit = &mut battle.units[idx];
+                    unit.hp = (unit.hp + 2).min(unit.max_hp);
+                }
+            }
+            messages.push("💚 Healing Mist! All units heal 2 HP!".to_string());
+            battle.audio_events.push(AudioEvent::Heal);
+        }
+
+        ArenaEvent::FrostSnap => {
+            let mut frozen_count = 0;
+            for y in 0..h {
+                for x in 0..w {
+                    if battle.arena.tile(x, y) == Some(BattleTile::Water) {
+                        battle.arena.set_tile(x, y, BattleTile::Ice);
+                        frozen_count += 1;
+                    }
+                }
+            }
+            for idx in 0..battle.units.len() {
+                if !battle.units[idx].alive {
+                    continue;
+                }
+                let is_wet = battle.units[idx]
+                    .statuses
+                    .iter()
+                    .any(|s| matches!(s.kind, crate::status::StatusKind::Wet));
+                if is_wet {
+                    let has_slow = battle.units[idx]
+                        .statuses
+                        .iter()
+                        .any(|s| matches!(s.kind, crate::status::StatusKind::Slow));
+                    if !has_slow {
+                        battle.units[idx]
+                            .statuses
+                            .push(crate::status::StatusInstance::new(
+                                crate::status::StatusKind::Slow,
+                                2,
+                            ));
+                        let name = if battle.units[idx].is_player() {
+                            "You".to_string()
+                        } else {
+                            battle.units[idx].hanzi.to_string()
+                        };
+                        messages.push(format!("❄ {} is frozen stiff! Slowed!", name));
+                        battle.audio_events.push(AudioEvent::StatusSlow);
+                    }
+                }
+            }
+            messages.push(format!(
+                "❄ Frost Snap! {} water tiles freeze to ice!",
+                frozen_count
+            ));
+        }
+
+        ArenaEvent::SandstormBurst => {
+            let count = rng.range(4, 7);
+            let mut placed = 0;
+            for _ in 0..count {
+                let x = rng.range(0, w);
+                let y = rng.range(0, h);
+                if battle.arena.tile(x, y) == Some(BattleTile::Open) {
+                    battle.arena.set_tile(x, y, BattleTile::Sand);
+                    placed += 1;
+                }
+            }
+            for idx in 0..battle.units.len() {
+                if battle.units[idx].alive && battle.units[idx].stored_movement > 0 {
+                    battle.units[idx].stored_movement -= 1;
+                }
+            }
+            messages.push(format!(
+                "🏜 Sandstorm Burst! {} sand tiles appear! Movement hampered!",
+                placed
+            ));
+        }
+
+        ArenaEvent::SpiritualEcho => {
+            for idx in 0..battle.units.len() {
+                if !battle.units[idx].alive {
+                    continue;
+                }
+                for status in &mut battle.units[idx].statuses {
+                    status.turns_left += 1;
+                }
+            }
+            messages.push("👻 Spiritual Echo! All status effects extended by 1 turn!".to_string());
+        }
+
+        ArenaEvent::WildGrowth => {
+            let mut new_grass = Vec::new();
+            for y in 0..h {
+                for x in 0..w {
+                    if battle.arena.tile(x, y) == Some(BattleTile::Grass) {
+                        for &(dx, dy) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+                            let nx = x + dx;
+                            let ny = y + dy;
+                            if battle.arena.tile(nx, ny) == Some(BattleTile::Open)
+                                && rng.range(0, 100) < 40
+                            {
+                                new_grass.push((nx, ny));
+                            }
+                        }
+                    }
+                }
+            }
+            let mut upgrades = Vec::new();
+            for y in 0..h {
+                for x in 0..w {
+                    if battle.arena.tile(x, y) == Some(BattleTile::Grass)
+                        && battle.unit_at(x, y).is_none()
+                        && rng.range(0, 100) < 15
+                    {
+                        upgrades.push((x, y));
+                    }
+                }
+            }
+            for (gx, gy) in &new_grass {
+                battle.arena.set_tile(*gx, *gy, BattleTile::Grass);
+            }
+            for (ux, uy) in &upgrades {
+                battle.arena.set_tile(*ux, *uy, BattleTile::BambooThicket);
+            }
+            messages.push(format!(
+                "🌿 Wild Growth! {} new grass, {} bamboo thickets!",
+                new_grass.len(),
+                upgrades.len()
+            ));
+        }
+
+        ArenaEvent::VolcanicVent => {
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            let mut best_x = w / 2;
+            let mut best_y = h / 2;
+            let mut best_dist = 0;
+            for _ in 0..20 {
+                let x = rng.range(1, w - 1);
+                let y = rng.range(1, h - 1);
+                if battle.arena.tile(x, y) == Some(BattleTile::Open)
+                    && battle.unit_at(x, y).is_none()
+                {
+                    let dist = (x - px).abs() + (y - py).abs();
+                    if dist > best_dist {
+                        best_dist = dist;
+                        best_x = x;
+                        best_y = y;
+                    }
+                }
+            }
+            battle.arena.set_tile(best_x, best_y, BattleTile::Lava);
+            for &(dx, dy) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+                let bx = best_x + dx;
+                let by = best_y + dy;
+                if battle.arena.tile(bx, by) == Some(BattleTile::Open)
+                    && battle.unit_at(bx, by).is_none()
+                {
+                    battle.arena.set_tile(bx, by, BattleTile::ExplosiveBarrel);
+                    break;
+                }
+            }
+            messages.push(format!(
+                "🌋 Volcanic Vent erupts at ({},{})! Explosive debris nearby!",
+                best_x, best_y
+            ));
+            battle.audio_events.push(AudioEvent::LavaRumble);
         }
     }
 

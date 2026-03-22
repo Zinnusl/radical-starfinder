@@ -35,12 +35,17 @@ pub fn player_base_movement() -> i32 {
     3
 }
 
-pub fn player_movement(_form: PlayerForm, statuses: &[crate::status::StatusInstance]) -> i32 {
+pub fn player_movement(
+    _form: PlayerForm,
+    statuses: &[crate::status::StatusInstance],
+    stance: crate::combat::PlayerStance,
+) -> i32 {
     let mut mv = player_base_movement();
     if has_haste(statuses) {
         mv += 1;
     }
-    mv
+    mv += stance.movement_mod();
+    mv.max(1)
 }
 
 pub fn enemy_base_speed(is_elite: bool, is_boss: bool) -> i32 {
@@ -97,6 +102,13 @@ pub fn advance_turn(battle: &mut TacticalBattle) -> bool {
         // Reset defending flag for all units at round start.
         for unit in &mut battle.units {
             unit.defending = false;
+        }
+        // Decay combo armor bonus each round.
+        if battle.combo_armor_turns > 0 {
+            battle.combo_armor_turns -= 1;
+            if battle.combo_armor_turns == 0 {
+                battle.combo_armor_bonus = 0;
+            }
         }
         true
     } else {

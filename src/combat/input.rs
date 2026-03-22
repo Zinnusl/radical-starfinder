@@ -140,6 +140,10 @@ fn handle_command(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
             BattleEvent::None
         }
         "s" | "S" if !battle.player_acted => {
+            if !battle.player_stance.can_cast_spells() {
+                battle.log_message("Can't cast spells in Mobile stance!");
+                return BattleEvent::None;
+            }
             if battle.units[0]
                 .statuses
                 .iter()
@@ -197,6 +201,16 @@ fn handle_command(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
                 battle.item_menu_open = true;
                 battle.item_cursor = 0;
             }
+            BattleEvent::None
+        }
+        "f" | "F" => {
+            let new_stance = battle.player_stance.next();
+            battle.player_stance = new_stance;
+            battle.log_message(format!(
+                "Stance: {} — {}",
+                new_stance.name(),
+                new_stance.description()
+            ));
             BattleEvent::None
         }
         "v" | "V" | "l" | "L" => {
@@ -480,7 +494,7 @@ fn handle_spell_menu(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
                     battle.log_message(format!("Type pinyin for {} to cast!", hanzi));
                 }
                 _ => {
-                    let base_range = spell_range(&effect);
+                    let base_range = spell_range(&effect) + battle.player_stance.spell_range_mod();
                     let range = weather_adjusted_range(base_range, battle.weather);
                     let px = battle.units[0].x;
                     let py = battle.units[0].y;
@@ -1193,9 +1207,339 @@ fn spell_effect_school(effect: &SpellEffect) -> &'static str {
     }
 }
 
+/// Map a SpellEffect to a Wuxing element for the combo chain system.
+pub fn spell_effect_element(effect: &SpellEffect) -> Option<WuxingElement> {
+    match effect {
+        // Fire
+        SpellEffect::FireAoe(_) | SpellEffect::Cone(_) | SpellEffect::Ignite => {
+            Some(WuxingElement::Fire)
+        }
+        // Water/Ice
+        SpellEffect::Slow(_) | SpellEffect::FreezeGround(_) | SpellEffect::FloodWave(_) => {
+            Some(WuxingElement::Water)
+        }
+        // Metal/Force
+        SpellEffect::StrongHit(_)
+        | SpellEffect::ArmorBreak
+        | SpellEffect::Pierce(_)
+        | SpellEffect::KnockBack(_)
+        | SpellEffect::Stun => Some(WuxingElement::Metal),
+        // Wood/Nature
+        SpellEffect::Poison(_, _)
+        | SpellEffect::Thorns(_)
+        | SpellEffect::PlantGrowth
+        | SpellEffect::OilSlick
+        | SpellEffect::Heal(_)
+        | SpellEffect::Drain(_) => Some(WuxingElement::Wood),
+        // Earth
+        SpellEffect::Earthquake(_)
+        | SpellEffect::Wall(_)
+        | SpellEffect::SummonBoulder
+        | SpellEffect::Shield => Some(WuxingElement::Earth),
+        // No element
+        _ => None,
+    }
+}
+
+/// Name of the combo triggered by casting `prev` then `current` elements in sequence.
+pub fn spell_combo_name(
+    prev: WuxingElement,
+    current: WuxingElement,
+) -> Option<&'static str> {
+    match (prev, current) {
+        (WuxingElement::Water, WuxingElement::Fire) => Some("Steam Burst"),
+        (WuxingElement::Water, WuxingElement::Earth) => Some("Avalanche"),
+        (WuxingElement::Fire, WuxingElement::Fire) => Some("Inferno"),
+        (WuxingElement::Wood, WuxingElement::Fire) => Some("Toxic Cloud"),
+        (WuxingElement::Fire, WuxingElement::Metal) => Some("Tempering"),
+        (WuxingElement::Metal, WuxingElement::Water) => Some("Lightning Storm"),
+        (WuxingElement::Earth, WuxingElement::Earth) => Some("Petrify"),
+        (WuxingElement::Wood, WuxingElement::Water) => Some("Overgrowth"),
+        (WuxingElement::Metal, WuxingElement::Earth) => Some("Shatter"),
+        (WuxingElement::Wood, WuxingElement::Earth) => Some("Entangle"),
+        (WuxingElement::Fire, WuxingElement::Wood) => Some("Purifying Flame"),
+        (WuxingElement::Water, WuxingElement::Metal) => Some("Frozen Edge"),
+        _ => None,
+    }
+}
+
+/// Apply a spell combo effect. Called when the player casts two spells of the right
+/// elements within 2 turns. Returns a log message describing the combo.
+fn apply_spell_combo(
+    battle: &mut TacticalBattle,
+    combo_name: &str,
+    target_x: i32,
+    target_y: i32,
+) -> String {
+    let px = battle.units[0].x;
+    let py = battle.units[0].y;
+
+    match combo_name {
+        "Steam Burst" => {
+            // AoE Steam tiles in 2-radius + 2 dmg to all in area + Confused 1 turn
+            let mut hits = 0;
+            for dx in -2..=2_i32 {
+                for dy in -2..=2_i32 {
+                    if dx.abs() + dy.abs() > 2 {
+                        continue;
+                    }
+                    let tx = target_x + dx;
+                    let ty = target_y + dy;
+                    if battle.arena.in_bounds(tx, ty) {
+                        if let Some(tile) = battle.arena.tile(tx, ty) {
+                            if tile.is_walkable() {
+                                battle.arena.set_tile(tx, ty, BattleTile::Steam);
+                                battle.arena.set_steam(tx, ty, 3);
+                            }
+                        }
+                        if let Some(idx) = battle.unit_at(tx, ty) {
+                            if battle.units[idx].is_enemy() {
+                                deal_damage(battle, idx, 2);
+                                battle.units[idx]
+                                    .statuses
+                                    .push(StatusInstance::new(StatusKind::Confused, 1));
+                                hits += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            format!(
+                "Steam erupts! {} enemies take 2 dmg and are Confused!",
+                hits
+            )
+        }
+        "Avalanche" => {
+            // 4 dmg in cone + Slow 3 turns + BrokenGround tiles
+            let cone = compute_aoe_preview(
+                &SpellEffect::Cone(4),
+                target_x,
+                target_y,
+                px,
+                py,
+            );
+            let mut hits = 0;
+            for &(tx, ty) in &cone {
+                if battle.arena.in_bounds(tx, ty) {
+                    battle.arena.set_tile(tx, ty, BattleTile::BrokenGround);
+                    if let Some(idx) = battle.unit_at(tx, ty) {
+                        if battle.units[idx].is_enemy() {
+                            deal_damage(battle, idx, 4);
+                            battle.units[idx]
+                                .statuses
+                                .push(StatusInstance::new(StatusKind::Slow, 3));
+                            hits += 1;
+                        }
+                    }
+                }
+            }
+            format!("Avalanche! {} enemies take 4 dmg and are Slowed!", hits)
+        }
+        "Inferno" => {
+            // Double the second Fire spell's damage + Burn 2 for 3 turns
+            // We apply 4 bonus fire damage to target + burn
+            if let Some(idx) = battle.unit_at(target_x, target_y) {
+                if battle.units[idx].is_enemy() {
+                    deal_damage(battle, idx, 4);
+                    battle.units[idx]
+                        .statuses
+                        .push(StatusInstance::new(StatusKind::Burn { damage: 2 }, 3));
+                    return "Inferno! Double fire damage + Burn!".to_string();
+                }
+            }
+            // AoE fallback — burn everything in cross
+            let cross = [
+                (target_x, target_y),
+                (target_x - 1, target_y),
+                (target_x + 1, target_y),
+                (target_x, target_y - 1),
+                (target_x, target_y + 1),
+            ];
+            let mut hits = 0;
+            for &(tx, ty) in &cross {
+                if let Some(idx) = battle.unit_at(tx, ty) {
+                    if battle.units[idx].is_enemy() {
+                        deal_damage(battle, idx, 4);
+                        battle.units[idx]
+                            .statuses
+                            .push(StatusInstance::new(StatusKind::Burn { damage: 2 }, 3));
+                        hits += 1;
+                    }
+                }
+            }
+            format!("Inferno! {} enemies scorched with Burn!", hits)
+        }
+        "Toxic Cloud" => {
+            // Poison gas: 3×3, 2 dmg + Poison(1) 3 turns
+            let mut hits = 0;
+            for dx in -1..=1_i32 {
+                for dy in -1..=1_i32 {
+                    let tx = target_x + dx;
+                    let ty = target_y + dy;
+                    if battle.arena.in_bounds(tx, ty) {
+                        if let Some(idx) = battle.unit_at(tx, ty) {
+                            if battle.units[idx].is_enemy() {
+                                deal_damage(battle, idx, 2);
+                                battle.units[idx].statuses.push(StatusInstance::new(
+                                    StatusKind::Poison { damage: 1 },
+                                    3,
+                                ));
+                                hits += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            format!("Toxic Cloud! {} enemies take 2 dmg + Poison!", hits)
+        }
+        "Tempering" => {
+            // Player gains +2 armor for 3 turns + Fortify 2
+            battle.combo_armor_bonus = 2;
+            battle.combo_armor_turns = 3;
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Fortify { stacks: 2 }, 3));
+            "Tempering! +2 armor for 3 turns + Fortify!".to_string()
+        }
+        "Lightning Storm" => {
+            // Chain lightning: 3 dmg to target + 2 dmg to all Wet enemies
+            let mut hits = 0;
+            if let Some(idx) = battle.unit_at(target_x, target_y) {
+                if battle.units[idx].is_enemy() {
+                    deal_damage(battle, idx, 3);
+                    hits += 1;
+                }
+            }
+            let wet_targets: Vec<usize> = (1..battle.units.len())
+                .filter(|&i| {
+                    battle.units[i].alive
+                        && battle.units[i].is_enemy()
+                        && battle.units[i]
+                            .statuses
+                            .iter()
+                            .any(|s| matches!(s.kind, StatusKind::Wet))
+                })
+                .collect();
+            for idx in wet_targets {
+                deal_damage(battle, idx, 2);
+                hits += 1;
+            }
+            format!("Lightning Storm! {} enemies struck!", hits)
+        }
+        "Petrify" => {
+            // Target turned to stone: skip 2 turns + 4 armor
+            if let Some(idx) = battle.unit_at(target_x, target_y) {
+                if battle.units[idx].is_enemy() {
+                    battle.units[idx].stunned = true;
+                    battle.units[idx]
+                        .statuses
+                        .push(StatusInstance::new(StatusKind::Freeze, 2));
+                    battle.units[idx].radical_armor += 4;
+                    return "Petrify! Enemy turned to stone!".to_string();
+                }
+            }
+            "Petrify! The ground trembles...".to_string()
+        }
+        "Overgrowth" => {
+            // Create Grass+BambooThicket in 3×3, heal player 3 HP
+            for dx in -1..=1_i32 {
+                for dy in -1..=1_i32 {
+                    let tx = target_x + dx;
+                    let ty = target_y + dy;
+                    if battle.arena.in_bounds(tx, ty) {
+                        if let Some(tile) = battle.arena.tile(tx, ty) {
+                            if tile.is_walkable() && battle.unit_at(tx, ty).is_none() {
+                                if dx == 0 && dy == 0 {
+                                    battle
+                                        .arena
+                                        .set_tile(tx, ty, BattleTile::BambooThicket);
+                                } else {
+                                    battle.arena.set_tile(tx, ty, BattleTile::Grass);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let player = &mut battle.units[0];
+            player.hp = (player.hp + 3).min(player.max_hp);
+            "Overgrowth! Lush growth spreads, heal 3 HP!".to_string()
+        }
+        "Shatter" => {
+            // ArmorBreak + 3 dmg + BrokenGround under target
+            if let Some(idx) = battle.unit_at(target_x, target_y) {
+                if battle.units[idx].is_enemy() {
+                    battle.units[idx].radical_armor = 0;
+                    deal_damage(battle, idx, 3);
+                    battle.arena.set_tile(target_x, target_y, BattleTile::BrokenGround);
+                    return "Shatter! Armor broken + 3 dmg!".to_string();
+                }
+            }
+            battle.arena.set_tile(target_x, target_y, BattleTile::BrokenGround);
+            "Shatter! The ground cracks!".to_string()
+        }
+        "Entangle" => {
+            // Rooted 3 turns + Thorns tiles around target
+            if let Some(idx) = battle.unit_at(target_x, target_y) {
+                if battle.units[idx].is_enemy() {
+                    battle.units[idx]
+                        .statuses
+                        .push(StatusInstance::new(StatusKind::Rooted, 3));
+                }
+            }
+            let deltas = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+            for (dx, dy) in &deltas {
+                let tx = target_x + dx;
+                let ty = target_y + dy;
+                if battle.arena.in_bounds(tx, ty) {
+                    if let Some(tile) = battle.arena.tile(tx, ty) {
+                        if tile.is_walkable() {
+                            battle.arena.set_tile(tx, ty, BattleTile::Thorns);
+                        }
+                    }
+                }
+            }
+            "Entangle! Enemy Rooted + Thorns spread!".to_string()
+        }
+        "Purifying Flame" => {
+            // Remove all negative statuses from player + 2 dmg AoE
+            battle.units[0]
+                .statuses
+                .retain(|s| !s.is_negative());
+            let cross = [
+                (target_x, target_y),
+                (target_x - 1, target_y),
+                (target_x + 1, target_y),
+                (target_x, target_y - 1),
+                (target_x, target_y + 1),
+            ];
+            let mut hits = 0;
+            for &(tx, ty) in &cross {
+                if let Some(idx) = battle.unit_at(tx, ty) {
+                    if battle.units[idx].is_enemy() {
+                        deal_damage(battle, idx, 2);
+                        hits += 1;
+                    }
+                }
+            }
+            format!(
+                "Purifying Flame! Cleansed + {} enemies take 2 dmg!",
+                hits
+            )
+        }
+        "Frozen Edge" => {
+            // Next 3 basic attacks apply Slow 1 + deal +1 damage
+            battle.frozen_edge_charges = 3;
+            "Frozen Edge! Next 3 attacks deal +1 dmg + Slow!".to_string()
+        }
+        _ => "Unknown combo!".to_string(),
+    }
+}
+
 fn enter_move_targeting(battle: &mut TacticalBattle) {
     let player = &battle.units[0];
-    let movement = player.effective_movement();
+    let base_movement = player.effective_movement();
+    let movement = (base_movement + battle.player_stance.movement_mod()).max(1);
     let valid = reachable_tiles(battle, player.x, player.y, movement);
     if valid.is_empty() {
         battle.log_message("No valid movement targets.");
@@ -1460,7 +1804,7 @@ fn confirm_target(battle: &mut TacticalBattle, mode: &TargetMode, tx: i32, ty: i
                 let target_pinyin = battle.units[target_idx].pinyin;
                 let syllables = vocab::pinyin_syllables(target_pinyin);
                 if syllables.len() > 1 {
-                    let base_damage = battle.units[0].damage;
+                    let base_damage = (battle.units[0].damage + battle.player_stance.damage_mod()).max(1);
                     let per_syl = (base_damage as f64 / syllables.len() as f64).ceil() as i32;
                     battle.typing_action = Some(TypingAction::EliteChain {
                         target_unit: target_idx,
@@ -1634,7 +1978,7 @@ fn resolve_basic_attack(
         battle.audio_events.push(AudioEvent::TypingCorrect);
         let combo = battle.combo_multiplier();
         let flank = flank_bonus(battle, 0, target_idx);
-        let base_damage = battle.units[0].damage;
+        let base_damage = (battle.units[0].damage + battle.player_stance.damage_mod()).max(1);
 
         let focus_cost = target_hanzi.chars().count().max(1) as i32;
         let focus_penalty = if battle.focus < focus_cost { 0.65 } else { 1.0 };
@@ -1672,7 +2016,20 @@ fn resolve_basic_attack(
 
         let raw = (base_damage as f64 * combo * (1.0 + flank) * focus_penalty * synergy_bonus * crit_multiplier)
             .ceil() as i32;
-        let (actual, wuxing_label) = deal_damage_from(battle, 0, target_idx, raw);
+        // Frozen Edge combo bonus: +1 damage + Slow on next 3 basic attacks
+        let frozen_bonus = if battle.frozen_edge_charges > 0 {
+            battle.frozen_edge_charges -= 1;
+            1
+        } else {
+            0
+        };
+        let (actual, wuxing_label) = deal_damage_from(battle, 0, target_idx, raw + frozen_bonus);
+        if frozen_bonus > 0 {
+            battle.units[target_idx]
+                .statuses
+                .push(crate::status::StatusInstance::new(crate::status::StatusKind::Slow, 1));
+            battle.log_message("❄ Frozen Edge! +1 dmg + Slow!");
+        }
 
         let tier = battle.combo_tier_name();
         let flank_label = if flank >= 0.50 {
@@ -1820,7 +2177,7 @@ fn resolve_basic_attack(
             battle.combo_streak = 0;
             battle.selected_radical_ability = None;
             battle.audio_events.push(AudioEvent::TypingError);
-            let base_damage = battle.units[0].damage;
+            let base_damage = (battle.units[0].damage + battle.player_stance.damage_mod()).max(1);
             let half_dmg = (base_damage / 2).max(1);
             let actual = deal_damage(battle, target_idx, half_dmg);
             let msg = format!("Close! Wrong tone. {} half-damage.", actual);
@@ -1930,6 +2287,8 @@ fn resolve_spell_cast(
         .audio_events
         .push(AudioEvent::SpellElement(spell_effect_school(&effect).to_string()));
 
+    let spell_power = battle.player_stance.spell_power_mod();
+
     let msg = match effect {
         SpellEffect::FireAoe(dmg) => {
             let rain_penalty = if battle.weather == Weather::Rain {
@@ -1937,7 +2296,7 @@ fn resolve_spell_cast(
             } else {
                 0
             };
-            let dmg = (dmg - rain_penalty).max(1);
+            let dmg = (dmg + spell_power - rain_penalty).max(1);
             let school = spell_effect_school(&effect);
             let mut cross = vec![
                 (target_x, target_y),
@@ -2602,6 +2961,29 @@ fn resolve_spell_cast(
 
     battle.log_message(&msg);
 
+    // ── Spell combo chain check ──────────────────────────────────────────
+    let current_element = spell_effect_element(&effect);
+    if let Some(cur_elem) = current_element {
+        if let Some(prev_elem) = battle.last_spell_element {
+            if battle.turn_number.saturating_sub(battle.last_spell_turn) <= 2 {
+                if let Some(combo_name) = spell_combo_name(prev_elem, cur_elem) {
+                    let combo_msg =
+                        apply_spell_combo(battle, combo_name, target_x, target_y);
+                    battle.log_message(format!("⚡ COMBO: {}!", combo_name));
+                    battle.log_message(&combo_msg);
+                    battle.combo_message =
+                        Some(format!("⚡ COMBO: {}!", combo_name));
+                    battle.combo_message_timer = 60;
+                    battle
+                        .audio_events
+                        .push(AudioEvent::ComboStrike);
+                }
+            }
+        }
+        battle.last_spell_element = Some(cur_elem);
+        battle.last_spell_turn = battle.turn_number;
+    }
+
     battle.last_spell_school = Some(spell_effect_school(&effect));
     battle.spent_spell_index = Some(spell_idx);
     battle.player_acted = true;
@@ -2951,6 +3333,13 @@ pub fn execute_enemy_turn_action(battle: &mut TacticalBattle, unit_idx: usize) -
         return BattleEvent::None;
     }
 
+    // ── Sacrifice check: low-HP enemies may sacrifice for allies ─────
+    if battle.units[unit_idx].is_enemy() {
+        if crate::combat::synergy::try_sacrifice(battle, unit_idx) {
+            return BattleEvent::None;
+        }
+    }
+
     let action = if battle.units[unit_idx].is_companion() {
         choose_companion_action(battle, unit_idx)
     } else {
@@ -2960,9 +3349,17 @@ pub fn execute_enemy_turn_action(battle: &mut TacticalBattle, unit_idx: usize) -
 
     match action {
         AiAction::MeleeAttack { target_unit } => {
+            let (synergy_bonus, synergy_msgs) = crate::combat::synergy::total_attack_synergy_bonus(battle, unit_idx);
             let dmg = battle.units[unit_idx].damage
                 + battle.units[unit_idx].fortify_stacks
-                + boss::ink_sage_bonus(battle, unit_idx);
+                + boss::ink_sage_bonus(battle, unit_idx)
+                + synergy_bonus;
+            for sm in &synergy_msgs {
+                battle.log_message(sm);
+            }
+            if target_unit == 0 {
+                battle.attacks_on_player_this_round += 1;
+            }
             let multiply = battle.units[unit_idx].radical_multiply;
             let hits = if multiply { 2 } else { 1 };
             battle.units[unit_idx].radical_multiply = false;
@@ -3001,9 +3398,17 @@ pub fn execute_enemy_turn_action(battle: &mut TacticalBattle, unit_idx: usize) -
             for &(nx, ny) in &path {
                 move_unit(battle, unit_idx, nx, ny);
             }
+            let (synergy_bonus, synergy_msgs) = crate::combat::synergy::total_attack_synergy_bonus(battle, unit_idx);
             let dmg = battle.units[unit_idx].damage
                 + battle.units[unit_idx].fortify_stacks
-                + boss::ink_sage_bonus(battle, unit_idx);
+                + boss::ink_sage_bonus(battle, unit_idx)
+                + synergy_bonus;
+            for sm in &synergy_msgs {
+                battle.log_message(sm);
+            }
+            if target_unit == 0 {
+                battle.attacks_on_player_this_round += 1;
+            }
             let multiply = battle.units[unit_idx].radical_multiply;
             let hits = if multiply { 2 } else { 1 };
             battle.units[unit_idx].radical_multiply = false;

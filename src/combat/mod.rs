@@ -4,6 +4,7 @@ pub mod boss;
 pub mod grid;
 pub mod input;
 pub mod radical;
+pub mod synergy;
 pub mod terrain;
 pub mod tick;
 pub mod transition;
@@ -31,6 +32,126 @@ pub enum AudioEvent {
     TypingError,
     WaterSplash,
     LavaRumble,
+    ComboStrike,
+}
+
+// ── Player Combat Stances ────────────────────────────────────────────────────
+
+/// Combat stance the player can cycle during the Command phase.
+/// Each stance provides stat modifiers with meaningful tradeoffs.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum PlayerStance {
+    /// Default — no modifiers.
+    Balanced,
+    /// +2 damage, -1 armor, -1 movement.
+    Aggressive,
+    /// +2 armor, -1 damage, +0 movement.
+    Defensive,
+    /// +2 movement, -1 damage, can't cast spells.
+    Mobile,
+    /// +1 spell power, +1 spell range, -1 movement, -1 damage.
+    Focused,
+}
+
+impl PlayerStance {
+    pub fn damage_mod(&self) -> i32 {
+        match self {
+            Self::Balanced => 0,
+            Self::Aggressive => 2,
+            Self::Defensive => -1,
+            Self::Mobile => -1,
+            Self::Focused => -1,
+        }
+    }
+
+    pub fn armor_mod(&self) -> i32 {
+        match self {
+            Self::Balanced => 0,
+            Self::Aggressive => -1,
+            Self::Defensive => 2,
+            Self::Mobile => 0,
+            Self::Focused => 0,
+        }
+    }
+
+    pub fn movement_mod(&self) -> i32 {
+        match self {
+            Self::Balanced => 0,
+            Self::Aggressive => -1,
+            Self::Defensive => 0,
+            Self::Mobile => 2,
+            Self::Focused => -1,
+        }
+    }
+
+    pub fn spell_power_mod(&self) -> i32 {
+        match self {
+            Self::Focused => 1,
+            _ => 0,
+        }
+    }
+
+    pub fn spell_range_mod(&self) -> i32 {
+        match self {
+            Self::Focused => 1,
+            _ => 0,
+        }
+    }
+
+    pub fn can_cast_spells(&self) -> bool {
+        !matches!(self, Self::Mobile)
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Balanced => "Balanced",
+            Self::Aggressive => "Aggressive",
+            Self::Defensive => "Defensive",
+            Self::Mobile => "Mobile",
+            Self::Focused => "Focused",
+        }
+    }
+
+    pub fn icon(&self) -> &'static str {
+        match self {
+            Self::Balanced => "⚖",
+            Self::Aggressive => "⚔",
+            Self::Defensive => "🛡",
+            Self::Mobile => "🏃",
+            Self::Focused => "🧘",
+        }
+    }
+
+    pub fn color(&self) -> &'static str {
+        match self {
+            Self::Balanced => "#cccccc",
+            Self::Aggressive => "#ff4444",
+            Self::Defensive => "#4488ff",
+            Self::Mobile => "#44cc44",
+            Self::Focused => "#bb66ff",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            Self::Balanced => "No modifiers",
+            Self::Aggressive => "+2 dmg, -1 armor, -1 move",
+            Self::Defensive => "+2 armor, -1 dmg",
+            Self::Mobile => "+2 move, -1 dmg, no spells",
+            Self::Focused => "+1 spell pwr/range, -1 move/dmg",
+        }
+    }
+
+    /// Cycle to the next stance.
+    pub fn next(&self) -> Self {
+        match self {
+            Self::Balanced => Self::Aggressive,
+            Self::Aggressive => Self::Defensive,
+            Self::Defensive => Self::Mobile,
+            Self::Mobile => Self::Focused,
+            Self::Focused => Self::Balanced,
+        }
+    }
 }
 
 // ── Wuxing (五行) Elemental Cycle ────────────────────────────────────────────
@@ -87,6 +208,65 @@ impl WuxingElement {
             Self::Metal => "金 Metal",
             Self::Wood => "木 Wood",
             Self::Earth => "土 Earth",
+        }
+    }
+}
+
+// ── Arena Events ─────────────────────────────────────────────────────────────
+
+/// Dynamic environmental events that trigger periodically during combat.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArenaEvent {
+    /// Water tiles expand to adjacent Open tiles.
+    RisingWater,
+    /// 3-5 random tiles become CrumblingFloor/CrackedFloor.
+    EarthTremor,
+    /// 2-3 InkPool tiles appear randomly.
+    SpiritSurge,
+    /// All units pushed 1 tile in random cardinal direction.
+    WindGust,
+    /// Random tile hit with 3 damage + chain to Water.
+    LightningStrike,
+    /// 2-3 Lava tiles appear at arena edges, spread inward.
+    LavaFlow,
+    /// All units heal 2 HP.
+    HealingMist,
+    /// All Water tiles freeze to Ice, Wet units get Slow.
+    FrostSnap,
+    /// 4-6 random tiles become Sand, all units lose 1 movement this round.
+    SandstormBurst,
+    /// All status effect durations extended by 1 turn.
+    SpiritualEcho,
+    /// Grass tiles expand, some upgrade to BambooThicket.
+    WildGrowth,
+    /// Single tile becomes Lava + ExplosiveBarrel spawns adjacent.
+    VolcanicVent,
+}
+
+impl ArenaEvent {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::RisingWater => "Rising Water",
+            Self::EarthTremor => "Earth Tremor",
+            Self::SpiritSurge => "Spirit Surge",
+            Self::WindGust => "Wind Gust",
+            Self::LightningStrike => "Lightning Strike",
+            Self::LavaFlow => "Lava Flow",
+            Self::HealingMist => "Healing Mist",
+            Self::FrostSnap => "Frost Snap",
+            Self::SandstormBurst => "Sandstorm Burst",
+            Self::SpiritualEcho => "Spiritual Echo",
+            Self::WildGrowth => "Wild Growth",
+            Self::VolcanicVent => "Volcanic Vent",
+        }
+    }
+
+    /// Danger category for color-coding: "damaging", "environmental", "beneficial".
+    pub fn danger_level(self) -> &'static str {
+        match self {
+            Self::LightningStrike | Self::LavaFlow | Self::VolcanicVent => "damaging",
+            Self::HealingMist | Self::SpiritualEcho | Self::WildGrowth => "beneficial",
+            _ => "environmental",
         }
     }
 }
@@ -330,6 +510,8 @@ pub enum BattleTile {
     Oil,
     /// Holy ground. Heals units at start of turn. Timed (uses steam_timers).
     HolyGround,
+    /// Elevated terrain. +1 damage attacking downhill, -1 damage received from below.
+    HighGround,
 }
 
 impl BattleTile {
@@ -397,6 +579,7 @@ impl BattleTile {
             BattleTile::TrapTileRevealed => "Spike Trap. 2 damage + Slow on entry.",
             BattleTile::Oil => "Oil. Slippery (slide 1 extra tile). Flammable!",
             BattleTile::HolyGround => "Holy Ground. Heals units at start of turn.",
+            BattleTile::HighGround => "High Ground. +1 damage attacking down, -1 damage from below.",
         }
     }
 
@@ -433,6 +616,7 @@ impl BattleTile {
             BattleTile::TrapTileRevealed => "Spike Trap",
             BattleTile::Oil => "Oil",
             BattleTile::HolyGround => "Holy Ground",
+            BattleTile::HighGround => "High Ground",
         }
     }
 
@@ -458,6 +642,7 @@ impl BattleTile {
             BattleTile::TrapTileRevealed => Some("2 dmg + Slow on entry"),
             BattleTile::Oil => Some("Slippery + Flammable"),
             BattleTile::HolyGround => Some("Heals at start of turn"),
+            BattleTile::HighGround => Some("+1 dmg down, -1 dmg up"),
             _ => None,
         }
     }
@@ -472,6 +657,8 @@ pub struct TacticalArena {
     pub steam_timers: Vec<u8>,
     /// Per-tile turn countdown for HolyGround decay (0 = no timer).
     pub holy_timers: Vec<u8>,
+    /// Per-tile age counter for Lava cooling (0 = fresh or non-lava).
+    pub lava_timers: Vec<u8>,
     pub biome: ArenaBiome,
 }
 
@@ -484,6 +671,7 @@ impl TacticalArena {
             tiles: vec![BattleTile::Open; count],
             steam_timers: vec![0; count],
             holy_timers: vec![0; count],
+            lava_timers: vec![0; count],
             biome,
         }
     }
@@ -625,6 +813,18 @@ pub struct BattleUnit {
     /// Charge-cast: turns remaining before complex character attack fires.
     /// None = not charging. Some(0) = ready to fire.
     pub charge_remaining: Option<u8>,
+    /// Temporary damage bonus from enemy synergies (reset each round).
+    pub synergy_damage_bonus: i32,
+    /// Whether this unit has elemental resonance active (display flag).
+    pub elemental_resonance: bool,
+    /// Bonus damage from ally sacrifice (+2 for 2 turns).
+    pub sacrifice_bonus_damage: i32,
+    /// Turns remaining for sacrifice damage bonus.
+    pub sacrifice_bonus_turns: i32,
+    /// Movement momentum (0-3). Builds with straight-line movement.
+    pub momentum: i32,
+    /// Direction of last movement (for momentum tracking).
+    pub last_move_dir: Option<Direction>,
 }
 
 impl BattleUnit {
@@ -838,6 +1038,8 @@ pub struct TacticalBattle {
     pub player_moved: bool,
     /// Player has already used their action this turn.
     pub player_acted: bool,
+    /// Current combat stance (free action to switch during Command phase).
+    pub player_stance: PlayerStance,
     /// Text the player is currently typing (pinyin input buffer).
     pub typing_buffer: String,
     /// Active typing action (what the buffer is for).
@@ -860,6 +1062,20 @@ pub struct TacticalBattle {
     pub ward_tiles: Vec<(i32, i32)>,
     /// Last spell school used by the player (for Elementalist resistance).
     pub last_spell_school: Option<&'static str>,
+    /// Last spell element (Wuxing) used by the player (for spell combo chains).
+    pub last_spell_element: Option<WuxingElement>,
+    /// Turn number when the last spell was cast (for combo window check).
+    pub last_spell_turn: u32,
+    /// Combo notification message (e.g. "⚡ COMBO: Lightning Storm!").
+    pub combo_message: Option<String>,
+    /// Fade timer (frames) for combo notification overlay.
+    pub combo_message_timer: u16,
+    /// Temporary armor bonus from spell combos (stacks cleared after N turns).
+    pub combo_armor_bonus: i32,
+    /// Turns remaining for combo armor bonus.
+    pub combo_armor_turns: i32,
+    /// Bonus damage on next N basic attacks from Frozen Edge combo.
+    pub frozen_edge_charges: i32,
     /// Stolen spell pickups on the grid (RadicalThief).
     /// Each entry: (x, y, hanzi, pinyin, effect).
     pub stolen_spells: Vec<(
@@ -876,6 +1092,8 @@ pub struct TacticalBattle {
     pub item_cursor: usize,
     /// Arena weather effect.
     pub weather: Weather,
+    /// Terrain evolution tick counter (increments each round).
+    pub terrain_tick_count: u32,
     /// Mental focus resource. Complex chars cost more focus to attack.
     pub focus: i32,
     pub max_focus: i32,
@@ -907,6 +1125,16 @@ pub struct TacticalBattle {
     pub companion_kind: Option<crate::game::Companion>,
     /// Player equipment effects copied at combat start for synergy checks.
     pub player_equip_effects: Vec<crate::player::EquipEffect>,
+    /// Counts enemy attacks on the player this round for coordinated-attack synergy.
+    pub attacks_on_player_this_round: u32,
+    /// Countdown to next arena event (event fires when this reaches 0).
+    pub arena_event_timer: u32,
+    /// Warning shown 1 turn before the event fires.
+    pub pending_event: Option<ArenaEvent>,
+    /// Display message when event triggers.
+    pub event_message: Option<String>,
+    /// Fade timer for event message (frames).
+    pub event_message_timer: u16,
 }
 
 impl TacticalBattle {

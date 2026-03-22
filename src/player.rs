@@ -189,6 +189,99 @@ pub enum ItemKind {
     WindFan,
 }
 
+/// A recipe for combining two consumable items into a new one.
+pub struct CraftingRecipe {
+    pub input1: ItemKind,
+    pub input2: ItemKind,
+    pub output: ItemKind,
+    pub output_name: &'static str,
+}
+
+pub const CRAFTING_RECIPES: &[CraftingRecipe] = &[
+    CraftingRecipe { input1: ItemKind::HealthPotion, input2: ItemKind::PoisonFlask, output: ItemKind::LotusElixir, output_name: "🪷 Lotus Elixir" },
+    CraftingRecipe { input1: ItemKind::FireCracker, input2: ItemKind::InkBomb, output: ItemKind::ThunderDrum, output_name: "🥁 Thunder Drum" },
+    CraftingRecipe { input1: ItemKind::FrostVial, input2: ItemKind::ThunderDrum, output: ItemKind::StunBomb, output_name: "💥 Stun Bomb" },
+    CraftingRecipe { input1: ItemKind::HealthPotion, input2: ItemKind::HealthPotion, output: ItemKind::AncestralWine, output_name: "🍶 Ancestral Wine" },
+    CraftingRecipe { input1: ItemKind::SmokeScreen, input2: ItemKind::PoisonFlask, output: ItemKind::ShadowCloak, output_name: "👻 Shadow Cloak" },
+    CraftingRecipe { input1: ItemKind::IronSkinElixir, input2: ItemKind::DragonScale, output: ItemKind::WardingCharm, output_name: "🔮 Warding Charm" },
+    CraftingRecipe { input1: ItemKind::MeditationIncense, input2: ItemKind::ClarityTea, output: ItemKind::LotusElixir, output_name: "🪷 Lotus Elixir" },
+    CraftingRecipe { input1: ItemKind::SerpentFang, input2: ItemKind::PoisonFlask, output: ItemKind::SerpentFang, output_name: "🐍 Serpent Fang+" },
+    CraftingRecipe { input1: ItemKind::FireCracker, input2: ItemKind::FireCracker, output: ItemKind::FireCracker, output_name: "🧨 Fire Cracker+" },
+    CraftingRecipe { input1: ItemKind::JadeSalve, input2: ItemKind::HealthPotion, output: ItemKind::JadeSalve, output_name: "💎 Jade Salve+" },
+    CraftingRecipe { input1: ItemKind::WindFan, input2: ItemKind::SilkRope, output: ItemKind::BambooFlute, output_name: "🎋 Bamboo Flute" },
+    CraftingRecipe { input1: ItemKind::MirrorShard, input2: ItemKind::WardingCharm, output: ItemKind::MirrorShard, output_name: "🪞 Mirror Shard+" },
+    CraftingRecipe { input1: ItemKind::ThunderTalisman, input2: ItemKind::FrostVial, output: ItemKind::ThunderDrum, output_name: "🥁 Thunder Drum" },
+    CraftingRecipe { input1: ItemKind::GoldIngot, input2: ItemKind::GoldIngot, output: ItemKind::PhoenixPlume, output_name: "🔥 Phoenix Plume" },
+    CraftingRecipe { input1: ItemKind::HastePotion, input2: ItemKind::ClarityTea, output: ItemKind::HastePotion, output_name: "⚡ Haste Potion+" },
+];
+
+/// Look up a crafting recipe by two item kinds (order-independent).
+pub fn find_crafting_recipe(a: ItemKind, b: ItemKind) -> Option<&'static CraftingRecipe> {
+    CRAFTING_RECIPES.iter().find(|r| {
+        (r.input1 == a && r.input2 == b) || (r.input1 == b && r.input2 == a)
+    })
+}
+
+/// Check whether an item kind can pair with another to form any recipe.
+pub fn has_recipe_with(selected: ItemKind, candidate: ItemKind) -> bool {
+    find_crafting_recipe(selected, candidate).is_some()
+}
+
+/// Create the output item for a crafting recipe, using input items to scale stats.
+pub fn crafted_item(recipe: &CraftingRecipe, item1: &Item, item2: &Item) -> Item {
+    match recipe.output {
+        ItemKind::LotusElixir => Item::LotusElixir,
+        ItemKind::ThunderDrum => {
+            let base = match (item1, item2) {
+                (Item::FireCracker(d), _) | (_, Item::FireCracker(d)) => *d,
+                (Item::ThunderTalisman(d), _) | (_, Item::ThunderTalisman(d)) => *d,
+                (Item::ThunderDrum(d), _) | (_, Item::ThunderDrum(d)) => *d,
+                _ => 4,
+            };
+            Item::ThunderDrum(base + 3)
+        }
+        ItemKind::StunBomb => Item::StunBomb,
+        ItemKind::AncestralWine => Item::AncestralWine(6),
+        ItemKind::ShadowCloak => Item::ShadowCloak(5),
+        ItemKind::WardingCharm => {
+            let base = match (item1, item2) {
+                (Item::WardingCharm(d), _) | (_, Item::WardingCharm(d)) => *d,
+                (Item::IronSkinElixir(d), _) | (_, Item::IronSkinElixir(d)) => *d,
+                _ => 5,
+            };
+            Item::WardingCharm(base + 3)
+        }
+        ItemKind::SerpentFang => Item::SerpentFang,
+        ItemKind::FireCracker => {
+            let base = match (item1, item2) {
+                (Item::FireCracker(d1), Item::FireCracker(d2)) => (*d1).max(*d2),
+                (Item::FireCracker(d), _) | (_, Item::FireCracker(d)) => *d,
+                _ => 5,
+            };
+            Item::FireCracker(base + 4)
+        }
+        ItemKind::JadeSalve => {
+            let base = match (item1, item2) {
+                (Item::JadeSalve(d), _) | (_, Item::JadeSalve(d)) => *d,
+                _ => 2,
+            };
+            Item::JadeSalve(base + 2)
+        }
+        ItemKind::BambooFlute => Item::BambooFlute(4),
+        ItemKind::MirrorShard => Item::MirrorShard,
+        ItemKind::PhoenixPlume => Item::PhoenixPlume(15),
+        ItemKind::HastePotion => {
+            let base = match (item1, item2) {
+                (Item::HastePotion(d), _) | (_, Item::HastePotion(d)) => *d,
+                _ => 5,
+            };
+            Item::HastePotion(base + 3)
+        }
+        // Fallback for any future recipes
+        _ => Item::HealthPotion(10),
+    }
+}
+
 impl ItemKind {
     pub fn index(self) -> usize {
         match self {

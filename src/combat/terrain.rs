@@ -1,5 +1,6 @@
 use crate::combat::action::deal_damage;
-use crate::combat::{BattleTile, TacticalBattle, Weather};
+use crate::combat::{ArenaBiome, BattleTile, TacticalBattle, Weather};
+use crate::status::{StatusInstance, StatusKind};
 use std::collections::VecDeque;
 
 pub enum TerrainSource {
@@ -621,4 +622,382 @@ pub fn decay_cracked_floors(battle: &mut TacticalBattle) -> Vec<String> {
         }
     }
     messages
+}
+
+// ── Terrain Tick System ─────────────────────────────────────────────────────
+
+const DELTAS: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+
+/// Deterministic pseudo-random roll: returns true when the hash falls below `chance` (0–100).
+fn terrain_roll(tick: u32, tile_idx: usize, chance: u32) -> bool {
+    ((tick as u64).wrapping_mul(7).wrapping_add((tile_idx as u64).wrapping_mul(13))) % 100
+        < chance as u64
+}
+
+/// Called once per round to evolve terrain. Processes rules in priority order.
+pub fn tick_terrain(battle: &mut TacticalBattle) {
+    battle.terrain_tick_count += 1;
+    let tick = battle.terrain_tick_count;
+    let w = battle.arena.width as i32;
+    let h = battle.arena.height as i32;
+    let weather = battle.weather;
+    let biome = battle.arena.biome;
+
+    // In Fog weather, terrain is stabilized — no evolution.
+    if weather == Weather::Fog {
+        // Still age lava timers even in fog
+        for i in 0..battle.arena.tiles.len() {
+            if battle.arena.tiles[i] == BattleTile::Lava && battle.arena.lava_timers[i] < 255 {
+                battle.arena.lava_timers[i] += 1;
+            }
+        }
+        return;
+    }
+
+    // ── 1. Fire Spreads ─────────────────────────────────────────────────
+    let fire_chance = if weather == Weather::Rain { 20 } else { 40 };
+    {
+        let mut ignitions = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                if battle.arena.tile(x, y) == Some(BattleTile::Scorched) {
+                    for &(dx, dy) in &DELTAS {
+                        let nx = x + dx;
+                        let ny = y + dy;
+                        if battle.arena.tile(nx, ny) == Some(BattleTile::Grass) {
+                            if let Some(idx) = battle.arena.idx(nx, ny) {
+                                if terrain_roll(tick, idx, fire_chance) {
+                                    ignitions.push((nx, ny));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (x, y) in ignitions {
+            battle.arena.set_tile(x, y, BattleTile::Scorched);
+            battle.log_message(format!("🔥 Fire spreads to ({},{})!", x, y));
+            if let Some(uid) = battle.unit_at(x, y) {
+                battle.units[uid]
+                    .statuses
+                    .push(StatusInstance::new(StatusKind::Burn { damage: 1 }, 2));
+            }
+        }
+    }
+
+    // ── 2. Water Flows (downward / y+1) ─────────────────────────────────
+    let water_chance = if weather == Weather::Rain { 60 } else { 30 };
+    {
+        let mut new_water = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                if battle.arena.tile(x, y) == Some(BattleTile::Water) {
+                    let ny = y + 1;
+                    if battle.arena.tile(x, ny) == Some(BattleTile::Open) {
+                        if let Some(idx) = battle.arena.idx(x, ny) {
+                            if terrain_roll(tick, idx, water_chance) {
+                                new_water.push((x, ny));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (x, y) in new_water {
+            battle.arena.set_tile(x, y, BattleTile::Water);
+            battle.log_message(format!("💧 Water flows to ({},{})!", x, y));
+        }
+    }
+
+    // ── 3. Ice Melts ────────────────────────────────────────────────────
+    if biome != ArenaBiome::Frozen {
+        let ice_chance = if weather == Weather::Rain { 50 } else { 20 };
+        let mut melts = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                if battle.arena.tile(x, y) == Some(BattleTile::Ice) {
+                    if let Some(idx) = battle.arena.idx(x, y) {
+                        if terrain_roll(tick, idx, ice_chance) {
+                            melts.push((x, y));
+                        }
+                    }
+                }
+            }
+        }
+        for (x, y) in melts {
+            battle.arena.set_tile(x, y, BattleTile::Water);
+            battle.log_message(format!("🧊 Ice melts at ({},{})!", x, y));
+        }
+    }
+
+    // ── 4. Lava Cools ───────────────────────────────────────────────────
+    {
+        let mut cooled = Vec::new();
+        for i in 0..battle.arena.tiles.len() {
+            if battle.arena.tiles[i] == BattleTile::Lava {
+                if battle.arena.lava_timers[i] < 255 {
+                    battle.arena.lava_timers[i] += 1;
+                }
+                if battle.arena.lava_timers[i] >= 3 && terrain_roll(tick, i, 15) {
+                    let x = (i % battle.arena.width) as i32;
+                    let y = (i / battle.arena.width) as i32;
+                    cooled.push((x, y, i));
+                }
+            }
+        }
+        for (x, y, i) in cooled {
+            battle.arena.tiles[i] = BattleTile::Scorched;
+            battle.arena.lava_timers[i] = 0;
+            battle.log_message(format!("🌋 Lava cools at ({},{})!", x, y));
+        }
+    }
+
+    // ── 5. Thorns Grow ──────────────────────────────────────────────────
+    {
+        let thorns_count = battle
+            .arena
+            .tiles
+            .iter()
+            .filter(|t| **t == BattleTile::Thorns)
+            .count();
+        if thorns_count < 8 {
+            let mut growth = Vec::new();
+            for y in 0..h {
+                for x in 0..w {
+                    if battle.arena.tile(x, y) == Some(BattleTile::Thorns) {
+                        for &(dx, dy) in &DELTAS {
+                            let nx = x + dx;
+                            let ny = y + dy;
+                            if battle.arena.tile(nx, ny) == Some(BattleTile::Grass) {
+                                if let Some(idx) = battle.arena.idx(nx, ny) {
+                                    if terrain_roll(tick, idx, 25) {
+                                        growth.push((nx, ny));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let remaining = 8 - thorns_count;
+            for (i, (x, y)) in growth.into_iter().enumerate() {
+                if i >= remaining {
+                    break;
+                }
+                battle.arena.set_tile(x, y, BattleTile::Thorns);
+                battle.log_message(format!("🌿 Thorns grow at ({},{})!", x, y));
+            }
+        }
+    }
+
+    // ── 6. Holy Ground Pulses ───────────────────────────────────────────
+    {
+        let mut purified = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                if battle.arena.tile(x, y) == Some(BattleTile::HolyGround) {
+                    for &(dx, dy) in &DELTAS {
+                        let nx = x + dx;
+                        let ny = y + dy;
+                        if let Some(t) = battle.arena.tile(nx, ny) {
+                            if t == BattleTile::Scorched || t == BattleTile::BrokenGround {
+                                purified.push((nx, ny));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (x, y) in purified {
+            battle.arena.set_tile(x, y, BattleTile::Open);
+            battle.log_message(format!("✨ Holy ground purifies ({},{})!", x, y));
+        }
+    }
+
+    // ── 7. Steam + Ice Interaction ──────────────────────────────────────
+    if biome != ArenaBiome::Frozen {
+        let mut steam_melts = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                if battle.arena.tile(x, y) == Some(BattleTile::Steam) {
+                    for &(dx, dy) in &DELTAS {
+                        let nx = x + dx;
+                        let ny = y + dy;
+                        if battle.arena.tile(nx, ny) == Some(BattleTile::Ice) {
+                            steam_melts.push((nx, ny));
+                        }
+                    }
+                }
+            }
+        }
+        for (x, y) in steam_melts {
+            battle.arena.set_tile(x, y, BattleTile::Water);
+            battle.log_message(format!("♨️ Steam melts ice at ({},{})!", x, y));
+        }
+    }
+
+    // ── 8. Oil Seeps ────────────────────────────────────────────────────
+    {
+        let mut new_oil = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                if battle.arena.tile(x, y) == Some(BattleTile::Oil) {
+                    for &(dx, dy) in &DELTAS {
+                        let nx = x + dx;
+                        let ny = y + dy;
+                        if battle.arena.tile(nx, ny) == Some(BattleTile::Water) {
+                            if let Some(idx) = battle.arena.idx(nx, ny) {
+                                if terrain_roll(tick, idx, 20) {
+                                    new_oil.push((nx, ny));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (x, y) in new_oil {
+            battle.arena.set_tile(x, y, BattleTile::Oil);
+            battle.log_message(format!("🛢️ Oil seeps to ({},{})!", x, y));
+        }
+    }
+
+    // ── 9. Grass Regrows ────────────────────────────────────────────────
+    {
+        let mut regrowth = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                if battle.arena.tile(x, y) == Some(BattleTile::Open) {
+                    let mut grass_neighbors = 0u32;
+                    for &(dx, dy) in &DELTAS {
+                        let nx = x + dx;
+                        let ny = y + dy;
+                        if battle.arena.tile(nx, ny) == Some(BattleTile::Grass) {
+                            grass_neighbors += 1;
+                        }
+                    }
+                    if grass_neighbors >= 2 {
+                        if let Some(idx) = battle.arena.idx(x, y) {
+                            if terrain_roll(tick, idx, 10) {
+                                regrowth.push((x, y));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (x, y) in regrowth {
+            battle.arena.set_tile(x, y, BattleTile::Grass);
+        }
+    }
+
+    // ── 10. Boulder Erosion ─────────────────────────────────────────────
+    {
+        let mut eroded = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                if battle.arena.tile(x, y) == Some(BattleTile::Boulder) {
+                    let has_water_neighbor = DELTAS.iter().any(|&(dx, dy)| {
+                        battle.arena.tile(x + dx, y + dy) == Some(BattleTile::Water)
+                    });
+                    if has_water_neighbor {
+                        if let Some(idx) = battle.arena.idx(x, y) {
+                            if terrain_roll(tick, idx, 10) {
+                                eroded.push((x, y));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (x, y) in eroded {
+            battle.arena.set_tile(x, y, BattleTile::BrokenGround);
+            battle.log_message(format!("🪨 Boulder erodes at ({},{})!", x, y));
+        }
+    }
+
+    // ── 11. CrackedFloor Collapses (already handled by decay_cracked_floors) ──
+
+    // ── 12. Pit Fills ───────────────────────────────────────────────────
+    {
+        let mut filled = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                if battle.arena.tile(x, y) == Some(BattleTile::Pit) {
+                    let mut water_neighbors = 0u32;
+                    for &(dx, dy) in &DELTAS {
+                        let nx = x + dx;
+                        let ny = y + dy;
+                        if battle.arena.tile(nx, ny) == Some(BattleTile::Water) {
+                            water_neighbors += 1;
+                        }
+                    }
+                    if water_neighbors >= 2 {
+                        if let Some(idx) = battle.arena.idx(x, y) {
+                            if terrain_roll(tick, idx, 15) {
+                                filled.push((x, y));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (x, y) in filled {
+            battle.arena.set_tile(x, y, BattleTile::Water);
+            battle.log_message(format!("💧 Water fills the pit at ({},{})!", x, y));
+        }
+    }
+
+    // ── Weather-specific terrain modifiers ───────────────────────────────
+    match weather {
+        Weather::Sandstorm => {
+            let mut sanded = Vec::new();
+            for y in 0..h {
+                for x in 0..w {
+                    if battle.arena.tile(x, y) == Some(BattleTile::Open) {
+                        let has_sand_neighbor = DELTAS.iter().any(|&(dx, dy)| {
+                            battle.arena.tile(x + dx, y + dy) == Some(BattleTile::Sand)
+                        });
+                        if has_sand_neighbor {
+                            if let Some(idx) = battle.arena.idx(x, y) {
+                                if terrain_roll(tick, idx, 20) {
+                                    sanded.push((x, y));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for (x, y) in sanded {
+                battle.arena.set_tile(x, y, BattleTile::Sand);
+                battle.log_message(format!("🏜️ Sand reclaims ({},{})!", x, y));
+            }
+        }
+        Weather::SpiritualInk => {
+            let mut inked = Vec::new();
+            for y in 0..h {
+                for x in 0..w {
+                    if battle.arena.tile(x, y) == Some(BattleTile::InkPool) {
+                        for &(dx, dy) in &DELTAS {
+                            let nx = x + dx;
+                            let ny = y + dy;
+                            if battle.arena.tile(nx, ny) == Some(BattleTile::Open) {
+                                if let Some(idx) = battle.arena.idx(nx, ny) {
+                                    if terrain_roll(tick, idx, 10) {
+                                        inked.push((nx, ny));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for (x, y) in inked {
+                battle.arena.set_tile(x, y, BattleTile::InkPool);
+                battle.log_message(format!("🖋️ Ink pools pulse to ({},{})!", x, y));
+            }
+        }
+        _ => {}
+    }
 }

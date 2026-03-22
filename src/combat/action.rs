@@ -11,8 +11,19 @@ pub fn move_unit(
     let old_y = unit.y;
     let dx = dest_x - old_x;
     let dy = dest_y - old_y;
-    if let Some(dir) = Direction::from_delta(dx, dy) {
+    let move_dir = Direction::from_delta(dx, dy);
+    if let Some(dir) = move_dir {
         unit.facing = dir;
+        // Build momentum on straight-line movement
+        if unit.last_move_dir == Some(dir) {
+            unit.momentum = (unit.momentum + 1).min(3);
+        } else {
+            unit.momentum = 1;
+        }
+        unit.last_move_dir = Some(dir);
+    } else {
+        unit.momentum = 0;
+        unit.last_move_dir = None;
     }
     unit.x = dest_x;
     unit.y = dest_y;
@@ -80,11 +91,44 @@ pub fn move_unit(
             battle.audio_events.push(AudioEvent::LavaRumble);
         }
     }
+    // Charge attack: momentum 3 adjacent to an enemy triggers free attack
+    if battle.units[unit_idx].momentum >= 3 {
+        let ux = battle.units[unit_idx].x;
+        let uy = battle.units[unit_idx].y;
+        let is_player = battle.units[unit_idx].is_player();
+        let is_enemy = battle.units[unit_idx].is_enemy();
+        let mut charge_target = None;
+        for (i, u) in battle.units.iter().enumerate() {
+            if i == unit_idx || !u.alive {
+                continue;
+            }
+            if (u.x - ux).abs() + (u.y - uy).abs() != 1 {
+                continue;
+            }
+            if (is_player && u.is_enemy()) || (is_enemy && (u.is_player() || u.is_companion())) {
+                charge_target = Some(i);
+                break;
+            }
+        }
+        if let Some(target) = charge_target {
+            let charge_dmg = battle.units[unit_idx].damage + 2;
+            let name = if is_player {
+                "You".to_string()
+            } else {
+                battle.units[unit_idx].hanzi.to_string()
+            };
+            let (actual, _) = deal_damage_from(battle, unit_idx, target, charge_dmg);
+            messages.push(format!("⚡ {} charge attack! {} damage!", name, actual));
+            battle.units[unit_idx].momentum = 0;
+        }
+    }
     messages
 }
 
 pub fn defend(battle: &mut TacticalBattle, unit_idx: usize) {
     battle.units[unit_idx].defending = true;
+    battle.units[unit_idx].momentum = 0;
+    battle.units[unit_idx].last_move_dir = None;
     if battle.units[unit_idx].is_player() {
         battle.player_acted = true;
         let msg = "You brace for impact.".to_string();
@@ -95,6 +139,8 @@ pub fn defend(battle: &mut TacticalBattle, unit_idx: usize) {
 pub fn wait(battle: &mut TacticalBattle, unit_idx: usize) {
     let unit = &mut battle.units[unit_idx];
     unit.stored_movement = (unit.stored_movement + 1).min(2);
+    unit.momentum = 0;
+    unit.last_move_dir = None;
     let is_player = unit.is_player();
     let ux = unit.x;
     let uy = unit.y;
@@ -144,6 +190,8 @@ pub fn deal_damage(battle: &mut TacticalBattle, target_idx: usize, raw_damage: i
                 // Continue with reduced damage for the player
                 let unit = &mut battle.units[target_idx];
                 let mut damage = remaining;
+                // Apply stance armor modifier
+                damage -= battle.player_stance.armor_mod();
                 if unit.defending {
                     damage = damage / 2;
                     battle.audio_events.push(AudioEvent::ShieldBlock);
@@ -164,6 +212,13 @@ pub fn deal_damage(battle: &mut TacticalBattle, target_idx: usize, raw_damage: i
 
     let unit = &mut battle.units[target_idx];
     let mut damage = raw_damage;
+
+    // Apply stance armor modifier when player is the target
+    if target_idx == 0 {
+        damage -= battle.player_stance.armor_mod();
+        // Apply spell combo armor bonus (Tempering)
+        damage -= battle.combo_armor_bonus;
+    }
 
     if unit.defending {
         damage = damage / 2;
@@ -201,6 +256,8 @@ pub fn deal_damage(battle: &mut TacticalBattle, target_idx: usize, raw_damage: i
                 battle.pending_spirit_delta += 10;
                 battle.log_message("💀 Soul Trap captures the fallen spirit! (+10 spirit)");
             }
+            // Revenge: adjacent allies get enraged when an enemy dies.
+            crate::combat::synergy::on_enemy_death_revenge(battle, target_idx);
         }
     }
     damage
@@ -228,6 +285,21 @@ fn word_group_order_bonus(battle: &TacticalBattle, target_idx: usize, base_damag
     }
 }
 
+/// Check if a unit is cornered (adjacent to 2+ walls/obstacles).
+pub fn is_cornered(battle: &TacticalBattle, unit_idx: usize) -> bool {
+    let ux = battle.units[unit_idx].x;
+    let uy = battle.units[unit_idx].y;
+    let mut wall_count = 0;
+    for &(ddx, ddy) in &[(-1, 0), (1, 0), (0, -1), (0, 1)] {
+        match battle.arena.tile(ux + ddx, uy + ddy) {
+            None => wall_count += 1,
+            Some(t) if !t.is_walkable() => wall_count += 1,
+            _ => {}
+        }
+    }
+    wall_count >= 2
+}
+
 pub fn deal_damage_from(
     battle: &mut TacticalBattle,
     attacker_idx: usize,
@@ -237,8 +309,37 @@ pub fn deal_damage_from(
     let atk_elem = battle.units[attacker_idx].wuxing_element;
     let def_elem = battle.units[target_idx].wuxing_element;
     let multiplier = WuxingElement::multiplier(atk_elem, def_elem);
-    let modified = (raw_damage as f64 * multiplier).ceil() as i32;
+    let mut modified = (raw_damage as f64 * multiplier).ceil() as i32;
+
+    // Momentum bonus: momentum / 2 (0 at 0-1, +1 at 2-3)
+    let momentum = battle.units[attacker_idx].momentum;
+    let momentum_bonus = momentum / 2;
+    if momentum_bonus > 0 {
+        modified += momentum_bonus;
+        battle.log_message(format!("Momentum +{}!", momentum_bonus));
+    }
+
+    // High ground damage modifier
+    let atk_tile = battle.arena.tile(battle.units[attacker_idx].x, battle.units[attacker_idx].y);
+    let def_tile = battle.arena.tile(battle.units[target_idx].x, battle.units[target_idx].y);
+    if atk_tile == Some(BattleTile::HighGround) && def_tile != Some(BattleTile::HighGround) {
+        modified += 1;
+    } else if atk_tile != Some(BattleTile::HighGround) && def_tile == Some(BattleTile::HighGround) {
+        modified = (modified - 1).max(1);
+    }
+
+    // Cornered penalty: +1 damage to cornered targets
+    if is_cornered(battle, target_idx) {
+        modified += 1;
+        battle.log_message("Cornered!");
+    }
+
     let actual = deal_damage(battle, target_idx, modified);
+
+    // Reset attacker momentum after attack (spent on the attack)
+    battle.units[attacker_idx].momentum = 0;
+    battle.units[attacker_idx].last_move_dir = None;
+
     let label = if multiplier > 1.0 {
         Some("Super effective!")
     } else if multiplier < 1.0 {
@@ -253,7 +354,11 @@ pub fn deal_damage_from(
 
     if target.thorn_armor_turns > 0 {
         // ThornsAura + Fortify synergy: thorns damage boosted by fortify stacks
-        let fortify_boost = target.fortify_stacks;
+        let mut fortify_boost = target.fortify_stacks;
+        // Aggressive stance + Fortify synergy: fortify stacks doubled
+        if target_idx == 0 && battle.player_stance == crate::combat::PlayerStance::Aggressive {
+            fortify_boost *= 2;
+        }
         attacker_damage += 1 + fortify_boost;
         if fortify_boost > 0 {
             retaliation_msg = Some(format!(
@@ -269,10 +374,15 @@ pub fn deal_damage_from(
         .iter()
         .any(|s| matches!(s.kind, crate::status::StatusKind::Thorns))
     {
-        attacker_damage += 2;
+        let mut thorn_dmg = 2;
+        // Defensive stance + Thorns synergy: +1 thorn damage
+        if target_idx == 0 && battle.player_stance == crate::combat::PlayerStance::Defensive {
+            thorn_dmg += 1;
+        }
+        attacker_damage += thorn_dmg;
         let msg = match retaliation_msg {
-            Some(prev) => format!("{} Thorns aura retaliates for 2 damage!", prev),
-            None => "Thorns aura retaliates for 2 damage!".to_string(),
+            Some(prev) => format!("{} Thorns aura retaliates for {} damage!", prev, thorn_dmg),
+            None => format!("Thorns aura retaliates for {} damage!", thorn_dmg),
         };
         retaliation_msg = Some(msg);
     }

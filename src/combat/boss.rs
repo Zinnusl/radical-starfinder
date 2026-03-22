@@ -238,6 +238,12 @@ fn mimic_king_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<Str
             intent: None,
             mastery_tier: 0,
             charge_remaining: None,
+            synergy_damage_bonus: 0,
+            elemental_resonance: false,
+            sacrifice_bonus_damage: 0,
+            sacrifice_bonus_turns: 0,
+            momentum: 0,
+            last_move_dir: None,
         };
 
         battle.units.push(decoy);

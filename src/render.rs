@@ -4289,6 +4289,7 @@ impl Renderer {
                     BattleTile::TrapTileRevealed => "arena_thorns",
                     BattleTile::Oil => "arena_water",
                     BattleTile::HolyGround => "arena_spirit_well",
+                    BattleTile::HighGround => "arena_broken_ground",
                 };
 
                 if !self.draw_sprite_icon(sprite_key, sx, sy, cell) {
@@ -4325,6 +4326,7 @@ impl Renderer {
                         BattleTile::TrapTileRevealed => "#4a2a2a",
                         BattleTile::Oil => "#2a2018",
                         BattleTile::HolyGround => "#4a4a22",
+                        BattleTile::HighGround => "#5a4a30",
                     };
                     self.ctx.set_fill_style_str(fill);
                     self.ctx.fill_rect(sx, sy, cell, cell);
@@ -4396,6 +4398,15 @@ impl Renderer {
                         self.ctx.set_text_align("center");
                         self.ctx
                             .fill_text("✦", sx + cell / 2.0, sy + cell / 2.0 + 5.0)
+                            .ok();
+                    }
+
+                    if tile == BattleTile::HighGround {
+                        self.ctx.set_fill_style_str("rgba(200,180,130,0.7)");
+                        self.ctx.set_font("bold 14px monospace");
+                        self.ctx.set_text_align("center");
+                        self.ctx
+                            .fill_text("▲", sx + cell / 2.0, sy + cell / 2.0 + 5.0)
                             .ok();
                     }
 
@@ -4550,6 +4561,15 @@ impl Renderer {
                             .set_fill_style_str(&format!("rgba(220,200,100,{:.3})", glow));
                         self.ctx.fill_rect(sx, sy, cell, cell);
                     }
+                    BattleTile::HighGround => {
+                        let glow = ((anim_t * 1.5 + gx as f64 * 0.4 + gy as f64 * 0.6).sin()
+                            * 0.08
+                            + 0.1)
+                            .max(0.0);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(200,180,130,{:.3})", glow));
+                        self.ctx.fill_rect(sx, sy, cell, cell);
+                    }
                     _ => {}
                 }
 
@@ -4607,6 +4627,20 @@ impl Renderer {
                         self.ctx.set_stroke_style_str(&format!(
                             "rgba(255,230,120,{:.3})",
                             glow + 0.1
+                        ));
+                        self.ctx.set_line_width(1.0);
+                        self.ctx
+                            .stroke_rect(sx + 1.0, sy + 1.0, cell - 2.0, cell - 2.0);
+                    }
+                    BattleTile::HighGround => {
+                        let glow = ((anim_t * 2.0 + gx as f64 * 0.5).sin() * 0.08 + 0.1)
+                            .max(0.0);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(180,160,110,{:.3})", glow));
+                        self.ctx.fill_rect(sx, sy, cell, cell);
+                        self.ctx.set_stroke_style_str(&format!(
+                            "rgba(200,180,130,{:.3})",
+                            glow + 0.08
                         ));
                         self.ctx.set_line_width(1.0);
                         self.ctx
@@ -4948,6 +4982,51 @@ impl Renderer {
                 self.ctx.set_font("8px monospace");
                 self.ctx.set_text_align("left");
                 self.ctx.fill_text(arrow, sx + 1.0, sy + 10.0).ok();
+            }
+
+            // Momentum indicator (directional arrows)
+            if unit.momentum > 0 {
+                let arrow_ch = match unit.last_move_dir {
+                    Some(Direction::North) => "\u{2191}",
+                    Some(Direction::South) => "\u{2193}",
+                    Some(Direction::East) => "\u{2192}",
+                    Some(Direction::West) => "\u{2190}",
+                    None => "\u{2192}",
+                };
+                let color = match unit.momentum {
+                    1 => "rgba(255,255,255,0.6)",
+                    2 => "rgba(255,255,100,0.7)",
+                    _ => "rgba(255,180,50,0.8)",
+                };
+                self.ctx.set_fill_style_str(color);
+                self.ctx.set_font("7px monospace");
+                self.ctx.set_text_align("right");
+                let text: String = (0..unit.momentum).map(|_| arrow_ch).collect();
+                self.ctx
+                    .fill_text(&text, sx + cell - 1.0, sy + cell - 9.0)
+                    .ok();
+            }
+
+            // Cornered indicator
+            {
+                let ux = unit.x;
+                let uy = unit.y;
+                let mut walls = 0i32;
+                for &(cdx, cdy) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+                    match battle.arena.tile(ux + cdx, uy + cdy) {
+                        None => walls += 1,
+                        Some(t) if !t.is_walkable() => walls += 1,
+                        _ => {}
+                    }
+                }
+                if walls >= 2 {
+                    self.ctx.set_fill_style_str("rgba(255,80,80,0.8)");
+                    self.ctx.set_font("bold 7px monospace");
+                    self.ctx.set_text_align("center");
+                    self.ctx
+                        .fill_text("!", sx + cell / 2.0, sy + cell - 9.0)
+                        .ok();
+                }
             }
 
             // Active turn indicator (brighter, with shadow glow)
@@ -5297,6 +5376,20 @@ impl Renderer {
             py += 14.0;
         }
 
+        // ─ Stance indicator ─
+        if !matches!(battle.player_stance, crate::combat::PlayerStance::Balanced) {
+            self.ctx.set_font("10px monospace");
+            self.ctx.set_fill_style_str(battle.player_stance.color());
+            self.ctx
+                .fill_text(
+                    &format!("{} {}", battle.player_stance.icon(), battle.player_stance.name()),
+                    panel_x,
+                    py + 10.0,
+                )
+                .ok();
+            py += 14.0;
+        }
+
         // ─ Separator ─
         self.ctx.set_stroke_style_str("rgba(100,80,140,0.3)");
         self.ctx.set_line_width(1.0);
@@ -5436,6 +5529,7 @@ impl Renderer {
                 ("D", "Defend", !battle.player_acted),
                 ("W", "Wait", true),
                 ("R", "Rotate", true),
+                ("F", "Stance", true),
                 ("V", "Look", true),
             ];
             self.ctx.set_font("11px monospace");
@@ -5492,9 +5586,36 @@ impl Renderer {
                     } else {
                         self.ctx.set_fill_style_str("#aaa");
                     }
+                    // Check if casting this spell would trigger a combo
+                    let combo_indicator =
+                        if let Some(prev_elem) = battle.last_spell_element {
+                            if battle.turn_number.saturating_sub(battle.last_spell_turn) <= 2 {
+                                if let Some(cur_elem) =
+                                    crate::combat::input::spell_effect_element(effect)
+                                {
+                                    if crate::combat::input::spell_combo_name(prev_elem, cur_elem)
+                                        .is_some()
+                                    {
+                                        "⚡"
+                                    } else {
+                                        ""
+                                    }
+                                } else {
+                                    ""
+                                }
+                            } else {
+                                ""
+                            }
+                        } else {
+                            ""
+                        };
                     let label = effect.label();
                     self.ctx
-                        .fill_text(&format!("{} {}", hanzi, label), panel_x, py + 10.0)
+                        .fill_text(
+                            &format!("{}{} {}", combo_indicator, hanzi, label),
+                            panel_x,
+                            py + 10.0,
+                        )
                         .ok();
                     py += 18.0;
                 }
@@ -6049,6 +6170,85 @@ impl Renderer {
             self.ctx.set_text_align("left");
         }
 
+        // ── Arena event warning banner ──────────────────────────────────
+        if let Some(ref pending) = battle.pending_event {
+            let banner_h = 28.0;
+            let banner_y = grid_y - 2.0;
+            let danger = pending.danger_level();
+            let bg_color = match danger {
+                "damaging" => "rgba(180,30,30,0.55)",
+                "beneficial" => "rgba(30,140,60,0.55)",
+                _ => "rgba(40,80,160,0.55)",
+            };
+            self.ctx.set_fill_style_str(bg_color);
+            self.ctx.fill_rect(grid_x, banner_y, grid_px, banner_h);
+
+            let text_color = match danger {
+                "damaging" => "#ff6666",
+                "beneficial" => "#88ff88",
+                _ => "#88bbff",
+            };
+            self.ctx.set_fill_style_str(text_color);
+            self.ctx.set_font("bold 12px monospace");
+            self.ctx.set_text_align("center");
+            let pulse = (anim_t * 4.0).sin().abs();
+            let warning_text = format!("⚠ {} incoming! ⚠", pending.name());
+            self.ctx.set_shadow_color(text_color);
+            self.ctx.set_shadow_blur(4.0 + pulse * 4.0);
+            self.ctx
+                .fill_text(&warning_text, grid_x + grid_px / 2.0, banner_y + 18.0)
+                .ok();
+            self.ctx.set_shadow_blur(0.0);
+            self.ctx.set_shadow_color("transparent");
+            self.ctx.set_text_align("left");
+        }
+
+        // ── Arena event trigger message (large text) ────────────────────
+        if let Some(ref event_msg) = battle.event_message {
+            if battle.event_message_timer > 0 {
+                let alpha = (battle.event_message_timer as f64 / 90.0).min(1.0);
+                let scale = 1.0 + (1.0 - alpha) * 0.3;
+                let font_size = (20.0 * scale) as u32;
+                self.ctx
+                    .set_fill_style_str(&format!("rgba(255,240,180,{})", alpha));
+                self.ctx
+                    .set_font(&format!("bold {}px monospace", font_size));
+                self.ctx.set_text_align("center");
+                let msg_y = grid_y + grid_px * 0.3;
+                self.ctx.set_shadow_color("rgba(255,200,50,0.6)");
+                self.ctx.set_shadow_blur(8.0);
+                self.ctx
+                    .fill_text(event_msg, grid_x + grid_px / 2.0, msg_y)
+                    .ok();
+                self.ctx.set_shadow_blur(0.0);
+                self.ctx.set_shadow_color("transparent");
+                self.ctx.set_text_align("left");
+            }
+        }
+
+        // ── Spell combo notification overlay ─────────────────────────────
+        if let Some(ref combo_msg) = battle.combo_message {
+            if battle.combo_message_timer > 0 {
+                let alpha = (battle.combo_message_timer as f64 / 60.0).min(1.0);
+                let scale = 1.0 + (1.0 - alpha) * 0.5;
+                let font_size = (22.0 * scale) as u32;
+                self.ctx
+                    .set_fill_style_str(&format!("rgba(120,220,255,{})", alpha));
+                self.ctx
+                    .set_font(&format!("bold {}px monospace", font_size));
+                self.ctx.set_text_align("center");
+                let msg_y = grid_y + grid_px * 0.45;
+                self.ctx.set_shadow_color(&format!("rgba(80,180,255,{})", alpha * 0.8));
+                self.ctx.set_shadow_blur(12.0);
+                self.ctx
+                    .fill_text(combo_msg, grid_x + grid_px / 2.0, msg_y)
+                    .ok();
+                self.ctx.set_shadow_blur(0.0);
+                self.ctx.set_shadow_color("transparent");
+                self.ctx.set_text_align("left");
+            }
+        }
+
         // Typing input box (when active)
         if let Some(ref action) = battle.typing_action {
             let target_label = match action {
@@ -6522,6 +6722,9 @@ impl Renderer {
         item_labels: &[String],
         inventory_cursor: usize,
         inventory_inspect: Option<usize>,
+        crafting_mode: bool,
+        crafting_first: Option<usize>,
+        crafting_cursor: usize,
     ) {
         let box_x = 24.0;
         let box_y = 28.0;
@@ -6545,9 +6748,14 @@ impl Renderer {
             .ok();
         self.ctx.set_font("11px monospace");
         self.ctx.set_fill_style_str("#9aaad8");
+        let header_hint = if crafting_mode {
+            "Esc back   ↑↓ navigate   Enter select item"
+        } else {
+            "I/Esc close   ↑↓ navigate items   Enter inspect   C craft"
+        };
         self.ctx
             .fill_text(
-                "I/Esc close   ↑↓ navigate items   Enter inspect",
+                header_hint,
                 self.canvas_w / 2.0,
                 box_y + 46.0,
             )
@@ -6677,8 +6885,17 @@ impl Renderer {
 
         left_y += 26.0;
         self.ctx.set_fill_style_str("#9ab0d7");
+        let section_title = if crafting_mode {
+            if crafting_first.is_some() {
+                "Crafting — Select second item"
+            } else {
+                "Crafting — Select first item"
+            }
+        } else {
+            "Consumables"
+        };
         self.ctx
-            .fill_text("Consumables", left_x + 12.0, left_y)
+            .fill_text(section_title, left_x + 12.0, left_y)
             .ok();
         left_y += 18.0;
         self.ctx.set_fill_style_str("#dde7ff");
@@ -6688,15 +6905,50 @@ impl Renderer {
                 .ok();
             left_y += 16.0;
         } else {
+            // Determine which item kind is selected first (for recipe highlighting)
+            let first_kind = if crafting_mode {
+                crafting_first.and_then(|fi| player.items.get(fi).map(|it| it.kind()))
+            } else {
+                None
+            };
             for (idx, label) in item_labels.iter().enumerate() {
-                let selected = inventory_cursor == idx + 3;
-                if selected {
+                let selected = if crafting_mode {
+                    crafting_cursor == idx
+                } else {
+                    inventory_cursor == idx + 3
+                };
+                let is_first_pick = crafting_mode && crafting_first == Some(idx);
+                let is_compatible = first_kind
+                    .and_then(|fk| player.items.get(idx).map(|it| {
+                        crafting_first != Some(idx)
+                            && crate::player::has_recipe_with(fk, it.kind())
+                    }))
+                    .unwrap_or(false);
+
+                if is_first_pick {
+                    self.ctx.set_fill_style_str("rgba(100,200,255,0.18)");
+                    self.ctx
+                        .fill_rect(left_x + 8.0, left_y - 12.0, left_w - 16.0, 16.0);
+                } else if selected {
                     self.ctx.set_fill_style_str("rgba(255,204,51,0.15)");
                     self.ctx
                         .fill_rect(left_x + 8.0, left_y - 12.0, left_w - 16.0, 16.0);
+                } else if is_compatible {
+                    self.ctx.set_fill_style_str("rgba(80,255,120,0.10)");
+                    self.ctx
+                        .fill_rect(left_x + 8.0, left_y - 12.0, left_w - 16.0, 16.0);
                 }
-                self.ctx
-                    .set_fill_style_str(if selected { "#ffcc33" } else { "#dde7ff" });
+
+                let color = if is_first_pick {
+                    "#66ccff"
+                } else if selected {
+                    "#ffcc33"
+                } else if is_compatible {
+                    "#66ff88"
+                } else {
+                    "#dde7ff"
+                };
+                self.ctx.set_fill_style_str(color);
                 if let Some(item) = player.items.get(idx) {
                     self.draw_sprite_icon(
                         item_sprite_key(item),
@@ -6705,7 +6957,13 @@ impl Renderer {
                         12.0,
                     );
                 }
-                let marker = if selected { "▸" } else { " " };
+                let marker = if is_first_pick {
+                    "★"
+                } else if selected {
+                    "▸"
+                } else {
+                    " "
+                };
                 self.ctx
                     .fill_text(
                         &format!("{} {}. {}", marker, idx + 1, label),
@@ -6714,6 +6972,37 @@ impl Renderer {
                     )
                     .ok();
                 left_y += 16.0;
+            }
+        }
+
+        // Show recipe preview when both items are selected
+        if crafting_mode {
+            if let Some(fi) = crafting_first {
+                if let (Some(item1), Some(item2)) = (
+                    player.items.get(fi),
+                    player.items.get(crafting_cursor),
+                ) {
+                    if fi != crafting_cursor {
+                        left_y += 4.0;
+                        if let Some(recipe) =
+                            crate::player::find_crafting_recipe(item1.kind(), item2.kind())
+                        {
+                            self.ctx.set_fill_style_str("#66ff88");
+                            self.ctx
+                                .fill_text(
+                                    &format!("→ {}", recipe.output_name),
+                                    left_x + 12.0,
+                                    left_y,
+                                )
+                                .ok();
+                        } else {
+                            self.ctx.set_fill_style_str("#ff6666");
+                            self.ctx
+                                .fill_text("✗ No recipe", left_x + 12.0, left_y)
+                                .ok();
+                        }
+                    }
+                }
             }
         }
 
@@ -6900,10 +7189,12 @@ impl Renderer {
         self.ctx.set_text_align("center");
         self.ctx.set_font("11px monospace");
         self.ctx.set_fill_style_str("#7784aa");
-        let footer = if item_labels.iter().any(|label| label.starts_with('?')) {
+        let footer = if crafting_mode {
+            "Select two items to combine. Compatible pairs glow green."
+        } else if item_labels.iter().any(|label| label.starts_with('?')) {
             "Mystery seals identify themselves on use. Use 1-5 in exploration to test them."
         } else {
-            "Use 1-5 in exploration to consume items. Selected spell is highlighted here for combat."
+            "Use 1-5 to consume items. C to craft/combine two items together."
         };
         self.ctx
             .fill_text(footer, self.canvas_w / 2.0, box_y + box_h - 16.0)

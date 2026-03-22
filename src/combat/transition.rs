@@ -33,7 +33,7 @@ pub fn enter_combat(
     let px = (arena_size / 2) as i32;
     let py = (arena_size - 2) as i32;
     let p_speed = player_speed(player.class, player.form, &player.statuses);
-    let p_movement = player_movement(player.form, &player.statuses);
+    let p_movement = player_movement(player.form, &player.statuses, crate::combat::PlayerStance::Balanced);
 
     let p_damage = 2 + player.bonus_damage() + player.enchant_bonus_damage();
 
@@ -71,6 +71,12 @@ pub fn enter_combat(
         intent: None,
         mastery_tier: 0,
         charge_remaining: None,
+        synergy_damage_bonus: 0,
+        elemental_resonance: false,
+        sacrifice_bonus_damage: 0,
+        sacrifice_bonus_turns: 0,
+        momentum: 0,
+        last_move_dir: None,
     });
 
     // Companion unit adjacent to player (if any).
@@ -119,6 +125,12 @@ pub fn enter_combat(
             intent: None,
             mastery_tier: 0,
             charge_remaining: None,
+            synergy_damage_bonus: 0,
+            elemental_resonance: false,
+            sacrifice_bonus_damage: 0,
+            sacrifice_bonus_turns: 0,
+            momentum: 0,
+            last_move_dir: None,
         });
     }
     // Multi-char words are split into one BattleUnit per character.
@@ -214,6 +226,12 @@ pub fn enter_combat(
                 } else {
                     None
                 },
+                synergy_damage_bonus: 0,
+                elemental_resonance: false,
+                sacrifice_bonus_damage: 0,
+                sacrifice_bonus_turns: 0,
+                momentum: 0,
+                last_move_dir: None,
             });
 
             let last_idx = units.len() - 1;
@@ -252,6 +270,7 @@ pub fn enter_combat(
         combo_streak: 0,
         player_moved: false,
         player_acted: false,
+        player_stance: crate::combat::PlayerStance::Balanced,
         typing_buffer: String::new(),
         typing_action: None,
         log: vec!["Battle begins!".to_string()],
@@ -267,6 +286,13 @@ pub fn enter_combat(
         spent_spell_index: None,
         ward_tiles: Vec::new(),
         last_spell_school: None,
+        last_spell_element: None,
+        last_spell_turn: 0,
+        combo_message: None,
+        combo_message_timer: 0,
+        combo_armor_bonus: 0,
+        combo_armor_turns: 0,
+        frozen_edge_charges: 0,
         stolen_spells: Vec::new(),
         player_class: Some(player.class),
         available_items: player
@@ -279,6 +305,7 @@ pub fn enter_combat(
         item_menu_open: false,
         item_cursor: 0,
         weather,
+        terrain_tick_count: 0,
         focus: 10,
         max_focus: 10,
         radical_synergy_radical: None,
@@ -315,6 +342,11 @@ pub fn enter_combat(
             }
             effects
         },
+        attacks_on_player_this_round: 0,
+        arena_event_timer: 3,
+        pending_event: None,
+        event_message: None,
+        event_message_timer: 0,
     }
 }
 
@@ -527,6 +559,28 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
                     }
                 }
             }
+        }
+    }
+
+    // High Ground: 1-2 elevated tiles per arena (hill positions)
+    {
+        let hg_seed = seed.wrapping_mul(12347).wrapping_add(55);
+        let hg_count = 1 + ((hg_seed >> 4) % 2) as usize;
+        for i in 0..hg_count {
+            let hash = hg_seed
+                .wrapping_mul(7727)
+                .wrapping_add(i as u64)
+                .wrapping_mul(19991);
+            let x = ((hash >> 16) % size as u64) as i32;
+            let y = (2 + (hash >> 8) % (size as u64 - 4)) as i32;
+            let mid = size as i32 / 2;
+            if y >= (size as i32 - 2) && (x - mid).abs() <= 1 {
+                continue;
+            }
+            if arena.tile(x, y) != Some(BattleTile::Open) {
+                continue;
+            }
+            arena.set_tile(x, y, BattleTile::HighGround);
         }
     }
 

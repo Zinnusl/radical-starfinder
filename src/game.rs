@@ -1375,6 +1375,12 @@ pub struct GameState {
     pub completed_special_rooms: HashSet<(i32, i32, i32)>,
     /// Whether the demon deal is active (enemies on next floor are elite)
     pub demon_deal_floors: i32,
+    /// Whether the crafting sub-mode is active inside the inventory screen
+    pub crafting_mode: bool,
+    /// Index (into player.items) of the first item selected for crafting
+    pub crafting_first: Option<usize>,
+    /// Cursor position while selecting items for crafting
+    pub crafting_cursor: usize,
 }
 
 impl GameState {
@@ -1421,6 +1427,43 @@ impl GameState {
     fn close_inventory(&mut self) {
         self.show_inventory = false;
         self.inventory_inspect = None;
+        self.crafting_mode = false;
+        self.crafting_first = None;
+        self.crafting_cursor = 0;
+    }
+
+    fn try_craft(&mut self, first_idx: usize, second_idx: usize) {
+        use crate::player::{find_crafting_recipe, crafted_item, ItemState};
+        let kind1 = self.player.items[first_idx].kind();
+        let kind2 = self.player.items[second_idx].kind();
+        if let Some(recipe) = find_crafting_recipe(kind1, kind2) {
+            let output = crafted_item(recipe, &self.player.items[first_idx], &self.player.items[second_idx]);
+            let output_name = recipe.output_name;
+            // Remove the higher index first to avoid shifting the lower one
+            let (hi, lo) = if first_idx > second_idx {
+                (first_idx, second_idx)
+            } else {
+                (second_idx, first_idx)
+            };
+            self.player.items.remove(hi);
+            self.player.item_states.remove(hi);
+            self.player.items.remove(lo);
+            self.player.item_states.remove(lo);
+            self.player.add_item(output, ItemState::Normal);
+            if let Some(ref audio) = self.audio {
+                audio.play_forge();
+            }
+            self.message = format!("✨ Crafted {}!", output_name);
+            self.message_timer = 90;
+            // Exit crafting mode after successful craft
+            self.crafting_mode = false;
+            self.crafting_first = None;
+            self.crafting_cursor = 0;
+        } else {
+            self.message = "These items can't be combined.".to_string();
+            self.message_timer = 60;
+            self.crafting_first = None;
+        }
     }
 
     fn start_look_mode(&mut self) {
@@ -9194,6 +9237,9 @@ impl GameState {
         self.show_inventory = false;
         self.show_help = false;
         self.show_settings = false;
+        self.crafting_mode = false;
+        self.crafting_first = None;
+        self.crafting_cursor = 0;
         self.message_tick_delay = 0;
         self.new_floor();
     }
@@ -9437,6 +9483,9 @@ impl GameState {
                 &item_labels,
                 self.inventory_cursor,
                 self.inventory_inspect,
+                self.crafting_mode,
+                self.crafting_first,
+                self.crafting_cursor,
             );
         } else if self.show_spellbook {
             self.renderer.draw_spellbook(&self.player);
@@ -10896,6 +10945,9 @@ pub fn init_game() -> Result<(), JsValue> {
         god_mode: false,
         completed_special_rooms: HashSet::new(),
         demon_deal_floors: 0,
+        crafting_mode: false,
+        crafting_first: None,
+        crafting_cursor: 0,
     }));
 
     // Initial setup
@@ -11031,7 +11083,49 @@ pub fn init_game() -> Result<(), JsValue> {
 
             if s.show_inventory {
                 event.prevent_default();
-                if s.inventory_inspect.is_some() {
+                if s.crafting_mode {
+                    // Crafting sub-mode input handling
+                    let item_count = s.player.items.len();
+                    match key.as_str() {
+                        "Escape" | "Backspace" => {
+                            if s.crafting_first.is_some() {
+                                // Go back to selecting first item
+                                s.crafting_first = None;
+                            } else {
+                                // Exit crafting mode entirely
+                                s.crafting_mode = false;
+                                s.crafting_cursor = 0;
+                            }
+                        }
+                        "ArrowUp" | "w" | "W" => {
+                            if s.crafting_cursor > 0 {
+                                s.crafting_cursor -= 1;
+                            }
+                        }
+                        "ArrowDown" | "s" | "S" => {
+                            if item_count > 0 && s.crafting_cursor < item_count - 1 {
+                                s.crafting_cursor += 1;
+                            }
+                        }
+                        "Enter" => {
+                            if item_count > 0 && s.crafting_cursor < item_count {
+                                if let Some(first_idx) = s.crafting_first {
+                                    let second_idx = s.crafting_cursor;
+                                    if first_idx != second_idx {
+                                        s.try_craft(first_idx, second_idx);
+                                    } else {
+                                        s.message = "Select a different item!".to_string();
+                                        s.message_timer = 60;
+                                    }
+                                } else {
+                                    // Select first item
+                                    s.crafting_first = Some(s.crafting_cursor);
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                } else if s.inventory_inspect.is_some() {
                     match key.as_str() {
                         "Escape" | "Backspace" => s.inventory_inspect = None,
                         _ => {}
@@ -11054,6 +11148,16 @@ pub fn init_game() -> Result<(), JsValue> {
                         "Enter" => {
                             if s.inventory_cursor < total_slots {
                                 s.inventory_inspect = Some(s.inventory_cursor);
+                            }
+                        }
+                        "c" | "C" => {
+                            if s.player.items.len() >= 2 {
+                                s.crafting_mode = true;
+                                s.crafting_first = None;
+                                s.crafting_cursor = 0;
+                            } else {
+                                s.message = "Need at least 2 items to craft.".to_string();
+                                s.message_timer = 60;
                             }
                         }
                         _ => {}
@@ -12710,10 +12814,10 @@ pub fn init_game() -> Result<(), JsValue> {
                                 combat::AudioEvent::TypingError => audio.play_typing_error(),
                                 combat::AudioEvent::WaterSplash => audio.play_water_splash(),
                                 combat::AudioEvent::LavaRumble => audio.play_lava_rumble(),
+                                combat::AudioEvent::ComboStrike => audio.play_critical_hit(),
                             }
                         }
                     }
-
                     // Scan new log messages for particle/shake triggers
                     for msg in &battle.log[log_len_before..] {
                         if msg.contains("Collision!") || msg.contains("Slammed") {
@@ -13789,6 +13893,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                     combat::AudioEvent::TypingError => audio.play_typing_error(),
                                     combat::AudioEvent::WaterSplash => audio.play_water_splash(),
                                     combat::AudioEvent::LavaRumble => audio.play_lava_rumble(),
+                                    combat::AudioEvent::ComboStrike => audio.play_critical_hit(),
                                 }
                             }
                         }
