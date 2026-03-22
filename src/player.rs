@@ -465,6 +465,45 @@ impl Item {
         }
     }
 
+    /// Base value of the item; sell price is 40% of this.
+    pub fn sell_price(&self) -> i32 {
+        let base = match self {
+            Item::MedHypo(_) => 25,
+            Item::ToxinGrenade(_, _) => 30,
+            Item::ScannerPulse => 30,
+            Item::PersonalTeleporter => 35,
+            Item::StimPack(_) => 25,
+            Item::EMPGrenade => 35,
+            Item::RationPack(_) => 15,
+            Item::FocusStim(_) => 20,
+            Item::SynthAle(_) => 15,
+            Item::HoloDecoy(_) => 20,
+            Item::PlasmaBurst(_) => 35,
+            Item::NanoShield(_) => 30,
+            Item::NeuralBoost => 25,
+            Item::CreditChip(_) => 15,
+            Item::ShockModule(_) => 30,
+            Item::BiogelPatch(_) => 20,
+            Item::VenomDart => 25,
+            Item::DeflectorDrone(_) => 30,
+            Item::NaniteSwarm => 35,
+            Item::Revitalizer(_) => 40,
+            Item::ReflectorPlate => 30,
+            Item::CryoGrenade(_) => 30,
+            Item::CloakingDevice(_) => 35,
+            Item::PlasmaShield(_) => 30,
+            Item::SignalJammer(_) => 25,
+            Item::NavComputer => 25,
+            Item::GrappleLine => 20,
+            Item::OmniGel => 25,
+            Item::SonicEmitter(_) => 30,
+            Item::CircuitInk => 25,
+            Item::DataCore(_) => 40,
+            Item::ThrusterPack => 20,
+        };
+        (base * 40) / 100
+    }
+
     #[allow(dead_code)]
     pub fn short_name(&self) -> &'static str {
         match self {
@@ -905,6 +944,17 @@ impl CrewRole {
             CrewRole::Engineer => "🔧",
         }
     }
+
+    pub fn all() -> &'static [CrewRole] {
+        &[
+            CrewRole::ScienceOfficer,
+            CrewRole::Medic,
+            CrewRole::Quartermaster,
+            CrewRole::SecurityChief,
+            CrewRole::Pilot,
+            CrewRole::Engineer,
+        ]
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -921,6 +971,7 @@ pub struct Ship {
     pub sensor_range: i32,
     pub cargo_capacity: i32,
     pub cargo_used: i32,
+    pub upgrades: Vec<crate::world::ship::ShipUpgrade>,
 }
 
 #[allow(dead_code)]
@@ -938,6 +989,7 @@ impl Ship {
             sensor_range: 3,
             cargo_capacity: 20,
             cargo_used: 0,
+            upgrades: Vec::new(),
         }
     }
 }

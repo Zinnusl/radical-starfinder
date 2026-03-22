@@ -12,7 +12,7 @@ use crate::combat::{
 };
 use crate::world::{TerminalKind, DungeonLevel, SealKind, Tile, LocationType};
 use crate::enemy::{BossKind, Enemy};
-use crate::game::{combo_tier, CombatState, ComboTier, GameSettings, ListenMode, ShopItemKind};
+use crate::game::{combo_tier, CombatState, ComboTier, EnemyShip, GameSettings, ListenMode, ShopItemKind, SpaceCombatPhase};
 use crate::particle::ParticleSystem;
 use crate::player::{Faction, Item, ItemKind, ItemState, Player, PlayerClass, PlayerForm, Ship};
 use crate::world::starmap::SectorMap;
@@ -124,7 +124,8 @@ impl Renderer {
         class_cursor: usize,
         location_label: &str,
         location_bonus: &str,
-        _show_minimap: bool,
+        show_minimap: bool,
+        shop_sell_mode: bool,
     ) {
         let anim_t = Date::now() / 1000.0;
         // Screen shake offset
@@ -904,7 +905,9 @@ impl Renderer {
         }
 
         // Minimap (bottom-right)
-        self.draw_minimap(level, player);
+        if show_minimap {
+            self.draw_minimap(level, player);
+        }
 
         // Quest tracker (bottom-left)
         if !quests.is_empty() {
@@ -1548,24 +1551,30 @@ impl Renderer {
 
         // ── Shop UI overlay ─────────────────────────────────────────────
         if let CombatState::Shopping { ref items, cursor } = combat {
+            let display_items_len = if shop_sell_mode {
+                player.items.len()
+            } else {
+                items.len()
+            };
             let box_w = 350.0;
-            let box_h = 60.0 + items.len() as f64 * 28.0;
+            let box_h = 60.0 + display_items_len.max(1) as f64 * 28.0;
             let box_x = (self.canvas_w - box_w) / 2.0;
             let box_y = 50.0;
 
             // Background
             self.ctx.set_fill_style_str("rgba(10,30,20,0.95)");
             self.ctx.fill_rect(box_x, box_y, box_w, box_h);
-            self.ctx.set_stroke_style_str("#44dd88");
+            self.ctx.set_stroke_style_str(if shop_sell_mode { "#dd8844" } else { "#44dd88" });
             self.ctx.set_line_width(2.0);
             self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
 
             // Title
-            self.ctx.set_fill_style_str("#44dd88");
+            self.ctx.set_fill_style_str(if shop_sell_mode { "#dd8844" } else { "#44dd88" });
             self.ctx.set_font("18px monospace");
             self.ctx.set_text_align("center");
+            let title = if shop_sell_mode { "$ Sell Items $" } else { "$ Shop $" };
             self.ctx
-                .fill_text("$ Shop $", self.canvas_w / 2.0, box_y + 26.0)
+                .fill_text(title, self.canvas_w / 2.0, box_y + 26.0)
                 .ok();
 
             // Gold display
@@ -1579,44 +1588,86 @@ impl Renderer {
                 )
                 .ok();
 
-            // Items
-            for (i, item) in items.iter().enumerate() {
-                let y = box_y + 60.0 + i as f64 * 28.0;
-                let selected = i == *cursor;
-
-                // Selection highlight
-                if selected {
-                    self.ctx.set_fill_style_str("rgba(68,221,136,0.15)");
+            if shop_sell_mode {
+                // Sell mode: show player inventory with sell prices
+                if player.items.is_empty() {
+                    let y = box_y + 60.0;
+                    self.ctx.set_fill_style_str("#666");
+                    self.ctx.set_font("13px monospace");
+                    self.ctx.set_text_align("center");
                     self.ctx
-                        .fill_rect(box_x + 10.0, y - 6.0, box_w - 20.0, 24.0);
-                }
-
-                let marker = if selected { "►" } else { " " };
-                let companion_discount = companion
-                    .map(|c| c.shop_discount_pct(companion_level))
-                    .unwrap_or(0);
-                let total_discount = (player.shop_discount_pct + companion_discount).clamp(0, 50);
-                let display_cost = ((item.cost * (100 - total_discount)) + 99) / 100;
-                let can_afford = player.gold >= display_cost;
-                self.ctx
-                    .set_fill_style_str(if can_afford { "#ccffcc" } else { "#666" });
-                self.ctx.set_font("13px monospace");
-                self.ctx.set_text_align("left");
-                let price_label = if total_discount > 0 {
-                    format!(
-                        "{} {} — {}g ({}% off)",
-                        marker, item.label, display_cost, total_discount
-                    )
+                        .fill_text("No items to sell", self.canvas_w / 2.0, y + 10.0)
+                        .ok();
                 } else {
-                    format!("{} {} — {}g", marker, item.label, item.cost)
-                };
-                let mut text_x = box_x + 15.0;
-                if let Some(icon_key) = shop_item_sprite_key(&item.kind) {
-                    if self.draw_sprite_icon(icon_key, box_x + 15.0, y - 4.0, 16.0) {
-                        text_x += 20.0;
+                    for (i, item) in player.items.iter().enumerate() {
+                        let y = box_y + 60.0 + i as f64 * 28.0;
+                        let selected = i == *cursor;
+
+                        if selected {
+                            self.ctx.set_fill_style_str("rgba(221,136,68,0.15)");
+                            self.ctx
+                                .fill_rect(box_x + 10.0, y - 6.0, box_w - 20.0, 24.0);
+                        }
+
+                        let marker = if selected { "►" } else { " " };
+                        let sell_price = item.sell_price();
+                        let label = if i < item_labels.len() {
+                            &item_labels[i]
+                        } else {
+                            item.name()
+                        };
+                        self.ctx.set_fill_style_str("#ffcc99");
+                        self.ctx.set_font("13px monospace");
+                        self.ctx.set_text_align("left");
+                        let price_label = format!("{} {} — {}g", marker, label, sell_price);
+                        let mut text_x = box_x + 15.0;
+                        let icon_key = item_sprite_key(item);
+                        if self.draw_sprite_icon(icon_key, box_x + 15.0, y - 4.0, 16.0) {
+                            text_x += 20.0;
+                        }
+                        self.ctx.fill_text(&price_label, text_x, y + 10.0).ok();
                     }
                 }
-                self.ctx.fill_text(&price_label, text_x, y + 10.0).ok();
+            } else {
+                // Buy mode: show shop items (existing logic)
+                for (i, item) in items.iter().enumerate() {
+                    let y = box_y + 60.0 + i as f64 * 28.0;
+                    let selected = i == *cursor;
+
+                    // Selection highlight
+                    if selected {
+                        self.ctx.set_fill_style_str("rgba(68,221,136,0.15)");
+                        self.ctx
+                            .fill_rect(box_x + 10.0, y - 6.0, box_w - 20.0, 24.0);
+                    }
+
+                    let marker = if selected { "►" } else { " " };
+                    let companion_discount = companion
+                        .map(|c| c.shop_discount_pct(companion_level))
+                        .unwrap_or(0);
+                    let total_discount = (player.shop_discount_pct + companion_discount).clamp(0, 50);
+                    let display_cost = ((item.cost * (100 - total_discount)) + 99) / 100;
+                    let can_afford = player.gold >= display_cost;
+                    self.ctx
+                        .set_fill_style_str(if can_afford { "#ccffcc" } else { "#666" });
+                    self.ctx.set_font("13px monospace");
+                    self.ctx.set_text_align("left");
+                    let price_label = if total_discount > 0 {
+                        format!(
+                            "{} {} — {}g ({}% off)",
+                            marker, item.label, display_cost, total_discount
+                        )
+                    } else {
+                        format!("{} {} — {}g", marker, item.label, item.cost)
+                    };
+                    let mut text_x = box_x + 15.0;
+                    if let Some(icon_key) = shop_item_sprite_key(&item.kind) {
+                        if self.draw_sprite_icon(icon_key, box_x + 15.0, y - 4.0, 16.0) {
+                            text_x += 20.0;
+                        }
+                    }
+                    self.ctx.fill_text(&price_label, text_x, y + 10.0).ok();
+                }
             }
 
             // Hint
@@ -1625,10 +1676,12 @@ impl Renderer {
             self.ctx.set_text_align("center");
             let has_reroll =
                 companion == Some(crate::game::Companion::Quartermaster) && companion_level >= 3;
-            let hint_text = if has_reroll {
-                "↑↓=browse  Enter=buy  R=reroll  Esc=leave"
+            let hint_text = if shop_sell_mode {
+                "↑↓=browse  Enter=sell  Tab=buy mode  Esc=leave"
+            } else if has_reroll {
+                "↑↓=browse  Enter=buy  Tab=sell  R=reroll  Esc=leave"
             } else {
-                "↑↓=browse  Enter=buy  Esc=leave"
+                "↑↓=browse  Enter=buy  Tab=sell  Esc=leave"
             };
             self.ctx
                 .fill_text(hint_text, self.canvas_w / 2.0, box_y + box_h + 14.0)
@@ -9537,7 +9590,7 @@ impl Renderer {
     }
 
     /// Draw class selection overlay on top of the starmap.
-    pub fn draw_class_select(&self, cursor: usize) {
+    pub fn draw_class_select(&self, cursor: usize, has_continue: bool) {
         let anim_t = Date::now() / 1000.0;
 
         self.ctx.set_fill_style_str("rgba(0,0,0,0.85)");
@@ -9556,11 +9609,50 @@ impl Renderer {
         self.ctx.fill_text("Choose Your Path", cx, y).ok();
         y += 40.0;
 
+        // "Continue Previous Game" option
+        if has_continue {
+            let is_selected = cursor == 0;
+            let bg_color = if is_selected {
+                "rgba(255,200,0,0.20)"
+            } else {
+                "rgba(0,0,0,0.4)"
+            };
+            let border_color = if is_selected { "#ffcc00" } else { "#444" };
+
+            self.ctx.set_fill_style_str(bg_color);
+            self.ctx.set_stroke_style_str(border_color);
+            self.ctx.set_line_width(if is_selected { 2.0 } else { 1.0 });
+
+            let box_w = 400.0;
+            let box_h = 50.0;
+            let box_x = cx - box_w / 2.0;
+
+            self.ctx.fill_rect(box_x, y, box_w, box_h);
+            self.ctx.stroke_rect(box_x, y, box_w, box_h);
+
+            self.ctx.set_fill_style_str("#ffcc00");
+            self.ctx.set_font("20px monospace");
+            self.ctx.set_text_align("left");
+            self.ctx.fill_text("▸", box_x + 15.0, y + 32.0).ok();
+
+            self.ctx
+                .set_fill_style_str(if is_selected { "#ffe066" } else { "#ccaa00" });
+            self.ctx.set_font("16px monospace");
+            self.ctx
+                .fill_text("Continue Previous Game", box_x + 45.0, y + 32.0)
+                .ok();
+
+            y += box_h + 16.0;
+        }
+
+        let continue_offset = if has_continue { 1 } else { 0 };
+        let class_cursor = cursor.saturating_sub(continue_offset);
+
         let all_classes = PlayerClass::all();
         let total = all_classes.len();
 
         let page_size = 6;
-        let page = cursor / page_size;
+        let page = class_cursor / page_size;
         let start_idx = page * page_size;
         let end_idx = (start_idx + page_size).min(total);
 
@@ -9568,7 +9660,7 @@ impl Renderer {
             let class_var = all_classes[i];
             let data = class_var.data();
 
-            let is_selected = i == cursor;
+            let is_selected = i + continue_offset == cursor;
             let bg_color = if is_selected {
                 "rgba(255,255,255,0.15)"
             } else {
@@ -9690,29 +9782,257 @@ impl Renderer {
         self.ctx.fill();
     }
 
+    pub fn draw_ship_upgrades(
+        &self,
+        cursor: usize,
+        purchased: &[crate::world::ship::ShipUpgrade],
+        gold: i32,
+    ) {
+        use crate::world::ship::ShipUpgrade;
+
+        let all = ShipUpgrade::all();
+        let panel_w = 500.0_f64;
+        let panel_h = 40.0 * all.len() as f64 + 100.0;
+        let px = (self.canvas_w - panel_w) / 2.0;
+        let py = (self.canvas_h - panel_h) / 2.0;
+
+        // Overlay background
+        self.ctx.set_fill_style_str("rgba(0, 0, 0, 0.92)");
+        self.ctx.fill_rect(px, py, panel_w, panel_h);
+        self.ctx.set_stroke_style_str("#00ccdd");
+        self.ctx.set_line_width(2.0);
+        self.ctx.stroke_rect(px, py, panel_w, panel_h);
+
+        // Title
+        self.ctx.set_font("20px monospace");
+        self.ctx.set_fill_style_str("#00eeff");
+        self.ctx.set_text_align("center");
+        self.ctx.fill_text("Ship Upgrades", px + panel_w / 2.0, py + 30.0).ok();
+
+        // Gold display
+        self.ctx.set_font("14px monospace");
+        self.ctx.set_fill_style_str("#ffcc00");
+        self.ctx.fill_text(&format!("Credits: {}", gold), px + panel_w / 2.0, py + 52.0).ok();
+        self.ctx.set_text_align("left");
+
+        // List upgrades
+        let list_y = py + 70.0;
+        for (i, upgrade) in all.iter().enumerate() {
+            let row_y = list_y + i as f64 * 40.0;
+            let owned = purchased.contains(upgrade);
+
+            // Highlight cursor
+            if i == cursor {
+                self.ctx.set_fill_style_str("rgba(0, 200, 220, 0.15)");
+                self.ctx.fill_rect(px + 10.0, row_y - 14.0, panel_w - 20.0, 36.0);
+            }
+
+            // Name + status
+            self.ctx.set_font("14px monospace");
+            let prefix = if owned { "\u{2713} " } else if i == cursor { "> " } else { "  " };
+            let name_color = if owned { "#55aa55" } else if gold >= upgrade.cost() { "#ffffff" } else { "#aa5555" };
+            self.ctx.set_fill_style_str(name_color);
+            self.ctx.fill_text(&format!("{}{}", prefix, upgrade.name()), px + 20.0, row_y + 4.0).ok();
+
+            // Description
+            self.ctx.set_fill_style_str("#888888");
+            self.ctx.set_font("12px monospace");
+            self.ctx.fill_text(upgrade.description(), px + 240.0, row_y + 4.0).ok();
+
+            // Cost
+            let cost_str = if owned { "OWNED".to_string() } else { format!("{}c", upgrade.cost()) };
+            self.ctx.set_fill_style_str(if owned { "#55aa55" } else { "#ffcc00" });
+            self.ctx.fill_text(&cost_str, px + panel_w - 70.0, row_y + 4.0).ok();
+        }
+
+        // Footer
+        self.ctx.set_font("12px monospace");
+        self.ctx.set_fill_style_str("#666666");
+        self.ctx.set_text_align("center");
+        self.ctx.fill_text("[Enter] Buy  [Esc] Close", px + panel_w / 2.0, py + panel_h - 12.0).ok();
+        self.ctx.set_text_align("left");
+    }
+
     pub fn draw_space_combat(
         &self,
         player_ship: &Ship,
-        // enemy_ship: &Ship, // Assuming enemy ship struct is same or similar
-        // For now just draw HUD
-        _anim_t: f64,
+        enemy_ship: &EnemyShip,
+        phase: &SpaceCombatPhase,
+        cursor: usize,
+        log: &[String],
+        crew_count: usize,
+        anim_t: f64,
     ) {
-        self.ctx.set_fill_style_str("#000000");
-        self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
-        
-        // Draw Player Ship (Left)
+        let w = self.canvas_w;
+        let h = self.canvas_h;
+
+        // Dark space background
+        self.ctx.set_fill_style_str("#050510");
+        self.ctx.fill_rect(0.0, 0.0, w, h);
+
+        // Stars
+        let star_seed = (anim_t * 0.1) as u64;
+        let mut rng = star_seed.wrapping_mul(1664525).wrapping_add(1013904223);
+        for _ in 0..60 {
+            rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+            let sx = (rng % (w as u64)) as f64;
+            rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+            let sy = (rng % (h as u64)) as f64;
+            rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+            let brightness = 0.3 + (rng % 70) as f64 / 100.0;
+            let b = (brightness * 255.0) as u8;
+            self.ctx.set_fill_style_str(&format!("rgb({},{},{})", b, b, b));
+            self.ctx.fill_rect(sx, sy, 2.0, 2.0);
+        }
+
+        // Player ship (left side) - cyan triangle shape
+        let ps_x = 80.0;
+        let ps_y = h * 0.35;
         self.ctx.set_fill_style_str("#00ccdd");
-        self.ctx.fill_rect(100.0, 300.0, 100.0, 60.0);
-        
-        // Draw Enemy Ship (Right)
+        self.ctx.begin_path();
+        self.ctx.move_to(ps_x + 100.0, ps_y + 30.0);
+        self.ctx.line_to(ps_x, ps_y);
+        self.ctx.line_to(ps_x, ps_y + 60.0);
+        self.ctx.close_path();
+        self.ctx.fill();
+        // Engine glow
+        let glow_alpha = 0.5 + 0.3 * (anim_t * 3.0).sin();
+        self.ctx.set_fill_style_str(&format!("rgba(0,200,255,{:.2})", glow_alpha));
+        self.ctx.fill_rect(ps_x - 15.0, ps_y + 15.0, 15.0, 30.0);
+
+        // Enemy ship (right side) - red triangle shape
+        let es_x = w - 180.0;
+        let es_y = h * 0.35;
         self.ctx.set_fill_style_str("#ff5555");
-        self.ctx.fill_rect(self.canvas_w - 200.0, 300.0, 100.0, 60.0);
-        
-        // UI
-        self.ctx.set_font("20px monospace");
+        self.ctx.begin_path();
+        self.ctx.move_to(es_x, es_y + 30.0);
+        self.ctx.line_to(es_x + 100.0, es_y);
+        self.ctx.line_to(es_x + 100.0, es_y + 60.0);
+        self.ctx.close_path();
+        self.ctx.fill();
+        // Enemy engine glow
+        self.ctx.set_fill_style_str(&format!("rgba(255,100,50,{:.2})", glow_alpha));
+        self.ctx.fill_rect(es_x + 100.0, es_y + 15.0, 15.0, 30.0);
+
+        // Player ship stats (left)
+        self.ctx.set_font("16px monospace");
+        self.ctx.set_fill_style_str("#00ccdd");
+        self.ctx.fill_text("YOUR SHIP", 20.0, 30.0).ok();
+        // Hull bar
+        self.ctx.set_fill_style_str("#333333");
+        self.ctx.fill_rect(20.0, 40.0, 200.0, 16.0);
+        let hull_pct = player_ship.hull as f64 / player_ship.max_hull.max(1) as f64;
+        let hull_color = if hull_pct > 0.5 { "#44ff44" } else if hull_pct > 0.25 { "#ffaa00" } else { "#ff4444" };
+        self.ctx.set_fill_style_str(hull_color);
+        self.ctx.fill_rect(20.0, 40.0, 200.0 * hull_pct, 16.0);
         self.ctx.set_fill_style_str("#ffffff");
-        self.ctx.fill_text(&format!("Hull: {}/{}", player_ship.hull, player_ship.max_hull), 20.0, 40.0).ok();
-        self.ctx.fill_text(&format!("Shields: {}/{}", player_ship.shields, player_ship.max_shields), 20.0, 70.0).ok();
+        self.ctx.set_font("12px monospace");
+        self.ctx.fill_text(&format!("Hull: {}/{}", player_ship.hull, player_ship.max_hull), 25.0, 53.0).ok();
+        // Shield bar
+        self.ctx.set_fill_style_str("#333333");
+        self.ctx.fill_rect(20.0, 62.0, 200.0, 16.0);
+        let shield_pct = player_ship.shields as f64 / player_ship.max_shields.max(1) as f64;
+        self.ctx.set_fill_style_str("#4488ff");
+        self.ctx.fill_rect(20.0, 62.0, 200.0 * shield_pct, 16.0);
+        self.ctx.set_fill_style_str("#ffffff");
+        self.ctx.fill_text(&format!("Shields: {}/{}", player_ship.shields, player_ship.max_shields), 25.0, 75.0).ok();
+
+        // Enemy ship stats (right)
+        self.ctx.set_font("16px monospace");
+        self.ctx.set_fill_style_str("#ff5555");
+        self.ctx.fill_text(&enemy_ship.name, w - 220.0, 30.0).ok();
+        // Hull bar
+        self.ctx.set_fill_style_str("#333333");
+        self.ctx.fill_rect(w - 220.0, 40.0, 200.0, 16.0);
+        let e_hull_pct = enemy_ship.hull as f64 / enemy_ship.max_hull.max(1) as f64;
+        let e_hull_color = if e_hull_pct > 0.5 { "#44ff44" } else if e_hull_pct > 0.25 { "#ffaa00" } else { "#ff4444" };
+        self.ctx.set_fill_style_str(e_hull_color);
+        self.ctx.fill_rect(w - 220.0, 40.0, 200.0 * e_hull_pct.max(0.0), 16.0);
+        self.ctx.set_fill_style_str("#ffffff");
+        self.ctx.set_font("12px monospace");
+        self.ctx.fill_text(&format!("Hull: {}/{}", enemy_ship.hull.max(0), enemy_ship.max_hull), w - 215.0, 53.0).ok();
+        // Shield bar
+        self.ctx.set_fill_style_str("#333333");
+        self.ctx.fill_rect(w - 220.0, 62.0, 200.0, 16.0);
+        let e_shield_pct = enemy_ship.shields as f64 / enemy_ship.max_shields.max(1) as f64;
+        self.ctx.set_fill_style_str("#4488ff");
+        self.ctx.fill_rect(w - 220.0, 62.0, 200.0 * e_shield_pct.max(0.0), 16.0);
+        self.ctx.set_fill_style_str("#ffffff");
+        self.ctx.fill_text(&format!("Shields: {}/{}", enemy_ship.shields.max(0), enemy_ship.max_shields), w - 215.0, 75.0).ok();
+
+        // Battle log (center, last 5 messages)
+        self.ctx.set_font("14px monospace");
+        self.ctx.set_fill_style_str("#aaaaaa");
+        let log_start = if log.len() > 5 { log.len() - 5 } else { 0 };
+        for (i, msg) in log[log_start..].iter().enumerate() {
+            let alpha = 0.5 + 0.1 * i as f64;
+            self.ctx.set_fill_style_str(&format!("rgba(200,200,200,{:.2})", alpha.min(1.0)));
+            self.ctx.fill_text(msg, w / 2.0 - 180.0, h * 0.55 + i as f64 * 22.0).ok();
+        }
+
+        // Action buttons (bottom)
+        let actions = ["⚔ Fire", "↺ Evade", "🛡 Shields", "⚓ Board", "🚀 Flee"];
+        let btn_w = 120.0;
+        let btn_h = 40.0;
+        let total_w = 5.0 * btn_w + 4.0 * 10.0;
+        let start_x = (w - total_w) / 2.0;
+        let btn_y = h - 70.0;
+
+        self.ctx.set_font("14px monospace");
+        for (i, action) in actions.iter().enumerate() {
+            let bx = start_x + i as f64 * (btn_w + 10.0);
+            if i == cursor && *phase == SpaceCombatPhase::Choosing {
+                // Highlighted
+                self.ctx.set_fill_style_str("#00ccdd");
+                self.ctx.fill_rect(bx, btn_y, btn_w, btn_h);
+                self.ctx.set_fill_style_str("#000000");
+            } else {
+                self.ctx.set_fill_style_str("#222233");
+                self.ctx.fill_rect(bx, btn_y, btn_w, btn_h);
+                self.ctx.set_stroke_style_str("#555577");
+                self.ctx.stroke_rect(bx, btn_y, btn_w, btn_h);
+                self.ctx.set_fill_style_str("#cccccc");
+            }
+            self.ctx.fill_text(action, bx + 10.0, btn_y + 26.0).ok();
+        }
+
+        // Crew count and stats footer
+        self.ctx.set_font("12px monospace");
+        self.ctx.set_fill_style_str("#888888");
+        self.ctx.fill_text(&format!("Crew: {} | Wpn: {} | Eng: {}", crew_count, player_ship.weapon_power, player_ship.engine_power), 20.0, h - 10.0).ok();
+
+        // Victory/Defeat overlay
+        match phase {
+            SpaceCombatPhase::Victory => {
+                self.ctx.set_fill_style_str("rgba(0, 40, 0, 0.8)");
+                self.ctx.fill_rect(w * 0.2, h * 0.3, w * 0.6, h * 0.3);
+                self.ctx.set_stroke_style_str("#44ff44");
+                self.ctx.set_line_width(2.0);
+                self.ctx.stroke_rect(w * 0.2, h * 0.3, w * 0.6, h * 0.3);
+                self.ctx.set_font("32px monospace");
+                self.ctx.set_fill_style_str("#44ff44");
+                self.ctx.fill_text("VICTORY!", w * 0.38, h * 0.42).ok();
+                self.ctx.set_font("16px monospace");
+                self.ctx.set_fill_style_str("#ffffff");
+                self.ctx.fill_text(&format!("Loot: {} credits", enemy_ship.loot_credits), w * 0.38, h * 0.50).ok();
+                self.ctx.fill_text("Press any key to continue", w * 0.34, h * 0.55).ok();
+            }
+            SpaceCombatPhase::Defeat => {
+                self.ctx.set_fill_style_str("rgba(40, 0, 0, 0.8)");
+                self.ctx.fill_rect(w * 0.2, h * 0.3, w * 0.6, h * 0.3);
+                self.ctx.set_stroke_style_str("#ff4444");
+                self.ctx.set_line_width(2.0);
+                self.ctx.stroke_rect(w * 0.2, h * 0.3, w * 0.6, h * 0.3);
+                self.ctx.set_font("32px monospace");
+                self.ctx.set_fill_style_str("#ff4444");
+                self.ctx.fill_text("DEFEAT!", w * 0.39, h * 0.42).ok();
+                self.ctx.set_font("16px monospace");
+                self.ctx.set_fill_style_str("#ffffff");
+                self.ctx.fill_text("Your ship was destroyed...", w * 0.34, h * 0.50).ok();
+                self.ctx.fill_text("Press any key to continue", w * 0.34, h * 0.55).ok();
+            }
+            _ => {}
+        }
     }
 
     pub fn draw_event(

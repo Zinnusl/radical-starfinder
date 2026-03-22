@@ -312,6 +312,30 @@ pub enum GameMode {
     Event,
 }
 
+#[derive(Clone)]
+#[allow(dead_code)]
+pub struct EnemyShip {
+    pub name: String,
+    pub hull: i32,
+    pub max_hull: i32,
+    pub shields: i32,
+    pub max_shields: i32,
+    pub weapon_power: i32,
+    pub engine_power: i32,
+    pub loot_credits: i32,
+}
+
+#[derive(Clone, PartialEq)]
+#[allow(dead_code)]
+pub enum SpaceCombatPhase {
+    Choosing,
+    PlayerFiring,
+    EnemyFiring,
+    Boarding,
+    Victory,
+    Defeat,
+}
+
 // ── Run Journal ────────────────────────────────────────────────────
 #[derive(Clone, Debug)]
 pub enum RunEvent {
@@ -1520,6 +1544,24 @@ pub struct GameState {
     pub show_class_select: bool,
     /// Whether the player has already selected a class
     pub class_selected: bool,
+    /// Whether a saved game exists (shows "Continue" option in class select)
+    pub has_continue_option: bool,
+    /// Ship upgrade shop cursor position
+    pub ship_upgrade_cursor: usize,
+    /// Whether the ship upgrade shop overlay is showing
+    pub show_ship_upgrades: bool,
+    /// Pending crew recruit at a space station
+    pub pending_recruit: Option<CrewMember>,
+    /// Current enemy ship in space combat
+    pub enemy_ship: Option<EnemyShip>,
+    /// Current phase of space combat
+    pub space_combat_phase: SpaceCombatPhase,
+    /// Cursor for space combat action selection
+    pub space_combat_cursor: usize,
+    /// Battle log messages for space combat
+    pub space_combat_log: Vec<String>,
+    /// Whether the shop is in sell mode (player sells items)
+    pub shop_sell_mode: bool,
 }
 
 impl GameState {
@@ -1540,6 +1582,35 @@ impl GameState {
         x ^= x << 17;
         self.rng_state = x;
         x
+    }
+
+    fn crew_bonus(&self, role: CrewRole) -> i32 {
+        self.crew
+            .iter()
+            .filter(|c| c.role == role && c.hp > 0)
+            .map(|c| c.skill)
+            .sum()
+    }
+
+    #[allow(dead_code)]
+    fn generate_recruit(&mut self) -> CrewMember {
+        let seed = self.rng_next() as u32;
+        let roles = CrewRole::all();
+        let role = roles[(seed as usize) % roles.len()];
+        let names = [
+            "Zara", "Kael", "Nova", "Rexx", "Lyra", "Voss", "Juno", "Talon", "Echo", "Blaze",
+        ];
+        let name = names[(seed as usize / 6) % names.len()];
+        CrewMember {
+            name: name.to_string(),
+            role,
+            hp: 10,
+            max_hp: 10,
+            level: 1,
+            xp: 0,
+            skill: 2 + (seed % 3) as i32,
+            morale: 80,
+        }
     }
 
     fn trigger_shake(&mut self, frames: u8) {
@@ -1723,6 +1794,8 @@ impl GameState {
         if self.current_location_type == Some(crate::world::LocationType::TradingPost) {
             discount += 25;
         }
+        // Quartermaster crew bonus: +5% per skill point
+        discount += self.crew_bonus(CrewRole::Quartermaster) * 5;
         discount.clamp(0, 50)
     }
 
@@ -1960,11 +2033,12 @@ impl GameState {
                 }
             }
         }
-        // DerelictShip: tougher enemies (+50% HP)
+        // DerelictShip: tougher enemies (+50% HP), more gold drops
         if self.current_location_type == Some(crate::world::LocationType::DerelictShip) {
             for e in &mut self.enemies {
                 e.hp = (e.hp * 3) / 2;
                 e.max_hp = (e.max_hp * 3) / 2;
+                e.gold_value = (e.gold_value * 3) / 2;
             }
         }
     }
@@ -3383,7 +3457,7 @@ impl GameState {
         } else {
             FOV_RADIUS
         };
-        base + self.player.enchant_fov_bonus()
+        base + self.player.enchant_fov_bonus() + self.crew_bonus(CrewRole::ScienceOfficer)
     }
 
     fn look_text(&self, x: i32, y: i32) -> String {
@@ -4461,6 +4535,8 @@ impl GameState {
                     0
                 };
 
+                let security_bonus = self.crew_bonus(CrewRole::SecurityChief);
+
                 let hit_dmg = 2
                     + self.player.bonus_damage()
                     + self.player.enchant_bonus_damage()
@@ -4470,7 +4546,8 @@ impl GameState {
                     + form_bonus
                     + empowered_bonus
                     + iron_bonus
-                    + tactical_insight;
+                    + tactical_insight
+                    + security_bonus;
 
                 self.answer_streak += 1;
                 if self.answer_streak > self.run_journal.max_combo {
@@ -4596,8 +4673,13 @@ impl GameState {
                     }
                     gold_gain = (gold_gain as f64 * self.floor_profile.gold_multiplier()) as i32;
                     gold_gain = gold_gain.max(1);
-                    // MiningColony: double credits per kill
-                    if self.current_location_type == Some(crate::world::LocationType::MiningColony) {
+                    // Location gold bonus
+                    if self.current_location_type == Some(crate::world::LocationType::AsteroidBase)
+                        || self.current_location_type == Some(crate::world::LocationType::MiningColony)
+                    {
+                        gold_gain = (gold_gain as f64 * 1.5) as i32;
+                    }
+                    if self.current_location_type == Some(crate::world::LocationType::AsteroidBase) {
                         gold_gain *= 2;
                     }
                     self.player.gold += gold_gain;
@@ -5627,6 +5709,10 @@ impl GameState {
             if q.completed && q.gold_reward > 0 {
                 self.player.gold += q.gold_reward;
                 quest_xp += 10;
+                // ResearchLab: double vocab XP
+                if self.current_location_type == Some(crate::world::LocationType::ResearchLab) {
+                    quest_xp += 10;
+                }
                 if q.is_chain() && q.chain_step < 4 {
                     self.message = format!(
                         "⛓ Chain quest step complete: {}! +{}g — Next step incoming!",
@@ -6422,6 +6508,39 @@ impl GameState {
                 }
             }
             self.message_timer = 60;
+        }
+    }
+
+    /// Sell an item from the player's inventory.
+    fn shop_sell(&mut self) {
+        if let CombatState::Shopping { ref mut cursor, .. } = self.combat {
+            if self.player.items.is_empty() {
+                self.message = "No items to sell!".to_string();
+                self.message_timer = 40;
+                return;
+            }
+            if *cursor >= self.player.items.len() {
+                *cursor = self.player.items.len().saturating_sub(1);
+                return;
+            }
+            let idx = *cursor;
+            let item = &self.player.items[idx];
+            let price = item.sell_price();
+            let name = self.item_display_name(item);
+            self.player.gold += price;
+            self.player.items.remove(idx);
+            self.player.item_states.remove(idx);
+            if let Some(ref audio) = self.audio {
+                audio.play_buy();
+            }
+            self.message = format!("Sold {} for {}g", name, price);
+            self.message_timer = 60;
+            // Adjust cursor if it's now past the end
+            if let CombatState::Shopping { ref mut cursor, .. } = self.combat {
+                if *cursor >= self.player.items.len() && *cursor > 0 {
+                    *cursor -= 1;
+                }
+            }
         }
     }
 
@@ -9139,8 +9258,13 @@ impl GameState {
             }
             gold_gain = (gold_gain as f64 * self.floor_profile.gold_multiplier()) as i32;
             gold_gain = gold_gain.max(1);
-            // MiningColony: double credits per kill
-            if self.current_location_type == Some(crate::world::LocationType::MiningColony) {
+            // Location gold bonus
+            if self.current_location_type == Some(crate::world::LocationType::AsteroidBase)
+                || self.current_location_type == Some(crate::world::LocationType::MiningColony)
+            {
+                gold_gain = (gold_gain as f64 * 1.5) as i32;
+            }
+            if self.current_location_type == Some(crate::world::LocationType::AsteroidBase) {
                 gold_gain *= 2;
             }
             self.player.gold += gold_gain;
@@ -9291,6 +9415,26 @@ impl GameState {
         }
 
         self.answer_streak = combo;
+
+        // Crew XP gain: each living crew member gains XP from combat
+        let crew_xp_gain = killed.len() as u32 * 10;
+        for crew in self.crew.iter_mut() {
+            if crew.hp > 0 {
+                crew.xp += crew_xp_gain;
+                let xp_threshold = crew.level as u32 * 100;
+                if crew.xp >= xp_threshold {
+                    crew.xp -= xp_threshold;
+                    crew.level += 1;
+                    crew.skill += 1;
+                }
+            }
+        }
+
+        // Medic crew bonus: heal player after combat
+        let medic_heal = self.crew_bonus(CrewRole::Medic);
+        if medic_heal > 0 {
+            self.player.hp = (self.player.hp + medic_heal).min(self.player.max_hp);
+        }
 
         let mut msg = format!("Victory! +{}g", total_gold_gained);
         if let Some(rad) = last_radical_drop {
@@ -9652,16 +9796,25 @@ impl GameState {
                     self.renderer.draw_starmap_hud(map, &self.ship, self.starmap_cursor);
                 }
                 if self.show_class_select {
-                    self.renderer.draw_class_select(self.class_cursor);
+                    self.renderer.draw_class_select(self.class_cursor, self.has_continue_option);
                 }
                 return;
             }
             GameMode::ShipInterior => {
                 self.renderer.draw_ship_interior(&self.ship_layout, self.ship_player_x, self.ship_player_y, &self.crew, &self.ship, &self.message);
+                if self.show_ship_upgrades {
+                    self.renderer.draw_ship_upgrades(self.ship_upgrade_cursor, &self.ship.upgrades, self.player.gold);
+                }
                 return;
             }
             GameMode::SpaceCombat => {
-                self.renderer.draw_space_combat(&self.ship, js_sys::Date::now() / 1000.0);
+                if let Some(ref enemy) = self.enemy_ship {
+                    self.renderer.draw_space_combat(
+                        &self.ship, enemy, &self.space_combat_phase,
+                        self.space_combat_cursor, &self.space_combat_log,
+                        self.crew.len(), js_sys::Date::now() / 1000.0,
+                    );
+                }
                 return;
             }
             GameMode::Event => {
@@ -9743,6 +9896,7 @@ impl GameState {
             self.current_location_type.map(|lt| lt.label()).unwrap_or(""),
             self.current_location_type.map(|lt| lt.bonus_description()).unwrap_or(""),
             self.show_minimap,
+            self.shop_sell_mode,
         );
         if self.show_inventory {
             self.renderer.draw_inventory(
@@ -11258,6 +11412,7 @@ pub fn init_game() -> Result<(), JsValue> {
             sensor_range: 2,
             cargo_capacity: 100,
             cargo_used: 0,
+            upgrades: Vec::new(),
         },
         crew: vec![
             CrewMember {
@@ -11289,37 +11444,16 @@ pub fn init_game() -> Result<(), JsValue> {
         current_location_type: None,
         show_class_select: true,
         class_selected: false,
+        has_continue_option: GameState::has_save(),
+        ship_upgrade_cursor: 0,
+        show_ship_upgrades: false,
+        pending_recruit: None,
+        enemy_ship: None,
+        space_combat_phase: SpaceCombatPhase::Choosing,
+        space_combat_cursor: 0,
+        space_combat_log: vec![],
+        shop_sell_mode: false,
     }));
-
-    // Load saved game if exists
-    if let Some(save_data) = GameState::load_game_data() {
-        let mut s = state.borrow_mut();
-        s.player.hp = parse_i32(&save_data, "hp", s.player.hp);
-        s.player.max_hp = parse_i32(&save_data, "max_hp", s.player.max_hp);
-        s.player.gold = parse_i32(&save_data, "gold", s.player.gold);
-        s.floor_num = parse_i32(&save_data, "floor", s.floor_num);
-        s.best_floor = parse_i32(&save_data, "best", s.best_floor);
-        s.player.spirit = parse_i32(&save_data, "spirit", s.player.spirit);
-        s.player.max_spirit = parse_i32(&save_data, "max_spirit", s.player.max_spirit);
-        // Ship
-        s.ship.hull = parse_i32(&save_data, "ship_hull", s.ship.hull);
-        s.ship.max_hull = parse_i32(&save_data, "ship_max_hull", s.ship.max_hull);
-        s.ship.fuel = parse_i32(&save_data, "ship_fuel", s.ship.fuel);
-        s.ship.max_fuel = parse_i32(&save_data, "ship_max_fuel", s.ship.max_fuel);
-        s.ship.shields = parse_i32(&save_data, "ship_shields", s.ship.shields);
-        s.ship.max_shields = parse_i32(&save_data, "ship_max_shields", s.ship.max_shields);
-        s.ship.weapon_power = parse_i32(&save_data, "ship_weapon", s.ship.weapon_power);
-        s.ship.engine_power = parse_i32(&save_data, "ship_engine", s.ship.engine_power);
-        s.ship.sensor_range = parse_i32(&save_data, "ship_sensor", s.ship.sensor_range);
-        s.ship.cargo_capacity = parse_i32(&save_data, "ship_cargo_cap", s.ship.cargo_capacity);
-        s.ship.cargo_used = parse_i32(&save_data, "ship_cargo_used", s.ship.cargo_used);
-        // Stats
-        s.total_kills = parse_u32(&save_data, "kills", s.total_kills);
-        s.total_runs = parse_u32(&save_data, "runs", s.total_runs);
-        s.seed = parse_u64(&save_data, "seed", s.seed);
-        s.message = "📂 Save data loaded!".to_string();
-        s.message_timer = 90;
-    }
 
     // Initial setup
     {
@@ -11428,9 +11562,10 @@ pub fn init_game() -> Result<(), JsValue> {
 
                     // Class selection overlay intercepts all input
                     if s.show_class_select {
+                        let continue_offset = if s.has_continue_option { 1 } else { 0 };
+                        let total = crate::player::PlayerClass::all().len() + continue_offset;
                         match key.as_str() {
                             "ArrowUp" | "w" | "W" => {
-                                let total = crate::player::PlayerClass::all().len();
                                 if s.class_cursor == 0 {
                                     s.class_cursor = total - 1;
                                 } else {
@@ -11438,19 +11573,69 @@ pub fn init_game() -> Result<(), JsValue> {
                                 }
                             }
                             "ArrowDown" | "s" | "S" => {
-                                let total = crate::player::PlayerClass::all().len();
                                 s.class_cursor = (s.class_cursor + 1) % total;
                             }
                             "Enter" | " " => {
-                                let all = crate::player::PlayerClass::all();
-                                let class = all[s.class_cursor];
-                                let (px, py) = (s.player.x, s.player.y);
-                                s.player = Player::new(px, py, class);
-                                s.show_class_select = false;
-                                s.class_selected = true;
-                                let data = class.data();
-                                s.message = format!("Class selected: {}!", data.name_en);
-                                s.message_timer = 90;
+                                if s.has_continue_option && s.class_cursor == 0 {
+                                    // Continue previous game
+                                    if let Some(save_data) = GameState::load_game_data() {
+                                        s.player.hp = parse_i32(&save_data, "hp", s.player.hp);
+                                        s.player.max_hp = parse_i32(&save_data, "max_hp", s.player.max_hp);
+                                        s.player.gold = parse_i32(&save_data, "gold", s.player.gold);
+                                        s.floor_num = parse_i32(&save_data, "floor", s.floor_num);
+                                        s.best_floor = parse_i32(&save_data, "best", s.best_floor);
+                                        s.player.spirit = parse_i32(&save_data, "spirit", s.player.spirit);
+                                        s.player.max_spirit = parse_i32(&save_data, "max_spirit", s.player.max_spirit);
+                                        // Restore player class
+                                        let class_id = parse_u32(&save_data, "class", 0);
+                                        let all_classes = crate::player::PlayerClass::all();
+                                        let class = all_classes.get(class_id as usize).copied().unwrap_or(crate::player::PlayerClass::Soldier);
+                                        let (px, py) = (s.player.x, s.player.y);
+                                        s.player = Player::new(px, py, class);
+                                        // Re-apply saved stats on top of fresh player
+                                        s.player.hp = parse_i32(&save_data, "hp", s.player.hp);
+                                        s.player.max_hp = parse_i32(&save_data, "max_hp", s.player.max_hp);
+                                        s.player.gold = parse_i32(&save_data, "gold", s.player.gold);
+                                        s.player.spirit = parse_i32(&save_data, "spirit", s.player.spirit);
+                                        s.player.max_spirit = parse_i32(&save_data, "max_spirit", s.player.max_spirit);
+                                        // Ship
+                                        s.ship.hull = parse_i32(&save_data, "ship_hull", s.ship.hull);
+                                        s.ship.max_hull = parse_i32(&save_data, "ship_max_hull", s.ship.max_hull);
+                                        s.ship.fuel = parse_i32(&save_data, "ship_fuel", s.ship.fuel);
+                                        s.ship.max_fuel = parse_i32(&save_data, "ship_max_fuel", s.ship.max_fuel);
+                                        s.ship.shields = parse_i32(&save_data, "ship_shields", s.ship.shields);
+                                        s.ship.max_shields = parse_i32(&save_data, "ship_max_shields", s.ship.max_shields);
+                                        s.ship.weapon_power = parse_i32(&save_data, "ship_weapon", s.ship.weapon_power);
+                                        s.ship.engine_power = parse_i32(&save_data, "ship_engine", s.ship.engine_power);
+                                        s.ship.sensor_range = parse_i32(&save_data, "ship_sensor", s.ship.sensor_range);
+                                        s.ship.cargo_capacity = parse_i32(&save_data, "ship_cargo_cap", s.ship.cargo_capacity);
+                                        s.ship.cargo_used = parse_i32(&save_data, "ship_cargo_used", s.ship.cargo_used);
+                                        // Sector map position
+                                        if let Some(ref mut map) = s.sector_map {
+                                            map.current_sector = parse_u32(&save_data, "sector", map.current_sector as u32) as usize;
+                                            map.current_system = parse_u32(&save_data, "system", map.current_system as u32) as usize;
+                                        }
+                                        // Stats
+                                        s.total_kills = parse_u32(&save_data, "kills", s.total_kills);
+                                        s.total_runs = parse_u32(&save_data, "runs", s.total_runs);
+                                        s.seed = parse_u64(&save_data, "seed", s.seed);
+                                        s.show_class_select = false;
+                                        s.class_selected = true;
+                                        s.message = "Welcome back, Commander!".to_string();
+                                        s.message_timer = 90;
+                                    }
+                                } else {
+                                    let class_idx = if s.has_continue_option { s.class_cursor - 1 } else { s.class_cursor };
+                                    let all = crate::player::PlayerClass::all();
+                                    let class = all[class_idx];
+                                    let (px, py) = (s.player.x, s.player.y);
+                                    s.player = Player::new(px, py, class);
+                                    s.show_class_select = false;
+                                    s.class_selected = true;
+                                    let data = class.data();
+                                    s.message = format!("Class selected: {}!", data.name_en);
+                                    s.message_timer = 90;
+                                }
                             }
                             _ => {}
                         }
@@ -11524,11 +11709,20 @@ pub fn init_game() -> Result<(), JsValue> {
                                     }
                                 };
                                 
+                                // Pilot crew bonus: reduce fuel cost by 1 (min 1)
+                                let pilot_bonus = if s.crew_bonus(CrewRole::Pilot) > 0 { 1 } else { 0 };
+                                let fuel_cost = (fuel_cost - pilot_bonus).max(1);
+
                                 if s.ship.fuel >= fuel_cost {
                                     s.ship.fuel -= fuel_cost;
                                     if let Some(ref audio) = s.audio { audio.sfx_jump(); }
                                     if hazard_dmg > 0 {
                                         s.ship.hull = (s.ship.hull - hazard_dmg).max(0);
+                                    }
+                                    // Engineer crew bonus: repair hull on jump
+                                    let eng_repair = s.crew_bonus(CrewRole::Engineer);
+                                    if eng_repair > 0 {
+                                        s.ship.hull = (s.ship.hull + eng_repair).min(s.ship.max_hull);
                                     }
                                     if let Some(ref mut map) = s.sector_map {
                                         map.current_system = target;
@@ -11539,11 +11733,43 @@ pub fn init_game() -> Result<(), JsValue> {
                                     s.starmap_cursor = 0;
                                     s.message = format!("Jumped to {}! (-{} fuel){}", target_name, fuel_cost, hazard_msg);
                                     s.message_timer = 90;
+                                    // Apply passive ship upgrade effects on jump
+                                    if s.ship.upgrades.contains(&crate::world::ship::ShipUpgrade::AutoRepairDrone) {
+                                        s.ship.hull = (s.ship.hull + 2).min(s.ship.max_hull);
+                                    }
+                                    if s.ship.upgrades.contains(&crate::world::ship::ShipUpgrade::MedicalBay) {
+                                        for crew in s.crew.iter_mut() {
+                                            crew.hp = (crew.hp + 2).min(crew.max_hp);
+                                        }
+                                    }
                                     // Check for events at the new system
                                     if let Some(event_id) = event_id {
                                         s.current_event = Some(event_id);
                                         s.event_choice_cursor = 0;
                                         s.game_mode = GameMode::Event;
+                                    }
+                                    // 20% chance of pirate encounter after jump (only if no event)
+                                    if s.game_mode != GameMode::Event {
+                                        let encounter_roll = (s.seed.wrapping_mul(1664525).wrapping_add(1013904223)) % 100;
+                                        s.seed = s.seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                                        if encounter_roll < 20 {
+                                            let difficulty = s.floor_num as i32 + 1;
+                                            let names = ["Pirate Raider", "Void Corsair", "Rogue Frigate", "Scav Interceptor"];
+                                            s.enemy_ship = Some(EnemyShip {
+                                                name: names[(encounter_roll as usize / 5) % 4].to_string(),
+                                                hull: 30 + difficulty * 10,
+                                                max_hull: 30 + difficulty * 10,
+                                                shields: 10 + difficulty * 5,
+                                                max_shields: 10 + difficulty * 5,
+                                                weapon_power: 3 + difficulty,
+                                                engine_power: 2 + difficulty / 2,
+                                                loot_credits: 50 + difficulty * 20,
+                                            });
+                                            s.space_combat_phase = SpaceCombatPhase::Choosing;
+                                            s.space_combat_cursor = 0;
+                                            s.space_combat_log = vec!["Enemy ship detected!".to_string()];
+                                            s.game_mode = GameMode::SpaceCombat;
+                                        }
                                     }
                                     s.save_game();
                                 } else {
@@ -11568,14 +11794,44 @@ pub fn init_game() -> Result<(), JsValue> {
                             match current_loc_type {
                                 crate::world::LocationType::SpaceStation => {
                                     s.player.hp = s.player.max_hp;
-                                    s.message = format!("Entering {} (Space Station) \u{2014} Fully healed!", current_name);
+                                    // Crew recruitment at space stations
+                                    if s.crew.len() < 6 {
+                                        let recruit = s.generate_recruit();
+                                        let recruit_info = format!(
+                                            " | {} ({}, skill {}) wants to join! Press R to recruit.",
+                                            recruit.name, recruit.role.name(), recruit.skill
+                                        );
+                                        s.pending_recruit = Some(recruit);
+                                        s.message = format!(
+                                            "Entering {} (Space Station) \u{2014} Fully healed!{}",
+                                            current_name, recruit_info
+                                        );
+                                    } else {
+                                        s.pending_recruit = None;
+                                        s.message = format!("Entering {} (Space Station) \u{2014} Fully healed!", current_name);
+                                    }
                                 }
                                 crate::world::LocationType::OrbitalPlatform => {
                                     s.ship.shields = s.ship.max_shields;
                                     s.message = format!("Entering {} (Orbital Platform) \u{2014} Shields recharged!", current_name);
                                 }
-                                _ => {
-                                    s.message = format!("Entering {} ({})...", current_name, current_loc_type.label());
+                                crate::world::LocationType::DerelictShip => {
+                                    s.message = format!("Entering {} (Derelict Ship) \u{2014} Enemies are stronger here, but loot is better!", current_name);
+                                }
+                                crate::world::LocationType::MiningColony => {
+                                    s.message = format!("Entering {} (Mining Colony) \u{2014} Extra credits per kill!", current_name);
+                                }
+                                crate::world::LocationType::ResearchLab => {
+                                    s.message = format!("Entering {} (Research Lab) \u{2014} Double vocab XP!", current_name);
+                                }
+                                crate::world::LocationType::AsteroidBase => {
+                                    s.message = format!("Entering {} (Asteroid Base) \u{2014} Double gold from mining!", current_name);
+                                }
+                                crate::world::LocationType::AlienRuins => {
+                                    s.message = format!("Entering {} (Alien Ruins) \u{2014} Bonus radicals from puzzles!", current_name);
+                                }
+                                crate::world::LocationType::TradingPost => {
+                                    s.message = format!("Entering {} (Trading Post) \u{2014} 25% shop discount!", current_name);
                                 }
                             }
                             s.message_timer = 90;
@@ -11595,6 +11851,73 @@ pub fn init_game() -> Result<(), JsValue> {
                 }
                 GameMode::ShipInterior => {
                     event.prevent_default();
+                    // Ship upgrade shop input interception
+                    if s.show_ship_upgrades {
+                        use crate::world::ship::ShipUpgrade;
+                        let all = ShipUpgrade::all();
+                        match key.as_str() {
+                            "ArrowUp" | "w" | "W" => {
+                                if s.ship_upgrade_cursor > 0 {
+                                    s.ship_upgrade_cursor -= 1;
+                                }
+                            }
+                            "ArrowDown" | "s" | "S" => {
+                                if s.ship_upgrade_cursor + 1 < all.len() {
+                                    s.ship_upgrade_cursor += 1;
+                                }
+                            }
+                            "Enter" | " " => {
+                                let upgrade = all[s.ship_upgrade_cursor];
+                                if s.ship.upgrades.contains(&upgrade) {
+                                    s.message = format!("{} already installed!", upgrade.name());
+                                    s.message_timer = 60;
+                                } else if s.player.gold >= upgrade.cost() {
+                                    s.player.gold -= upgrade.cost();
+                                    s.ship.upgrades.push(upgrade);
+                                    match upgrade {
+                                        ShipUpgrade::ReinforcedHull => {
+                                            s.ship.max_hull += 20;
+                                            s.ship.hull += 20;
+                                        }
+                                        ShipUpgrade::ExtendedFuelTanks => {
+                                            s.ship.max_fuel += 30;
+                                            s.ship.fuel += 30;
+                                        }
+                                        ShipUpgrade::AdvancedShields => {
+                                            s.ship.max_shields += 10;
+                                            s.ship.shields += 10;
+                                        }
+                                        ShipUpgrade::CargoExpansion => {
+                                            s.ship.cargo_capacity += 5;
+                                        }
+                                        ShipUpgrade::SensorArray => {
+                                            s.ship.sensor_range += 2;
+                                        }
+                                        ShipUpgrade::WeaponBooster => {
+                                            s.ship.weapon_power += 2;
+                                        }
+                                        ShipUpgrade::EngineBooster => {
+                                            s.ship.engine_power += 1;
+                                        }
+                                        // AutoRepairDrone, MedicalBay, QuantumForgeUpgrade
+                                        // are passive — just being in upgrades vec is enough
+                                        _ => {}
+                                    }
+                                    s.message = format!("Installed {}! (-{} credits)", upgrade.name(), upgrade.cost());
+                                    s.message_timer = 90;
+                                } else {
+                                    s.message = format!("Not enough credits! Need {}.", upgrade.cost());
+                                    s.message_timer = 60;
+                                }
+                            }
+                            "Escape" => {
+                                s.show_ship_upgrades = false;
+                            }
+                            _ => {}
+                        }
+                        s.render();
+                        return;
+                    }
                     match key.as_str() {
                         "ArrowUp" | "w" | "W" => {
                             let ny = s.ship_player_y - 1;
@@ -11695,7 +12018,9 @@ pub fn init_game() -> Result<(), JsValue> {
                                                         s.message_timer = 60;
                                                     }
                                                     ShipRoom::CargoBay => {
-                                                        s.message = format!("Cargo: {}/{} used", s.ship.cargo_used, s.ship.cargo_capacity);
+                                                        s.show_ship_upgrades = true;
+                                                        s.ship_upgrade_cursor = 0;
+                                                        s.message = "Ship Upgrades — browse available modules.".to_string();
                                                         s.message_timer = 60;
                                                     }
                                                     _ => {
@@ -11781,8 +12106,210 @@ pub fn init_game() -> Result<(), JsValue> {
                 }
                 GameMode::SpaceCombat => {
                     event.prevent_default();
-                    // Placeholder - Escape returns to starmap
-                    if key == "Escape" {
+                    if let Some(ref mut enemy) = s.enemy_ship.clone() {
+                        match s.space_combat_phase {
+                            SpaceCombatPhase::Victory => {
+                                // Award loot and return to starmap
+                                s.player.gold += enemy.loot_credits;
+                                s.message = format!("Victory! Gained {} credits.", enemy.loot_credits);
+                                s.message_timer = 120;
+                                s.enemy_ship = None;
+                                s.space_combat_log.clear();
+                                s.game_mode = GameMode::Starmap;
+                            }
+                            SpaceCombatPhase::Defeat => {
+                                // Game over — reset player
+                                s.player.hp = 0;
+                                s.enemy_ship = None;
+                                s.space_combat_log.clear();
+                                s.game_mode = GameMode::Starmap;
+                                s.message = "Your ship was destroyed...".to_string();
+                                s.message_timer = 120;
+                            }
+                            SpaceCombatPhase::Choosing => {
+                                let mut enemy = enemy.clone();
+                                let mut evading = false;
+                                match key.as_str() {
+                                    "ArrowUp" | "w" | "W" => {
+                                        if s.space_combat_cursor > 0 {
+                                            s.space_combat_cursor -= 1;
+                                        }
+                                    }
+                                    "ArrowDown" | "s" | "S" => {
+                                        if s.space_combat_cursor < 4 {
+                                            s.space_combat_cursor += 1;
+                                        }
+                                    }
+                                    "Enter" | " " => {
+                                        match s.space_combat_cursor {
+                                            0 => {
+                                                // Fire
+                                                let dmg = s.ship.weapon_power * 2;
+                                                let shield_absorb = dmg.min(enemy.shields);
+                                                enemy.shields -= shield_absorb;
+                                                let hull_dmg = dmg - shield_absorb;
+                                                enemy.hull -= hull_dmg;
+                                                s.space_combat_log.push(format!("You fire! {} dmg ({} to shields, {} to hull)", dmg, shield_absorb, hull_dmg));
+                                                s.space_combat_phase = SpaceCombatPhase::PlayerFiring;
+                                            }
+                                            1 => {
+                                                // Evade
+                                                evading = true;
+                                                if s.ship.engine_power > enemy.engine_power {
+                                                    s.space_combat_log.push("Evasive maneuvers! Enemy damage halved.".to_string());
+                                                } else {
+                                                    let roll = (s.seed.wrapping_mul(1664525).wrapping_add(1013904223)) % 100;
+                                                    s.seed = s.seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                                                    if roll < 50 {
+                                                        s.space_combat_log.push("Evasive maneuvers! Enemy damage halved.".to_string());
+                                                    } else {
+                                                        evading = false;
+                                                        s.space_combat_log.push("Evasion failed!".to_string());
+                                                    }
+                                                }
+                                                s.space_combat_phase = SpaceCombatPhase::PlayerFiring;
+                                            }
+                                            2 => {
+                                                // Shields
+                                                let restore = s.ship.max_shields / 3;
+                                                s.ship.shields = (s.ship.shields + restore).min(s.ship.max_shields);
+                                                s.space_combat_log.push(format!("Shields recharged! +{} shields", restore));
+                                                s.space_combat_phase = SpaceCombatPhase::PlayerFiring;
+                                            }
+                                            3 => {
+                                                // Board
+                                                let skill_total: i32 = s.crew.iter().map(|c| c.skill).sum();
+                                                if skill_total > enemy.weapon_power {
+                                                    enemy.hull = 0;
+                                                    s.space_combat_log.push(format!("Boarding successful! Crew skill {} vs enemy power {}", skill_total, enemy.weapon_power));
+                                                    // Bonus loot on boarding
+                                                    enemy.loot_credits = (enemy.loot_credits as f64 * 1.5) as i32;
+                                                } else {
+                                                    let dmg = enemy.weapon_power;
+                                                    s.ship.hull -= dmg;
+                                                    s.space_combat_log.push(format!("Boarding failed! Took {} hull damage. (Skill {} vs power {})", dmg, skill_total, enemy.weapon_power));
+                                                }
+                                                s.space_combat_phase = SpaceCombatPhase::Boarding;
+                                            }
+                                            4 | _ => {
+                                                // Flee
+                                                if s.ship.engine_power >= enemy.engine_power {
+                                                    s.space_combat_log.push("Escaped successfully!".to_string());
+                                                    s.enemy_ship = Some(enemy);
+                                                    s.enemy_ship = None;
+                                                    s.space_combat_log.clear();
+                                                    s.game_mode = GameMode::Starmap;
+                                                    s.message = "Escaped from combat!".to_string();
+                                                    s.message_timer = 90;
+                                                    s.render();
+                                                    return;
+                                                } else {
+                                                    let roll = (s.seed.wrapping_mul(1664525).wrapping_add(1013904223)) % 100;
+                                                    s.seed = s.seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                                                    if roll < 50 {
+                                                        s.space_combat_log.push("Escaped successfully!".to_string());
+                                                        s.enemy_ship = None;
+                                                        s.space_combat_log.clear();
+                                                        s.game_mode = GameMode::Starmap;
+                                                        s.message = "Escaped from combat!".to_string();
+                                                        s.message_timer = 90;
+                                                        s.render();
+                                                        return;
+                                                    } else {
+                                                        let dmg = enemy.weapon_power;
+                                                        let shield_absorb = dmg.min(s.ship.shields);
+                                                        s.ship.shields -= shield_absorb;
+                                                        let hull_dmg = dmg - shield_absorb;
+                                                        s.ship.hull -= hull_dmg;
+                                                        s.space_combat_log.push(format!("Escape failed! Took {} damage.", dmg));
+                                                        s.space_combat_phase = SpaceCombatPhase::PlayerFiring;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    "Escape" => {
+                                        // Escape key = attempt flee
+                                        if s.ship.engine_power >= enemy.engine_power {
+                                            s.enemy_ship = None;
+                                            s.space_combat_log.clear();
+                                            s.game_mode = GameMode::Starmap;
+                                            s.message = "Escaped from combat!".to_string();
+                                            s.message_timer = 90;
+                                            s.render();
+                                            return;
+                                        } else {
+                                            let roll = (s.seed.wrapping_mul(1664525).wrapping_add(1013904223)) % 100;
+                                            s.seed = s.seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                                            if roll < 50 {
+                                                s.enemy_ship = None;
+                                                s.space_combat_log.clear();
+                                                s.game_mode = GameMode::Starmap;
+                                                s.message = "Escaped from combat!".to_string();
+                                                s.message_timer = 90;
+                                                s.render();
+                                                return;
+                                            } else {
+                                                let dmg = enemy.weapon_power;
+                                                let shield_absorb = dmg.min(s.ship.shields);
+                                                s.ship.shields -= shield_absorb;
+                                                let hull_dmg = dmg - shield_absorb;
+                                                s.ship.hull -= hull_dmg;
+                                                s.space_combat_log.push(format!("Escape failed! Took {} damage.", dmg));
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
+
+                                // Check victory/defeat after player action
+                                if enemy.hull <= 0 {
+                                    s.space_combat_phase = SpaceCombatPhase::Victory;
+                                    s.space_combat_log.push(format!("{} destroyed!", enemy.name));
+                                    s.enemy_ship = Some(enemy);
+                                    s.render();
+                                    return;
+                                }
+                                if s.ship.hull <= 0 {
+                                    s.space_combat_phase = SpaceCombatPhase::Defeat;
+                                    s.space_combat_log.push("Your ship has been destroyed!".to_string());
+                                    s.enemy_ship = Some(enemy);
+                                    s.render();
+                                    return;
+                                }
+
+                                // Enemy fires back (if action was taken)
+                                if s.space_combat_phase != SpaceCombatPhase::Choosing {
+                                    let mut e_dmg = enemy.weapon_power;
+                                    if evading { e_dmg /= 2; }
+                                    let e_shield_absorb = e_dmg.min(s.ship.shields);
+                                    s.ship.shields -= e_shield_absorb;
+                                    let e_hull_dmg = e_dmg - e_shield_absorb;
+                                    s.ship.hull -= e_hull_dmg;
+                                    s.space_combat_log.push(format!("{} fires! {} dmg ({} to shields, {} to hull)", enemy.name, e_dmg, e_shield_absorb, e_hull_dmg));
+
+                                    // Check defeat after enemy fires
+                                    if s.ship.hull <= 0 {
+                                        s.space_combat_phase = SpaceCombatPhase::Defeat;
+                                        s.space_combat_log.push("Your ship has been destroyed!".to_string());
+                                        s.enemy_ship = Some(enemy);
+                                        s.render();
+                                        return;
+                                    }
+
+                                    // Return to choosing phase
+                                    s.space_combat_phase = SpaceCombatPhase::Choosing;
+                                }
+
+                                s.enemy_ship = Some(enemy);
+                            }
+                            _ => {
+                                // For transitional phases, any key returns to Choosing
+                                s.space_combat_phase = SpaceCombatPhase::Choosing;
+                            }
+                        }
+                    } else {
+                        // No enemy, return to starmap
                         s.game_mode = GameMode::Starmap;
                     }
                     s.render();
@@ -11790,6 +12317,22 @@ pub fn init_game() -> Result<(), JsValue> {
                 }
                 GameMode::LocationExploration | GameMode::GroundCombat => {
                     // Fall through to existing input handling
+                }
+            }
+
+            // Crew recruitment: press R to recruit pending crew member
+            if key == "r" || key == "R" {
+                if s.pending_recruit.is_some() && s.crew.len() < 6 {
+                    let recruit = s.pending_recruit.take().unwrap();
+                    s.message = format!(
+                        "🎉 {} ({}) has joined your crew!",
+                        recruit.name,
+                        recruit.role.name()
+                    );
+                    s.message_timer = 120;
+                    s.crew.push(recruit);
+                    s.render();
+                    return;
                 }
             }
 
@@ -14250,45 +14793,65 @@ pub fn init_game() -> Result<(), JsValue> {
                 match key.as_str() {
                     "Escape" => {
                         s.combat = CombatState::Explore;
+                        s.shop_sell_mode = false;
                         s.message.clear();
                         s.message_timer = 0;
                         s.render();
                     }
+                    "Tab" => {
+                        s.shop_sell_mode = !s.shop_sell_mode;
+                        if let CombatState::Shopping { ref mut cursor, .. } = s.combat {
+                            *cursor = 0;
+                        }
+                        s.render();
+                    }
                     "ArrowUp" | "w" | "W" => {
                         if let CombatState::Shopping {
-                            ref items,
-                            ref mut cursor,
+                            ref mut cursor, ..
                         } = s.combat
                         {
                             if *cursor > 0 {
                                 *cursor -= 1;
                             }
-                            let _ = items;
                         }
                         s.render();
                     }
                     "ArrowDown" | "s" | "S" => {
+                        let max_len = if s.shop_sell_mode {
+                            s.player.items.len()
+                        } else if let CombatState::Shopping { ref items, .. } = s.combat {
+                            items.len()
+                        } else {
+                            0
+                        };
                         if let CombatState::Shopping {
-                            ref items,
-                            ref mut cursor,
+                            ref mut cursor, ..
                         } = s.combat
                         {
-                            if *cursor + 1 < items.len() {
+                            if *cursor + 1 < max_len {
                                 *cursor += 1;
                             }
                         }
                         s.render();
                     }
                     "Enter" => {
-                        s.shop_buy();
+                        if s.shop_sell_mode {
+                            s.shop_sell();
+                        } else {
+                            s.shop_buy();
+                        }
                         s.render();
                     }
                     "r" | "R" => {
-                        s.shop_reroll();
+                        if !s.shop_sell_mode {
+                            s.shop_reroll();
+                        }
                         s.render();
                     }
                     "g" | "G" => {
-                        s.shop_steal();
+                        if !s.shop_sell_mode {
+                            s.shop_steal();
+                        }
                         s.render();
                     }
                     _ => {}

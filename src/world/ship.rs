@@ -119,6 +119,36 @@ impl ShipUpgrade {
             Self::QuantumForgeUpgrade => "+1 forge slot",
         }
     }
+
+    pub fn cost(self) -> i32 {
+        match self {
+            Self::ReinforcedHull => 200,
+            Self::ExtendedFuelTanks => 150,
+            Self::AdvancedShields => 250,
+            Self::CargoExpansion => 100,
+            Self::SensorArray => 175,
+            Self::AutoRepairDrone => 300,
+            Self::WeaponBooster => 225,
+            Self::EngineBooster => 275,
+            Self::MedicalBay => 200,
+            Self::QuantumForgeUpgrade => 350,
+        }
+    }
+
+    pub fn all() -> &'static [ShipUpgrade] {
+        &[
+            ShipUpgrade::ReinforcedHull,
+            ShipUpgrade::ExtendedFuelTanks,
+            ShipUpgrade::AdvancedShields,
+            ShipUpgrade::CargoExpansion,
+            ShipUpgrade::SensorArray,
+            ShipUpgrade::AutoRepairDrone,
+            ShipUpgrade::WeaponBooster,
+            ShipUpgrade::EngineBooster,
+            ShipUpgrade::MedicalBay,
+            ShipUpgrade::QuantumForgeUpgrade,
+        ]
+    }
 }
 
 // ── Layout generation ───────────────────────────────────────────────────────
