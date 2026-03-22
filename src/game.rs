@@ -1719,6 +1719,10 @@ impl GameState {
         if let Some(ref comp) = self.companion {
             discount += comp.shop_discount_pct(self.companion_level());
         }
+        // TradingPost location bonus: 25% shop discount
+        if self.current_location_type == Some(crate::world::LocationType::TradingPost) {
+            discount += 25;
+        }
         discount.clamp(0, 50)
     }
 
@@ -1954,6 +1958,13 @@ impl GameState {
                     self.enemies
                         .push(Enemy::from_vocab(entry, ex, ey, self.floor_num));
                 }
+            }
+        }
+        // DerelictShip: tougher enemies (+50% HP)
+        if self.current_location_type == Some(crate::world::LocationType::DerelictShip) {
+            for e in &mut self.enemies {
+                e.hp = (e.hp * 3) / 2;
+                e.max_hp = (e.max_hp * 3) / 2;
             }
         }
     }
@@ -4585,6 +4596,10 @@ impl GameState {
                     }
                     gold_gain = (gold_gain as f64 * self.floor_profile.gold_multiplier()) as i32;
                     gold_gain = gold_gain.max(1);
+                    // MiningColony: double credits per kill
+                    if self.current_location_type == Some(crate::world::LocationType::MiningColony) {
+                        gold_gain *= 2;
+                    }
                     self.player.gold += gold_gain;
 
                     // Listening mode bonus gold
@@ -9124,6 +9139,10 @@ impl GameState {
             }
             gold_gain = (gold_gain as f64 * self.floor_profile.gold_multiplier()) as i32;
             gold_gain = gold_gain.max(1);
+            // MiningColony: double credits per kill
+            if self.current_location_type == Some(crate::world::LocationType::MiningColony) {
+                gold_gain *= 2;
+            }
             self.player.gold += gold_gain;
             total_gold_gained += gold_gain;
 
@@ -11544,7 +11563,20 @@ pub fn init_game() -> Result<(), JsValue> {
                             s.spawn_enemies();
                             let (px, py) = (s.player.x, s.player.y);
                             compute_fov(&mut s.level, px, py, FOV_RADIUS);
-                            s.message = format!("Entering {} ({})...", current_name, current_loc_type.label());
+                            // Apply location entry bonuses
+                            match current_loc_type {
+                                crate::world::LocationType::SpaceStation => {
+                                    s.player.hp = s.player.max_hp;
+                                    s.message = format!("Entering {} (Space Station) \u{2014} Fully healed!", current_name);
+                                }
+                                crate::world::LocationType::OrbitalPlatform => {
+                                    s.ship.shields = s.ship.max_shields;
+                                    s.message = format!("Entering {} (Orbital Platform) \u{2014} Shields recharged!", current_name);
+                                }
+                                _ => {
+                                    s.message = format!("Entering {} ({})...", current_name, current_loc_type.label());
+                                }
+                            }
                             s.message_timer = 90;
                         }
                         "s" | "S" => {

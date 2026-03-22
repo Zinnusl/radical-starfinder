@@ -14,7 +14,7 @@ use crate::world::{TerminalKind, DungeonLevel, SealKind, Tile, LocationType};
 use crate::enemy::{BossKind, Enemy};
 use crate::game::{combo_tier, CombatState, ComboTier, GameSettings, ListenMode, ShopItemKind};
 use crate::particle::ParticleSystem;
-use crate::player::{Faction, Item, ItemKind, ItemState, Player, PlayerForm, Ship};
+use crate::player::{Faction, Item, ItemKind, ItemState, Player, PlayerClass, PlayerForm, Ship};
 use crate::world::starmap::SectorMap;
 use crate::world::ship::{ShipLayout, ShipTile};
 use crate::world::events::SpaceEvent;
@@ -123,6 +123,8 @@ impl Renderer {
         post_mortem_page: usize,
         class_cursor: usize,
         location_label: &str,
+        location_bonus: &str,
+        _show_minimap: bool,
     ) {
         let anim_t = Date::now() / 1000.0;
         // Screen shake offset
@@ -611,12 +613,23 @@ impl Renderer {
                 .fill_text(floor_profile_label, self.canvas_w - 12.0, 38.0)
                 .ok();
         }
+        // Location bonus description
+        let mut bonus_offset = 0.0;
+        if !location_bonus.is_empty() {
+            let bonus_y = if floor_profile_label.is_empty() { 38.0 } else { 50.0 };
+            self.ctx.set_fill_style_str("#44dd88");
+            self.ctx.set_font("10px monospace");
+            self.ctx
+                .fill_text(location_bonus, self.canvas_w - 12.0, bonus_y)
+                .ok();
+            bonus_offset = 12.0;
+        }
         self.ctx.set_fill_style_str("#ffdd44");
         self.ctx.set_font("14px monospace");
         let gold_y = if floor_profile_label.is_empty() {
-            42.0
+            42.0 + bonus_offset
         } else {
-            52.0
+            52.0 + bonus_offset
         };
         self.ctx
             .fill_text(&format!("{}g", player.gold), self.canvas_w - 12.0, gold_y)
@@ -9509,13 +9522,117 @@ impl Renderer {
         self.ctx.fill_text("[M] Map  [E] Explore Current  [Enter] Jump  [←/→] Select Target", 20.0, self.canvas_h - 5.0).ok();
     }
 
+    /// Draw class selection overlay on top of the starmap.
+    pub fn draw_class_select(&self, cursor: usize) {
+        let anim_t = Date::now() / 1000.0;
+
+        self.ctx.set_fill_style_str("rgba(0,0,0,0.85)");
+        self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
+
+        let cx = self.canvas_w / 2.0;
+        let mut y = 40.0 + (anim_t * 2.1).sin() * 4.0;
+
+        self.ctx.set_fill_style_str("#00ccdd");
+        self.ctx.set_font("32px monospace");
+        self.ctx.set_text_align("center");
+        self.ctx.fill_text("选择你的道路", cx, y).ok();
+        y += 30.0;
+        self.ctx.set_fill_style_str("#888");
+        self.ctx.set_font("14px monospace");
+        self.ctx.fill_text("Choose Your Path", cx, y).ok();
+        y += 40.0;
+
+        let all_classes = PlayerClass::all();
+        let total = all_classes.len();
+
+        let page_size = 6;
+        let page = cursor / page_size;
+        let start_idx = page * page_size;
+        let end_idx = (start_idx + page_size).min(total);
+
+        for i in start_idx..end_idx {
+            let class_var = all_classes[i];
+            let data = class_var.data();
+
+            let is_selected = i == cursor;
+            let bg_color = if is_selected {
+                "rgba(255,255,255,0.15)"
+            } else {
+                "rgba(0,0,0,0.4)"
+            };
+            let border_color = if is_selected { data.color } else { "#444" };
+
+            self.ctx.set_fill_style_str(bg_color);
+            self.ctx.set_stroke_style_str(border_color);
+            self.ctx.set_line_width(if is_selected { 2.0 } else { 1.0 });
+
+            let box_w = 400.0;
+            let box_h = 50.0;
+            let box_x = cx - box_w / 2.0;
+
+            self.ctx.fill_rect(box_x, y, box_w, box_h);
+            self.ctx.stroke_rect(box_x, y, box_w, box_h);
+
+            self.ctx.set_fill_style_str(data.color);
+            self.ctx.set_font("20px monospace");
+            self.ctx.set_text_align("left");
+            self.ctx.fill_text(data.icon, box_x + 15.0, y + 32.0).ok();
+
+            self.ctx
+                .set_fill_style_str(if is_selected { "#fff" } else { "#ccc" });
+            self.ctx.set_font("16px monospace");
+            self.ctx
+                .fill_text(
+                    &format!("{} {}", data.name_cn, data.name_en),
+                    box_x + 45.0,
+                    y + 22.0,
+                )
+                .ok();
+
+            let dummy = Player::new(0, 0, class_var);
+            self.ctx.set_fill_style_str("#aaa");
+            self.ctx.set_font("12px monospace");
+            self.ctx
+                .fill_text(
+                    &format!("HP:{} Items:{}", dummy.max_hp, dummy.max_items()),
+                    box_x + 280.0,
+                    y + 22.0,
+                )
+                .ok();
+
+            self.ctx.set_fill_style_str(data.color);
+            self.ctx.set_font("12px monospace");
+            self.ctx.fill_text(data.lore, box_x + 45.0, y + 40.0).ok();
+
+            y += box_h + 10.0;
+        }
+
+        y += 10.0;
+        let total_pages = (total + page_size - 1) / page_size;
+        self.ctx.set_fill_style_str("#888");
+        self.ctx.set_text_align("center");
+        self.ctx
+            .fill_text(
+                &format!(
+                    "Page {}/{} (↑/↓ to scroll, Enter to select)",
+                    page + 1,
+                    total_pages
+                ),
+                cx,
+                y,
+            )
+            .ok();
+        self.ctx.set_text_align("left");
+    }
+
     pub fn draw_ship_interior(
         &self,
         layout: &ShipLayout,
         ship_x: i32,
         ship_y: i32,
         _crew: &[crate::player::CrewMember],
-        _anim_t: f64,
+        _ship: &Ship,
+        _message: &str,
     ) {
         // Clear
         self.ctx.set_fill_style_str("#111111");

@@ -671,6 +671,19 @@ impl LocationType {
             LocationType::ResearchLab => "Research Lab",
         }
     }
+
+    pub fn bonus_description(&self) -> &'static str {
+        match self {
+            LocationType::SpaceStation => "\u{1f3e5} Free healing on entry",
+            LocationType::AsteroidBase => "\u{26cf} Double ore/gold from mining",
+            LocationType::DerelictShip => "\u{1f480} More loot, tougher enemies",
+            LocationType::AlienRuins => "\u{1f3fa} Bonus radicals from puzzles",
+            LocationType::TradingPost => "\u{1f4b0} 25% shop discount",
+            LocationType::OrbitalPlatform => "\u{1f6f8} Shield recharge on entry",
+            LocationType::MiningColony => "\u{2692} Extra credits per kill",
+            LocationType::ResearchLab => "\u{1f52c} Double vocab XP",
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
