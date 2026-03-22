@@ -8785,6 +8785,7 @@ impl Renderer {
         sector_map: &SectorMap,
         anim_t: f64,
         _settings: &GameSettings,
+        selected_target: Option<usize>,
     ) {
         // Clear background
         self.ctx.set_fill_style_str("#000000");
@@ -8848,6 +8849,15 @@ impl Renderer {
                 self.ctx.arc(sx, sy, r, 0.0, std::f64::consts::TAU).ok();
                 self.ctx.fill();
                 
+                // Highlight selected jump target
+                if Some(system.id) == selected_target {
+                    self.ctx.set_stroke_style_str("#00ffff");
+                    self.ctx.set_line_width(2.0);
+                    self.ctx.begin_path();
+                    self.ctx.arc(sx, sy, r + 4.0, 0.0, std::f64::consts::TAU).ok();
+                    self.ctx.stroke();
+                }
+                
                 // Name
                 if is_current || system.visited {
                     self.ctx.set_font("12px monospace");
@@ -8858,11 +8868,71 @@ impl Renderer {
         }
     }
 
-    #[allow(dead_code)]
+    pub fn draw_starmap_hud(&self, map: &SectorMap, ship: &Ship, cursor: usize) {
+        // Title
+        self.ctx.set_font("bold 20px monospace");
+        self.ctx.set_fill_style_str("#00ccdd");
+        self.ctx.set_text_align("left");
+        self.ctx.fill_text("★ STAR MAP", 20.0, 30.0).ok();
+        
+        // Ship stats
+        self.ctx.set_font("14px monospace");
+        self.ctx.set_fill_style_str("#aaaaaa");
+        self.ctx.fill_text(&format!("Hull: {}/{}", ship.hull, ship.max_hull), 20.0, 55.0).ok();
+        self.ctx.fill_text(&format!("Fuel: {}/{}", ship.fuel, ship.max_fuel), 20.0, 75.0).ok();
+        self.ctx.fill_text(&format!("Shields: {}/{}", ship.shields, ship.max_shields), 20.0, 95.0).ok();
+        
+        // Current system info
+        if let Some(sector) = map.sectors.get(map.current_sector) {
+            let sys = &sector.systems[map.current_system];
+            self.ctx.set_font("16px monospace");
+            self.ctx.set_fill_style_str("#ffffff");
+            self.ctx.fill_text(&format!("Current: {} ({})", sys.name, sys.chinese_name), 20.0, self.canvas_h - 80.0).ok();
+            
+            // Connected systems
+            let connections = &sys.connections;
+            if !connections.is_empty() {
+                self.ctx.set_font("14px monospace");
+                self.ctx.set_fill_style_str("#888888");
+                self.ctx.fill_text("Jump targets (←/→ to select, Enter to jump, E to explore):", 20.0, self.canvas_h - 55.0).ok();
+                
+                let mut x_pos = 20.0;
+                for (i, &conn_id) in connections.iter().enumerate() {
+                    if let Some(target) = sector.systems.iter().find(|s| s.id == conn_id) {
+                        let label = format!("{} ", target.name);
+                        if i == cursor % connections.len() {
+                            self.ctx.set_fill_style_str("#00ffff");
+                            self.ctx.fill_text(&format!("▶ {}", label), x_pos, self.canvas_h - 30.0).ok();
+                        } else {
+                            self.ctx.set_fill_style_str("#666666");
+                            self.ctx.fill_text(&label, x_pos, self.canvas_h - 30.0).ok();
+                        }
+                        x_pos += (label.len() as f64 + 3.0) * 8.5;
+                    }
+                }
+            }
+        }
+        
+        // Sector label
+        if let Some(sector) = map.sectors.get(map.current_sector) {
+            self.ctx.set_font("12px monospace");
+            self.ctx.set_fill_style_str("#555555");
+            self.ctx.set_text_align("right");
+            self.ctx.fill_text(&format!("Sector: {} (HSK {})", sector.name, sector.hsk_level), self.canvas_w - 20.0, 30.0).ok();
+            self.ctx.set_text_align("left");
+        }
+        
+        // Controls reminder
+        self.ctx.set_font("12px monospace");
+        self.ctx.set_fill_style_str("#444444");
+        self.ctx.fill_text("[M] Map  [E] Explore  [Enter] Jump  [←/→] Select target", 20.0, self.canvas_h - 5.0).ok();
+    }
+
     pub fn draw_ship_interior(
         &self,
         layout: &ShipLayout,
-        player: &Player, // Assuming player has ship_x/y or we use standard x/y
+        ship_x: i32,
+        ship_y: i32,
         _crew: &[crate::player::CrewMember],
         _anim_t: f64,
     ) {
@@ -8899,9 +8969,8 @@ impl Renderer {
         }
 
         // Draw Player
-        // Assuming player.x/y are used for ship coords in ship mode
-        let px = offset_x + player.x as f64 * tx_size;
-        let py = offset_y + player.y as f64 * tx_size;
+        let px = offset_x + ship_x as f64 * tx_size;
+        let py = offset_y + ship_y as f64 * tx_size;
         
         self.ctx.set_fill_style_str(COL_PLAYER);
         self.ctx.begin_path();
@@ -8909,7 +8978,6 @@ impl Renderer {
         self.ctx.fill();
     }
 
-    #[allow(dead_code)]
     pub fn draw_space_combat(
         &self,
         player_ship: &Ship,
@@ -8935,7 +9003,6 @@ impl Renderer {
         self.ctx.fill_text(&format!("Shields: {}/{}", player_ship.shields, player_ship.max_shields), 20.0, 70.0).ok();
     }
 
-    #[allow(dead_code)]
     pub fn draw_event(
         &self,
         event: &SpaceEvent,

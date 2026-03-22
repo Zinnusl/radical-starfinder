@@ -12,8 +12,9 @@ use crate::audio::Audio;
 use crate::codex::Codex;
 use crate::combat;
 use crate::world::{compute_fov, TerminalKind, AltarKind, DungeonLevel, RoomModifier, SecuritySeal, SealKind, SpecialRoomKind, Tile};
-use crate::world::starmap::{SectorMap, generate_sector};
-use crate::world::ship::{ShipLayout, generate_ship_layout};
+use crate::world::starmap::{SectorMap, generate_sector, jump_cost};
+use crate::world::ship::{ShipLayout, ShipTile, generate_ship_layout};
+use crate::world::events::ALL_EVENTS;
 use crate::enemy::{BossKind, Enemy, RadicalAction};
 use crate::particle::ParticleSystem;
 use crate::player::{
@@ -202,7 +203,6 @@ impl Companion {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[allow(dead_code)]
 pub enum GameMode {
     Starmap,
     ShipInterior,
@@ -1395,33 +1395,23 @@ pub struct GameState {
     /// Cursor position while selecting items for crafting
     pub crafting_cursor: usize,
     /// Current game mode (Starmap/ShipInterior/etc.)
-    #[allow(dead_code)]
     pub game_mode: GameMode,
     /// Sector map for space exploration
-    #[allow(dead_code)]
     pub sector_map: Option<SectorMap>,
     /// Ship interior layout
-    #[allow(dead_code)]
     pub ship_layout: ShipLayout,
     /// Ship stats (hull, fuel, shields)
-    #[allow(dead_code)]
     pub ship: Ship,
     /// Crew members aboard the ship
-    #[allow(dead_code)]
     pub crew: Vec<CrewMember>,
     /// Current event index (if in Event mode)
-    #[allow(dead_code)]
     pub current_event: Option<usize>,
     /// Cursor for event choice selection
-    #[allow(dead_code)]
     pub event_choice_cursor: usize,
     /// Player position inside ship
-    #[allow(dead_code)]
     pub ship_player_x: i32,
-    #[allow(dead_code)]
     pub ship_player_y: i32,
     /// Cursor for starmap system selection
-    #[allow(dead_code)]
     pub starmap_cursor: usize,
 }
 
@@ -9420,6 +9410,48 @@ impl GameState {
     }
 
     fn render(&self) {
+        // ── Game mode dispatch ──
+        match self.game_mode {
+            GameMode::Starmap => {
+                if let Some(ref map) = self.sector_map {
+                    let selected_target = if let Some(sector) = map.sectors.get(map.current_sector) {
+                        let sys = &sector.systems[map.current_system];
+                        let connections = &sys.connections;
+                        if !connections.is_empty() {
+                            Some(connections[self.starmap_cursor % connections.len()])
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    self.renderer.draw_starmap(map, js_sys::Date::now() / 1000.0, &self.settings, selected_target);
+                    // Draw HUD overlay with fuel, hull, current system info
+                    self.renderer.draw_starmap_hud(map, &self.ship, self.starmap_cursor);
+                }
+                return;
+            }
+            GameMode::ShipInterior => {
+                self.renderer.draw_ship_interior(&self.ship_layout, self.ship_player_x, self.ship_player_y, &self.crew, js_sys::Date::now() / 1000.0);
+                return;
+            }
+            GameMode::SpaceCombat => {
+                self.renderer.draw_space_combat(&self.ship, js_sys::Date::now() / 1000.0);
+                return;
+            }
+            GameMode::Event => {
+                if let Some(event_idx) = self.current_event {
+                    if let Some(event) = ALL_EVENTS.get(event_idx) {
+                        self.renderer.draw_event(event, self.event_choice_cursor);
+                    }
+                }
+                return;
+            }
+            GameMode::LocationExploration | GameMode::GroundCombat => {
+                // Fall through to existing render logic
+            }
+        }
+        
         let popup = self.achievement_popup.map(|(n, d, _)| (n, d));
         let room_mod = self.current_room_modifier();
         let tutorial_hint = self.tutorial_hint();
@@ -10960,7 +10992,7 @@ pub fn init_game() -> Result<(), JsValue> {
         crafting_mode: false,
         crafting_first: None,
         crafting_cursor: 0,
-        game_mode: GameMode::ShipInterior,
+        game_mode: GameMode::Starmap,
         sector_map: Some({
             let s = generate_sector(0, 1, seed as u32);
             let start = s.start_system;
@@ -11111,6 +11143,230 @@ pub fn init_game() -> Result<(), JsValue> {
                 }
                 s.render();
                 return;
+            }
+
+            // ── Game mode input dispatch ──
+            match s.game_mode {
+                GameMode::Starmap => {
+                    event.prevent_default();
+                    // Collect data first to avoid borrow conflicts
+                    let (connections, current, current_name) = if let Some(ref map) = s.sector_map {
+                        let sector = &map.sectors[map.current_sector];
+                        let current = map.current_system;
+                        let connections = if current < sector.systems.len() {
+                            sector.systems[current].connections.clone()
+                        } else {
+                            vec![]
+                        };
+                        let name = if current < sector.systems.len() {
+                            sector.systems[current].name
+                        } else {
+                            "Unknown"
+                        };
+                        (connections, current, name)
+                    } else {
+                        (vec![], 0, "Unknown")
+                    };
+
+                    match key.as_str() {
+                        "ArrowLeft" | "a" | "A" => {
+                            // Move cursor to previous connected system
+                            if !connections.is_empty() {
+                                if s.starmap_cursor == 0 {
+                                    s.starmap_cursor = connections.len() - 1;
+                                } else {
+                                    s.starmap_cursor -= 1;
+                                }
+                            }
+                        }
+                        "ArrowRight" | "d" | "D" => {
+                            if !connections.is_empty() {
+                                s.starmap_cursor = (s.starmap_cursor + 1) % connections.len();
+                            }
+                        }
+                        "Enter" | " " => {
+                            // Jump to selected system
+                            if !connections.is_empty() && s.sector_map.is_some() {
+                                let target = connections[s.starmap_cursor % connections.len()];
+                                // Collect jump data
+                                let (fuel_cost, target_name, event_id) = {
+                                    let map = s.sector_map.as_ref().unwrap();
+                                    let sector = &map.sectors[map.current_sector];
+                                    if target < sector.systems.len() && current < sector.systems.len() {
+                                        let from = &sector.systems[current];
+                                        let to = &sector.systems[target];
+                                        let cost = jump_cost(from, to);
+                                        let name = to.name;
+                                        let evt = to.event_id;
+                                        (cost, name, evt)
+                                    } else {
+                                        (0, "Unknown", None)
+                                    }
+                                };
+                                
+                                if s.ship.fuel >= fuel_cost {
+                                    s.ship.fuel -= fuel_cost;
+                                    if let Some(ref mut map) = s.sector_map {
+                                        map.current_system = target;
+                                        if target < map.sectors[map.current_sector].systems.len() {
+                                            map.sectors[map.current_sector].systems[target].visited = true;
+                                        }
+                                    }
+                                    s.starmap_cursor = 0;
+                                    s.message = format!("Jumped to {}! (-{} fuel)", target_name, fuel_cost);
+                                    s.message_timer = 90;
+                                    // Check for events at the new system
+                                    if let Some(event_id) = event_id {
+                                        s.current_event = Some(event_id);
+                                        s.event_choice_cursor = 0;
+                                        s.game_mode = GameMode::Event;
+                                    }
+                                } else {
+                                    s.message = format!("Not enough fuel! Need {} fuel.", fuel_cost);
+                                    s.message_timer = 90;
+                                }
+                            }
+                        }
+                        "e" | "E" => {
+                            // Enter current system (explore the location)
+                            s.game_mode = GameMode::LocationExploration;
+                            s.message = format!("Entering {}...", current_name);
+                            s.message_timer = 90;
+                        }
+                        "Escape" => {
+                            // Could open menu or do nothing
+                        }
+                        _ => {}
+                    }
+                    s.render();
+                    return;
+                }
+                GameMode::ShipInterior => {
+                    event.prevent_default();
+                    match key.as_str() {
+                        "ArrowUp" | "w" | "W" => {
+                            let ny = s.ship_player_y - 1;
+                            if ny >= 0 {
+                                let idx = (ny * s.ship_layout.width + s.ship_player_x) as usize;
+                                if idx < s.ship_layout.tiles.len() {
+                                    match s.ship_layout.tiles[idx] {
+                                        ShipTile::Floor | ShipTile::Door | ShipTile::Console(_) 
+                                        | ShipTile::CrewStation(_) | ShipTile::Decoration(_) => {
+                                            s.ship_player_y = ny;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                        "ArrowDown" | "s" | "S" => {
+                            let ny = s.ship_player_y + 1;
+                            if ny < s.ship_layout.height {
+                                let idx = (ny * s.ship_layout.width + s.ship_player_x) as usize;
+                                if idx < s.ship_layout.tiles.len() {
+                                    match s.ship_layout.tiles[idx] {
+                                        ShipTile::Floor | ShipTile::Door | ShipTile::Console(_) 
+                                        | ShipTile::CrewStation(_) | ShipTile::Decoration(_) => {
+                                            s.ship_player_y = ny;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                        "ArrowLeft" | "a" | "A" => {
+                            let nx = s.ship_player_x - 1;
+                            if nx >= 0 {
+                                let idx = (s.ship_player_y * s.ship_layout.width + nx) as usize;
+                                if idx < s.ship_layout.tiles.len() {
+                                    match s.ship_layout.tiles[idx] {
+                                        ShipTile::Floor | ShipTile::Door | ShipTile::Console(_) 
+                                        | ShipTile::CrewStation(_) | ShipTile::Decoration(_) => {
+                                            s.ship_player_x = nx;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                        "ArrowRight" | "d" | "D" => {
+                            let nx = s.ship_player_x + 1;
+                            if nx < s.ship_layout.width {
+                                let idx = (s.ship_player_y * s.ship_layout.width + nx) as usize;
+                                if idx < s.ship_layout.tiles.len() {
+                                    match s.ship_layout.tiles[idx] {
+                                        ShipTile::Floor | ShipTile::Door | ShipTile::Console(_) 
+                                        | ShipTile::CrewStation(_) | ShipTile::Decoration(_) => {
+                                            s.ship_player_x = nx;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                        "m" | "M" => {
+                            s.game_mode = GameMode::Starmap;
+                            s.starmap_cursor = 0;
+                            s.message = "Opening star map...".to_string();
+                            s.message_timer = 60;
+                        }
+                        "Escape" => {
+                            s.game_mode = GameMode::Starmap;
+                        }
+                        _ => {}
+                    }
+                    s.render();
+                    return;
+                }
+                GameMode::Event => {
+                    event.prevent_default();
+                    if let Some(event_idx) = s.current_event {
+                        if let Some(ev) = ALL_EVENTS.get(event_idx) {
+                            let num_choices = ev.choices.len();
+                            match key.as_str() {
+                                "ArrowUp" | "w" | "W" => {
+                                    if s.event_choice_cursor > 0 {
+                                        s.event_choice_cursor -= 1;
+                                    }
+                                }
+                                "ArrowDown" | "s" | "S" => {
+                                    if s.event_choice_cursor + 1 < num_choices {
+                                        s.event_choice_cursor += 1;
+                                    }
+                                }
+                                "Enter" | " " => {
+                                    // Apply choice outcome (simplified for now)
+                                    let choice = &ev.choices[s.event_choice_cursor];
+                                    s.message = format!("You chose: {}", choice.text);
+                                    s.message_timer = 120;
+                                    s.current_event = None;
+                                    s.event_choice_cursor = 0;
+                                    s.game_mode = GameMode::Starmap;
+                                }
+                                "Escape" => {
+                                    s.current_event = None;
+                                    s.event_choice_cursor = 0;
+                                    s.game_mode = GameMode::Starmap;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    s.render();
+                    return;
+                }
+                GameMode::SpaceCombat => {
+                    event.prevent_default();
+                    // Placeholder - Escape returns to starmap
+                    if key == "Escape" {
+                        s.game_mode = GameMode::Starmap;
+                    }
+                    s.render();
+                    return;
+                }
+                GameMode::LocationExploration | GameMode::GroundCombat => {
+                    // Fall through to existing input handling
+                }
             }
 
             if key == "?" || key == "/" {
@@ -13683,6 +13939,15 @@ pub fn init_game() -> Result<(), JsValue> {
                     s.show_codex = false;
                     s.render();
                 }
+                return;
+            }
+            // Open star map with 'm'
+            if key == "m" || key == "M" {
+                s.game_mode = GameMode::Starmap;
+                s.starmap_cursor = 0;
+                s.message = "Opening star map...".to_string();
+                s.message_timer = 60;
+                s.render();
                 return;
             }
             match key.as_str() {
