@@ -27,14 +27,14 @@ fn tile_spell_bonus(battle: &TacticalBattle, unit_idx: usize) -> i32 {
         .tile(battle.units[unit_idx].x, battle.units[unit_idx].y)
     {
         // SpiritualInk + InkPool → +2 spell power instead of +1
-        Some(BattleTile::InkPool) => {
-            if battle.weather == Weather::SpiritualInk { 2 } else { 1 }
+        Some(BattleTile::OilSlick) => {
+            if battle.weather == Weather::EnergyFlux { 2 } else { 1 }
         }
-        Some(BattleTile::ArcaneGlyph) => 2,
+        Some(BattleTile::HoloTrap) => 2,
         _ => 0,
     };
     let weather_bonus = match battle.weather {
-        Weather::SpiritualInk => 1,
+        Weather::EnergyFlux => 1,
         _ => 0,
     };
     tile_bonus + weather_bonus
@@ -82,6 +82,11 @@ pub fn handle_input(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
     // If item menu is open, route to item menu handler.
     if battle.item_menu_open {
         return handle_item_menu(battle, key);
+    }
+
+    // If skill menu is open, route to skill menu handler.
+    if battle.skill_menu_open {
+        return handle_skill_menu(battle, key);
     }
 
     // If radical picker is open, route to radical picker handler.
@@ -157,6 +162,15 @@ fn handle_command(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
             } else {
                 battle.spell_menu_open = true;
                 battle.spell_cursor = 0;
+            }
+            BattleEvent::None
+        }
+        "k" | "K" if !battle.player_acted => {
+            if battle.player_radical_abilities.is_empty() {
+                battle.log_message("No skills available.");
+            } else {
+                battle.skill_menu_open = true;
+                battle.skill_menu_cursor = 0;
             }
             BattleEvent::None
         }
@@ -236,7 +250,7 @@ fn handle_command(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
             if let Some(class) = battle.player_class {
                 if matches!(
                     class,
-                    crate::player::PlayerClass::Thief | crate::player::PlayerClass::Assassin
+                    crate::player::PlayerClass::Operative | crate::player::PlayerClass::Operative
                 ) {
                     chance += 20;
                 }
@@ -452,6 +466,116 @@ fn handle_deployment(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
     }
 }
 
+fn handle_skill_menu(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
+    let total = battle.player_radical_abilities.len();
+    match key {
+        "Escape" => {
+            battle.skill_menu_open = false;
+            BattleEvent::None
+        }
+        "ArrowUp" => {
+            battle.skill_menu_cursor = battle.skill_menu_cursor.saturating_sub(1);
+            BattleEvent::None
+        }
+        "ArrowDown" => {
+            battle.skill_menu_cursor = (battle.skill_menu_cursor + 1).min(total.saturating_sub(1));
+            BattleEvent::None
+        }
+        "Enter" => {
+            battle.skill_menu_open = false;
+            let idx = battle.skill_menu_cursor;
+            if idx >= total {
+                return BattleEvent::None;
+            }
+            let (_radical_str, ability) = battle.player_radical_abilities[idx];
+            let skill_type = ability.skill_type();
+
+            match skill_type {
+                crate::enemy::SkillType::SelfBuff => {
+                    let (radical_str, ability) = battle.player_radical_abilities[idx];
+                    let msg = crate::combat::radical::apply_player_radical_ability(
+                        battle, 0, 0, ability,
+                    );
+                    battle.log_message(&msg);
+                    battle.consumed_radicals.push(radical_str);
+                    battle.player_radical_abilities.remove(idx);
+                    battle.player_acted = true;
+                    try_end_player_turn(battle)
+                }
+                crate::enemy::SkillType::MeleeTarget => {
+                    battle.selected_radical_ability = Some(idx);
+                    let px = battle.units[0].x;
+                    let py = battle.units[0].y;
+                    let adjacent: Vec<(i32, i32)> = battle
+                        .adjacent_enemies(px, py)
+                        .iter()
+                        .map(|&i| (battle.units[i].x, battle.units[i].y))
+                        .collect();
+                    if adjacent.is_empty() {
+                        battle.log_message("No adjacent enemies for this melee skill.");
+                        battle.selected_radical_ability = None;
+                        return BattleEvent::None;
+                    }
+                    let (cx, cy) = adjacent[0];
+                    battle.phase = TacticalPhase::Targeting {
+                        mode: TargetMode::Skill,
+                        cursor_x: cx,
+                        cursor_y: cy,
+                        valid_targets: adjacent,
+                        aoe_preview: vec![],
+                    };
+                    BattleEvent::None
+                }
+                crate::enemy::SkillType::RangedTarget(range) => {
+                    battle.selected_radical_ability = Some(idx);
+                    let px = battle.units[0].x;
+                    let py = battle.units[0].y;
+                    let los = tiles_in_range_with_los(&battle.arena, px, py, range);
+                    let valid: Vec<(i32, i32)> = los
+                        .into_iter()
+                        .filter(|&(tx, ty)| {
+                            battle
+                                .unit_at(tx, ty)
+                                .map(|i| battle.units[i].is_enemy())
+                                .unwrap_or(false)
+                        })
+                        .collect();
+                    if valid.is_empty() {
+                        battle.log_message("No enemies in range for this skill.");
+                        battle.selected_radical_ability = None;
+                        return BattleEvent::None;
+                    }
+                    let (cx, cy) = valid[0];
+                    battle.phase = TacticalPhase::Targeting {
+                        mode: TargetMode::Skill,
+                        cursor_x: cx,
+                        cursor_y: cy,
+                        valid_targets: valid,
+                        aoe_preview: vec![],
+                    };
+                    BattleEvent::None
+                }
+                crate::enemy::SkillType::GroundTarget(range) => {
+                    battle.selected_radical_ability = Some(idx);
+                    let px = battle.units[0].x;
+                    let py = battle.units[0].y;
+                    let los = tiles_in_range_with_los(&battle.arena, px, py, range);
+                    let (cx, cy) = if los.is_empty() { (px, py) } else { los[0] };
+                    battle.phase = TacticalPhase::Targeting {
+                        mode: TargetMode::Skill,
+                        cursor_x: cx,
+                        cursor_y: cy,
+                        valid_targets: los,
+                        aoe_preview: vec![],
+                    };
+                    BattleEvent::None
+                }
+            }
+        }
+        _ => BattleEvent::None,
+    }
+}
+
 fn handle_spell_menu(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
     match key {
         "Escape" => {
@@ -612,14 +736,14 @@ fn use_item_in_combat(
 ) -> BattleEvent {
     use crate::player::Item;
     let msg = match item {
-        Item::HealthPotion(amount) => {
+        Item::MedHypo(amount) => {
             let heal = *amount;
             let unit = &mut battle.units[0];
             unit.hp = (unit.hp + heal).min(unit.max_hp);
             battle.audio_events.push(AudioEvent::Heal);
             format!("Healed {} HP!", heal)
         }
-        Item::PoisonFlask(dmg, turns) => {
+        Item::ToxinGrenade(dmg, turns) => {
             let dmg = *dmg;
             let turns = *turns;
             let px = battle.units[0].x;
@@ -638,14 +762,14 @@ fn use_item_in_combat(
             battle.audio_events.push(AudioEvent::StatusPoison);
             format!("Poisoned {} enemies!", adj.len())
         }
-        Item::HastePotion(turns) => {
+        Item::StimPack(turns) => {
             let turns = *turns;
             battle.units[0]
                 .statuses
                 .push(StatusInstance::new(StatusKind::Haste, turns));
             format!("Haste for {} turns!", turns)
         }
-        Item::StunBomb => {
+        Item::EMPGrenade => {
             let mut stunned_count = 0;
             for i in 1..battle.units.len() {
                 if battle.units[i].alive {
@@ -655,7 +779,7 @@ fn use_item_in_combat(
             }
             format!("Stunned {} enemies!", stunned_count)
         }
-        Item::TeleportScroll => {
+        Item::PersonalTeleporter => {
             let w = battle.arena.width;
             let h = battle.arena.height;
             let seed = battle.turn_number as u64;
@@ -687,25 +811,25 @@ fn use_item_in_combat(
                 return BattleEvent::None;
             }
         }
-        Item::RevealScroll
-        | Item::RiceBall(_)
-        | Item::MeditationIncense(_)
-        | Item::AncestralWine(_)
-        | Item::GoldIngot(_)
-        | Item::PhoenixPlume(_)
-        | Item::JadeCompass
-        | Item::AncestorToken(_) => {
+        Item::ScannerPulse
+        | Item::RationPack(_)
+        | Item::FocusStim(_)
+        | Item::SynthAle(_)
+        | Item::CreditChip(_)
+        | Item::Revitalizer(_)
+        | Item::NavComputer
+        | Item::DataCore(_) => {
             battle.log_message("This item has no effect in combat.");
             return BattleEvent::None;
         }
-        Item::SmokeScreen(turns) => {
+        Item::HoloDecoy(turns) => {
             let turns = *turns;
             battle.units[0]
                 .statuses
                 .push(StatusInstance::new(StatusKind::Haste, turns));
             format!("Smoke screen! Haste for {} turns!", turns)
         }
-        Item::FireCracker(damage) => {
+        Item::PlasmaBurst(damage) => {
             let damage = *damage;
             let mut count = 0;
             for i in 1..battle.units.len() {
@@ -716,7 +840,7 @@ fn use_item_in_combat(
             }
             format!("Cracker hit {} enemies for {} damage!", count, damage)
         }
-        Item::IronSkinElixir(turns) => {
+        Item::PlasmaShield(turns) => {
             let turns = *turns;
             battle.units[0].defending = true;
             battle.units[0]
@@ -725,11 +849,11 @@ fn use_item_in_combat(
             battle.audio_events.push(AudioEvent::ShieldBlock);
             format!("Iron Skin! Shield + Regen for {} turns!", turns)
         }
-        Item::ClarityTea => {
+        Item::NeuralBoost => {
             battle.units[0].statuses.retain(|s| !s.is_negative());
             "All negative effects purged!".to_string()
         }
-        Item::ThunderTalisman(damage) => {
+        Item::ShockModule(damage) => {
             let damage = *damage;
             let px = battle.units[0].x;
             let py = battle.units[0].y;
@@ -750,20 +874,20 @@ fn use_item_in_combat(
                 return BattleEvent::None;
             }
         }
-        Item::JadeSalve(regen) => {
+        Item::BiogelPatch(regen) => {
             let regen = *regen;
             battle.units[0]
                 .statuses
                 .push(StatusInstance::new(StatusKind::Regen { heal: regen }, 5));
             format!("Jade Salve! Regen {} per turn for 5 turns!", regen)
         }
-        Item::SerpentFang => {
+        Item::VenomDart => {
             battle.units[0]
                 .statuses
                 .push(StatusInstance::new(StatusKind::Envenomed, 5));
             "Weapon envenomed for 5 turns!".to_string()
         }
-        Item::WardingCharm(turns) => {
+        Item::DeflectorDrone(turns) => {
             let turns = *turns;
             battle.units[0].defending = true;
             battle.units[0]
@@ -772,7 +896,7 @@ fn use_item_in_combat(
             battle.audio_events.push(AudioEvent::ShieldBlock);
             format!("Ward active! Shield + Spirit Shield for {} turns!", turns)
         }
-        Item::InkBomb => {
+        Item::NaniteSwarm => {
             let mut count = 0;
             for i in 1..battle.units.len() {
                 if battle.units[i].alive {
@@ -782,7 +906,7 @@ fn use_item_in_combat(
             }
             format!("Ink splatters {} enemies!", count)
         }
-        Item::MirrorShard => {
+        Item::ReflectorPlate => {
             battle.units[0].statuses.push(StatusInstance::new(
                 StatusKind::Thorns,
                 1,
@@ -790,7 +914,7 @@ fn use_item_in_combat(
             battle.units[0].defending = true;
             "Mirror Shard! Next attack will be reflected!".to_string()
         }
-        Item::FrostVial(turns) => {
+        Item::CryoGrenade(turns) => {
             let turns = *turns;
             let px = battle.units[0].x;
             let py = battle.units[0].y;
@@ -808,14 +932,14 @@ fn use_item_in_combat(
             battle.audio_events.push(AudioEvent::StatusSlow);
             format!("Frost Vial freezes {} adjacent enemies!", adj.len())
         }
-        Item::ShadowCloak(turns) => {
+        Item::CloakingDevice(turns) => {
             let turns = *turns;
             battle.units[0]
                 .statuses
                 .push(StatusInstance::new(StatusKind::Invisible, turns));
             format!("Shadow Cloak! Invisible for {} turns!", turns)
         }
-        Item::DragonScale(armor) => {
+        Item::NanoShield(armor) => {
             let armor = *armor;
             battle.units[0]
                 .statuses
@@ -823,21 +947,8 @@ fn use_item_in_combat(
             battle.units[0].defending = true;
             format!("Dragon Scale! +{} armor and shield!", armor)
         }
-        Item::BambooFlute(turns) => {
-            let turns = *turns;
-            let mut count = 0;
-            for i in 1..battle.units.len() {
-                if battle.units[i].alive {
-                    battle.units[i].statuses.push(StatusInstance::new(
-                        StatusKind::Confused,
-                        turns,
-                    ));
-                    count += 1;
-                }
-            }
-            format!("Bamboo Flute confuses {} enemies for {} turns!", count, turns)
-        }
-        Item::SilkRope => {
+        // SignalJammer handled at end of match
+        Item::GrappleLine => {
             let px = battle.units[0].x;
             let py = battle.units[0].y;
             let mut nearest: Option<(usize, i32)> = None;
@@ -875,11 +986,11 @@ fn use_item_in_combat(
                 return BattleEvent::None;
             }
         }
-        Item::LotusElixir => {
+        Item::OmniGel => {
             battle.units[0].statuses.retain(|s| !s.is_negative());
             "Lotus Elixir purges all negative effects!".to_string()
         }
-        Item::ThunderDrum(damage) => {
+        Item::SonicEmitter(damage) => {
             let damage = *damage;
             let mut count = 0;
             for i in 1..battle.units.len() {
@@ -894,13 +1005,13 @@ fn use_item_in_combat(
             }
             format!("Thunder Drum hits {} enemies for {} damage + Slow!", count, damage)
         }
-        Item::CinnabarInk => {
+        Item::CircuitInk => {
             battle.units[0]
                 .statuses
                 .push(StatusInstance::new(StatusKind::Empowered { amount: 2 }, 5));
             "Cinnabar Ink! +2 spell damage for 5 turns!".to_string()
         }
-        Item::WindFan => {
+        Item::ThrusterPack => {
             let px = battle.units[0].x;
             let py = battle.units[0].y;
             let adj = battle.adjacent_enemies(px, py);
@@ -922,7 +1033,21 @@ fn use_item_in_combat(
                 }
                 count += 1;
             }
-            format!("Wind Fan pushes {} enemies away!", count)
+            format!("Thruster Pack pushes {} enemies away!", count)
+        }
+        Item::SignalJammer(turns) => {
+            let turns = *turns;
+            let mut count = 0;
+            for i in 1..battle.units.len() {
+                if battle.units[i].alive {
+                    battle.units[i].statuses.push(StatusInstance::new(
+                        StatusKind::Confused,
+                        turns,
+                    ));
+                    count += 1;
+                }
+            }
+            format!("Signal Jammer confuses {} enemies for {} turns!", count, turns)
         }
     };
     battle.log_message(&msg);
@@ -1288,7 +1413,7 @@ fn apply_spell_combo(
                     if battle.arena.in_bounds(tx, ty) {
                         if let Some(tile) = battle.arena.tile(tx, ty) {
                             if tile.is_walkable() {
-                                battle.arena.set_tile(tx, ty, BattleTile::Steam);
+                                battle.arena.set_tile(tx, ty, BattleTile::VentSteam);
                                 battle.arena.set_steam(tx, ty, 3);
                             }
                         }
@@ -1321,7 +1446,7 @@ fn apply_spell_combo(
             let mut hits = 0;
             for &(tx, ty) in &cone {
                 if battle.arena.in_bounds(tx, ty) {
-                    battle.arena.set_tile(tx, ty, BattleTile::BrokenGround);
+                    battle.arena.set_tile(tx, ty, BattleTile::DamagedPlating);
                     if let Some(idx) = battle.unit_at(tx, ty) {
                         if battle.units[idx].is_enemy() {
                             deal_damage(battle, idx, 4);
@@ -1452,9 +1577,9 @@ fn apply_spell_combo(
                                 if dx == 0 && dy == 0 {
                                     battle
                                         .arena
-                                        .set_tile(tx, ty, BattleTile::BambooThicket);
+                                        .set_tile(tx, ty, BattleTile::PipeTangle);
                                 } else {
-                                    battle.arena.set_tile(tx, ty, BattleTile::Grass);
+                                    battle.arena.set_tile(tx, ty, BattleTile::WiringPanel);
                                 }
                             }
                         }
@@ -1471,11 +1596,11 @@ fn apply_spell_combo(
                 if battle.units[idx].is_enemy() {
                     battle.units[idx].radical_armor = 0;
                     deal_damage(battle, idx, 3);
-                    battle.arena.set_tile(target_x, target_y, BattleTile::BrokenGround);
+                    battle.arena.set_tile(target_x, target_y, BattleTile::DamagedPlating);
                     return "Shatter! Armor broken + 3 dmg!".to_string();
                 }
             }
-            battle.arena.set_tile(target_x, target_y, BattleTile::BrokenGround);
+            battle.arena.set_tile(target_x, target_y, BattleTile::DamagedPlating);
             "Shatter! The ground cracks!".to_string()
         }
         "Entangle" => {
@@ -1494,7 +1619,7 @@ fn apply_spell_combo(
                 if battle.arena.in_bounds(tx, ty) {
                     if let Some(tile) = battle.arena.tile(tx, ty) {
                         if tile.is_walkable() {
-                            battle.arena.set_tile(tx, ty, BattleTile::Thorns);
+                            battle.arena.set_tile(tx, ty, BattleTile::ElectrifiedWire);
                         }
                     }
                 }
@@ -1571,7 +1696,7 @@ fn enter_attack_targeting(battle: &mut TacticalBattle) {
                 let ny = py + dy;
                 if matches!(
                     battle.arena.tile(nx, ny),
-                    Some(BattleTile::Boulder) | Some(BattleTile::ExplosiveBarrel)
+                    Some(BattleTile::CargoCrate) | Some(BattleTile::FuelCanister)
                 ) {
                     Some((nx, ny))
                 } else {
@@ -1734,7 +1859,7 @@ fn confirm_target(battle: &mut TacticalBattle, mode: &TargetMode, tx: i32, ty: i
             BattleEvent::None
         }
         TargetMode::Attack => {
-            if battle.arena.tile(tx, ty) == Some(BattleTile::Boulder) {
+            if battle.arena.tile(tx, ty) == Some(BattleTile::CargoCrate) {
                 let px = battle.units[0].x;
                 let py = battle.units[0].y;
                 let dx = tx - px;
@@ -1766,7 +1891,7 @@ fn confirm_target(battle: &mut TacticalBattle, mode: &TargetMode, tx: i32, ty: i
                 return BattleEvent::None;
             }
 
-            if battle.arena.tile(tx, ty) == Some(BattleTile::ExplosiveBarrel) {
+            if battle.arena.tile(tx, ty) == Some(BattleTile::FuelCanister) {
                 let msgs = crate::combat::terrain::explode_barrel(battle, tx, ty);
                 for msg in &msgs {
                     battle.log_message(msg);
@@ -1847,6 +1972,25 @@ fn confirm_target(battle: &mut TacticalBattle, mode: &TargetMode, tx: i32, ty: i
             BattleEvent::None
         }
         TargetMode::ShieldBreak => {
+            battle.phase = TacticalPhase::Command;
+            BattleEvent::None
+        }
+        TargetMode::Skill => {
+            if let Some(ability_idx) = battle.selected_radical_ability.take() {
+                if ability_idx < battle.player_radical_abilities.len() {
+                    let target = battle.unit_at(tx, ty);
+                    let target_idx = target.unwrap_or(0);
+                    let (radical_str, ability) = battle.player_radical_abilities[ability_idx];
+                    let msg = crate::combat::radical::apply_player_radical_ability(
+                        battle, 0, target_idx, ability,
+                    );
+                    battle.log_message(&msg);
+                    battle.consumed_radicals.push(radical_str);
+                    battle.player_radical_abilities.remove(ability_idx);
+                    battle.player_acted = true;
+                    return try_end_player_turn(battle);
+                }
+            }
             battle.phase = TacticalPhase::Command;
             BattleEvent::None
         }
@@ -1940,7 +2084,7 @@ fn resolve_basic_attack(
 
     let correct = check_attack_pinyin(battle, target_idx, input);
 
-    let correct = if correct && battle.weather == Weather::Sandstorm {
+    let correct = if correct && battle.weather == Weather::DebrisStorm {
         let roll = (battle.turn_number as u64 * 7 + target_idx as u64 * 13) % 100;
         if roll < 10 {
             battle.log_message("Sandstorm obscures your aim — miss!");
@@ -2211,7 +2355,7 @@ fn resolve_basic_attack(
 
             for i in 1..battle.units.len() {
                 if battle.units[i].alive
-                    && battle.units[i].boss_kind == Some(BossKind::RadicalThief)
+                    && battle.units[i].boss_kind == Some(BossKind::DriftLeviathan)
                 {
                     if let Some(steal_msg) = boss::steal_spell(battle, i) {
                         battle.log_message(steal_msg);
@@ -2291,7 +2435,7 @@ fn resolve_spell_cast(
 
     let msg = match effect {
         SpellEffect::FireAoe(dmg) => {
-            let rain_penalty = if battle.weather == Weather::Rain {
+            let rain_penalty = if battle.weather == Weather::CoolantLeak {
                 1
             } else {
                 0
@@ -2327,7 +2471,7 @@ fn resolve_spell_cast(
             }
             let terrain_msgs = apply_terrain_interactions(
                 battle,
-                TerrainSource::FireSpell,
+                TerrainSource::FireAbility,
                 &cross,
             );
             for tm in &terrain_msgs {
@@ -2348,8 +2492,8 @@ fn resolve_spell_cast(
         SpellEffect::Reveal => {
             let mut revealed = 0;
             for i in 0..battle.arena.tiles.len() {
-                if battle.arena.tiles[i] == BattleTile::TrapTile {
-                    battle.arena.tiles[i] = BattleTile::TrapTileRevealed;
+                if battle.arena.tiles[i] == BattleTile::MineTile {
+                    battle.arena.tiles[i] = BattleTile::MineTileRevealed;
                     revealed += 1;
                 }
             }
@@ -2556,7 +2700,7 @@ fn resolve_spell_cast(
                 {
                     break;
                 }
-                if let Some(BattleTile::Obstacle) = battle.arena.tile(x, y) {
+                if let Some(BattleTile::CoverBarrier) = battle.arena.tile(x, y) {
                     break;
                 }
                 if let Some(idx) = battle.unit_at(x, y) {
@@ -2686,9 +2830,9 @@ fn resolve_spell_cast(
                 };
                 if battle.arena.in_bounds(wx, wy)
                     && battle.unit_at(wx, wy).is_none()
-                    && battle.arena.tile(wx, wy) != Some(BattleTile::Obstacle)
+                    && battle.arena.tile(wx, wy) != Some(BattleTile::CoverBarrier)
                 {
-                    battle.arena.set_tile(wx, wy, BattleTile::Obstacle);
+                    battle.arena.set_tile(wx, wy, BattleTile::CoverBarrier);
                     placed += 1;
                 }
             }
@@ -2702,8 +2846,8 @@ fn resolve_spell_cast(
             for &(tx, ty) in &preview {
                 if battle.arena.in_bounds(tx, ty) {
                     if let Some(tile) = battle.arena.tile(tx, ty) {
-                        if tile.is_walkable() && tile != BattleTile::Oil {
-                            battle.arena.set_tile(tx, ty, BattleTile::Oil);
+                        if tile.is_walkable() && tile != BattleTile::Lubricant {
+                            battle.arena.set_tile(tx, ty, BattleTile::Lubricant);
                             placed += 1;
                         }
                     }
@@ -2719,8 +2863,8 @@ fn resolve_spell_cast(
             for &(tx, ty) in &preview {
                 if battle.arena.in_bounds(tx, ty) {
                     if let Some(tile) = battle.arena.tile(tx, ty) {
-                        if matches!(tile, BattleTile::Water | BattleTile::Open) {
-                            battle.arena.set_tile(tx, ty, BattleTile::Ice);
+                        if matches!(tile, BattleTile::CoolantPool | BattleTile::MetalFloor) {
+                            battle.arena.set_tile(tx, ty, BattleTile::FrozenCoolant);
                             frozen += 1;
                         }
                     }
@@ -2747,18 +2891,18 @@ fn resolve_spell_cast(
                 if battle.arena.in_bounds(tx, ty) {
                     if let Some(tile) = battle.arena.tile(tx, ty) {
                         match tile {
-                            BattleTile::Grass | BattleTile::Thorns => {
-                                battle.arena.set_tile(tx, ty, BattleTile::Scorched);
+                            BattleTile::WiringPanel | BattleTile::ElectrifiedWire => {
+                                battle.arena.set_tile(tx, ty, BattleTile::BlastMark);
                                 burned += 1;
                             }
-                            BattleTile::Oil => {
-                                battle.arena.set_tile(tx, ty, BattleTile::Scorched);
+                            BattleTile::Lubricant => {
+                                battle.arena.set_tile(tx, ty, BattleTile::BlastMark);
                                 burned += 1;
                                 // Oil explosion: 3 damage to unit on this tile
                                 if let Some(idx) = battle.unit_at(tx, ty) {
                                     deal_damage(battle, idx, 3);
                                     battle.log_message(&format!(
-                                        "Oil ignites! {} takes 3 damage!",
+                                        "Lubricant ignites! {} takes 3 damage!",
                                         battle.units[idx].hanzi
                                     ));
                                 }
@@ -2773,7 +2917,7 @@ fn resolve_spell_cast(
                     }
                 }
             }
-            format!("Fire ignites {} tiles! Burn applied!", burned)
+            format!("Plasma ignites {} tiles! Burn applied!", burned)
         }
         SpellEffect::PlantGrowth => {
             let px = battle.units[0].x;
@@ -2783,13 +2927,13 @@ fn resolve_spell_cast(
             for &(tx, ty) in &preview {
                 if battle.arena.in_bounds(tx, ty) {
                     if let Some(tile) = battle.arena.tile(tx, ty) {
-                        if tile == BattleTile::Grass {
+                        if tile == BattleTile::WiringPanel {
                             if battle.unit_at(tx, ty).is_none() {
-                                battle.arena.set_tile(tx, ty, BattleTile::BambooThicket);
+                                battle.arena.set_tile(tx, ty, BattleTile::PipeTangle);
                                 grown += 1;
                             }
-                        } else if tile == BattleTile::Open || tile == BattleTile::Scorched {
-                            battle.arena.set_tile(tx, ty, BattleTile::Grass);
+                        } else if tile == BattleTile::MetalFloor || tile == BattleTile::BlastMark {
+                            battle.arena.set_tile(tx, ty, BattleTile::WiringPanel);
                             grown += 1;
                         }
                     }
@@ -2797,15 +2941,15 @@ fn resolve_spell_cast(
             }
             // Heal player 1 if standing on Grass
             let player_tile = battle.arena.tile(battle.units[0].x, battle.units[0].y);
-            if player_tile == Some(BattleTile::Grass) {
+            if player_tile == Some(BattleTile::WiringPanel) {
                 let unit = &mut battle.units[0];
                 let healed = 1_i32.min(unit.max_hp - unit.hp);
                 unit.hp = (unit.hp + 1).min(unit.max_hp);
                 if healed > 0 {
-                    battle.log_message("Standing on grass restores 1 HP!");
+                    battle.log_message("Standing on wiring panel restores 1 HP!");
                 }
             }
-            format!("Nature grows! {} tiles transformed!", grown)
+            format!("Nanites spread! {} tiles transformed!", grown)
         }
         SpellEffect::Earthquake(dmg) => {
             let px = battle.units[0].x;
@@ -2817,14 +2961,14 @@ fn resolve_spell_cast(
                 if battle.arena.in_bounds(tx, ty) {
                     if let Some(tile) = battle.arena.tile(tx, ty) {
                         match tile {
-                            BattleTile::Open | BattleTile::Grass | BattleTile::Sand => {
-                                battle.arena.set_tile(tx, ty, BattleTile::CrumblingFloor);
+                            BattleTile::MetalFloor | BattleTile::WiringPanel | BattleTile::Debris => {
+                                battle.arena.set_tile(tx, ty, BattleTile::WeakenedPlating);
                             }
-                            BattleTile::CrumblingFloor => {
+                            BattleTile::WeakenedPlating => {
                                 if battle.unit_at(tx, ty).is_none() {
-                                    battle.arena.set_tile(tx, ty, BattleTile::Pit);
+                                    battle.arena.set_tile(tx, ty, BattleTile::BreachedFloor);
                                 } else {
-                                    battle.arena.set_tile(tx, ty, BattleTile::CrackedFloor);
+                                    battle.arena.set_tile(tx, ty, BattleTile::DamagedFloor);
                                 }
                             }
                             _ => {}
@@ -2839,9 +2983,9 @@ fn resolve_spell_cast(
                     }
                 }
             }
-            // Push boulders outward from center
+            // Push cargo crates outward from center
             for &(tx, ty) in &preview {
-                if battle.arena.tile(tx, ty) == Some(BattleTile::Boulder) {
+                if battle.arena.tile(tx, ty) == Some(BattleTile::CargoCrate) {
                     let bdx = (tx - target_x).signum();
                     let bdy = (ty - target_y).signum();
                     if bdx == 0 && bdy == 0 { continue; }
@@ -2851,8 +2995,8 @@ fn resolve_spell_cast(
                         && battle.arena.tile(nx, ny).map(|t| t.is_walkable()).unwrap_or(false)
                         && battle.unit_at(nx, ny).is_none()
                     {
-                        battle.arena.set_tile(tx, ty, BattleTile::Open);
-                        battle.arena.set_tile(nx, ny, BattleTile::Boulder);
+                        battle.arena.set_tile(tx, ty, BattleTile::MetalFloor);
+                        battle.arena.set_tile(nx, ny, BattleTile::CargoCrate);
                     }
                 }
             }
@@ -2865,7 +3009,7 @@ fn resolve_spell_cast(
             for tm in &terrain_msgs {
                 battle.log_message(tm);
             }
-            format!("The earth shakes! {} damage to {} units!", dmg, hits)
+            format!("The deck shakes! {} damage to {} units!", dmg, hits)
         }
         SpellEffect::Sanctify(heal) => {
             let px = battle.units[0].x;
@@ -2877,7 +3021,7 @@ fn resolve_spell_cast(
                     if let Some(tile) = battle.arena.tile(tx, ty) {
                         if tile.is_walkable() {
                             battle.arena.set_holy(tx, ty, 3);
-                            // Store heal amount in steam_timers (reuse for holy heal amount)
+                            // Store heal amount in steam_timers (reuse for shield zone heal amount)
                             if let Some(i) = battle.arena.idx(tx, ty) {
                                 battle.arena.steam_timers[i] = heal as u8;
                             }
@@ -2886,7 +3030,7 @@ fn resolve_spell_cast(
                     }
                 }
             }
-            format!("Holy light sanctifies {} tiles! Heals {} HP/turn for 3 rounds.", sanctified, heal)
+            format!("Shield field covers {} tiles! Heals {} HP/turn for 3 rounds.", sanctified, heal)
         }
         SpellEffect::FloodWave(dmg) => {
             let px = battle.units[0].x;
@@ -2930,17 +3074,17 @@ fn resolve_spell_cast(
                     }
                 }
             }
-            // Place water tiles
+            // Place coolant tiles
             for &(tx, ty) in &preview {
                 if battle.arena.in_bounds(tx, ty) {
                     if let Some(tile) = battle.arena.tile(tx, ty) {
-                        if tile.is_walkable() && tile != BattleTile::Water {
-                            battle.arena.set_tile(tx, ty, BattleTile::Water);
+                        if tile.is_walkable() && tile != BattleTile::CoolantPool {
+                            battle.arena.set_tile(tx, ty, BattleTile::CoolantPool);
                         }
                     }
                 }
             }
-            format!("Flood wave hits {} enemies for {} damage!", hits, dmg)
+            format!("Coolant wave hits {} enemies for {} damage!", hits, dmg)
         }
         SpellEffect::SummonBoulder => {
             if battle.arena.in_bounds(target_x, target_y) {
@@ -2948,10 +3092,10 @@ fn resolve_spell_cast(
                 if tile.map(|t| t.is_walkable()).unwrap_or(false)
                     && battle.unit_at(target_x, target_y).is_none()
                 {
-                    battle.arena.set_tile(target_x, target_y, BattleTile::Boulder);
-                    "A boulder materializes!".to_string()
+                    battle.arena.set_tile(target_x, target_y, BattleTile::CargoCrate);
+                    "A cargo crate materializes!".to_string()
                 } else {
-                    "Cannot place boulder there!".to_string()
+                    "Cannot place crate there!".to_string()
                 }
             } else {
                 "Target out of bounds.".to_string()
@@ -2961,7 +3105,7 @@ fn resolve_spell_cast(
 
     battle.log_message(&msg);
 
-    // ── Spell combo chain check ──────────────────────────────────────────
+    // ── Ability combo chain check ──────────────────────────────────────────
     let current_element = spell_effect_element(&effect);
     if let Some(cur_elem) = current_element {
         if let Some(prev_elem) = battle.last_spell_element {
@@ -3533,3 +3677,5 @@ fn check_chengyu_combo(battle: &mut TacticalBattle) -> Option<String> {
     }
     None
 }
+
+

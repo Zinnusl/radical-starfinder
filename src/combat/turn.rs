@@ -8,8 +8,8 @@ use crate::status::has_haste;
 /// Slow (Ironclad, Earthmover): 3
 pub fn player_base_speed(class: PlayerClass) -> i32 {
     match class {
-        PlayerClass::Assassin | PlayerClass::Thief | PlayerClass::Swordsman => 5,
-        PlayerClass::Ironclad | PlayerClass::Earthmover => 3,
+        PlayerClass::Operative | PlayerClass::Operative | PlayerClass::Solarian => 5,
+        PlayerClass::Soldier | PlayerClass::Mechanic => 3,
         _ => 4,
     }
 }
@@ -24,8 +24,8 @@ pub fn player_speed(
         speed += 2;
     }
     match form {
-        PlayerForm::Tiger => speed += 2,
-        PlayerForm::Stone => speed -= 1,
+        PlayerForm::Void => speed += 2,
+        PlayerForm::Cybernetic => speed -= 1,
         _ => {}
     }
     speed
@@ -115,3 +115,5 @@ pub fn advance_turn(battle: &mut TacticalBattle) -> bool {
         false
     }
 }
+
+

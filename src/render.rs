@@ -1,4 +1,4 @@
-//! Canvas 2D rendering for the dungeon.
+//! Canvas 2D rendering for the station.
 
 use std::collections::BTreeMap;
 
@@ -10,30 +10,33 @@ use crate::combat::{
     ArenaBiome, BattleTile, Direction, EnemyIntent, TacticalBattle, TacticalPhase, TargetMode,
     TypingAction, Weather, WuxingElement,
 };
-use crate::dungeon::{AltarKind, DungeonLevel, SealKind, Tile};
+use crate::world::{compute_fov, TerminalKind, DungeonLevel, RoomModifier, SecuritySeal, SealKind, SpecialRoomKind, Tile, LocationType};
 use crate::enemy::{BossKind, Enemy};
 use crate::game::{combo_tier, CombatState, ComboTier, GameSettings, ListenMode, ShopItemKind};
 use crate::particle::ParticleSystem;
-use crate::player::{Deity, Item, ItemKind, ItemState, Player, PlayerForm};
+use crate::player::{Faction, Item, ItemKind, ItemState, Player, PlayerForm, Ship};
+use crate::world::starmap::SectorMap;
+use crate::world::ship::{ShipLayout, ShipTile};
+use crate::world::events::SpaceEvent;
 use crate::radical;
 use crate::sprites::SpriteCache;
 
 const TILE_SIZE: f64 = 24.0;
 
 // Colors
-const COL_WALL: &str = "#2a1f3d";
+const COL_WALL: &str = "#1a1a2a";
 const COL_WALL_REVEALED: &str = "#1a1428";
-const COL_FLOOR: &str = "#4a4260";
-const COL_FLOOR_REVEALED: &str = "#2d2840";
-const COL_CORRIDOR: &str = "#3d3555";
+const COL_FLOOR: &str = "#2a2a3a";
+const COL_FLOOR_REVEALED: &str = "#252535";
+const COL_CORRIDOR: &str = "#2a3344";
 const COL_CORRIDOR_REVEALED: &str = "#272040";
 const COL_STAIRS: &str = "#8ab4ff";
 const COL_FORGE: &str = "#ff8844";
 const COL_SHOP: &str = "#44dd88";
 const COL_CHEST: &str = "#ddaa33";
-const COL_FOG: &str = "#0d0b14";
-const COL_PLAYER: &str = "#ffcc33";
-const COL_PLAYER_OUTLINE: &str = "#bb8800";
+const COL_FOG: &str = "#060612";
+const COL_PLAYER: &str = "#00ccdd";
+const COL_PLAYER_OUTLINE: &str = "#008899";
 const COL_HP_BAR: &str = "#44cc55";
 const COL_HP_BG: &str = "#442222";
 
@@ -96,7 +99,7 @@ impl Renderer {
         shake_timer: u8,
         flash: Option<(u8, u8, u8, f64)>,
         achievement_popup: Option<(&str, &str)>,
-        room_modifier: Option<crate::dungeon::RoomModifier>,
+        room_modifier: Option<crate::world::RoomModifier>,
         listening_mode: ListenMode,
         companion: Option<crate::game::Companion>,
         companion_level: u8,
@@ -197,10 +200,10 @@ impl Renderer {
 
         let player_key = match player.form {
             PlayerForm::Human => "player_human",
-            PlayerForm::Flame => "player_flame",
-            PlayerForm::Stone => "player_stone",
-            PlayerForm::Mist => "player_mist",
-            PlayerForm::Tiger => "player_tiger",
+            PlayerForm::Powered => "player_flame",
+            PlayerForm::Cybernetic => "player_stone",
+            PlayerForm::Holographic => "player_mist",
+            PlayerForm::Void => "player_tiger",
         };
         let mut player_sprite_drawn = false;
         if self.sprites.is_loaded(player_key) {
@@ -290,7 +293,7 @@ impl Renderer {
             self.ctx
                 .fill_rect(center_x - 10.0, center_y + 12.0, 20.0, 3.0);
             self.ctx.set_fill_style_str(if player_sprite_drawn {
-                "#ffcc33"
+                "#00ccdd"
             } else {
                 player.form.color()
             });
@@ -372,7 +375,7 @@ impl Renderer {
             let color = if enemy.is_boss {
                 "#cc66ff"
             } else if enemy.is_elite {
-                "#ffcc33"
+                "#00ccdd"
             } else if enemy.alert {
                 "#ff6666"
             } else {
@@ -403,7 +406,7 @@ impl Renderer {
 
             // Elite star marker
             if enemy.is_elite {
-                self.ctx.set_fill_style_str("#ffcc33");
+                self.ctx.set_fill_style_str("#00ccdd");
                 self.ctx.set_font("10px monospace");
                 self.ctx.set_text_align("left");
                 self.ctx.fill_text("★", ex, ey + 8.0).ok();
@@ -643,12 +646,12 @@ impl Renderer {
         // Room modifier indicator
         if let Some(modifier) = room_modifier {
             let (label, color) = match modifier {
-                crate::dungeon::RoomModifier::Dark => ("🌑 Dark Room", "#8888bb"),
-                crate::dungeon::RoomModifier::Arcane => ("✨ Arcane Room", "#aa66ff"),
-                crate::dungeon::RoomModifier::Cursed => ("💀 Cursed Room", "#ff6666"),
-                crate::dungeon::RoomModifier::Garden => ("🌿 Garden Room", "#66cc66"),
-                crate::dungeon::RoomModifier::Frozen => ("❄️ Frozen Room", "#88ccff"),
-                crate::dungeon::RoomModifier::Infernal => ("🔥 Infernal Room", "#ff6600"),
+                crate::world::RoomModifier::PoweredDown => ("🌑 Powered Down", "#8888bb"),
+                crate::world::RoomModifier::HighTech => ("✨ High-Tech Module", "#aa66ff"),
+                crate::world::RoomModifier::Irradiated => ("☢ Irradiated Zone", "#ff6666"),
+                crate::world::RoomModifier::Hydroponics => ("🌿 Hydroponics Bay", "#66cc66"),
+                crate::world::RoomModifier::Cryogenic => ("❄ Cryo Bay", "#88ccff"),
+                crate::world::RoomModifier::OverheatedReactor => ("🔥 Reactor Core", "#ff6600"),
             };
             self.ctx.set_fill_style_str(color);
             self.ctx.fill_text(label, self.canvas_w - 12.0, eq_y).ok();
@@ -677,15 +680,15 @@ impl Renderer {
             self.ctx.fill_text(&label, self.canvas_w - 12.0, eq_y).ok();
             eq_y += 14.0;
         }
-        // Deity piety
+        // Faction piety
         for &(deity, piety) in &player.piety {
             if piety != 0 {
                 let (icon, color) = match deity {
-                    Deity::Jade => ("🟢", "#66cc88"),
-                    Deity::Iron => ("⚙", "#99aacc"),
-                    Deity::Gold => ("💰", "#ddaa44"),
-                    Deity::Gale => ("🌀", "#66bbdd"),
-                    Deity::Mirror => ("🪞", "#bb88dd"),
+                    Faction::Consortium => ("🟢", "#66cc88"),
+                    Faction::MilitaryAlliance => ("⚙", "#99aacc"),
+                    Faction::AncientOrder => ("💰", "#ddaa44"),
+                    Faction::FreeTraders => ("🌀", "#66bbdd"),
+                    Faction::Technocracy => ("🪞", "#bb88dd"),
                 };
                 self.ctx.set_fill_style_str(color);
                 self.ctx
@@ -694,7 +697,7 @@ impl Renderer {
                 eq_y += 14.0;
             }
         }
-        if let Some((synergy_name, _)) = player.deity_synergy() {
+        if let Some((synergy_name, _)) = player.faction_synergy() {
             self.ctx.set_fill_style_str("#ffd700");
             self.ctx
                 .fill_text(&format!("⚡ {}", synergy_name), self.canvas_w - 12.0, eq_y)
@@ -722,11 +725,11 @@ impl Renderer {
             let box_x = (self.canvas_w - box_w) / 2.0;
             self.ctx.set_fill_style_str("rgba(10,8,18,0.82)");
             self.ctx.fill_rect(box_x, 10.0, box_w, 38.0);
-            self.ctx.set_stroke_style_str("#ffcc33");
+            self.ctx.set_stroke_style_str("#00ccdd");
             self.ctx.set_line_width(1.0);
             self.ctx.stroke_rect(box_x, 10.0, box_w, 38.0);
             self.ctx.set_text_align("center");
-            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_fill_style_str("#00ccdd");
             self.ctx.set_font("11px monospace");
             self.ctx
                 .fill_text("Tutorial", self.canvas_w / 2.0, 24.0)
@@ -750,7 +753,7 @@ impl Renderer {
                 let y = sp_y + 16.0 + i as f64 * 16.0;
                 let selected = i == player.selected_spell;
                 self.ctx
-                    .set_fill_style_str(if selected { "#ffcc33" } else { "#88bbdd" });
+                    .set_fill_style_str(if selected { "#00ccdd" } else { "#88bbdd" });
                 self.ctx.set_font("12px monospace");
                 let marker = if selected { "►" } else { " " };
                 let mut text_x = sp_x;
@@ -802,7 +805,7 @@ impl Renderer {
             self.ctx.set_font("12px monospace");
             self.ctx.set_text_align("left");
             self.ctx.set_fill_style_str("#44ddff");
-            self.ctx.fill_text("🛡 Shield Active", 12.0, 36.0).ok();
+            self.ctx.fill_text("🛡 Energy Barrier Active", 12.0, 36.0).ok();
         }
 
         // ── Particles ────────────────────────────────────────────────────
@@ -854,12 +857,12 @@ impl Renderer {
             let py = 50.0;
             self.ctx.set_fill_style_str("rgba(40,30,60,0.9)");
             self.ctx.fill_rect(px, py, pw, ph);
-            self.ctx.set_stroke_style_str("#ffcc33");
+            self.ctx.set_stroke_style_str("#00ccdd");
             self.ctx.set_line_width(2.0);
             self.ctx.stroke_rect(px, py, pw, ph);
             self.ctx.set_font("bold 14px monospace");
             self.ctx.set_text_align("center");
-            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_fill_style_str("#00ccdd");
             self.ctx
                 .fill_text("🏆 Achievement Unlocked!", px + pw / 2.0, py + 20.0)
                 .ok();
@@ -1043,7 +1046,7 @@ impl Renderer {
                     self.ctx.set_fill_style_str("#aa66ff");
                     self.ctx.set_font("12px monospace");
                     // Teacher companion reveals meaning even in listening mode
-                    let teacher_hint = if companion == Some(crate::game::Companion::Teacher) {
+                    let teacher_hint = if companion == Some(crate::game::Companion::ScienceOfficer) {
                         &format!("📚 ({})", enemy.meaning)
                     } else {
                         "(listen carefully...)"
@@ -1128,7 +1131,7 @@ impl Renderer {
                     typing
                 };
                 self.ctx
-                    .set_fill_style_str(if typing.is_empty() { "#555" } else { "#ffcc33" });
+                    .set_fill_style_str(if typing.is_empty() { "#555" } else { "#00ccdd" });
                 self.ctx.set_font("16px monospace");
                 self.ctx.set_text_align("center");
                 self.ctx
@@ -1243,14 +1246,14 @@ impl Renderer {
                 };
                 self.ctx.set_text_align("left");
                 self.ctx
-                    .set_fill_style_str(if is_cursor { "#ffcc33" } else { "#888" });
+                    .set_fill_style_str(if is_cursor { "#00ccdd" } else { "#888" });
                 self.ctx.set_font("11px monospace");
                 self.ctx
                     .fill_text(&format!("{}{}", marker, num), box_x + 10.0, ry + 17.0)
                     .ok();
 
                 self.ctx
-                    .set_fill_style_str(if is_cursor { "#ffcc33" } else { "#ffaa66" });
+                    .set_fill_style_str(if is_cursor { "#00ccdd" } else { "#ffaa66" });
                 self.ctx.set_font("16px 'Noto Serif SC', 'SimSun', serif");
                 self.ctx
                     .fill_text(recipe.output_hanzi, box_x + 34.0, ry + 19.0)
@@ -1368,7 +1371,7 @@ impl Renderer {
                     let is_selected = i == *slot;
                     let has_equip = equip_name.is_some();
                     let color = if is_selected {
-                        "#ffcc33"
+                        "#00ccdd"
                     } else if has_equip {
                         "#ccc"
                     } else {
@@ -1442,7 +1445,7 @@ impl Renderer {
                     1 => player.armor.map(|e| e.name).unwrap_or("—"),
                     _ => player.charm.map(|e| e.name).unwrap_or("—"),
                 };
-                self.ctx.set_fill_style_str("#ffcc33");
+                self.ctx.set_fill_style_str("#00ccdd");
                 self.ctx.set_font("12px monospace");
                 self.ctx.set_text_align("center");
                 self.ctx
@@ -1477,7 +1480,7 @@ impl Renderer {
                     self.ctx.set_line_width(1.0);
                     self.ctx.stroke_rect(rx, ry, 110.0, 34.0);
 
-                    self.ctx.set_fill_style_str("#ffcc33");
+                    self.ctx.set_fill_style_str("#00ccdd");
                     self.ctx.set_font("11px monospace");
                     self.ctx.set_text_align("left");
                     self.ctx
@@ -1595,7 +1598,7 @@ impl Renderer {
             self.ctx.set_font("10px monospace");
             self.ctx.set_text_align("center");
             let has_reroll =
-                companion == Some(crate::game::Companion::Merchant) && companion_level >= 3;
+                companion == Some(crate::game::Companion::Quartermaster) && companion_level >= 3;
             let hint_text = if has_reroll {
                 "↑↓=browse  Enter=buy  R=reroll  Esc=leave"
             } else {
@@ -1705,11 +1708,11 @@ impl Renderer {
                 });
                 self.ctx.fill_rect(tx + 2.0, ty, tile_w - 4.0, 36.0);
                 self.ctx
-                    .set_stroke_style_str(if selected { "#ffcc33" } else { "#555" });
+                    .set_stroke_style_str(if selected { "#00ccdd" } else { "#555" });
                 self.ctx.set_line_width(if selected { 2.0 } else { 1.0 });
                 self.ctx.stroke_rect(tx + 2.0, ty, tile_w - 4.0, 36.0);
                 self.ctx
-                    .set_fill_style_str(if selected { "#ffcc33" } else { "#ccccee" });
+                    .set_fill_style_str(if selected { "#00ccdd" } else { "#ccccee" });
                 self.ctx.set_font("16px 'Noto Serif SC', serif");
                 self.ctx.set_text_align("center");
                 self.ctx
@@ -1758,7 +1761,7 @@ impl Renderer {
                 .fill_text("筆 Stroke Order", self.canvas_w / 2.0, box_y + 24.0)
                 .ok();
 
-            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_fill_style_str("#00ccdd");
             self.ctx.set_font("42px 'Noto Serif SC', 'SimSun', serif");
             self.ctx
                 .fill_text(hanzi, self.canvas_w / 2.0, box_y + 72.0)
@@ -1794,7 +1797,7 @@ impl Renderer {
                 let y = box_y + 135.0 + i as f64 * 22.0;
                 let selected = i == *cursor;
                 self.ctx
-                    .set_fill_style_str(if selected { "#ffcc33" } else { "#ccccee" });
+                    .set_fill_style_str(if selected { "#00ccdd" } else { "#ccccee" });
                 let marker = if selected { "▸ " } else { "  " };
                 self.ctx
                     .fill_text(&format!("{}{}", marker, part), self.canvas_w / 2.0, y)
@@ -1845,7 +1848,7 @@ impl Renderer {
                 )
                 .ok();
 
-            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_fill_style_str("#00ccdd");
             self.ctx.set_font("42px 'Noto Serif SC', 'SimSun', serif");
             self.ctx
                 .fill_text(hanzi, self.canvas_w / 2.0, box_y + 75.0)
@@ -1951,7 +1954,7 @@ impl Renderer {
                 let y = box_y + 115.0 + i as f64 * 26.0;
                 let selected = i == *cursor;
                 self.ctx
-                    .set_fill_style_str(if selected { "#ffcc33" } else { "#ccccee" });
+                    .set_fill_style_str(if selected { "#00ccdd" } else { "#ccccee" });
                 let marker = if selected { "▸ " } else { "  " };
                 self.ctx
                     .fill_text(&format!("{}{}", marker, part), self.canvas_w / 2.0, y)
@@ -2004,7 +2007,7 @@ impl Renderer {
                 )
                 .ok();
 
-            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_fill_style_str("#00ccdd");
             self.ctx.set_font("36px 'Noto Serif SC', 'SimSun', serif");
             self.ctx
                 .fill_text(noun, self.canvas_w / 2.0, box_y + 68.0)
@@ -2861,7 +2864,7 @@ impl Renderer {
                 .ok();
 
             // Character
-            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_fill_style_str("#00ccdd");
             self.ctx.set_font("42px 'Noto Serif SC', 'SimSun', serif");
             self.ctx
                 .fill_text(hanzi, self.canvas_w / 2.0, box_y + 75.0)
@@ -2914,7 +2917,7 @@ impl Renderer {
             let cx = self.canvas_w / 2.0;
             let mut y = 40.0 + (anim_t * 2.1).sin() * 4.0;
 
-            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_fill_style_str("#00ccdd");
             self.ctx.set_font("32px monospace");
             self.ctx.set_text_align("center");
             self.ctx.fill_text("选择你的道路", cx, y).ok();
@@ -3019,7 +3022,7 @@ impl Renderer {
             }
 
             y += 20.0;
-            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_fill_style_str("#00ccdd");
             self.ctx.set_font("14px monospace");
             self.ctx
                 .fill_text("[D] Daily Challenge (fixed seed)", cx, y)
@@ -3139,7 +3142,7 @@ impl Renderer {
                 y += 34.0;
 
                 // Navigation hint
-                self.ctx.set_fill_style_str("#ffcc33");
+                self.ctx.set_fill_style_str("#00ccdd");
                 self.ctx.set_font("14px monospace");
                 self.ctx
                     .fill_text("Press R to restart  |  → Floor log", cx, y)
@@ -3180,7 +3183,7 @@ impl Renderer {
                     .ok();
                 y += 28.0;
 
-                self.ctx.set_fill_style_str("#ffcc33");
+                self.ctx.set_fill_style_str("#00ccdd");
                 self.ctx.set_font("14px monospace");
                 self.ctx
                     .fill_text("← Back  |  → Next  |  R Restart", cx, y)
@@ -3268,7 +3271,7 @@ impl Renderer {
     ) {
         let pattern = tile_pattern_seed(tx, ty);
         let (highlight, shadow) =
-            if matches!(tile, Tile::Wall | Tile::CrackedWall | Tile::BrittleWall) {
+            if matches!(tile, Tile::Bulkhead | Tile::DamagedBulkhead | Tile::WeakBulkhead) {
                 ("rgba(255,255,255,0.08)", "rgba(0,0,0,0.32)")
             } else {
                 ("rgba(255,255,255,0.06)", "rgba(0,0,0,0.24)")
@@ -3294,9 +3297,11 @@ impl Renderer {
         );
 
         match tile {
-            Tile::Floor | Tile::Corridor | Tile::CursedFloor | Tile::Trap(_)
-            | Tile::Ice | Tile::PoisonGas | Tile::Mushroom => {
-                self.ctx.set_fill_style_str(if tile == Tile::Corridor {
+            Tile::NavBeacon | Tile::SpecialRoom(_) | Tile::SalvageCrate
+            | Tile::MetalFloor | Tile::Hallway | Tile::CorruptedFloor | Tile::Catwalk
+            | Tile::Trap(_) => {},
+            | Tile::FrozenDeck | Tile::ToxicGas | Tile::ToxicFungus => {
+                self.ctx.set_fill_style_str(if tile == Tile::Hallway {
                     "rgba(215,225,255,0.06)"
                 } else {
                     "rgba(255,255,255,0.05)"
@@ -3304,7 +3309,7 @@ impl Renderer {
                 let spark_x = screen_x + 4.0 + (pattern % 11) as f64;
                 let spark_y = screen_y + 4.0 + ((pattern / 11) % 9) as f64;
                 self.ctx.fill_rect(spark_x, spark_y, 2.0, 2.0);
-                if tile == Tile::Corridor {
+                if tile == Tile::Hallway {
                     self.ctx.set_fill_style_str("rgba(170,190,255,0.05)");
                     self.ctx.fill_rect(
                         screen_x + 4.0,
@@ -3313,7 +3318,7 @@ impl Renderer {
                         1.0,
                     );
                 }
-                if tile == Tile::CursedFloor {
+                if tile == Tile::CorruptedFloor {
                     // Subtle cursed shimmer — barely visible trap hint
                     self.ctx.set_fill_style_str("rgba(180,120,255,0.06)");
                     let cx = screen_x + 6.0 + ((pattern / 3) % 8) as f64;
@@ -3321,7 +3326,7 @@ impl Renderer {
                     self.ctx.fill_rect(cx, cy, 2.0, 2.0);
                 }
             }
-            Tile::Wall | Tile::CrackedWall | Tile::BrittleWall | Tile::Bamboo => {
+            Tile::Bulkhead | Tile::DamagedBulkhead | Tile::WeakBulkhead | Tile::CargoPipes => {
                 self.ctx.set_fill_style_str("rgba(0,0,0,0.14)");
                 self.ctx.fill_rect(
                     screen_x + 3.0,
@@ -3336,7 +3341,7 @@ impl Renderer {
                 let seam_x = screen_x + 7.0 + ((pattern / 5) % 8) as f64;
                 self.ctx
                     .fill_rect(seam_x, screen_y + 3.0, 1.0, TILE_SIZE / 2.0 - 1.0);
-                if tile == Tile::CrackedWall {
+                if tile == Tile::DamagedBulkhead {
                     self.ctx.set_stroke_style_str("rgba(255,180,120,0.65)");
                     self.ctx.set_line_width(1.2);
                     self.ctx.begin_path();
@@ -3355,7 +3360,7 @@ impl Renderer {
                     self.ctx.move_to(screen_x + 14.0, screen_y + 14.0);
                     self.ctx.line_to(screen_x + 18.0, screen_y + 17.0);
                     self.ctx.stroke();
-                } else if tile == Tile::BrittleWall {
+                } else if tile == Tile::WeakBulkhead {
                     self.ctx.set_stroke_style_str("rgba(255,221,170,0.58)");
                     self.ctx.set_line_width(1.0);
                     self.ctx.begin_path();
@@ -3371,9 +3376,9 @@ impl Renderer {
                     self.ctx.stroke();
                 }
             }
-            Tile::Water | Tile::DeepWater | Tile::Lava => {
+            Tile::CoolantPool | Tile::VacuumBreach | Tile::PlasmaVent => {
                 let wave_shift = (anim_t * 3.2 + tx as f64 * 0.7 + ty as f64 * 0.4).sin() * 2.0;
-                self.ctx.set_fill_style_str(if tile == Tile::DeepWater {
+                self.ctx.set_fill_style_str(if tile == Tile::VacuumBreach {
                     "rgba(160,200,255,0.14)"
                 } else {
                     "rgba(210,230,255,0.11)"
@@ -3390,13 +3395,13 @@ impl Renderer {
                     TILE_SIZE - 10.0,
                     1.5,
                 );
-                if tile == Tile::DeepWater {
+                if tile == Tile::VacuumBreach {
                     self.ctx.set_fill_style_str("rgba(26,48,89,0.28)");
                     self.ctx
                         .fill_rect(screen_x + 4.0, screen_y + 18.0, TILE_SIZE - 8.0, 3.0);
                 }
             }
-            Tile::Oil => {
+            Tile::Coolant => {
                 self.ctx.set_fill_style_str("rgba(255,224,154,0.10)");
                 self.ctx.fill_rect(
                     screen_x + 4.0,
@@ -3408,7 +3413,7 @@ impl Renderer {
                 self.ctx
                     .fill_rect(screen_x + 6.0, screen_y + 6.0, TILE_SIZE - 14.0, 1.5);
             }
-            Tile::Crate => {
+            Tile::SalvageCrate => {
                 self.ctx.set_fill_style_str("rgba(255,225,180,0.08)");
                 self.ctx.fill_rect(
                     screen_x + 4.0,
@@ -3422,7 +3427,7 @@ impl Renderer {
                 self.ctx
                     .fill_rect(screen_x + 14.5, screen_y + 4.0, 1.5, TILE_SIZE - 8.0);
             }
-            Tile::Spikes => {
+            Tile::LaserGrid => {
                 self.ctx.set_fill_style_str("rgba(255,220,220,0.08)");
                 self.ctx.fill_rect(
                     screen_x + 4.0,
@@ -3431,7 +3436,7 @@ impl Renderer {
                     2.0,
                 );
             }
-            Tile::Bridge => {
+            Tile::Catwalk => {
                 // Planks
                 self.ctx.set_fill_style_str("rgba(160,110,60,0.4)");
                 self.ctx
@@ -3454,36 +3459,36 @@ impl Renderer {
                 self.ctx
                     .fill_rect(screen_x + TILE_SIZE - 5.0, screen_y + 19.0, 1.0, 1.0);
             }
-            Tile::StairsDown
-            | Tile::Forge
-            | Tile::Shop
-            | Tile::Chest
+            Tile::Airlock
+            | Tile::QuantumForge
+            | Tile::TradeTerminal
+            | Tile::SupplyCrate
             | Tile::Npc(_)
-            | Tile::Shrine
-            | Tile::StrokeShrine
-            | Tile::ToneWall
+            | Tile::CircuitShrine
+            | Tile::RadicalLab
+            | Tile::FrequencyWall
             | Tile::CompoundShrine
-            | Tile::ClassifierShrine
-            | Tile::InkWell
-            | Tile::AncestorShrine
-            | Tile::TranslationAltar
-            | Tile::RadicalGarden
-            | Tile::MirrorPool
-            | Tile::StoneTutor
-            | Tile::CodexShrine
-            | Tile::WordBridge
-            | Tile::LockedDoor
-            | Tile::Altar(_)
-            | Tile::Seal(_)
-            | Tile::Sign(_)
-            | Tile::GoldOre
-            | Tile::Bookshelf
-            | Tile::DragonGatePortal
-            | Tile::SpiritSpringTile
-            | Tile::GoldPile
-            | Tile::Crystal
-            | Tile::PressurePlate
-            | Tile::Boulder => {
+            | Tile::ClassifierNode
+            | Tile::DataWell
+            | Tile::MemorialNode
+            | Tile::TranslationTerminal
+            | Tile::RadicalLab
+            | Tile::HoloPool
+            | Tile::DroidTutor
+            | Tile::CodexTerminal
+            | Tile::DataBridge
+            | Tile::SealedHatch
+            | Tile::Terminal(_)
+            | Tile::SecurityLock(_)
+            | Tile::InfoPanel(_)
+            | Tile::OreVein
+            | Tile::DataRack
+            | Tile::WarpGatePortal
+            | Tile::MedBayTile
+            | Tile::CreditCache
+            | Tile::CrystalPanel
+            | Tile::PressureSensor
+            | Tile::CargoCrate => {
                 if let Some(plate_fill) = tile_plate_fill(tile) {
                     self.ctx.set_fill_style_str(plate_fill);
                     self.ctx.fill_rect(
@@ -3538,7 +3543,7 @@ impl Renderer {
         &self,
         player: &Player,
         item_labels: &[String],
-        altar_kind: crate::dungeon::AltarKind,
+        altar_kind: crate::world::TerminalKind,
         cursor: usize,
     ) {
         let box_w = 360.0;
@@ -3558,11 +3563,11 @@ impl Renderer {
             .stroke_rect(box_x + 1.0, box_y + 1.0, box_w - 2.0, box_h - 2.0);
 
         let god_name = match altar_kind {
-            crate::dungeon::AltarKind::Jade => "Jade Emperor",
-            crate::dungeon::AltarKind::Gale => "Wind Walker",
-            crate::dungeon::AltarKind::Mirror => "Mirror Sage",
-            crate::dungeon::AltarKind::Iron => "Iron General",
-            crate::dungeon::AltarKind::Gold => "Golden Toad",
+            crate::world::TerminalKind::Quantum => "Consortium Executive",
+            crate::world::TerminalKind::Stellar => "Free Trader Captain",
+            crate::world::TerminalKind::Holographic => "Technocracy AI",
+            crate::world::TerminalKind::Tactical => "Alliance Commander",
+            crate::world::TerminalKind::Commerce => "Ancient Order Master",
         };
 
         // Find current piety
@@ -3570,11 +3575,11 @@ impl Renderer {
             .piety
             .iter()
             .find(|(d, _)| match (d, altar_kind) {
-                (crate::player::Deity::Jade, crate::dungeon::AltarKind::Jade) => true,
-                (crate::player::Deity::Gale, crate::dungeon::AltarKind::Gale) => true,
-                (crate::player::Deity::Mirror, crate::dungeon::AltarKind::Mirror) => true,
-                (crate::player::Deity::Iron, crate::dungeon::AltarKind::Iron) => true,
-                (crate::player::Deity::Gold, crate::dungeon::AltarKind::Gold) => true,
+                (crate::player::Faction::Consortium, crate::world::TerminalKind::Quantum) => true,
+                (crate::player::Faction::FreeTraders, crate::world::TerminalKind::Stellar) => true,
+                (crate::player::Faction::Technocracy, crate::world::TerminalKind::Holographic) => true,
+                (crate::player::Faction::MilitaryAlliance, crate::world::TerminalKind::Tactical) => true,
+                (crate::player::Faction::AncientOrder, crate::world::TerminalKind::Commerce) => true,
                 _ => false,
             })
             .map(|(_, p)| *p)
@@ -3994,7 +3999,7 @@ impl Renderer {
             .stroke_rect(box_x + 1.0, box_y + 1.0, box_w - 2.0, box_h - 2.0);
 
         self.ctx.set_text_align("left");
-        self.ctx.set_fill_style_str("#ffcc33");
+        self.ctx.set_fill_style_str("#00ccdd");
         self.ctx.set_font("bold 14px monospace");
         self.ctx
             .fill_text(mode_title, box_x + 12.0, box_y + 20.0)
@@ -4167,7 +4172,7 @@ impl Renderer {
                 let fg = if !unit.alive {
                     "#555"
                 } else if unit.is_player() {
-                    "#ffcc33"
+                    "#00ccdd"
                 } else if unit.is_companion() {
                     "#44cc88"
                 } else {
@@ -4228,116 +4233,116 @@ impl Renderer {
                 let tile = battle
                     .arena
                     .tile(gx as i32, gy as i32)
-                    .unwrap_or(BattleTile::Open);
+                    .unwrap_or(BattleTile::MetalFloor);
                 let sx = grid_x + gx as f64 * cell;
                 let sy = grid_y + gy as f64 * cell;
 
                 let sprite_key = match tile {
-                    BattleTile::Open => match biome {
-                        ArenaBiome::Stone => "arena_floor_stone",
-                        ArenaBiome::Dark => "arena_floor_dark",
-                        ArenaBiome::Arcane => "arena_floor_arcane",
-                        ArenaBiome::Cursed => "arena_floor_cursed",
-                        ArenaBiome::Garden => "arena_floor_garden",
-                        ArenaBiome::Frozen => "arena_floor_frozen",
-                        ArenaBiome::Infernal => "arena_floor_infernal",
+                    BattleTile::MetalFloor => match biome {
+                        ArenaBiome::StationInterior => "arena_floor_stone",
+                        ArenaBiome::DerelictShip => "arena_floor_dark",
+                        ArenaBiome::AlienRuins => "arena_floor_arcane",
+                        ArenaBiome::IrradiatedZone => "arena_floor_cursed",
+                        ArenaBiome::Hydroponics => "arena_floor_garden",
+                        ArenaBiome::CryoBay => "arena_floor_frozen",
+                        ArenaBiome::ReactorRoom => "arena_floor_infernal",
                     },
-                    BattleTile::Obstacle => match biome {
-                        ArenaBiome::Stone => "arena_obstacle_stone",
-                        ArenaBiome::Dark => "arena_obstacle_dark",
-                        ArenaBiome::Arcane => "arena_obstacle_arcane",
-                        ArenaBiome::Cursed => "arena_obstacle_cursed",
-                        ArenaBiome::Garden => "arena_obstacle_garden",
-                        ArenaBiome::Frozen => "arena_obstacle_frozen",
-                        ArenaBiome::Infernal => "arena_obstacle_infernal",
+                    BattleTile::CoverBarrier => match biome {
+                        ArenaBiome::StationInterior => "arena_obstacle_stone",
+                        ArenaBiome::DerelictShip => "arena_obstacle_dark",
+                        ArenaBiome::AlienRuins => "arena_obstacle_arcane",
+                        ArenaBiome::IrradiatedZone => "arena_obstacle_cursed",
+                        ArenaBiome::Hydroponics => "arena_obstacle_garden",
+                        ArenaBiome::CryoBay => "arena_obstacle_frozen",
+                        ArenaBiome::ReactorRoom => "arena_obstacle_infernal",
                     },
-                    BattleTile::Grass => "arena_grass",
-                    BattleTile::Water => "arena_water",
-                    BattleTile::Ice => "arena_ice",
-                    BattleTile::Scorched => "arena_scorched",
-                    BattleTile::InkPool => "arena_ink_pool",
-                    BattleTile::BrokenGround => "arena_broken_ground",
-                    BattleTile::Steam => "arena_steam",
-                    BattleTile::Lava => "arena_lava",
-                    BattleTile::Thorns => "arena_thorns",
-                    BattleTile::ArcaneGlyph => "arena_arcane_glyph",
-                    BattleTile::Sand => "arena_sand",
-                    BattleTile::BambooThicket => "arena_bamboo_thicket",
-                    BattleTile::FrozenGround => "arena_frozen_ground",
-                    BattleTile::SpiritWell => "arena_spirit_well",
-                    BattleTile::SpiritDrain => "arena_spirit_drain",
-                    BattleTile::MeditationStone => "arena_meditation_stone",
-                    BattleTile::SoulTrap => "arena_soul_trap",
-                    BattleTile::Boulder => "arena_obstacle_stone",
-                    BattleTile::FlowNorth
-                    | BattleTile::FlowSouth
-                    | BattleTile::FlowEast
-                    | BattleTile::FlowWest => "arena_water",
-                    BattleTile::ExplosiveBarrel => "arena_obstacle_stone",
-                    BattleTile::CrumblingFloor => "arena_broken_ground",
-                    BattleTile::CrackedFloor => "arena_broken_ground",
-                    BattleTile::Pit => "arena_obstacle_dark",
-                    BattleTile::TrapTile => match biome {
-                        ArenaBiome::Stone => "arena_floor_stone",
-                        ArenaBiome::Dark => "arena_floor_dark",
-                        ArenaBiome::Arcane => "arena_floor_arcane",
-                        ArenaBiome::Cursed => "arena_floor_cursed",
-                        ArenaBiome::Garden => "arena_floor_garden",
-                        ArenaBiome::Frozen => "arena_floor_frozen",
-                        ArenaBiome::Infernal => "arena_floor_infernal",
+                    BattleTile::WiringPanel => "arena_grass",
+                    BattleTile::CoolantPool => "arena_water",
+                    BattleTile::FrozenCoolant => "arena_ice",
+                    BattleTile::BlastMark => "arena_scorched",
+                    BattleTile::OilSlick => "arena_ink_pool",
+                    BattleTile::DamagedPlating => "arena_broken_ground",
+                    BattleTile::VentSteam => "arena_steam",
+                    BattleTile::PlasmaPool => "arena_lava",
+                    BattleTile::ElectrifiedWire => "arena_thorns",
+                    BattleTile::HoloTrap => "arena_arcane_glyph",
+                    BattleTile::Debris => "arena_sand",
+                    BattleTile::PipeTangle => "arena_bamboo_thicket",
+                    BattleTile::CryoZone => "arena_frozen_ground",
+                    BattleTile::EnergyNode => "arena_spirit_well",
+                    BattleTile::PowerDrain => "arena_spirit_drain",
+                    BattleTile::ChargingPad => "arena_meditation_stone",
+                    BattleTile::GravityTrap => "arena_soul_trap",
+                    BattleTile::CargoCrate => "arena_obstacle_stone",
+                    BattleTile::ConveyorN
+                    | BattleTile::ConveyorS
+                    | BattleTile::ConveyorE
+                    | BattleTile::ConveyorW => "arena_water",
+                    BattleTile::FuelCanister => "arena_obstacle_stone",
+                    BattleTile::WeakenedPlating => "arena_broken_ground",
+                    BattleTile::DamagedFloor => "arena_broken_ground",
+                    BattleTile::BreachedFloor => "arena_obstacle_dark",
+                    BattleTile::MineTile => match biome {
+                        ArenaBiome::StationInterior => "arena_floor_stone",
+                        ArenaBiome::DerelictShip => "arena_floor_dark",
+                        ArenaBiome::AlienRuins => "arena_floor_arcane",
+                        ArenaBiome::IrradiatedZone => "arena_floor_cursed",
+                        ArenaBiome::Hydroponics => "arena_floor_garden",
+                        ArenaBiome::CryoBay => "arena_floor_frozen",
+                        ArenaBiome::ReactorRoom => "arena_floor_infernal",
                     },
-                    BattleTile::TrapTileRevealed => "arena_thorns",
-                    BattleTile::Oil => "arena_water",
-                    BattleTile::HolyGround => "arena_spirit_well",
-                    BattleTile::HighGround => "arena_broken_ground",
+                    BattleTile::MineTileRevealed => "arena_thorns",
+                    BattleTile::Lubricant => "arena_water",
+                    BattleTile::ShieldZone => "arena_spirit_well",
+                    BattleTile::ElevatedPlatform => "arena_broken_ground",
                 };
 
                 if !self.draw_sprite_icon(sprite_key, sx, sy, cell) {
                     let fill = match tile {
-                        BattleTile::Open => "#3a3458",
-                        BattleTile::Obstacle => "#1a1428",
-                        BattleTile::Grass => "#2a4a2a",
-                        BattleTile::Water => "#1a2a4a",
-                        BattleTile::Ice => "#3a4a6a",
-                        BattleTile::Scorched => "#4a2a1a",
-                        BattleTile::InkPool => "#2a2a4a",
-                        BattleTile::BrokenGround => "#3a3030",
-                        BattleTile::Steam => "#5a5a6a",
-                        BattleTile::Lava => "#6a2a0a",
-                        BattleTile::Thorns => "#2a3a1a",
-                        BattleTile::ArcaneGlyph => "#2a2a5a",
-                        BattleTile::Sand => "#5a4a2a",
-                        BattleTile::BambooThicket => "#1a3a1a",
-                        BattleTile::FrozenGround => "#4a5a6a",
-                        BattleTile::SpiritWell => "#2244aa",
-                        BattleTile::SpiritDrain => "#1a0a2a",
-                        BattleTile::MeditationStone => "#4a4a5a",
-                        BattleTile::SoulTrap => "#3a1a3a",
-                        BattleTile::Boulder => "#5a4a3a",
-                        BattleTile::FlowNorth
-                        | BattleTile::FlowSouth
-                        | BattleTile::FlowEast
-                        | BattleTile::FlowWest => "#1a3a5a",
-                        BattleTile::ExplosiveBarrel => "#6a3a1a",
-                        BattleTile::CrumblingFloor => "#3a3430",
-                        BattleTile::CrackedFloor => "#4a3a28",
-                        BattleTile::Pit => "#0a0a0a",
-                        BattleTile::TrapTile => "#3a3458",
-                        BattleTile::TrapTileRevealed => "#4a2a2a",
-                        BattleTile::Oil => "#2a2018",
-                        BattleTile::HolyGround => "#4a4a22",
-                        BattleTile::HighGround => "#5a4a30",
+                        BattleTile::MetalFloor => "#3a3458",
+                        BattleTile::CoverBarrier => "#1a1428",
+                        BattleTile::WiringPanel => "#2a4a2a",
+                        BattleTile::CoolantPool => "#1a2a4a",
+                        BattleTile::FrozenCoolant => "#3a4a6a",
+                        BattleTile::BlastMark => "#4a2a1a",
+                        BattleTile::OilSlick => "#2a2a4a",
+                        BattleTile::DamagedPlating => "#3a3030",
+                        BattleTile::VentSteam => "#5a5a6a",
+                        BattleTile::PlasmaPool => "#6a2a0a",
+                        BattleTile::ElectrifiedWire => "#2a3a1a",
+                        BattleTile::HoloTrap => "#2a2a5a",
+                        BattleTile::Debris => "#5a4a2a",
+                        BattleTile::PipeTangle => "#1a3a1a",
+                        BattleTile::CryoZone => "#4a5a6a",
+                        BattleTile::EnergyNode => "#2244aa",
+                        BattleTile::PowerDrain => "#1a0a2a",
+                        BattleTile::ChargingPad => "#4a4a5a",
+                        BattleTile::GravityTrap => "#3a1a3a",
+                        BattleTile::CargoCrate => "#5a4a3a",
+                        BattleTile::ConveyorN
+                        | BattleTile::ConveyorS
+                        | BattleTile::ConveyorE
+                        | BattleTile::ConveyorW => "#1a3a5a",
+                        BattleTile::FuelCanister => "#6a3a1a",
+                        BattleTile::WeakenedPlating => "#3a3430",
+                        BattleTile::DamagedFloor => "#4a3a28",
+                        BattleTile::BreachedFloor => "#0a0a0a",
+                        BattleTile::MineTile => "#3a3458",
+                        BattleTile::MineTileRevealed => "#4a2a2a",
+                        BattleTile::Lubricant => "#2a2018",
+                        BattleTile::ShieldZone => "#4a4a22",
+                        BattleTile::ElevatedPlatform => "#5a4a30",
                     };
                     self.ctx.set_fill_style_str(fill);
                     self.ctx.fill_rect(sx, sy, cell, cell);
 
-                    if tile == BattleTile::Obstacle {
+                    if tile == BattleTile::CoverBarrier {
                         self.ctx.set_fill_style_str("#2a2038");
                         self.ctx
                             .fill_rect(sx + 4.0, sy + 4.0, cell - 8.0, cell - 8.0);
                     }
 
-                    if tile == BattleTile::Boulder {
+                    if tile == BattleTile::CargoCrate {
                         self.ctx.set_fill_style_str("#8a7a6a");
                         self.ctx.set_font("bold 14px monospace");
                         self.ctx.set_text_align("center");
@@ -4346,7 +4351,7 @@ impl Renderer {
                             .ok();
                     }
 
-                    if tile == BattleTile::ExplosiveBarrel {
+                    if tile == BattleTile::FuelCanister {
                         self.ctx.set_fill_style_str("#ff6633");
                         self.ctx.set_font("bold 14px monospace");
                         self.ctx.set_text_align("center");
@@ -4355,7 +4360,7 @@ impl Renderer {
                             .ok();
                     }
 
-                    if tile == BattleTile::CrackedFloor {
+                    if tile == BattleTile::DamagedFloor {
                         self.ctx.set_fill_style_str("rgba(200,180,120,0.7)");
                         self.ctx.set_font("bold 12px monospace");
                         self.ctx.set_text_align("center");
@@ -4364,13 +4369,13 @@ impl Renderer {
                             .ok();
                     }
 
-                    if tile == BattleTile::Pit {
+                    if tile == BattleTile::BreachedFloor {
                         self.ctx.set_fill_style_str("#2a2a2a");
                         self.ctx
                             .fill_rect(sx + 4.0, sy + 4.0, cell - 8.0, cell - 8.0);
                     }
 
-                    if tile == BattleTile::TrapTileRevealed {
+                    if tile == BattleTile::MineTileRevealed {
                         self.ctx.set_fill_style_str("#cc3333");
                         self.ctx.set_font("bold 14px monospace");
                         self.ctx.set_text_align("center");
@@ -4379,7 +4384,7 @@ impl Renderer {
                             .ok();
                     }
 
-                    if tile == BattleTile::Oil {
+                    if tile == BattleTile::Lubricant {
                         let pulse = ((anim_t * 2.0).sin() * 0.15 + 0.5).max(0.3);
                         self.ctx
                             .set_fill_style_str(&format!("rgba(80,60,20,{})", pulse));
@@ -4390,7 +4395,7 @@ impl Renderer {
                             .ok();
                     }
 
-                    if tile == BattleTile::HolyGround {
+                    if tile == BattleTile::ShieldZone {
                         let pulse = ((anim_t * 2.5).sin() * 0.2 + 0.7).max(0.4);
                         self.ctx
                             .set_fill_style_str(&format!("rgba(255,215,80,{})", pulse));
@@ -4401,7 +4406,7 @@ impl Renderer {
                             .ok();
                     }
 
-                    if tile == BattleTile::HighGround {
+                    if tile == BattleTile::ElevatedPlatform {
                         self.ctx.set_fill_style_str("rgba(200,180,130,0.7)");
                         self.ctx.set_font("bold 14px monospace");
                         self.ctx.set_text_align("center");
@@ -4411,10 +4416,10 @@ impl Renderer {
                     }
 
                     let flow_arrow = match tile {
-                        BattleTile::FlowNorth => Some("↑"),
-                        BattleTile::FlowSouth => Some("↓"),
-                        BattleTile::FlowEast => Some("→"),
-                        BattleTile::FlowWest => Some("←"),
+                        BattleTile::ConveyorN => Some("↑"),
+                        BattleTile::ConveyorS => Some("↓"),
+                        BattleTile::ConveyorE => Some("→"),
+                        BattleTile::ConveyorW => Some("←"),
                         _ => None,
                     };
                     if let Some(arrow) = flow_arrow {
@@ -4431,11 +4436,11 @@ impl Renderer {
 
                 // ── Terrain visual effects (animated overlays) ──
                 match tile {
-                    BattleTile::Water
-                    | BattleTile::FlowNorth
-                    | BattleTile::FlowSouth
-                    | BattleTile::FlowEast
-                    | BattleTile::FlowWest => {
+                    BattleTile::CoolantPool
+                    | BattleTile::ConveyorN
+                    | BattleTile::ConveyorS
+                    | BattleTile::ConveyorE
+                    | BattleTile::ConveyorW => {
                         let wave = ((anim_t * 2.5 + gx as f64 * 0.7 + gy as f64 * 0.5).sin()
                             * 0.12
                             + 0.08)
@@ -4451,7 +4456,7 @@ impl Renderer {
                             .set_fill_style_str(&format!("rgba(120,200,255,{:.3})", wave2));
                         self.ctx.fill_rect(sx, sy + cell * 0.5, cell, cell * 0.5);
                     }
-                    BattleTile::Lava => {
+                    BattleTile::PlasmaPool => {
                         let glow = ((anim_t * 3.0 + gx as f64 * 0.5 + gy as f64 * 0.3).sin()
                             * 0.15
                             + 0.15)
@@ -4466,7 +4471,7 @@ impl Renderer {
                         self.ctx
                             .fill_rect(sx + 4.0, sy + 4.0, cell - 8.0, cell - 8.0);
                     }
-                    BattleTile::Ice | BattleTile::FrozenGround => {
+                    BattleTile::FrozenCoolant | BattleTile::CryoZone => {
                         let seed = (gx.wrapping_mul(31).wrapping_add(gy.wrapping_mul(17))) as f64;
                         let sparkle = ((anim_t * 4.0 + seed).sin() * 0.5 + 0.5).max(0.0);
                         if sparkle > 0.7 {
@@ -4489,7 +4494,7 @@ impl Renderer {
                             self.ctx.fill_rect(dot_x, dot_y, 1.5, 1.5);
                         }
                     }
-                    BattleTile::Grass | BattleTile::BambooThicket => {
+                    BattleTile::WiringPanel | BattleTile::PipeTangle => {
                         let hash = (gx.wrapping_mul(7).wrapping_add(gy.wrapping_mul(13)) % 4) as f64;
                         let shade_alpha = 0.06 + hash * 0.03;
                         let (r, g, b) = if hash > 2.0 {
@@ -4508,7 +4513,7 @@ impl Renderer {
                             .set_fill_style_str(&format!("rgba(80,160,60,{:.3})", sway));
                         self.ctx.fill_rect(sx, sy, cell * 0.5, cell);
                     }
-                    BattleTile::InkPool => {
+                    BattleTile::OilSlick => {
                         let swirl = ((anim_t * 2.0
                             + gx as f64 * 1.3
                             + gy as f64 * 0.7)
@@ -4528,7 +4533,7 @@ impl Renderer {
                         self.ctx
                             .fill_rect(sx + 2.0, sy + 2.0, cell - 4.0, cell - 4.0);
                     }
-                    BattleTile::Steam => {
+                    BattleTile::VentSteam => {
                         let fade = ((anim_t * 2.0 + gx as f64 * 0.6 + gy as f64 * 0.8).sin()
                             * 0.12
                             + 0.15)
@@ -4543,7 +4548,7 @@ impl Renderer {
                         self.ctx
                             .fill_rect(sx + cell * 0.25, sy, cell * 0.5, cell * 0.6);
                     }
-                    BattleTile::Oil => {
+                    BattleTile::Lubricant => {
                         let sheen = ((anim_t * 2.0 + gx as f64 * 0.8 + gy as f64 * 0.6).sin()
                             * 0.1
                             + 0.08)
@@ -4552,7 +4557,7 @@ impl Renderer {
                             .set_fill_style_str(&format!("rgba(140,120,40,{:.3})", sheen));
                         self.ctx.fill_rect(sx, sy, cell, cell);
                     }
-                    BattleTile::HolyGround => {
+                    BattleTile::ShieldZone => {
                         let glow = ((anim_t * 2.5 + gx as f64 * 0.3 + gy as f64 * 0.5).sin()
                             * 0.1
                             + 0.12)
@@ -4561,7 +4566,7 @@ impl Renderer {
                             .set_fill_style_str(&format!("rgba(220,200,100,{:.3})", glow));
                         self.ctx.fill_rect(sx, sy, cell, cell);
                     }
-                    BattleTile::HighGround => {
+                    BattleTile::ElevatedPlatform => {
                         let glow = ((anim_t * 1.5 + gx as f64 * 0.4 + gy as f64 * 0.6).sin()
                             * 0.08
                             + 0.1)
@@ -4575,7 +4580,7 @@ impl Renderer {
 
                 // ── Interactive tile pulsing glow ──
                 match tile {
-                    BattleTile::SpiritWell => {
+                    BattleTile::EnergyNode => {
                         let glow = ((anim_t * 3.0 + gx as f64 * 0.4).sin() * 0.12 + 0.15)
                             .max(0.0);
                         self.ctx
@@ -4589,7 +4594,7 @@ impl Renderer {
                         self.ctx
                             .stroke_rect(sx + 1.0, sy + 1.0, cell - 2.0, cell - 2.0);
                     }
-                    BattleTile::MeditationStone => {
+                    BattleTile::ChargingPad => {
                         let glow = ((anim_t * 2.5 + gy as f64 * 0.3).sin() * 0.1 + 0.12)
                             .max(0.0);
                         self.ctx.set_fill_style_str(&format!(
@@ -4605,7 +4610,7 @@ impl Renderer {
                         self.ctx
                             .stroke_rect(sx + 1.0, sy + 1.0, cell - 2.0, cell - 2.0);
                     }
-                    BattleTile::ExplosiveBarrel => {
+                    BattleTile::FuelCanister => {
                         let glow = ((anim_t * 4.0).sin() * 0.12 + 0.1).max(0.0);
                         self.ctx
                             .set_fill_style_str(&format!("rgba(255,100,30,{:.3})", glow));
@@ -4618,7 +4623,7 @@ impl Renderer {
                         self.ctx
                             .stroke_rect(sx + 1.0, sy + 1.0, cell - 2.0, cell - 2.0);
                     }
-                    BattleTile::HolyGround => {
+                    BattleTile::ShieldZone => {
                         let glow = ((anim_t * 2.5 + gx as f64 * 0.3).sin() * 0.1 + 0.12)
                             .max(0.0);
                         self.ctx
@@ -4632,7 +4637,7 @@ impl Renderer {
                         self.ctx
                             .stroke_rect(sx + 1.0, sy + 1.0, cell - 2.0, cell - 2.0);
                     }
-                    BattleTile::HighGround => {
+                    BattleTile::ElevatedPlatform => {
                         let glow = ((anim_t * 2.0 + gx as f64 * 0.5).sin() * 0.08 + 0.1)
                             .max(0.0);
                         self.ctx
@@ -4661,7 +4666,7 @@ impl Renderer {
             for gx in 0..battle.arena.width {
                 let x = gx as i32;
                 let y = gy as i32;
-                if battle.arena.tile(x, y) != Some(BattleTile::TrapTile) {
+                if battle.arena.tile(x, y) != Some(BattleTile::MineTile) {
                     continue;
                 }
                 for &(dx, dy) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
@@ -4687,7 +4692,7 @@ impl Renderer {
         self.ctx.set_line_width(2.0);
         self.ctx.stroke_rect(grid_x, grid_y, grid_px, grid_px);
 
-        // Ward tile overlays (Gatekeeper boss — 門 glyphs)
+        // Ward tile overlays (Pirate Captain boss — shield generator glyphs)
         for &(wx, wy) in &battle.ward_tiles {
             let sx = grid_x + wx as f64 * cell;
             let sy = grid_y + wy as f64 * cell;
@@ -5032,7 +5037,7 @@ impl Renderer {
             // Active turn indicator (brighter, with shadow glow)
             if i == battle.current_unit_idx() {
                 let glow_color = if unit.is_player() {
-                    "#ffcc33"
+                    "#00ccdd"
                 } else if unit.is_companion() {
                     "#44cc88"
                 } else {
@@ -5279,7 +5284,7 @@ impl Renderer {
         let p_bar_w = panel_w.min(130.0);
 
         // ─ HP section ─
-        self.ctx.set_fill_style_str("#ffcc33");
+        self.ctx.set_fill_style_str("#00ccdd");
         self.ctx.set_font("bold 12px monospace");
         self.ctx.set_text_align("left");
         self.ctx.fill_text("HP", panel_x, py + 12.0).ok();
@@ -5399,14 +5404,14 @@ impl Renderer {
         self.ctx.stroke();
         py += 6.0;
 
-        if !matches!(battle.weather, Weather::Clear) {
+        if !matches!(battle.weather, Weather::Normal) {
             let weather_label = battle.weather.name();
             let weather_color = match battle.weather {
-                Weather::Rain => "#4488ff",
-                Weather::Fog => "#aaaaaa",
-                Weather::Sandstorm => "#ccaa44",
-                Weather::SpiritualInk => "#cc88ff",
-                Weather::Clear => "#888888",
+                Weather::CoolantLeak => "#4488ff",
+                Weather::SmokeScreen => "#aaaaaa",
+                Weather::DebrisStorm => "#ccaa44",
+                Weather::EnergyFlux => "#cc88ff",
+                Weather::Normal => "#888888",
             };
             self.ctx.set_fill_style_str(weather_color);
             self.ctx.set_font("10px monospace");
@@ -5517,7 +5522,7 @@ impl Renderer {
             py += 6.0;
 
             self.ctx.set_font("bold 11px monospace");
-            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_fill_style_str("#00ccdd");
             self.ctx.fill_text("─ Actions ─", panel_x, py + 10.0).ok();
             py += 16.0;
 
@@ -5525,6 +5530,7 @@ impl Renderer {
                 ("M", "Move", !battle.player_moved),
                 ("A", "Attack", !battle.player_acted),
                 ("S", "Spell", !battle.player_acted),
+                ("K", "Skill", !battle.player_acted),
                 ("I", "Item", !battle.player_acted),
                 ("D", "Defend", !battle.player_acted),
                 ("W", "Wait", true),
@@ -5564,7 +5570,7 @@ impl Renderer {
                 panel_w.min(170.0),
                 16.0 + battle.available_spells.len() as f64 * 18.0 + 20.0,
             );
-            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_fill_style_str("#00ccdd");
             self.ctx.set_font("bold 11px monospace");
             self.ctx.fill_text("Spells:", panel_x, py + 12.0).ok();
             py += 18.0;
@@ -5582,7 +5588,7 @@ impl Renderer {
                         self.ctx.set_fill_style_str("rgba(255,204,50,0.2)");
                         self.ctx
                             .fill_rect(panel_x - 2.0, py - 2.0, panel_w.min(166.0), 16.0);
-                        self.ctx.set_fill_style_str("#ffcc33");
+                        self.ctx.set_fill_style_str("#00ccdd");
                     } else {
                         self.ctx.set_fill_style_str("#aaa");
                     }
@@ -5745,6 +5751,67 @@ impl Renderer {
             py += 14.0;
         }
 
+        if battle.skill_menu_open && matches!(battle.phase, TacticalPhase::Command) {
+            py += 6.0;
+            let count = battle.player_radical_abilities.len();
+            self.ctx.set_fill_style_str("rgba(0,0,0,0.6)");
+            self.ctx.fill_rect(
+                panel_x - 4.0,
+                py,
+                panel_w.min(200.0),
+                16.0 + count as f64 * 18.0 + 36.0,
+            );
+            self.ctx.set_fill_style_str("#ff9944");
+            self.ctx.set_font("bold 11px monospace");
+            self.ctx.fill_text("Skills:", panel_x, py + 12.0).ok();
+            py += 18.0;
+
+            if count == 0 {
+                self.ctx.set_fill_style_str("#666");
+                self.ctx.set_font("10px monospace");
+                self.ctx.fill_text("(none)", panel_x, py + 10.0).ok();
+                py += 16.0;
+            } else {
+                self.ctx.set_font("11px monospace");
+                for (i, (radical, ability)) in battle.player_radical_abilities.iter().enumerate() {
+                    let selected = i == battle.skill_menu_cursor;
+                    if selected {
+                        self.ctx.set_fill_style_str("rgba(255,153,68,0.2)");
+                        self.ctx
+                            .fill_rect(panel_x - 2.0, py - 2.0, panel_w.min(196.0), 16.0);
+                        self.ctx.set_fill_style_str("#ff9944");
+                    } else {
+                        self.ctx.set_fill_style_str("#aaa");
+                    }
+                    self.ctx
+                        .fill_text(
+                            &format!("{} {} [{}]", radical, ability.name(), ability.skill_type_label()),
+                            panel_x,
+                            py + 10.0,
+                        )
+                        .ok();
+                    py += 18.0;
+                }
+            }
+
+            if battle.skill_menu_cursor < count {
+                let (_, ability) = &battle.player_radical_abilities[battle.skill_menu_cursor];
+                self.ctx.set_fill_style_str("#997744");
+                self.ctx.set_font("9px monospace");
+                self.ctx
+                    .fill_text(ability.description(), panel_x, py + 10.0)
+                    .ok();
+                py += 14.0;
+            }
+
+            self.ctx.set_fill_style_str("#666");
+            self.ctx.set_font("9px monospace");
+            self.ctx
+                .fill_text("Enter=use  Esc=back", panel_x, py + 10.0)
+                .ok();
+            py += 14.0;
+        }
+
         // Targeting mode label
         if let TacticalPhase::Targeting { ref mode, .. } = battle.phase {
             py += 6.0;
@@ -5753,8 +5820,9 @@ impl Renderer {
                 TargetMode::Attack => "Select attack target",
                 TargetMode::Spell { .. } => "Select spell target",
                 TargetMode::ShieldBreak => "Select shield target",
+                TargetMode::Skill => "Select skill target",
             };
-            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_fill_style_str("#00ccdd");
             self.ctx.set_font("bold 11px monospace");
             self.ctx.fill_text(label, panel_x, py + 10.0).ok();
             py += 16.0;
@@ -5845,7 +5913,7 @@ impl Renderer {
                         py += 6.0;
 
                         if unit.is_player() {
-                            self.ctx.set_fill_style_str("#ffcc33");
+                            self.ctx.set_fill_style_str("#00ccdd");
                             self.ctx.set_font("bold 10px monospace");
                             self.ctx
                                 .fill_text("You (Player)", panel_x, py + 10.0)
@@ -6287,7 +6355,7 @@ impl Renderer {
             let input_x = panel_x;
             let input_y = py + 4.0;
 
-            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_fill_style_str("#00ccdd");
             self.ctx.set_font("bold 12px monospace");
             self.ctx
                 .fill_text(&target_label, input_x, input_y + 10.0)
@@ -6339,7 +6407,7 @@ impl Renderer {
 
                     let progress_text =
                         format!("Syllable {}/{}", syllable_progress + 1, total_syllables);
-                    self.ctx.set_fill_style_str("#ffcc33");
+                    self.ctx.set_fill_style_str("#00ccdd");
                     self.ctx.set_font("10px monospace");
                     self.ctx.set_text_align("center");
                     self.ctx
@@ -6365,7 +6433,7 @@ impl Renderer {
                 .set_fill_style_str(if battle.typing_buffer.is_empty() {
                     "#555"
                 } else {
-                    "#ffcc33"
+                    "#00ccdd"
                 });
             self.ctx.set_font("14px monospace");
             self.ctx.set_text_align("center");
@@ -6431,7 +6499,7 @@ impl Renderer {
                 format!("rgba(255,130,100,{})", alpha)
             } else if msg.contains("heal") || msg.contains("restore") {
                 format!("rgba(100,220,100,{})", alpha)
-            } else if msg.contains("spell") || msg.contains("cast") {
+            } else if msg.contains("ability") || msg.contains("cast") {
                 format!("rgba(130,160,255,{})", alpha)
             } else if msg.contains("move") || msg.contains("walk") {
                 format!("rgba(160,160,180,{})", alpha * 0.8)
@@ -6517,9 +6585,9 @@ impl Renderer {
         }
     }
 
-    fn draw_room_ambience(&self, room_modifier: Option<crate::dungeon::RoomModifier>, anim_t: f64) {
+    fn draw_room_ambience(&self, room_modifier: Option<crate::world::RoomModifier>, anim_t: f64) {
         match room_modifier {
-            Some(crate::dungeon::RoomModifier::Dark) => {
+            Some(crate::world::RoomModifier::PoweredDown) => {
                 self.ctx.set_fill_style_str("rgba(10,10,22,0.16)");
                 self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
                 self.ctx.set_fill_style_str("rgba(150,160,220,0.08)");
@@ -6533,7 +6601,7 @@ impl Renderer {
                     self.ctx.fill();
                 }
             }
-            Some(crate::dungeon::RoomModifier::Arcane) => {
+            Some(crate::world::RoomModifier::HighTech) => {
                 for i in 0..14 {
                     let seed = i as f64 * 1.13;
                     let x = (((anim_t * 0.41) + seed).sin() * 0.5 + 0.5) * self.canvas_w;
@@ -6552,7 +6620,7 @@ impl Renderer {
                 self.ctx.set_shadow_blur(0.0);
                 self.ctx.set_shadow_color("transparent");
             }
-            Some(crate::dungeon::RoomModifier::Cursed) => {
+            Some(crate::world::RoomModifier::Irradiated) => {
                 self.ctx.set_fill_style_str("rgba(40,0,0,0.08)");
                 self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
                 for i in 0..12 {
@@ -6568,7 +6636,7 @@ impl Renderer {
                     self.ctx.stroke();
                 }
             }
-            Some(crate::dungeon::RoomModifier::Garden) => {
+            Some(crate::world::RoomModifier::Hydroponics) => {
                 // Floating green leaves drifting down
                 self.ctx.set_fill_style_str("rgba(20,60,10,0.06)");
                 self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
@@ -6594,7 +6662,7 @@ impl Renderer {
                     self.ctx.fill();
                 }
             }
-            Some(crate::dungeon::RoomModifier::Frozen) => {
+            Some(crate::world::RoomModifier::Cryogenic) => {
                 // Blue-white frost overlay with snowflake particles
                 self.ctx.set_fill_style_str("rgba(180,210,240,0.06)");
                 self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
@@ -6611,7 +6679,7 @@ impl Renderer {
                     self.ctx.fill();
                 }
             }
-            Some(crate::dungeon::RoomModifier::Infernal) => {
+            Some(crate::world::RoomModifier::OverheatedReactor) => {
                 // Red-orange heat haze with rising embers
                 self.ctx.set_fill_style_str("rgba(40,8,0,0.10)");
                 self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
@@ -6667,7 +6735,7 @@ impl Renderer {
                     continue;
                 }
                 let tile = level.tiles[idx];
-                if tile == Tile::Wall {
+                if tile == Tile::Bulkhead {
                     continue;
                 }
                 let px = mm_x + tx as f64 * mm_scale;
@@ -6682,15 +6750,15 @@ impl Renderer {
 
                 if level.revealed[idx] {
                     let poi_color = match tile {
-                        Tile::StairsDown => Some(COL_STAIRS),
-                        Tile::Forge => Some(COL_FORGE),
-                        Tile::Shop => Some(COL_SHOP),
-                        Tile::Chest => Some(COL_CHEST),
-                        Tile::Altar(_) => Some("#cc88ff"),
-                        Tile::DragonGatePortal => Some("#ff44aa"),
-                        Tile::SpiritSpringTile => Some("#66ffdd"),
-                        Tile::GoldPile => Some("#ffd700"),
-                        Tile::Bookshelf => Some("#c49a6c"),
+                        Tile::Airlock => Some(COL_STAIRS),
+                        Tile::QuantumForge => Some(COL_FORGE),
+                        Tile::TradeTerminal => Some(COL_SHOP),
+                        Tile::SupplyCrate => Some(COL_CHEST),
+                        Tile::Terminal(_) => Some("#cc88ff"),
+                        Tile::WarpGatePortal => Some("#ff44aa"),
+                        Tile::MedBayTile => Some("#66ffdd"),
+                        Tile::CreditCache => Some("#ffd700"),
+                        Tile::DataRack => Some("#c49a6c"),
                         _ => None,
                     };
                     if let Some(c) = poi_color {
@@ -6742,7 +6810,7 @@ impl Renderer {
 
         self.ctx.set_text_align("center");
         self.ctx.set_font("bold 22px monospace");
-        self.ctx.set_fill_style_str("#ffcc33");
+        self.ctx.set_fill_style_str("#00ccdd");
         self.ctx
             .fill_text("Inventory", self.canvas_w / 2.0, box_y + 28.0)
             .ok();
@@ -6861,7 +6929,7 @@ impl Renderer {
                     .fill_rect(left_x + 8.0, left_y - 12.0, left_w - 16.0, 16.0);
             }
             self.ctx
-                .set_fill_style_str(if selected { "#ffcc33" } else { "#dde7ff" });
+                .set_fill_style_str(if selected { "#00ccdd" } else { "#dde7ff" });
             let marker = if selected { "▸" } else { " " };
             self.ctx
                 .fill_text(
@@ -6942,7 +7010,7 @@ impl Renderer {
                 let color = if is_first_pick {
                     "#66ccff"
                 } else if selected {
-                    "#ffcc33"
+                    "#00ccdd"
                 } else if is_compatible {
                     "#66ff88"
                 } else {
@@ -7015,7 +7083,7 @@ impl Renderer {
         if player.shield {
             self.ctx.set_fill_style_str("#7fd8ff");
             self.ctx
-                .fill_text("🛡 Shield Active", left_x + 12.0, left_y)
+                .fill_text("🛡 Energy Barrier Active", left_x + 12.0, left_y)
                 .ok();
             left_y += 16.0;
         }
@@ -7239,11 +7307,11 @@ impl Renderer {
 
             self.ctx.set_fill_style_str("rgba(10,8,24,0.96)");
             self.ctx.fill_rect(pop_x, pop_y, pop_w, pop_h);
-            self.ctx.set_stroke_style_str("#ffcc33");
+            self.ctx.set_stroke_style_str("#00ccdd");
             self.ctx.set_line_width(2.0);
             self.ctx.stroke_rect(pop_x, pop_y, pop_w, pop_h);
 
-            self.ctx.set_fill_style_str("#ffcc33");
+            self.ctx.set_fill_style_str("#00ccdd");
             self.ctx.set_font("bold 14px monospace");
             self.ctx.set_text_align("center");
             self.ctx
@@ -7467,9 +7535,9 @@ impl Renderer {
 
         self.ctx.set_font("bold 22px monospace");
         self.ctx.set_text_align("center");
-        self.ctx.set_shadow_color("#ffcc33");
+        self.ctx.set_shadow_color("#00ccdd");
         self.ctx.set_shadow_blur(10.0);
-        self.ctx.set_fill_style_str("#ffcc33");
+        self.ctx.set_fill_style_str("#00ccdd");
         self.ctx
             .fill_text("─── Character Codex ───", self.canvas_w / 2.0, box_y + 28.0)
             .ok();
@@ -7656,7 +7724,7 @@ impl Renderer {
                 let color = if line.starts_with("> ") {
                     "#556655"
                 } else if line.starts_with("===") || line.starts_with("--- ") {
-                    "#ffcc33"
+                    "#00ccdd"
                 } else if line.starts_with("ERROR")
                     || line.starts_with("Unknown")
                     || line.starts_with("No ")
@@ -7685,112 +7753,115 @@ impl Renderer {
 
 fn tile_sprite_key(tile: Tile) -> &'static str {
     match tile {
-        Tile::Wall => "tile_wall",
-        Tile::CrackedWall => "tile_cracked_wall",
-        Tile::BrittleWall => "tile_brittle_wall",
-        Tile::Floor => "tile_floor",
-        Tile::Corridor => "tile_corridor",
-        Tile::StairsDown => "tile_stairs_down",
-        Tile::Forge => "tile_forge",
-        Tile::Shop => "tile_shop",
-        Tile::Chest => "tile_chest",
-        Tile::Crate => "tile_crate",
-        Tile::Spikes => "tile_spikes",
-        Tile::Oil => "tile_oil",
-        Tile::Water => "tile_water",
-        Tile::DeepWater => "tile_deep_water",
-        Tile::Bridge => "tile_bridge",
-        Tile::Shrine => "obj_shrine",
-        Tile::StrokeShrine => "obj_shrine",
-        Tile::ToneWall => "obj_shrine",
+        Tile::NavBeacon => "obj_shrine",
+        Tile::SpecialRoom(_) => "tile_floor",
+        Tile::SalvageCrate => "obj_crate",
+        Tile::Bulkhead => "tile_wall",
+        Tile::DamagedBulkhead => "tile_cracked_wall",
+        Tile::WeakBulkhead => "tile_brittle_wall",
+        Tile::MetalFloor => "tile_floor",
+        Tile::Hallway => "tile_corridor",
+        Tile::Airlock => "tile_stairs_down",
+        Tile::QuantumForge => "tile_forge",
+        Tile::TradeTerminal => "tile_shop",
+        Tile::SupplyCrate => "tile_chest",
+        Tile::SalvageCrate => "tile_crate",
+        Tile::LaserGrid => "tile_spikes",
+        Tile::Coolant => "tile_oil",
+        Tile::CoolantPool => "tile_water",
+        Tile::VacuumBreach => "tile_deep_water",
+        Tile::Catwalk => "tile_bridge",
+        Tile::CircuitShrine => "obj_shrine",
+        Tile::RadicalLab => "obj_shrine",
+        Tile::FrequencyWall => "obj_shrine",
         Tile::CompoundShrine => "obj_shrine",
-        Tile::ClassifierShrine => "obj_shrine",
-        Tile::InkWell => "obj_shrine",
-        Tile::AncestorShrine => "obj_shrine",
-        Tile::TranslationAltar => "obj_shrine",
-        Tile::RadicalGarden => "obj_shrine",
-        Tile::MirrorPool => "obj_shrine",
-        Tile::StoneTutor => "obj_shrine",
-        Tile::CodexShrine => "obj_shrine",
-        Tile::WordBridge => "tile_bridge",
-        Tile::LockedDoor => "obj_shrine",
-        Tile::CursedFloor => "tile_floor",
-        Tile::Altar(AltarKind::Jade) => "obj_altar_jade",
-        Tile::Altar(AltarKind::Gale) => "obj_altar_gale",
-        Tile::Altar(AltarKind::Mirror) => "obj_altar_mirror",
-        Tile::Altar(AltarKind::Iron) => "obj_altar_iron",
-        Tile::Altar(AltarKind::Gold) => "obj_altar_gold",
-        Tile::Seal(SealKind::Ember) => "obj_seal_ember",
-        Tile::Seal(SealKind::Tide) => "obj_seal_tide",
-        Tile::Seal(SealKind::Thorn) => "obj_seal_thorn",
-        Tile::Seal(SealKind::Echo) => "obj_seal_echo",
-        Tile::Sign(_) => "obj_sign",
+        Tile::ClassifierNode => "obj_shrine",
+        Tile::DataWell => "obj_shrine",
+        Tile::MemorialNode => "obj_shrine",
+        Tile::TranslationTerminal => "obj_shrine",
+        Tile::RadicalLab => "obj_shrine",
+        Tile::HoloPool => "obj_shrine",
+        Tile::DroidTutor => "obj_shrine",
+        Tile::CodexTerminal => "obj_shrine",
+        Tile::DataBridge => "tile_bridge",
+        Tile::SealedHatch => "obj_shrine",
+        Tile::CorruptedFloor => "tile_floor",
+        Tile::Terminal(TerminalKind::Quantum) => "obj_altar_jade",
+        Tile::Terminal(TerminalKind::Stellar) => "obj_altar_gale",
+        Tile::Terminal(TerminalKind::Holographic) => "obj_altar_mirror",
+        Tile::Terminal(TerminalKind::Tactical) => "obj_altar_iron",
+        Tile::Terminal(TerminalKind::Commerce) => "obj_altar_gold",
+        Tile::SecurityLock(SealKind::Thermal) => "obj_seal_ember",
+        Tile::SecurityLock(SealKind::Hydraulic) => "obj_seal_tide",
+        Tile::SecurityLock(SealKind::Kinetic) => "obj_seal_thorn",
+        Tile::SecurityLock(SealKind::Sonic) => "obj_seal_echo",
+        Tile::InfoPanel(_) => "obj_sign",
         Tile::Npc(0) => "npc_teacher",
         Tile::Npc(1) => "npc_monk",
         Tile::Npc(2) => "npc_merchant",
         Tile::Npc(_) => "npc_guard",
         Tile::Trap(_) => "tile_floor",
-        Tile::GoldOre => "tile_wall",
-        Tile::Lava => "tile_water",
-        Tile::Ice => "tile_floor",
-        Tile::Bamboo => "tile_wall",
-        Tile::Mushroom => "tile_floor",
-        Tile::PoisonGas => "tile_floor",
-        Tile::Bookshelf => "obj_shrine",
-        Tile::PressurePlate => "tile_floor",
-        Tile::Boulder => "tile_crate",
-        Tile::Crystal => "tile_wall",
-        Tile::DragonGatePortal => "obj_shrine",
-        Tile::SpiritSpringTile => "obj_shrine",
-        Tile::GoldPile => "tile_floor",
+        Tile::OreVein => "tile_wall",
+        Tile::PlasmaVent => "tile_water",
+        Tile::FrozenDeck => "tile_floor",
+        Tile::CargoPipes => "tile_wall",
+        Tile::ToxicFungus => "tile_floor",
+        Tile::ToxicGas => "tile_floor",
+        Tile::DataRack => "obj_shrine",
+        Tile::PressureSensor => "tile_floor",
+        Tile::CargoCrate => "tile_crate",
+        Tile::CrystalPanel => "tile_wall",
+        Tile::WarpGatePortal => "obj_shrine",
+        Tile::MedBayTile => "obj_shrine",
+        Tile::CreditCache => "tile_floor",
     }
 }
 
 fn boss_sprite_key(kind: BossKind) -> &'static str {
     match kind {
-        BossKind::Gatekeeper => "boss_gatekeeper",
-        BossKind::Scholar => "boss_scholar",
-        BossKind::Elementalist => "boss_elementalist",
-        BossKind::MimicKing => "boss_mimic_king",
-        BossKind::InkSage => "boss_ink_sage",
-        BossKind::RadicalThief => "boss_radical_thief",
+        BossKind::PirateCaptain => "boss_gatekeeper",
+        BossKind::HiveQueen => "boss_scholar",
+        BossKind::RogueAICore => "boss_elementalist",
+        BossKind::VoidEntity => "boss_mimic_king",
+        BossKind::AncientGuardian => "boss_ink_sage",
+        BossKind::DriftLeviathan => "boss_radical_thief",
     }
 }
 
 fn item_sprite_key(item: &Item) -> &'static str {
     match item.kind() {
-        ItemKind::HealthPotion => "item_health_potion",
-        ItemKind::PoisonFlask => "item_poison_flask",
-        ItemKind::RevealScroll => "item_reveal_scroll",
-        ItemKind::TeleportScroll => "item_teleport_scroll",
-        ItemKind::HastePotion => "item_haste_potion",
-        ItemKind::StunBomb => "item_stun_bomb",
-        ItemKind::RiceBall => "item_rice_ball",
-        ItemKind::MeditationIncense => "item_meditation_incense",
-        ItemKind::AncestralWine => "item_ancestral_wine",
-        ItemKind::SmokeScreen => "item_smoke_screen",
-        ItemKind::FireCracker => "item_fire_cracker",
-        ItemKind::IronSkinElixir => "item_iron_skin_elixir",
-        ItemKind::ClarityTea => "item_clarity_tea",
-        ItemKind::GoldIngot => "item_gold_ingot",
-        ItemKind::ThunderTalisman => "item_thunder_talisman",
-        ItemKind::JadeSalve => "item_jade_salve",
-        ItemKind::SerpentFang => "item_serpent_fang",
-        ItemKind::WardingCharm => "item_warding_charm",
-        ItemKind::InkBomb => "item_ink_bomb",
-        ItemKind::PhoenixPlume => "item_phoenix_plume",
-        ItemKind::MirrorShard => "item_mirror_shard",
-        ItemKind::FrostVial => "item_frost_vial",
-        ItemKind::ShadowCloak => "item_shadow_cloak",
-        ItemKind::DragonScale => "item_dragon_scale",
-        ItemKind::BambooFlute => "item_bamboo_flute",
-        ItemKind::JadeCompass => "item_jade_compass",
-        ItemKind::SilkRope => "item_silk_rope",
-        ItemKind::LotusElixir => "item_lotus_elixir",
-        ItemKind::ThunderDrum => "item_thunder_drum",
-        ItemKind::CinnabarInk => "item_cinnabar_ink",
-        ItemKind::AncestorToken => "item_ancestor_token",
-        ItemKind::WindFan => "item_wind_fan",
+        ItemKind::MedHypo => "item_health_potion",
+        ItemKind::ToxinGrenade => "item_poison_flask",
+        ItemKind::ScannerPulse => "item_reveal_scroll",
+        ItemKind::PersonalTeleporter => "item_teleport_scroll",
+        ItemKind::StimPack => "item_haste_potion",
+        ItemKind::EMPGrenade => "item_stun_bomb",
+        ItemKind::RationPack => "item_rice_ball",
+        ItemKind::FocusStim => "item_meditation_incense",
+        ItemKind::SynthAle => "item_ancestral_wine",
+        ItemKind::HoloDecoy => "item_smoke_screen",
+        ItemKind::PlasmaBurst => "item_fire_cracker",
+        ItemKind::NanoShield => "item_iron_skin_elixir",
+        ItemKind::NeuralBoost => "item_clarity_tea",
+        ItemKind::CreditChip => "item_gold_ingot",
+        ItemKind::ShockModule => "item_thunder_talisman",
+        ItemKind::BiogelPatch => "item_jade_salve",
+        ItemKind::VenomDart => "item_serpent_fang",
+        ItemKind::DeflectorDrone => "item_warding_charm",
+        ItemKind::NaniteSwarm => "item_ink_bomb",
+        ItemKind::Revitalizer => "item_phoenix_plume",
+        ItemKind::ReflectorPlate => "item_mirror_shard",
+        ItemKind::CryoGrenade => "item_frost_vial",
+        ItemKind::CloakingDevice => "item_shadow_cloak",
+        ItemKind::PlasmaShield => "item_dragon_scale",
+        ItemKind::SignalJammer => "item_bamboo_flute",
+        ItemKind::NavComputer => "item_jade_compass",
+        ItemKind::GrappleLine => "item_silk_rope",
+        ItemKind::OmniGel => "item_lotus_elixir",
+        ItemKind::SonicEmitter => "item_thunder_drum",
+        ItemKind::CircuitInk => "item_cinnabar_ink",
+        ItemKind::DataCore => "item_ancestor_token",
+        ItemKind::ThrusterPack => "item_wind_fan",
     }
 }
 
@@ -7941,85 +8012,91 @@ struct TilePalette {
 fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
     if visible {
         match tile {
-            Tile::Wall => TilePalette {
+            Tile::NavBeacon | Tile::SpecialRoom(_) | Tile::SalvageCrate => TilePalette {
+                fill: "#444",
+                accent: None,
+                glyph: None,
+                glyph_color: "#fff",
+            },
+            Tile::Bulkhead => TilePalette {
                 fill: COL_WALL,
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::CrackedWall => TilePalette {
+            Tile::DamagedBulkhead => TilePalette {
                 fill: "#47324f",
                 accent: Some("#d89c74"),
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::BrittleWall => TilePalette {
+            Tile::WeakBulkhead => TilePalette {
                 fill: "#5b473a",
                 accent: Some("#f2d29e"),
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Floor => TilePalette {
+            Tile::MetalFloor => TilePalette {
                 fill: COL_FLOOR,
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Corridor => TilePalette {
+            Tile::Hallway => TilePalette {
                 fill: COL_CORRIDOR,
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::StairsDown => TilePalette {
+            Tile::Airlock => TilePalette {
                 fill: COL_STAIRS,
                 accent: Some("#d7e7ff"),
                 glyph: Some("▼"),
                 glyph_color: "#ffffff",
             },
-            Tile::Forge => TilePalette {
+            Tile::QuantumForge => TilePalette {
                 fill: COL_FORGE,
                 accent: Some("#ffd1aa"),
                 glyph: Some("⚒"),
                 glyph_color: "#ffffff",
             },
-            Tile::Shop => TilePalette {
+            Tile::TradeTerminal => TilePalette {
                 fill: COL_SHOP,
                 accent: Some("#bfffd4"),
                 glyph: Some("$"),
                 glyph_color: "#ffffff",
             },
-            Tile::Chest => TilePalette {
+            Tile::SupplyCrate => TilePalette {
                 fill: COL_CHEST,
                 accent: Some("#ffe29e"),
                 glyph: Some("◆"),
                 glyph_color: "#fff7dc",
             },
-            Tile::Crate => TilePalette {
+            Tile::SalvageCrate => TilePalette {
                 fill: "#6a4527",
                 accent: Some("#a77b52"),
                 glyph: Some("▣"),
                 glyph_color: "#fff0d8",
             },
-            Tile::Spikes => TilePalette {
+            Tile::LaserGrid => TilePalette {
                 fill: "#7e434a",
                 accent: Some("#d9a0a0"),
                 glyph: Some("^"),
                 glyph_color: "#fff1f1",
             },
-            Tile::Oil => TilePalette {
+            Tile::Coolant => TilePalette {
                 fill: "#4f3a1c",
                 accent: Some("#e7c56d"),
                 glyph: Some("~"),
                 glyph_color: "#ffdd88",
             },
-            Tile::Water => TilePalette {
+            Tile::CoolantPool => TilePalette {
                 fill: "#4466cc",
                 accent: Some("#9fc4ff"),
                 glyph: Some("≈"),
                 glyph_color: "#e5efff",
             },
-            Tile::DeepWater => TilePalette {
+            Tile::VacuumBreach => TilePalette {
                 fill: "#16386d",
                 accent: Some("#7fb4ff"),
                 glyph: Some("≈"),
@@ -8049,19 +8126,14 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
                 glyph: Some("🛡"),
                 glyph_color: "#ffffff",
             },
-            Tile::Shrine => TilePalette {
+            Tile::CircuitShrine => TilePalette {
                 fill: "#7d5d2a",
                 accent: Some("#ffd07a"),
                 glyph: Some("🔔"),
                 glyph_color: "#fff8e2",
             },
-            Tile::StrokeShrine => TilePalette {
-                fill: "#1a2d4a",
-                accent: Some("#88ccff"),
-                glyph: Some("筆"),
-                glyph_color: "#88ccff",
-            },
-            Tile::ToneWall => TilePalette {
+            // Removed StrokeShrine, mapped to RadicalLab
+            Tile::FrequencyWall => TilePalette {
                 fill: "#3a1515",
                 accent: Some("#dd6644"),
                 glyph: Some("壁"),
@@ -8073,91 +8145,91 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
                 glyph: Some("合"),
                 glyph_color: "#66dd88",
             },
-            Tile::ClassifierShrine => TilePalette {
+            Tile::ClassifierNode => TilePalette {
                 fill: "#3a2a1a",
                 accent: Some("#ddaa44"),
                 glyph: Some("量"),
                 glyph_color: "#ddaa44",
             },
-            Tile::InkWell => TilePalette {
+            Tile::DataWell => TilePalette {
                 fill: "#1a1a2d",
                 accent: Some("#9999ee"),
                 glyph: Some("墨"),
                 glyph_color: "#9999ee",
             },
-            Tile::AncestorShrine => TilePalette {
+            Tile::MemorialNode => TilePalette {
                 fill: "#2d1a1a",
                 accent: Some("#ee9966"),
                 glyph: Some("祖"),
                 glyph_color: "#ee9966",
             },
-            Tile::TranslationAltar => TilePalette {
+            Tile::TranslationTerminal => TilePalette {
                 fill: "#1a2d2d",
                 accent: Some("#66cccc"),
                 glyph: Some("译"),
                 glyph_color: "#66cccc",
             },
-            Tile::RadicalGarden => TilePalette {
+            Tile::RadicalLab => TilePalette {
                 fill: "#1a2d1a",
                 accent: Some("#88ee66"),
                 glyph: Some("部"),
                 glyph_color: "#88ee66",
             },
-            Tile::MirrorPool => TilePalette {
+            Tile::HoloPool => TilePalette {
                 fill: "#1a1a3a",
                 accent: Some("#aaaaff"),
                 glyph: Some("鏡"),
                 glyph_color: "#aaaaff",
             },
-            Tile::StoneTutor => TilePalette {
+            Tile::DroidTutor => TilePalette {
                 fill: "#2d2d1a",
                 accent: Some("#cccc66"),
                 glyph: Some("石"),
                 glyph_color: "#cccc66",
             },
-            Tile::CodexShrine => TilePalette {
+            Tile::CodexTerminal => TilePalette {
                 fill: "#2a1a3a",
                 accent: Some("#dd99ff"),
                 glyph: Some("典"),
                 glyph_color: "#dd99ff",
             },
-            Tile::WordBridge => TilePalette {
+            Tile::DataBridge => TilePalette {
                 fill: "#1a1a2d",
                 accent: Some("#66aaff"),
                 glyph: Some("桥"),
                 glyph_color: "#66aaff",
             },
-            Tile::LockedDoor => TilePalette {
+            Tile::SealedHatch => TilePalette {
                 fill: "#2d1a1a",
                 accent: Some("#ff6644"),
                 glyph: Some("锁"),
                 glyph_color: "#ff6644",
             },
-            Tile::CursedFloor => TilePalette {
+            Tile::CorruptedFloor => TilePalette {
                 fill: "#1a1a1a",
                 accent: None,
                 glyph: None,
                 glyph_color: "#aa44aa",
             },
-            Tile::Altar(kind) => TilePalette {
+            Tile::Terminal(kind) => TilePalette {
                 fill: altar_fill(kind),
                 accent: Some(kind.color()),
                 glyph: Some(kind.icon()),
                 glyph_color: kind.color(),
             },
-            Tile::Seal(kind) => TilePalette {
+            Tile::SecurityLock(kind) => TilePalette {
                 fill: seal_fill(kind),
                 accent: Some(kind.color()),
                 glyph: Some(kind.icon()),
                 glyph_color: kind.color(),
             },
-            Tile::Sign(_) => TilePalette {
+            Tile::InfoPanel(_) => TilePalette {
                 fill: "#8a6b47",
                 accent: Some("#d7b07b"),
                 glyph: Some("?"),
                 glyph_color: "#ffffff",
             },
-            Tile::Bridge => TilePalette {
+            Tile::Catwalk => TilePalette {
                 fill: "#8b4513",
                 accent: Some("#a0522d"),
                 glyph: None,
@@ -8169,166 +8241,178 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::GoldOre => TilePalette {
+            Tile::OreVein => TilePalette {
                 fill: "#5a4a1e",
                 accent: Some("#ffd700"),
                 glyph: Some("矿"),
                 glyph_color: "#ffd700",
             },
-            Tile::Lava => TilePalette {
+            Tile::PlasmaVent => TilePalette {
                 fill: "#8b2500",
                 accent: Some("#ff4500"),
                 glyph: Some("~"),
                 glyph_color: "#ff6633",
             },
-            Tile::Ice => TilePalette {
+            Tile::FrozenDeck => TilePalette {
                 fill: "#a8d8ea",
                 accent: Some("#e0f0ff"),
                 glyph: Some("·"),
                 glyph_color: "#e0f0ff",
             },
-            Tile::Bamboo => TilePalette {
+            Tile::CargoPipes => TilePalette {
                 fill: "#2d5a27",
                 accent: Some("#6abf4b"),
                 glyph: Some("‖"),
                 glyph_color: "#88dd66",
             },
-            Tile::Mushroom => TilePalette {
+            Tile::ToxicFungus => TilePalette {
                 fill: "#4a2d5a",
                 accent: Some("#bb77dd"),
                 glyph: Some("♠"),
                 glyph_color: "#cc88ee",
             },
-            Tile::PoisonGas => TilePalette {
+            Tile::ToxicGas => TilePalette {
                 fill: "#2a4a2a",
                 accent: Some("#77dd44"),
                 glyph: Some("░"),
                 glyph_color: "#88ee55",
             },
-            Tile::Bookshelf => TilePalette {
+            Tile::DataRack => TilePalette {
                 fill: "#5a3a1e",
                 accent: Some("#c49a6c"),
                 glyph: Some("书"),
                 glyph_color: "#ddb888",
             },
-            Tile::PressurePlate => TilePalette {
+            Tile::PressureSensor => TilePalette {
                 fill: "#555555",
                 accent: Some("#999999"),
                 glyph: Some("◫"),
                 glyph_color: "#bbbbbb",
             },
-            Tile::Boulder => TilePalette {
+            Tile::CargoCrate => TilePalette {
                 fill: "#666655",
                 accent: Some("#998877"),
                 glyph: Some("●"),
                 glyph_color: "#bbaa99",
             },
-            Tile::Crystal => TilePalette {
+            Tile::CrystalPanel => TilePalette {
                 fill: "#3a3a6a",
                 accent: Some("#aaaaff"),
                 glyph: Some("◇"),
                 glyph_color: "#ccccff",
             },
-            Tile::DragonGatePortal => TilePalette {
+            Tile::WarpGatePortal => TilePalette {
                 fill: "#4a1a3a",
                 accent: Some("#ff44aa"),
                 glyph: Some("龙"),
                 glyph_color: "#ff66cc",
             },
-            Tile::SpiritSpringTile => TilePalette {
+            Tile::MedBayTile => TilePalette {
                 fill: "#2a5a5a",
                 accent: Some("#66ffdd"),
                 glyph: Some("泉"),
                 glyph_color: "#88ffee",
             },
-            Tile::GoldPile => TilePalette {
+            Tile::CreditCache => TilePalette {
                 fill: "#5a4a1e",
                 accent: Some("#ffd700"),
                 glyph: Some("¥"),
                 glyph_color: "#ffdd44",
             },
+            Tile::NavBeacon | Tile::SpecialRoom(_) | Tile::SalvageCrate => TilePalette {
+                fill: "#222",
+                accent: None,
+                glyph: None,
+                glyph_color: "#555",
+            },
         }
     } else {
         match tile {
-            Tile::Wall => TilePalette {
+            Tile::NavBeacon | Tile::SpecialRoom(_) | Tile::SalvageCrate => TilePalette {
+                fill: "#222",
+                accent: None,
+                glyph: None,
+                glyph_color: "#555",
+            },
+            Tile::Bulkhead => TilePalette {
                 fill: COL_WALL_REVEALED,
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::CrackedWall => TilePalette {
+            Tile::DamagedBulkhead => TilePalette {
                 fill: "#2d2338",
                 accent: Some("#805d48"),
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::BrittleWall => TilePalette {
+            Tile::WeakBulkhead => TilePalette {
                 fill: "#342c26",
                 accent: Some("#7d6a57"),
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Floor => TilePalette {
+            Tile::MetalFloor => TilePalette {
                 fill: COL_FLOOR_REVEALED,
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Corridor => TilePalette {
+            Tile::Hallway => TilePalette {
                 fill: COL_CORRIDOR_REVEALED,
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::StairsDown => TilePalette {
+            Tile::Airlock => TilePalette {
                 fill: "#243857",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Forge => TilePalette {
+            Tile::QuantumForge => TilePalette {
                 fill: "#4b2b1d",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Shop => TilePalette {
+            Tile::TradeTerminal => TilePalette {
                 fill: "#1e4a33",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Chest => TilePalette {
+            Tile::SupplyCrate => TilePalette {
                 fill: "#5a441b",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Crate => TilePalette {
+            Tile::SalvageCrate => TilePalette {
                 fill: "#3f2c1c",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Spikes => TilePalette {
+            Tile::LaserGrid => TilePalette {
                 fill: "#4a2d32",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Oil => TilePalette {
+            Tile::Coolant => TilePalette {
                 fill: "#3a2f1b",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Water => TilePalette {
+            Tile::CoolantPool => TilePalette {
                 fill: "#213f6b",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::DeepWater => TilePalette {
+            Tile::VacuumBreach => TilePalette {
                 fill: "#132846",
                 accent: None,
                 glyph: None,
@@ -8340,19 +8424,19 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Shrine => TilePalette {
+            Tile::CircuitShrine => TilePalette {
                 fill: "#4f3d20",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::StrokeShrine => TilePalette {
+            Tile::RadicalLab => TilePalette {
                 fill: "#111822",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::ToneWall => TilePalette {
+            Tile::FrequencyWall => TilePalette {
                 fill: "#1a1010",
                 accent: None,
                 glyph: None,
@@ -8364,91 +8448,91 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::ClassifierShrine => TilePalette {
+            Tile::ClassifierNode => TilePalette {
                 fill: "#221a11",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::InkWell => TilePalette {
+            Tile::DataWell => TilePalette {
                 fill: "#111118",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::AncestorShrine => TilePalette {
+            Tile::MemorialNode => TilePalette {
                 fill: "#181111",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::TranslationAltar => TilePalette {
+            Tile::TranslationTerminal => TilePalette {
                 fill: "#111818",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::RadicalGarden => TilePalette {
+            Tile::RadicalLab => TilePalette {
                 fill: "#111811",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::MirrorPool => TilePalette {
+            Tile::HoloPool => TilePalette {
                 fill: "#11111f",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::StoneTutor => TilePalette {
+            Tile::DroidTutor => TilePalette {
                 fill: "#181811",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::CodexShrine => TilePalette {
+            Tile::CodexTerminal => TilePalette {
                 fill: "#16101e",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::WordBridge => TilePalette {
+            Tile::DataBridge => TilePalette {
                 fill: "#101018",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::LockedDoor => TilePalette {
+            Tile::SealedHatch => TilePalette {
                 fill: "#1a1010",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::CursedFloor => TilePalette {
+            Tile::CorruptedFloor => TilePalette {
                 fill: "#111111",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Altar(kind) => TilePalette {
+            Tile::Terminal(kind) => TilePalette {
                 fill: altar_revealed_fill(kind),
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Seal(kind) => TilePalette {
+            Tile::SecurityLock(kind) => TilePalette {
                 fill: seal_revealed_fill(kind),
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Sign(_) => TilePalette {
+            Tile::InfoPanel(_) => TilePalette {
                 fill: "#4b3a26",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Bridge => TilePalette {
+            Tile::Catwalk => TilePalette {
                 fill: "#5c4033",
                 accent: None,
                 glyph: None,
@@ -8460,79 +8544,79 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::GoldOre => TilePalette {
+            Tile::OreVein => TilePalette {
                 fill: "#3a3214",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Lava => TilePalette {
+            Tile::PlasmaVent => TilePalette {
                 fill: "#5a1a00",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Ice => TilePalette {
+            Tile::FrozenDeck => TilePalette {
                 fill: "#6a8a9a",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Bamboo => TilePalette {
+            Tile::CargoPipes => TilePalette {
                 fill: "#1e3a1b",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Mushroom => TilePalette {
+            Tile::ToxicFungus => TilePalette {
                 fill: "#2d1a3a",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::PoisonGas => TilePalette {
+            Tile::ToxicGas => TilePalette {
                 fill: "#1a2d1a",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Bookshelf => TilePalette {
+            Tile::DataRack => TilePalette {
                 fill: "#3a2614",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::PressurePlate => TilePalette {
+            Tile::PressureSensor => TilePalette {
                 fill: "#333333",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Boulder => TilePalette {
+            Tile::CargoCrate => TilePalette {
                 fill: "#3a3a33",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::Crystal => TilePalette {
+            Tile::CrystalPanel => TilePalette {
                 fill: "#222244",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::DragonGatePortal => TilePalette {
+            Tile::WarpGatePortal => TilePalette {
                 fill: "#2d1024",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::SpiritSpringTile => TilePalette {
+            Tile::MedBayTile => TilePalette {
                 fill: "#1a3a3a",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
             },
-            Tile::GoldPile => TilePalette {
+            Tile::CreditCache => TilePalette {
                 fill: "#3a3214",
                 accent: None,
                 glyph: None,
@@ -8544,100 +8628,100 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
 
 fn tile_plate_fill(tile: Tile) -> Option<&'static str> {
     match tile {
-        Tile::StairsDown => Some("rgba(255,255,255,0.14)"),
-        Tile::Forge => Some("rgba(255,226,194,0.16)"),
-        Tile::Shop => Some("rgba(207,255,224,0.15)"),
-        Tile::Chest => Some("rgba(255,231,173,0.16)"),
+        Tile::Airlock => Some("rgba(255,255,255,0.14)"),
+        Tile::QuantumForge => Some("rgba(255,226,194,0.16)"),
+        Tile::TradeTerminal => Some("rgba(207,255,224,0.15)"),
+        Tile::SupplyCrate => Some("rgba(255,231,173,0.16)"),
         Tile::Npc(_) => Some("rgba(225,245,255,0.12)"),
-        Tile::Shrine => Some("rgba(255,224,156,0.16)"),
-        Tile::StrokeShrine => Some("rgba(136,204,255,0.16)"),
-        Tile::ToneWall => Some("rgba(221,102,68,0.16)"),
+        Tile::CircuitShrine => Some("rgba(255,224,156,0.16)"),
+        Tile::RadicalLab => Some("rgba(136,204,255,0.16)"),
+        Tile::FrequencyWall => Some("rgba(221,102,68,0.16)"),
         Tile::CompoundShrine => Some("rgba(102,221,136,0.16)"),
-        Tile::ClassifierShrine => Some("rgba(221,170,68,0.16)"),
-        Tile::InkWell => Some("rgba(153,153,238,0.16)"),
-        Tile::AncestorShrine => Some("rgba(238,153,102,0.16)"),
-        Tile::TranslationAltar => Some("rgba(102,204,204,0.16)"),
-        Tile::RadicalGarden => Some("rgba(136,238,102,0.16)"),
-        Tile::MirrorPool => Some("rgba(170,170,255,0.16)"),
-        Tile::StoneTutor => Some("rgba(204,204,102,0.16)"),
-        Tile::CodexShrine => Some("rgba(221,153,255,0.16)"),
-        Tile::WordBridge => Some("rgba(102,170,255,0.16)"),
-        Tile::LockedDoor => Some("rgba(255,102,68,0.16)"),
-        Tile::Altar(kind) => Some(altar_plate_fill(kind)),
-        Tile::Seal(kind) => Some(seal_plate_fill(kind)),
-        Tile::Sign(_) => Some("rgba(255,236,200,0.10)"),
-        Tile::GoldOre => Some("rgba(255,215,0,0.16)"),
-        Tile::Lava => Some("rgba(255,69,0,0.18)"),
-        Tile::Bookshelf => Some("rgba(196,154,108,0.14)"),
-        Tile::DragonGatePortal => Some("rgba(255,68,170,0.18)"),
-        Tile::SpiritSpringTile => Some("rgba(102,255,221,0.16)"),
-        Tile::GoldPile => Some("rgba(255,215,0,0.16)"),
-        Tile::Crystal => Some("rgba(170,170,255,0.14)"),
+        Tile::ClassifierNode => Some("rgba(221,170,68,0.16)"),
+        Tile::DataWell => Some("rgba(153,153,238,0.16)"),
+        Tile::MemorialNode => Some("rgba(238,153,102,0.16)"),
+        Tile::TranslationTerminal => Some("rgba(102,204,204,0.16)"),
+        Tile::RadicalLab => Some("rgba(136,238,102,0.16)"),
+        Tile::HoloPool => Some("rgba(170,170,255,0.16)"),
+        Tile::DroidTutor => Some("rgba(204,204,102,0.16)"),
+        Tile::CodexTerminal => Some("rgba(221,153,255,0.16)"),
+        Tile::DataBridge => Some("rgba(102,170,255,0.16)"),
+        Tile::SealedHatch => Some("rgba(255,102,68,0.16)"),
+        Tile::Terminal(kind) => Some(altar_plate_fill(kind)),
+        Tile::SecurityLock(kind) => Some(seal_plate_fill(kind)),
+        Tile::InfoPanel(_) => Some("rgba(255,236,200,0.10)"),
+        Tile::OreVein => Some("rgba(255,215,0,0.16)"),
+        Tile::PlasmaVent => Some("rgba(255,69,0,0.18)"),
+        Tile::DataRack => Some("rgba(196,154,108,0.14)"),
+        Tile::WarpGatePortal => Some("rgba(255,68,170,0.18)"),
+        Tile::MedBayTile => Some("rgba(102,255,221,0.16)"),
+        Tile::CreditCache => Some("rgba(255,215,0,0.16)"),
+        Tile::CrystalPanel => Some("rgba(170,170,255,0.14)"),
         _ => None,
     }
 }
 
-fn altar_fill(kind: AltarKind) -> &'static str {
+fn altar_fill(kind: TerminalKind) -> &'static str {
     match kind {
-        AltarKind::Jade => "#30563f",
-        AltarKind::Gale => "#334d74",
-        AltarKind::Mirror => "#5a456e",
-        AltarKind::Iron => "#4a4a4a",
-        AltarKind::Gold => "#665522",
+        TerminalKind::Quantum => "#30563f",
+        TerminalKind::Stellar => "#334d74",
+        TerminalKind::Holographic => "#5a456e",
+        TerminalKind::Tactical => "#4a4a4a",
+        TerminalKind::Commerce => "#665522",
     }
 }
 
-fn altar_revealed_fill(kind: AltarKind) -> &'static str {
+fn altar_revealed_fill(kind: TerminalKind) -> &'static str {
     match kind {
-        AltarKind::Jade => "#214231",
-        AltarKind::Gale => "#243b56",
-        AltarKind::Mirror => "#443255",
-        AltarKind::Iron => "#333333",
-        AltarKind::Gold => "#443a1a",
+        TerminalKind::Quantum => "#214231",
+        TerminalKind::Stellar => "#243b56",
+        TerminalKind::Holographic => "#443255",
+        TerminalKind::Tactical => "#333333",
+        TerminalKind::Commerce => "#443a1a",
     }
 }
 
-fn altar_plate_fill(kind: AltarKind) -> &'static str {
+fn altar_plate_fill(kind: TerminalKind) -> &'static str {
     match kind {
-        AltarKind::Jade => "rgba(102,221,153,0.14)",
-        AltarKind::Gale => "rgba(136,204,255,0.14)",
-        AltarKind::Mirror => "rgba(221,184,255,0.14)",
-        AltarKind::Iron => "rgba(200,200,200,0.14)",
-        AltarKind::Gold => "rgba(255,215,0,0.14)",
+        TerminalKind::Quantum => "rgba(102,221,153,0.14)",
+        TerminalKind::Stellar => "rgba(136,204,255,0.14)",
+        TerminalKind::Holographic => "rgba(221,184,255,0.14)",
+        TerminalKind::Tactical => "rgba(200,200,200,0.14)",
+        TerminalKind::Commerce => "rgba(255,215,0,0.14)",
     }
 }
 
 fn seal_fill(kind: SealKind) -> &'static str {
     match kind {
-        SealKind::Ember => "#6a3529",
-        SealKind::Tide => "#264d79",
-        SealKind::Thorn => "#5f3144",
-        SealKind::Echo => "#4f3a68",
+        SealKind::Thermal => "#6a3529",
+        SealKind::Hydraulic => "#264d79",
+        SealKind::Kinetic => "#5f3144",
+        SealKind::Sonic => "#4f3a68",
     }
 }
 
 fn seal_revealed_fill(kind: SealKind) -> &'static str {
     match kind {
-        SealKind::Ember => "#44251d",
-        SealKind::Tide => "#1b3652",
-        SealKind::Thorn => "#412230",
-        SealKind::Echo => "#352646",
+        SealKind::Thermal => "#44251d",
+        SealKind::Hydraulic => "#1b3652",
+        SealKind::Kinetic => "#412230",
+        SealKind::Sonic => "#352646",
     }
 }
 
 fn seal_plate_fill(kind: SealKind) -> &'static str {
     match kind {
-        SealKind::Ember => "rgba(255,155,115,0.16)",
-        SealKind::Tide => "rgba(144,201,255,0.16)",
-        SealKind::Thorn => "rgba(255,158,184,0.14)",
-        SealKind::Echo => "rgba(212,164,255,0.16)",
+        SealKind::Thermal => "rgba(255,155,115,0.16)",
+        SealKind::Hydraulic => "rgba(144,201,255,0.16)",
+        SealKind::Kinetic => "rgba(255,158,184,0.14)",
+        SealKind::Sonic => "rgba(212,164,255,0.16)",
     }
 }
 
 fn tile_glyph_font(tile: Tile) -> &'static str {
     match tile {
-        Tile::Seal(_) => "bold 14px 'Noto Serif SC', 'SimSun', serif",
-        Tile::Crate | Tile::Spikes | Tile::Oil | Tile::Water | Tile::DeepWater => "15px monospace",
+        Tile::SecurityLock(_) => "bold 14px 'Noto Serif SC', 'SimSun', serif",
+        Tile::SalvageCrate | Tile::LaserGrid | Tile::Coolant | Tile::CoolantPool | Tile::VacuumBreach => "15px monospace",
         _ => "16px monospace",
     }
 }
@@ -8645,33 +8729,33 @@ fn tile_glyph_font(tile: Tile) -> &'static str {
 fn tile_glyph_y(tile: Tile, screen_y: f64, anim_t: f64, tx: i32, ty: i32) -> f64 {
     let base = screen_y + TILE_SIZE * 0.75;
     match tile {
-        Tile::Water | Tile::DeepWater => {
+        Tile::CoolantPool | Tile::VacuumBreach => {
             base + (anim_t * 3.5 + tx as f64 * 0.6 + ty as f64 * 0.35).sin() * 1.4
         }
-        Tile::Oil => base + (anim_t * 2.0 + tx as f64 * 0.4).sin() * 0.6,
-        Tile::Shrine => base + (anim_t * 2.5).sin() * 0.9,
-        Tile::StrokeShrine => base + (anim_t * 2.7 + tx as f64 * 0.3).sin() * 0.8,
-        Tile::ToneWall => base + (anim_t * 3.0 + ty as f64 * 0.3).sin() * 0.7,
+        Tile::Coolant => base + (anim_t * 2.0 + tx as f64 * 0.4).sin() * 0.6,
+        Tile::CircuitShrine => base + (anim_t * 2.5).sin() * 0.9,
+        Tile::RadicalLab => base + (anim_t * 2.7 + tx as f64 * 0.3).sin() * 0.8,
+        Tile::FrequencyWall => base + (anim_t * 3.0 + ty as f64 * 0.3).sin() * 0.7,
         Tile::CompoundShrine => base + (anim_t * 2.4 + tx as f64 * 0.2).sin() * 0.8,
-        Tile::ClassifierShrine => base + (anim_t * 2.6 + ty as f64 * 0.25).sin() * 0.7,
-        Tile::InkWell => base + (anim_t * 2.3 + tx as f64 * 0.25).sin() * 0.7,
-        Tile::AncestorShrine => base + (anim_t * 2.9 + ty as f64 * 0.35).sin() * 0.8,
-        Tile::TranslationAltar => base + (anim_t * 2.5 + tx as f64 * 0.3).sin() * 0.75,
-        Tile::RadicalGarden => base + (anim_t * 2.2 + tx as f64 * 0.2).sin() * 0.9,
-        Tile::MirrorPool => base + (anim_t * 3.2 + ty as f64 * 0.4).sin() * 1.0,
-        Tile::StoneTutor => base + (anim_t * 2.0 + tx as f64 * 0.15).sin() * 0.6,
-        Tile::CodexShrine => base + (anim_t * 2.4 + tx as f64 * 0.2).sin() * 0.8,
-        Tile::WordBridge => base + (anim_t * 2.6 + ty as f64 * 0.3).sin() * 0.7,
-        Tile::LockedDoor => base + (anim_t * 1.8 + tx as f64 * 0.1).sin() * 0.5,
-        Tile::Altar(_) => base + (anim_t * 2.8 + ty as f64 * 0.4).sin() * 0.8,
-        Tile::Seal(_) => base + (anim_t * 3.1 + tx as f64 * 0.35 + ty as f64 * 0.2).sin() * 0.7,
-        Tile::StairsDown => base + (anim_t * 1.8).sin() * 0.4,
-        Tile::Lava => base + (anim_t * 3.0 + tx as f64 * 0.5 + ty as f64 * 0.3).sin() * 1.2,
-        Tile::SpiritSpringTile => base + (anim_t * 2.5 + tx as f64 * 0.3).sin() * 0.9,
-        Tile::DragonGatePortal => base + (anim_t * 3.5 + ty as f64 * 0.4).sin() * 1.1,
-        Tile::GoldPile => base + (anim_t * 1.5).sin() * 0.3,
-        Tile::Mushroom => base + (anim_t * 2.0 + tx as f64 * 0.2).sin() * 0.5,
-        Tile::PoisonGas => base + (anim_t * 2.8 + tx as f64 * 0.4 + ty as f64 * 0.3).sin() * 0.8,
+        Tile::ClassifierNode => base + (anim_t * 2.6 + ty as f64 * 0.25).sin() * 0.7,
+        Tile::DataWell => base + (anim_t * 2.3 + tx as f64 * 0.25).sin() * 0.7,
+        Tile::MemorialNode => base + (anim_t * 2.9 + ty as f64 * 0.35).sin() * 0.8,
+        Tile::TranslationTerminal => base + (anim_t * 2.5 + tx as f64 * 0.3).sin() * 0.75,
+        Tile::RadicalLab => base + (anim_t * 2.2 + tx as f64 * 0.2).sin() * 0.9,
+        Tile::HoloPool => base + (anim_t * 3.2 + ty as f64 * 0.4).sin() * 1.0,
+        Tile::DroidTutor => base + (anim_t * 2.0 + tx as f64 * 0.15).sin() * 0.6,
+        Tile::CodexTerminal => base + (anim_t * 2.4 + tx as f64 * 0.2).sin() * 0.8,
+        Tile::DataBridge => base + (anim_t * 2.6 + ty as f64 * 0.3).sin() * 0.7,
+        Tile::SealedHatch => base + (anim_t * 1.8 + tx as f64 * 0.1).sin() * 0.5,
+        Tile::Terminal(_) => base + (anim_t * 2.8 + ty as f64 * 0.4).sin() * 0.8,
+        Tile::SecurityLock(_) => base + (anim_t * 3.1 + tx as f64 * 0.35 + ty as f64 * 0.2).sin() * 0.7,
+        Tile::Airlock => base + (anim_t * 1.8).sin() * 0.4,
+        Tile::PlasmaVent => base + (anim_t * 3.0 + tx as f64 * 0.5 + ty as f64 * 0.3).sin() * 1.2,
+        Tile::MedBayTile => base + (anim_t * 2.5 + tx as f64 * 0.3).sin() * 0.9,
+        Tile::WarpGatePortal => base + (anim_t * 3.5 + ty as f64 * 0.4).sin() * 1.1,
+        Tile::CreditCache => base + (anim_t * 1.5).sin() * 0.3,
+        Tile::ToxicFungus => base + (anim_t * 2.0 + tx as f64 * 0.2).sin() * 0.5,
+        Tile::ToxicGas => base + (anim_t * 2.8 + tx as f64 * 0.4 + ty as f64 * 0.3).sin() * 0.8,
         _ => base,
     }
 }
@@ -8714,7 +8798,7 @@ fn word_wrap(text: &str, max_chars: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{radical_stack_counts, tile_palette, TilePalette};
-    use crate::dungeon::{AltarKind, Tile};
+    use crate::world::{TerminalKind, Tile};
 
     #[test]
     fn radical_stack_counts_groups_duplicate_radicals() {
@@ -8734,7 +8818,7 @@ mod tests {
 
     #[test]
     fn tile_palette_highlights_interactive_tiles_when_visible() {
-        let stairs = tile_palette(Tile::StairsDown, true);
+        let stairs = tile_palette(Tile::Airlock, true);
 
         assert_eq!(
             stairs,
@@ -8749,12 +8833,215 @@ mod tests {
 
     #[test]
     fn tile_palette_keeps_special_tiles_distinct_when_revealed() {
-        let revealed_chest = tile_palette(Tile::Chest, false);
-        let revealed_floor = tile_palette(Tile::Floor, false);
-        let revealed_altar = tile_palette(Tile::Altar(AltarKind::Jade), false);
+        let revealed_chest = tile_palette(Tile::SupplyCrate, false);
+        let revealed_floor = tile_palette(Tile::MetalFloor, false);
+        let revealed_altar = tile_palette(Tile::Terminal(TerminalKind::Quantum), false);
 
         assert_eq!(revealed_chest.fill, "#5a441b");
         assert_ne!(revealed_chest.fill, revealed_floor.fill);
         assert_eq!(revealed_altar.fill, "#214231");
     }
 }
+
+
+impl Renderer {
+    pub fn draw_starmap(
+        &self,
+        sector_map: &SectorMap,
+        anim_t: f64,
+        settings: &GameSettings,
+    ) {
+        // Clear background
+        self.ctx.set_fill_style_str("#000000");
+        self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
+
+        // Draw stars/nebula background (simple)
+        self.ctx.set_fill_style_str("#111122");
+        for i in 0..100 {
+            let x = (i * 1234567) % (self.canvas_w as i32);
+            let y = (i * 7654321) % (self.canvas_h as i32);
+            self.ctx.fill_rect(x as f64, y as f64, 2.0, 2.0);
+        }
+
+        if let Some(sector) = sector_map.sectors.get(sector_map.current_sector) {
+            let cx = self.canvas_w / 2.0;
+            let cy = self.canvas_h / 2.0;
+            let scale = 300.0;
+
+            // Draw connections
+            self.ctx.set_stroke_style_str("#444466");
+            self.ctx.set_line_width(2.0);
+            for system in &sector.systems {
+                let sx = cx + (system.x - 0.5) * scale * 2.0;
+                let sy = cy + (system.y - 0.5) * scale * 2.0;
+
+                for &target_id in &system.connections {
+                    if let Some(target) = sector.systems.iter().find(|s| s.id == target_id) {
+                        let tx = cx + (target.x - 0.5) * scale * 2.0;
+                        let ty = cy + (target.y - 0.5) * scale * 2.0;
+                        self.ctx.begin_path();
+                        self.ctx.move_to(sx, sy);
+                        self.ctx.line_to(tx, ty);
+                        self.ctx.stroke();
+                    }
+                }
+            }
+
+            // Draw systems
+            for system in &sector.systems {
+                let sx = cx + (system.x - 0.5) * scale * 2.0;
+                let sy = cy + (system.y - 0.5) * scale * 2.0;
+                let is_current = system.id == sector_map.current_system;
+
+                let r = if is_current { 8.0 + (anim_t * 5.0).sin() * 2.0 } else { 6.0 };
+                
+                let color = if is_current {
+                    "#00ffff"
+                } else if system.visited {
+                    "#44aa88"
+                } else {
+                    match system.location_type {
+                        LocationType::SpaceStation => "#ffff00",
+                        LocationType::AsteroidBase => "#aa5500",
+                        LocationType::DerelictShip => "#5500aa",
+                        _ => "#aaaaaa",
+                    }
+                };
+
+                self.ctx.set_fill_style_str(color);
+                self.ctx.begin_path();
+                self.ctx.arc(sx, sy, r, 0.0, std::f64::consts::TAU).ok();
+                self.ctx.fill();
+                
+                // Name
+                if is_current || system.visited {
+                    self.ctx.set_font("12px monospace");
+                    self.ctx.set_fill_style_str("#ffffff");
+                    self.ctx.fill_text(system.name, sx + 10.0, sy).ok();
+                }
+            }
+        }
+    }
+
+    pub fn draw_ship_interior(
+        &self,
+        layout: &ShipLayout,
+        player: &Player, // Assuming player has ship_x/y or we use standard x/y
+        crew: &[crate::player::CrewMember],
+        anim_t: f64,
+    ) {
+        // Clear
+        self.ctx.set_fill_style_str("#111111");
+        self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
+
+        let tx_size = 32.0;
+        let offset_x = (self.canvas_w - layout.width as f64 * tx_size) / 2.0;
+        let offset_y = (self.canvas_h - layout.height as f64 * tx_size) / 2.0;
+
+        for (i, tile) in layout.tiles.iter().enumerate() {
+            let x = (i as i32 % layout.width) as f64;
+            let y = (i as i32 / layout.width) as f64;
+            let screen_x = offset_x + x * tx_size;
+            let screen_y = offset_y + y * tx_size;
+
+            let color = match tile {
+                ShipTile::Floor => "#222233",
+                ShipTile::Wall => "#444455",
+                ShipTile::Door => "#666677",
+                ShipTile::Console(_) => "#0088aa",
+                ShipTile::CrewStation(_) => "#00aa88",
+                ShipTile::Decoration(_) => "#333344",
+                ShipTile::Empty => continue,
+            };
+
+            self.ctx.set_fill_style_str(color);
+            self.ctx.fill_rect(screen_x, screen_y, tx_size, tx_size);
+            
+            // Grid lines
+            self.ctx.set_stroke_style_str("#333344");
+            self.ctx.stroke_rect(screen_x, screen_y, tx_size, tx_size);
+        }
+
+        // Draw Player
+        // Assuming player.x/y are used for ship coords in ship mode
+        let px = offset_x + player.x as f64 * tx_size;
+        let py = offset_y + player.y as f64 * tx_size;
+        
+        self.ctx.set_fill_style_str(COL_PLAYER);
+        self.ctx.begin_path();
+        self.ctx.arc(px + tx_size/2.0, py + tx_size/2.0, tx_size/3.0, 0.0, std::f64::consts::TAU).ok();
+        self.ctx.fill();
+    }
+
+    pub fn draw_space_combat(
+        &self,
+        player_ship: &Ship,
+        // enemy_ship: &Ship, // Assuming enemy ship struct is same or similar
+        // For now just draw HUD
+        anim_t: f64,
+    ) {
+        self.ctx.set_fill_style_str("#000000");
+        self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
+        
+        // Draw Player Ship (Left)
+        self.ctx.set_fill_style_str("#00ccdd");
+        self.ctx.fill_rect(100.0, 300.0, 100.0, 60.0);
+        
+        // Draw Enemy Ship (Right)
+        self.ctx.set_fill_style_str("#ff5555");
+        self.ctx.fill_rect(self.canvas_w - 200.0, 300.0, 100.0, 60.0);
+        
+        // UI
+        self.ctx.set_font("20px monospace");
+        self.ctx.set_fill_style_str("#ffffff");
+        self.ctx.fill_text(&format!("Hull: {}/{}", player_ship.hull, player_ship.max_hull), 20.0, 40.0).ok();
+        self.ctx.fill_text(&format!("Shields: {}/{}", player_ship.shields, player_ship.max_shields), 20.0, 70.0).ok();
+    }
+
+    pub fn draw_event(
+        &self,
+        event: &SpaceEvent,
+        cursor: usize,
+    ) {
+        // Overlay background
+        self.ctx.set_fill_style_str("rgba(0, 0, 0, 0.9)");
+        self.ctx.fill_rect(50.0, 50.0, self.canvas_w - 100.0, self.canvas_h - 100.0);
+        
+        self.ctx.set_stroke_style_str("#00ccdd");
+        self.ctx.set_line_width(2.0);
+        self.ctx.stroke_rect(50.0, 50.0, self.canvas_w - 100.0, self.canvas_h - 100.0);
+        
+        // Title
+        self.ctx.set_font("bold 24px serif");
+        self.ctx.set_fill_style_str("#ffffff");
+        self.ctx.set_text_align("center");
+        self.ctx.fill_text(event.title, self.canvas_w / 2.0, 100.0).ok();
+        
+        self.ctx.set_font("20px serif");
+        self.ctx.set_fill_style_str("#cccccc");
+        self.ctx.fill_text(event.chinese_title, self.canvas_w / 2.0, 130.0).ok();
+        
+        // Description (simple wrap)
+        self.ctx.set_font("16px monospace");
+        self.ctx.set_fill_style_str("#aaaaaa");
+        self.ctx.set_text_align("left");
+        self.ctx.fill_text(event.description, 80.0, 180.0).ok();
+        
+        // Choices
+        let start_y = 300.0;
+        for (i, choice) in event.choices.iter().enumerate() {
+            let y = start_y + i as f64 * 40.0;
+            if i == cursor {
+                self.ctx.set_fill_style_str("#004455");
+                self.ctx.fill_rect(70.0, y - 20.0, self.canvas_w - 140.0, 30.0);
+                self.ctx.set_fill_style_str("#ffffff");
+            } else {
+                self.ctx.set_fill_style_str("#888888");
+            }
+            self.ctx.fill_text(&format!("{}. {}", i+1, choice.text), 80.0, y).ok();
+        }
+    }
+}
+
+
+

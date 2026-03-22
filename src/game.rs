@@ -11,12 +11,15 @@ use crate::achievement::AchievementTracker;
 use crate::audio::Audio;
 use crate::codex::Codex;
 use crate::combat;
-use crate::dungeon::{compute_fov, AltarKind, DungeonLevel, RoomModifier, SealKind, SpecialRoomKind, Tile};
+use crate::world::{compute_fov, TerminalKind, AltarKind, DungeonLevel, RoomModifier, SecuritySeal, SealKind, SpecialRoomKind, Tile, LocationType};
+use crate::world::starmap::{SectorMap, generate_sector};
+use crate::world::ship::{ShipLayout, ShipRoom, ShipTile, generate_ship_layout, get_console_room, get_room_at, tile_at as ship_tile_at, is_walkable as ship_is_walkable};
+use crate::world::events::{SpaceEvent, EventOutcome, select_event};
 use crate::enemy::{BossKind, Enemy, RadicalAction};
 use crate::particle::ParticleSystem;
 use crate::player::{
-    Deity, EquipEffect, Item, ItemKind, ItemState, Player, PlayerClass, PlayerForm, EQUIPMENT_POOL,
-    ITEM_KIND_COUNT, MYSTERY_ITEM_APPEARANCES,
+    Faction, EquipEffect, Item, ItemKind, ItemState, Player, PlayerClass, PlayerForm, EQUIPMENT_POOL,
+    ITEM_KIND_COUNT, MYSTERY_ITEM_APPEARANCES, Ship, CrewMember, CrewRole,
 };
 use crate::radical::{self, Spell, SpellEffect};
 use crate::render::Renderer;
@@ -34,28 +37,28 @@ const LOOK_RANGE: i32 = 3;
 /// Companion NPC that follows the player.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Companion {
-    Teacher,
-    Monk,
-    Merchant,
-    Guard,
+    ScienceOfficer,
+    Medic,
+    Quartermaster,
+    SecurityChief,
 }
 
 impl Companion {
     pub fn name(&self) -> &'static str {
         match self {
-            Companion::Teacher => "Teacher 师",
-            Companion::Monk => "Monk 僧",
-            Companion::Merchant => "Merchant 商",
-            Companion::Guard => "Guard 卫",
+            Companion::ScienceOfficer => "Science Officer 研",
+            Companion::Medic => "Medic 医",
+            Companion::Quartermaster => "Quartermaster 商",
+            Companion::SecurityChief => "Security Chief 卫",
         }
     }
 
     pub fn icon(&self) -> &'static str {
         match self {
-            Companion::Teacher => "📚",
-            Companion::Monk => "🧘",
-            Companion::Merchant => "💰",
-            Companion::Guard => "🛡",
+            Companion::ScienceOfficer => "🔬",
+            Companion::Medic => "💊",
+            Companion::Quartermaster => "📦",
+            Companion::SecurityChief => "🛡",
         }
     }
 
@@ -85,7 +88,7 @@ impl Companion {
 
     pub fn shop_discount_pct(&self, level: u8) -> i32 {
         match self {
-            Companion::Merchant => {
+            Companion::Quartermaster => {
                 if level >= 2 {
                     25
                 } else {
@@ -98,7 +101,7 @@ impl Companion {
 
     pub fn heal_per_floor(&self, level: u8) -> i32 {
         match self {
-            Companion::Monk => {
+            Companion::Medic => {
                 if level >= 2 {
                     2
                 } else {
@@ -111,7 +114,7 @@ impl Companion {
 
     pub fn guard_max_blocks(&self, level: u8) -> u8 {
         match self {
-            Companion::Guard => {
+            Companion::SecurityChief => {
                 if level >= 3 {
                     2
                 } else {
@@ -124,7 +127,7 @@ impl Companion {
 
     pub fn guard_second_block_chance(&self, level: u8) -> u64 {
         match self {
-            Companion::Guard => {
+            Companion::SecurityChief => {
                 if level >= 3 {
                     100
                 } else if level >= 2 {
@@ -146,13 +149,13 @@ impl Companion {
         level: u8,
     ) -> Option<String> {
         match self {
-            Companion::Teacher => {
+            Companion::ScienceOfficer => {
                 let first_char = enemy
                     .meaning
                     .split_whitespace()
                     .next()
                     .unwrap_or(enemy.meaning);
-                let mut hint = format!("📚 Hint: {} means \"{}\"", enemy.hanzi, first_char);
+                let mut hint = format!("🔬 Hint: {} means \"{}\"", enemy.hanzi, first_char);
                 if level >= 2 {
                     hint.push_str(&format!(" ({})", enemy.pinyin));
                 }
@@ -165,25 +168,25 @@ impl Companion {
                 }
                 Some(hint)
             }
-            Companion::Monk => {
+            Companion::Medic => {
                 if player_hp <= player_max_hp / 3 {
                     let heal = self.heal_per_floor(level);
                     Some(format!(
-                        "🧘 Stay focused. I'll mend {} HP next floor.",
+                        "💊 Stay focused. I'll mend {} HP next deck.",
                         heal
                     ))
                 } else {
                     None
                 }
             }
-            Companion::Merchant => {
+            Companion::Quartermaster => {
                 if enemy.gold_value >= 20 {
-                    Some(format!("💰 That one's worth {} gold!", enemy.gold_value))
+                    Some(format!("📦 That one's worth {} credits!", enemy.gold_value))
                 } else {
                     None
                 }
             }
-            Companion::Guard => {
+            Companion::SecurityChief => {
                 if !guard_used {
                     let blocks = self.guard_max_blocks(level);
                     if blocks > 1 {
@@ -197,6 +200,16 @@ impl Companion {
             }
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum GameMode {
+    Starmap,
+    ShipInterior,
+    LocationExploration,
+    GroundCombat,
+    SpaceCombat,
+    Event,
 }
 
 // ── Run Journal ────────────────────────────────────────────────────
@@ -1381,6 +1394,25 @@ pub struct GameState {
     pub crafting_first: Option<usize>,
     /// Cursor position while selecting items for crafting
     pub crafting_cursor: usize,
+    /// Current game mode (Starmap/ShipInterior/etc.)
+    pub game_mode: GameMode,
+    /// Sector map for space exploration
+    pub sector_map: Option<SectorMap>,
+    /// Ship interior layout
+    pub ship_layout: ShipLayout,
+    /// Ship stats (hull, fuel, shields)
+    pub ship: Ship,
+    /// Crew members aboard the ship
+    pub crew: Vec<CrewMember>,
+    /// Current event index (if in Event mode)
+    pub current_event: Option<usize>,
+    /// Cursor for event choice selection
+    pub event_choice_cursor: usize,
+    /// Player position inside ship
+    pub ship_player_x: i32,
+    pub ship_player_y: i32,
+    /// Cursor for starmap system selection
+    pub starmap_cursor: usize,
 }
 
 impl GameState {
@@ -1522,43 +1554,43 @@ impl GameState {
     fn make_player(&mut self, x: i32, y: i32, class: PlayerClass) -> Player {
         let mut player = Player::new(x, y, class);
         match class {
-            PlayerClass::Warrior => {
+            PlayerClass::Soldier => {
                 player.weapon = Some(&crate::player::EQUIPMENT_POOL[0]); // Brush of Clarity
             }
-            PlayerClass::Herbalist => {
-                player.items.push(crate::player::Item::HealthPotion(5));
+            PlayerClass::Mystic => {
+                player.items.push(crate::player::Item::MedHypo(5));
                 player.item_states.push(ItemState::Normal);
-                player.items.push(crate::player::Item::HealthPotion(5));
+                player.items.push(crate::player::Item::MedHypo(5));
                 player.item_states.push(ItemState::Normal);
             }
-            PlayerClass::Thief => {
+            PlayerClass::Operative => {
                 player.gold += 20;
             }
-            PlayerClass::Swordsman => {
+            PlayerClass::Soldier => {
                 player.weapon = Some(&crate::player::EQUIPMENT_POOL[1]); // Scholar's Quill
             }
-            PlayerClass::Merchant => {
+            PlayerClass::Envoy => {
                 player.gold += 15;
                 player.shop_discount_pct = 20;
             }
-            PlayerClass::Pilgrim => {
-                player.add_piety(crate::player::Deity::Jade, 5);
+            PlayerClass::Envoy => {
+                player.add_piety(crate::player::Faction::Consortium, 5);
             }
-            PlayerClass::Beastmaster => {
-                self.companion = Some(Companion::Guard);
+            PlayerClass::Operative => {
+                self.companion = Some(Companion::SecurityChief);
             }
-            PlayerClass::Earthmover => {
+            PlayerClass::Soldier => {
                 player.weapon = Some(&crate::player::EQUIPMENT_POOL[10]); // Iron Pickaxe
             }
-            PlayerClass::Ironclad => {
+            PlayerClass::Soldier => {
                 player.armor = Some(&crate::player::EQUIPMENT_POOL[3]); // Jade Vest
             }
-            PlayerClass::Inkmaster => {
+            PlayerClass::Technomancer => {
                 player.radicals.push("木");
                 player.radicals.push("水");
                 player.radicals.push("火");
             }
-            PlayerClass::Shaman => {
+            PlayerClass::Mystic => {
                 player.spells.push(crate::radical::Spell {
                     hanzi: "炎",
                     pinyin: "yán",
@@ -1629,13 +1661,13 @@ impl GameState {
         let level = self.companion_level();
 
         let hint: Option<String> = match comp {
-            Companion::Teacher => {
+            Companion::ScienceOfficer => {
                 let mut forge_visible = false;
                 for y in 0..h {
                     for x in 0..w {
                         let idx = y * w + x;
                         if self.level.visible[idx as usize]
-                            && self.level.tiles[idx as usize] == Tile::Forge
+                            && self.level.tiles[idx as usize] == Tile::QuantumForge
                         {
                             forge_visible = true;
                             break;
@@ -1651,7 +1683,7 @@ impl GameState {
                     None
                 }
             }
-            Companion::Monk => {
+            Companion::Medic => {
                 if self.player.hp <= self.player.max_hp / 3 {
                     let mut shrine_visible = false;
                     for y in 0..h {
@@ -1659,9 +1691,9 @@ impl GameState {
                             let idx = y * w + x;
                             if self.level.visible[idx as usize] {
                                 let t = self.level.tiles[idx as usize];
-                                if t == Tile::Shrine
-                                    || matches!(t, Tile::Altar(_))
-                                    || t == Tile::AncestorShrine
+                                if t == Tile::CircuitShrine
+                                    || matches!(t, Tile::Terminal(_))
+                                    || t == Tile::MemorialNode
                                 {
                                     shrine_visible = true;
                                     break;
@@ -1673,7 +1705,7 @@ impl GameState {
                         }
                     }
                     if shrine_visible {
-                        let heal = Companion::Monk.heal_per_floor(level);
+                        let heal = Companion::Medic.heal_per_floor(level);
                         Some(format!(
                             "🧘 A shrine nearby — rest may help. I'll mend {} HP next floor.",
                             heal
@@ -1685,14 +1717,14 @@ impl GameState {
                     None
                 }
             }
-            Companion::Merchant => {
+            Companion::Quartermaster => {
                 if self.floor_profile.radical_drop_bonus() {
                     let mut chest_visible = false;
                     for y in 0..h {
                         for x in 0..w {
                             let idx = y * w + x;
                             if self.level.visible[idx as usize]
-                                && self.level.tiles[idx as usize] == Tile::Chest
+                                && self.level.tiles[idx as usize] == Tile::SupplyCrate
                             {
                                 chest_visible = true;
                                 break;
@@ -1711,7 +1743,7 @@ impl GameState {
                     None
                 }
             }
-            Companion::Guard => {
+            Companion::SecurityChief => {
                 let px = self.player.x;
                 let py = self.player.y;
                 let alert_count = self
@@ -1725,7 +1757,7 @@ impl GameState {
                     })
                     .count();
                 if alert_count >= 3 {
-                    let blocks = Companion::Guard.guard_max_blocks(level);
+                    let blocks = Companion::SecurityChief.guard_max_blocks(level);
                     Some(format!(
                         "🛡 {} enemies closing in! I can block {} hit{}.",
                         alert_count,
@@ -1815,17 +1847,17 @@ impl GameState {
             // Boss in second-to-last room on boss floors
             if is_boss_floor && i == rooms.len() - 2 {
                 let entry: &'static VocabEntry = match BossKind::for_floor(self.floor_num) {
-                    Some(BossKind::Gatekeeper) => Self::vocab_entry_by_hanzi("门")
+                    Some(BossKind::PirateCaptain) => Self::vocab_entry_by_hanzi("门")
                         .unwrap_or(pool[self.rng_next() as usize % pool.len()]),
-                    Some(BossKind::Scholar) => Self::vocab_entry_by_hanzi("学")
+                    Some(BossKind::HiveQueen) => Self::vocab_entry_by_hanzi("学")
                         .unwrap_or(pool[self.rng_next() as usize % pool.len()]),
-                    Some(BossKind::Elementalist) => Self::vocab_entry_by_hanzi("电")
+                    Some(BossKind::RogueAICore) => Self::vocab_entry_by_hanzi("电")
                         .unwrap_or(pool[self.rng_next() as usize % pool.len()]),
-                    Some(BossKind::MimicKing) => Self::vocab_entry_by_hanzi("王")
+                    Some(BossKind::VoidEntity) => Self::vocab_entry_by_hanzi("王")
                         .unwrap_or(pool[self.rng_next() as usize % pool.len()]),
-                    Some(BossKind::InkSage) => Self::vocab_entry_by_hanzi("书")
+                    Some(BossKind::AncientGuardian) => Self::vocab_entry_by_hanzi("书")
                         .unwrap_or(pool[self.rng_next() as usize % pool.len()]),
-                    Some(BossKind::RadicalThief) => Self::vocab_entry_by_hanzi("盗")
+                    Some(BossKind::DriftLeviathan) => Self::vocab_entry_by_hanzi("盗")
                         .unwrap_or(pool[self.rng_next() as usize % pool.len()]),
                     None => pool[self.rng_next() as usize % pool.len()],
                 };
@@ -1850,7 +1882,7 @@ impl GameState {
 
     fn start_tutorial(&mut self, class: PlayerClass) {
         self.floor_num = 0;
-        self.srs.current_floor = 0;
+        self.srs.current_deck = 0;
         self.level = DungeonLevel::tutorial(MAP_W, MAP_H);
         let (sx, sy) = self.level.start_pos();
         self.player = self.make_player(sx, sy, class);
@@ -1953,7 +1985,7 @@ impl GameState {
         let has_piety = self.player.piety.iter().any(|(d, _)| *d == god);
 
         if !has_piety {
-            if let Some(highest) = self.player.highest_deity() {
+            if let Some(highest) = self.player.highest_faction() {
                 if highest != god && self.player.get_piety(highest) >= 15 {
                     self.player.add_piety(highest, -3);
                     self.message = format!(
@@ -1977,11 +2009,11 @@ impl GameState {
         };
 
         let god_name = match kind {
-            AltarKind::Jade => "Jade Emperor",
-            AltarKind::Gale => "Wind Walker",
-            AltarKind::Mirror => "Mirror Sage",
-            AltarKind::Iron => "Iron General",
-            AltarKind::Gold => "Golden Toad",
+            TerminalKind::Quantum => "Quantum Sage",
+            TerminalKind::Stellar => "Stellar Navigator",
+            TerminalKind::Holographic => "Holo Architect",
+            TerminalKind::Tactical => "Tactical Commander",
+            TerminalKind::Commerce => "Trade Consortium",
         };
         if !(!has_piety && self.message.contains("disapproves")) {
             self.message = format!("You kneel before the Altar of {}.", god_name);
@@ -2021,7 +2053,7 @@ impl GameState {
                 self.saved_battle = Some(battle);
             }
         }
-        if self.enemies[enemy_idx].boss_kind == Some(BossKind::Gatekeeper)
+        if self.enemies[enemy_idx].boss_kind == Some(BossKind::PirateCaptain)
             && !self.enemies[enemy_idx].phase_triggered
             && self.enemies[enemy_idx].hp <= self.enemies[enemy_idx].max_hp / 2
         {
@@ -2032,11 +2064,11 @@ impl GameState {
                     success_damage: 4 + self.floor_num / 3,
                     failure_damage_to_player: 3 + self.floor_num / 4,
                 },
-                "🔒 The Gatekeeper invokes a seal! Arrange the sentence to shatter it.".to_string(),
+                "🔒 The Pirate Captain activates a lockdown seal! Arrange the sentence to shatter it.".to_string(),
             );
             return true;
         }
-        if self.enemies[enemy_idx].boss_kind == Some(BossKind::Scholar)
+        if self.enemies[enemy_idx].boss_kind == Some(BossKind::HiveQueen)
             && !self.enemies[enemy_idx].phase_triggered
             && self.enemies[enemy_idx].hp <= self.enemies[enemy_idx].max_hp / 2
         {
@@ -2047,12 +2079,12 @@ impl GameState {
                     success_damage: 6 + self.floor_num / 2,
                     failure_heal: 3 + self.floor_num / 5,
                 },
-                "📜 The Scholar conjures a syntax duel! Arrange the sentence to break the ward."
+                "📜 The Hive Queen emits a psionic syntax duel! Arrange the sentence to break the swarm link."
                     .to_string(),
             );
             return true;
         }
-        if self.enemies[enemy_idx].boss_kind == Some(BossKind::InkSage)
+        if self.enemies[enemy_idx].boss_kind == Some(BossKind::AncientGuardian)
             && !self.enemies[enemy_idx].phase_triggered
             && self.enemies[enemy_idx].hp <= self.enemies[enemy_idx].max_hp / 2
         {
@@ -2063,7 +2095,7 @@ impl GameState {
                     success_damage: 8 + self.floor_num / 2,
                     failure_heal: 5 + self.floor_num / 4,
                 },
-                "🖌 The Ink Sage paints a calligraphy trial! Arrange the sentence to dispel the ink ward."
+                "🖌 The Ancient Guardian projects a glyph trial! Arrange the sentence to dispel the energy ward."
                     .to_string(),
             );
             return true;
@@ -2167,17 +2199,17 @@ impl GameState {
             return;
         }
         let idx = self.level.idx(x, y);
-        if !matches!(self.level.tiles[idx], Tile::Seal(current) if current == kind) {
+        if !matches!(self.level.tiles[idx], Tile::SecurityLock(current) if current == kind) {
             return;
         }
-        self.level.tiles[idx] = Tile::Floor;
+        self.level.tiles[idx] = Tile::MetalFloor;
 
         let visible = self.level.visible[idx] || triggerer.is_none();
         let (sx, sy) = self.tile_to_screen(x, y);
         let affected_tiles = seal_cross_positions(x, y);
         match kind {
-            SealKind::Ember => {
-                let changed = self.paint_seal_cross(x, y, Tile::Oil);
+            SecuritySeal::Thermal => {
+                let changed = self.paint_seal_cross(x, y, Tile::Coolant);
                 if visible {
                     self.particles.spawn_fire(sx, sy, &mut self.rng_state);
                     self.flash = Some((255, 128, 80, 0.16));
@@ -2197,8 +2229,8 @@ impl GameState {
                     self.message_timer = 90;
                 }
             }
-            SealKind::Tide => {
-                let changed = self.paint_seal_cross(x, y, Tile::Water);
+            SecuritySeal::Hydraulic => {
+                let changed = self.paint_seal_cross(x, y, Tile::CoolantPool);
                 let stunned = self.stun_enemies_on_tiles(&affected_tiles);
                 if visible {
                     self.particles.spawn_shield(sx, sy, &mut self.rng_state);
@@ -2221,8 +2253,8 @@ impl GameState {
                     self.message_timer = 90;
                 }
             }
-            SealKind::Thorn => {
-                let changed = self.paint_seal_cross(x, y, Tile::Spikes);
+            SecuritySeal::Kinetic => {
+                let changed = self.paint_seal_cross(x, y, Tile::LaserGrid);
                 let pricked = self.damage_enemies_on_tiles(&affected_tiles);
                 if visible {
                     self.particles.spawn_damage(sx, sy, &mut self.rng_state);
@@ -2245,7 +2277,7 @@ impl GameState {
                     self.message_timer = 90;
                 }
             }
-            SealKind::Echo => {
+            SecuritySeal::Sonic => {
                 let ambusher = self.spawn_seal_ambusher(x, y);
                 if visible {
                     self.particles.spawn_drain(sx, sy, &mut self.rng_state);
@@ -2281,7 +2313,7 @@ impl GameState {
 
     fn apply_player_tile_effect(&mut self, tile: Tile) {
         match tile {
-            Tile::Spikes => {
+            Tile::LaserGrid => {
                 let dmg = (1 + self.floor_num.max(1) / 3).max(1);
                 self.player.hp -= dmg;
                 if let Some(ref audio) = self.audio {
@@ -2307,11 +2339,11 @@ impl GameState {
                     self.save_high_score();
                 }
             }
-            Tile::Oil => {
+            Tile::Coolant => {
                 self.message = "🛢 Oil slick — fire magic will ignite nearby puddles.".to_string();
                 self.message_timer = 60;
             }
-            Tile::Water => {
+            Tile::CoolantPool => {
                 self.message = "≈ Shallow water — stunning magic can arc through it.".to_string();
                 self.message_timer = 60;
                 if let Some(ref audio) = self.audio {
@@ -2320,7 +2352,7 @@ impl GameState {
             }
             Tile::Trap(trap_type) => {
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Floor; // trap consumed
+                self.level.tiles[idx] = Tile::MetalFloor; // trap consumed
                 match trap_type {
                     0 => {
                         // Poison trap
@@ -2341,7 +2373,7 @@ impl GameState {
                             let rx = (self.rng_next() % MAP_W as u64) as i32;
                             let ry = (self.rng_next() % MAP_H as u64) as i32;
                             let ri = self.level.idx(rx, ry);
-                            if matches!(self.level.tiles[ri], Tile::Floor | Tile::Corridor)
+                            if matches!(self.level.tiles[ri], Tile::MetalFloor | Tile::Hallway)
                                 && self.level.revealed[ri]
                             {
                                 self.player.x = rx;
@@ -2375,7 +2407,7 @@ impl GameState {
                     audio.play_damage();
                 }
             }
-            Tile::Lava => {
+            Tile::PlasmaVent => {
                 let dmg = (2 + self.floor_num.max(1) / 2).max(2);
                 self.player.hp -= dmg;
                 if let Some(ref audio) = self.audio {
@@ -2402,16 +2434,16 @@ impl GameState {
                     self.save_high_score();
                 }
             }
-            Tile::Ice => {
+            Tile::FrozenDeck => {
                 self.message = "❄ Ice! The floor is slippery.".to_string();
                 self.message_timer = 40;
             }
-            Tile::Mushroom => {
+            Tile::ToxicFungus => {
                 self.message = "🍄 Spore cloud! You feel disoriented.".to_string();
                 self.message_timer = 60;
                 self.flash = Some((180, 100, 255, 0.15));
             }
-            Tile::PoisonGas => {
+            Tile::ToxicGas => {
                 self.player
                     .statuses
                     .push(crate::status::StatusInstance::new(
@@ -2426,23 +2458,23 @@ impl GameState {
                     audio.play_damage();
                 }
             }
-            Tile::GoldPile => {
+            Tile::CreditCache => {
                 let gold = 5 + (self.rng_next() % 16) as i32;
                 self.player.gold += gold;
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 self.message = format!("💰 You pick up {} gold!", gold);
                 self.message_timer = 50;
                 if let Some(ref audio) = self.audio {
                     audio.play_treasure();
                 }
             }
-            Tile::SpiritSpringTile => {
+            Tile::MedBayTile => {
                 let heal = self.player.max_hp / 2;
                 self.player.hp = (self.player.hp + heal).min(self.player.max_hp);
                 self.player.spirit = (self.player.spirit + 20).min(self.player.max_spirit);
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Water;
+                self.level.tiles[idx] = Tile::CoolantPool;
                 self.message = format!("🌊 The spirit spring heals {} HP and restores 20 spirit!", heal);
                 self.message_timer = 80;
                 self.flash = Some((100, 255, 200, 0.2));
@@ -2462,7 +2494,7 @@ impl GameState {
             .level
             .tile(self.enemies[enemy_idx].x, self.enemies[enemy_idx].y);
         match tile {
-            Tile::Spikes => {
+            Tile::LaserGrid => {
                 self.enemies[enemy_idx].hp -= 1;
                 if self.enemies[enemy_idx].hp <= 0 {
                     let e_hanzi = self.enemies[enemy_idx].hanzi;
@@ -2475,7 +2507,7 @@ impl GameState {
                     }
                 }
             }
-            Tile::Seal(kind) => {
+            Tile::SecurityLock(kind) => {
                 let (x, y, name) = (
                     self.enemies[enemy_idx].x,
                     self.enemies[enemy_idx].y,
@@ -2493,7 +2525,7 @@ impl GameState {
         for y in 0..self.level.height {
             for x in 0..self.level.width {
                 let idx = self.level.idx(x, y);
-                if self.level.visible[idx] && self.level.tiles[idx] == Tile::Oil {
+                if self.level.visible[idx] && self.level.tiles[idx] == Tile::Coolant {
                     oil_tiles.push((x, y));
                     oil_screens.push(self.tile_to_screen(x, y));
                 }
@@ -2501,7 +2533,7 @@ impl GameState {
         }
         for &(x, y) in &oil_tiles {
             let idx = self.level.idx(x, y);
-            self.level.tiles[idx] = Tile::Floor;
+            self.level.tiles[idx] = Tile::MetalFloor;
         }
         for (sx, sy) in oil_screens {
             self.particles.spawn_fire(sx, sy, &mut self.rng_state);
@@ -2535,7 +2567,7 @@ impl GameState {
             for x in 0..self.level.width {
                 let idx = self.level.idx(x, y);
                 if self.level.visible[idx]
-                    && matches!(self.level.tiles[idx], Tile::Water | Tile::DeepWater)
+                    && matches!(self.level.tiles[idx], Tile::CoolantPool | Tile::VacuumBreach)
                 {
                     water_tiles.push((x, y));
                     water_screens.push(self.tile_to_screen(x, y));
@@ -2578,7 +2610,7 @@ impl GameState {
         self.codex.save();
         self.floor_num += 1;
         self.run_journal.log(RunEvent::EnteredFloor(self.floor_num));
-        self.srs.current_floor = self.floor_num;
+        self.srs.current_deck = self.floor_num;
         self.tutorial = None;
         self.merchant_reroll_used = false;
         self.shop_banned = false;
@@ -2588,7 +2620,7 @@ impl GameState {
         self.seed = self.seed.wrapping_mul(6364136223846793005).wrapping_add(1);
         self.rng_state = self.seed;
         self.floor_profile = FloorProfile::roll(self.floor_num, self.rng_next());
-        self.level = DungeonLevel::generate(MAP_W, MAP_H, self.seed, self.floor_num);
+        self.level = DungeonLevel::generate(MAP_W, MAP_H, self.seed, self.floor_num, crate::world::LocationType::OrbitalPlatform);
         let (sx, sy) = self.level.start_pos();
         self.player.move_to(sx, sy);
         self.enemies.clear();
@@ -2599,9 +2631,9 @@ impl GameState {
         compute_fov(&mut self.level, px, py, FOV_RADIUS);
         self.achievements.check_floor(self.floor_num);
 
-        if self.companion == Some(Companion::Monk) {
+        if self.companion == Some(Companion::Medic) {
             let lvl = self.companion_level();
-            let heal = Companion::Monk.heal_per_floor(lvl);
+            let heal = Companion::Medic.heal_per_floor(lvl);
             let max_hp = self.player.max_hp;
             if self.player.hp < max_hp && heal > 0 {
                 self.player.hp = (self.player.hp + heal).min(max_hp);
@@ -2618,13 +2650,13 @@ impl GameState {
         }
 
         if self.floor_num > 1 {
-            if self.player.get_piety(Deity::Jade) >= 10 && self.player.get_piety(Deity::Gold) >= 10
+            if self.player.get_piety(Faction::Consortium) >= 10 && self.player.get_piety(Faction::AncientOrder) >= 10
             {
                 self.player.gold += 5;
             }
         }
 
-        if self.player.get_piety(Deity::Mirror) >= 10 && self.player.get_piety(Deity::Gale) >= 10 {
+        if self.player.get_piety(Faction::Technocracy) >= 10 && self.player.get_piety(Faction::FreeTraders) >= 10 {
             if (self.rng_next() % 100) < 25 {
                 self.reveal_entire_floor();
                 let (sx, sy) = self.tile_to_screen(self.player.x, self.player.y);
@@ -2636,7 +2668,7 @@ impl GameState {
             }
         }
 
-        if self.player.get_piety(Deity::Gale) >= 10 && self.player.get_piety(Deity::Gold) >= 10 {
+        if self.player.get_piety(Faction::FreeTraders) >= 10 && self.player.get_piety(Faction::AncientOrder) >= 10 {
             if (self.rng_next() % 100) < 25 {
                 let mut tries = 0;
                 while tries < 100 {
@@ -2644,11 +2676,11 @@ impl GameState {
                     let ry = (self.rng_next() % (MAP_H as u64)) as i32;
                     if self.level.in_bounds(rx, ry)
                         && self.level.is_walkable(rx, ry)
-                        && self.level.tile(rx, ry) == Tile::Floor
+                        && self.level.tile(rx, ry) == Tile::MetalFloor
                     {
                         if (rx, ry) != (self.player.x, self.player.y) {
                             let idx = self.level.idx(rx, ry);
-                            self.level.tiles[idx] = Tile::Chest;
+                            self.level.tiles[idx] = Tile::SupplyCrate;
                             break;
                         }
                     }
@@ -2740,13 +2772,13 @@ impl GameState {
 
         match special {
             // ── Risk/Reward Rooms ────────────────────────────────────
-            SpecialRoomKind::GamblingDen => {
+            SpecialRoomKind::WanderingMerchant => {
                 // Triggered when stepping on a Chest tile
-                if target_tile != Tile::Chest { return; }
+                if target_tile != Tile::SupplyCrate { return; }
                 self.mark_room_completed();
                 let roll = self.rng_next() % 3;
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 match roll {
                     0 => {
                         // Great reward: rare radical + gold
@@ -2762,7 +2794,7 @@ impl GameState {
                     }
                     1 => {
                         // Decent: random item
-                        let _ = self.player.add_item(Item::HealthPotion(8), ItemState::Normal);
+                        let _ = self.player.add_item(Item::MedHypo(8), ItemState::Normal);
                         self.message = "🎰 You find a Health Potion inside the urn.".to_string();
                         if let Some(ref audio) = self.audio {
                             audio.play_treasure();
@@ -2787,8 +2819,8 @@ impl GameState {
                 self.message_timer = 100;
             }
 
-            SpecialRoomKind::BloodAltar => {
-                if target_tile != Tile::Altar(AltarKind::Iron) { return; }
+            SpecialRoomKind::EnergyNexus => {
+                if target_tile != Tile::Terminal(TerminalKind::Tactical) { return; }
                 if self.player.hp <= 5 {
                     self.message = "🩸 You're too weak to sacrifice. You need more than 5 HP.".to_string();
                     self.message_timer = 80;
@@ -2798,7 +2830,7 @@ impl GameState {
                 self.player.hp -= 5;
                 self.player.tone_bonus_damage += 1;
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 self.message = "🩸 You sacrifice 5 HP. Permanent +1 damage gained!".to_string();
                 self.message_timer = 100;
                 self.trigger_shake(6);
@@ -2808,11 +2840,11 @@ impl GameState {
                 }
             }
 
-            SpecialRoomKind::CursedTreasure => {
-                if target_tile != Tile::Chest { return; }
+            SpecialRoomKind::CursedSalvage => {
+                if target_tile != Tile::SupplyCrate { return; }
                 self.mark_room_completed();
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 // Great loot: high-tier equipment + gold
                 let equip_idx = 2 + (self.rng_next() as usize % 3); // Dragon Fang Pen or better
                 let equip = &EQUIPMENT_POOL[equip_idx.min(EQUIPMENT_POOL.len() - 1)];
@@ -2833,7 +2865,7 @@ impl GameState {
             }
 
             SpecialRoomKind::SoulForge => {
-                if target_tile != Tile::Forge { return; }
+                if target_tile != Tile::QuantumForge { return; }
                 if self.player.radicals.is_empty() {
                     self.message = "🔮 The Soul Forge flickers — you have no radicals to offer.".to_string();
                     self.message_timer = 80;
@@ -2841,7 +2873,7 @@ impl GameState {
                 }
                 self.mark_room_completed();
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 // Remove a random radical and give a different one
                 let remove_idx = self.rng_next() as usize % self.player.radicals.len();
                 let old = self.player.radicals.remove(remove_idx);
@@ -2856,9 +2888,9 @@ impl GameState {
                 }
             }
 
-            SpecialRoomKind::WishingWell => {
+            SpecialRoomKind::ChemLab => {
                 // Triggered when stepping on DeepWater (the well center)
-                if target_tile != Tile::DeepWater { return; }
+                if target_tile != Tile::VacuumBreach { return; }
                 self.mark_room_completed();
                 // Tiered cost: take what the player can afford
                 let (cost, reward_tier) = if self.player.gold >= 50 {
@@ -2875,7 +2907,7 @@ impl GameState {
                 self.player.gold -= cost;
                 match reward_tier {
                     0 => {
-                        let _ = self.player.add_item(Item::HealthPotion(10), ItemState::Normal);
+                        let _ = self.player.add_item(Item::MedHypo(10), ItemState::Normal);
                         self.message = format!("🪙 You throw {} gold. A potion rises from the depths!", cost);
                     }
                     1 => {
@@ -2902,12 +2934,12 @@ impl GameState {
             }
 
             // ── Puzzle Rooms ─────────────────────────────────────────
-            SpecialRoomKind::RuneGate => {
+            SpecialRoomKind::WarpGate => {
                 // Stepping on pressure plates in the room
-                if target_tile != Tile::PressurePlate { return; }
+                if target_tile != Tile::PressureSensor { return; }
                 self.mark_room_completed();
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 // Simplified: each plate gives a reward or penalty
                 if self.rng_next() % 2 == 0 {
                     let radicals: &[&str] = &["水", "火", "金", "木", "土"];
@@ -2931,14 +2963,14 @@ impl GameState {
                 self.message_timer = 80;
             }
 
-            SpecialRoomKind::MirrorMaze => {
+            SpecialRoomKind::HoloMaze => {
                 // Reward at the center chest
-                if target_tile != Tile::Chest { return; }
+                if target_tile != Tile::SupplyCrate { return; }
                 self.mark_room_completed();
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 self.player.gold += 30 + (self.floor_num * 3) as i32;
-                let _ = self.player.add_item(Item::RevealScroll, ItemState::Normal);
+                let _ = self.player.add_item(Item::ScannerPulse, ItemState::Normal);
                 self.message = format!("🪞 You navigate the mirrors! {} gold + Reveal Scroll!", 30 + self.floor_num * 3);
                 self.message_timer = 100;
                 self.flash = Some((200, 200, 255, 0.2));
@@ -2947,12 +2979,12 @@ impl GameState {
                 }
             }
 
-            SpecialRoomKind::WeightPuzzle => {
+            SpecialRoomKind::GravityPuzzle => {
                 // Reward chest in center after navigating ice + boulders
-                if target_tile != Tile::Chest { return; }
+                if target_tile != Tile::SupplyCrate { return; }
                 self.mark_room_completed();
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 self.player.gold += 40;
                 let eq_idx = self.rng_next() as usize % EQUIPMENT_POOL.len();
                 let equip = &EQUIPMENT_POOL[eq_idx];
@@ -2965,12 +2997,12 @@ impl GameState {
                 }
             }
 
-            SpecialRoomKind::ToneStaircase => {
+            SpecialRoomKind::ToneFrequency => {
                 // Stepping on Shrine tiles (the steps)
-                if target_tile != Tile::Shrine { return; }
+                if target_tile != Tile::CircuitShrine { return; }
                 // Don't mark completed — each shrine is a step
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 self.player.spirit = (self.player.spirit + 5).min(self.player.max_spirit);
                 self.message = "🎵 Correct tone! Spirit +5. Ascend the staircase!".to_string();
                 self.message_timer = 60;
@@ -2979,9 +3011,9 @@ impl GameState {
 
             SpecialRoomKind::ElementalLock => {
                 // Stepping on elemental altars charges the lock
-                if !matches!(target_tile, Tile::Altar(_)) { return; }
+                if !matches!(target_tile, Tile::Terminal(_)) { return; }
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 // Count remaining altars in room
                 let mut remaining = 0;
                 if let Some((rx, ry)) = self.current_room_origin() {
@@ -2991,7 +3023,7 @@ impl GameState {
                                 for tx in room.x..room.x + room.w {
                                     if self.level.in_bounds(tx, ty) {
                                         let ti = self.level.idx(tx, ty);
-                                        if matches!(self.level.tiles[ti], Tile::Altar(_)) {
+                                        if matches!(self.level.tiles[ti], Tile::Terminal(_)) {
                                             remaining += 1;
                                         }
                                     }
@@ -3012,8 +3044,8 @@ impl GameState {
                                     for tx in room.x..room.x + room.w {
                                         if self.level.in_bounds(tx, ty) {
                                             let ti = self.level.idx(tx, ty);
-                                            if self.level.tiles[ti] == Tile::LockedDoor {
-                                                self.level.tiles[ti] = Tile::Chest;
+                                            if self.level.tiles[ti] == Tile::SealedHatch {
+                                                self.level.tiles[ti] = Tile::SupplyCrate;
                                             }
                                         }
                                     }
@@ -3031,12 +3063,12 @@ impl GameState {
             }
 
             // ── Timed/Wave Rooms ─────────────────────────────────────
-            SpecialRoomKind::SurvivalPit => {
+            SpecialRoomKind::SurvivalBay => {
                 // On first entry, give a big bonus (simulate surviving)
-                if target_tile != Tile::Spikes && target_tile != Tile::Floor { return; }
+                if target_tile != Tile::LaserGrid && target_tile != Tile::MetalFloor { return; }
                 // Only trigger once when entering the arena center area
                 if self.player.x != self.level.rooms.iter()
-                    .find(|r| r.special == Some(SpecialRoomKind::SurvivalPit))
+                    .find(|r| r.special == Some(SpecialRoomKind::SurvivalBay))
                     .map(|r| r.x + r.w / 2)
                     .unwrap_or(-1)
                 { return; }
@@ -3051,23 +3083,23 @@ impl GameState {
                 }
             }
 
-            SpecialRoomKind::TreasureRace => {
+            SpecialRoomKind::SalvageRace => {
                 // Gold piles are already placed; tile effects handle pickup
                 // Just show encouragement on entry
-                if target_tile == Tile::GoldPile {
+                if target_tile == Tile::CreditCache {
                     // Normal GoldPile effect handles this via apply_player_tile_effect
                     return;
                 }
             }
 
-            SpecialRoomKind::CollapsingChamber => {
+            SpecialRoomKind::DepressurizingChamber => {
                 // Chest in center is the goal
-                if target_tile != Tile::Chest { return; }
+                if target_tile != Tile::SupplyCrate { return; }
                 self.mark_room_completed();
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 self.player.gold += 60;
-                let _ = self.player.add_item(Item::TeleportScroll, ItemState::Normal);
+                let _ = self.player.add_item(Item::PersonalTeleporter, ItemState::Normal);
                 self.message = "💎 You grab the treasure before the floor collapses! 60 gold + Teleport Scroll!".to_string();
                 self.message_timer = 100;
                 self.flash = Some((255, 200, 100, 0.25));
@@ -3076,11 +3108,11 @@ impl GameState {
                 }
             }
 
-            SpecialRoomKind::InkFlood => {
-                if target_tile == Tile::InkWell {
+            SpecialRoomKind::NanoFlood => {
+                if target_tile == Tile::DataWell {
                     self.mark_room_completed();
                     let idx = self.level.idx(self.player.x, self.player.y);
-                    self.level.tiles[idx] = Tile::Floor;
+                    self.level.tiles[idx] = Tile::MetalFloor;
                     self.player.spell_power_bonus += 1;
                     self.player.hp -= 2;
                     self.message = "🖋 The ink empowers your spells! +1 spell power, but -2 HP from ink exposure.".to_string();
@@ -3091,12 +3123,12 @@ impl GameState {
 
             // ── Transformation/Permanent Rooms ───────────────────────
             SpecialRoomKind::FormShrine => {
-                if target_tile != Tile::Shrine { return; }
+                if target_tile != Tile::CircuitShrine { return; }
                 self.mark_room_completed();
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 // Cycle through forms based on RNG
-                let forms = [PlayerForm::Flame, PlayerForm::Stone, PlayerForm::Mist, PlayerForm::Tiger];
+                let forms = [PlayerForm::Powered, PlayerForm::Cybernetic, PlayerForm::Holographic, PlayerForm::Void];
                 let form = forms[self.rng_next() as usize % forms.len()];
                 self.player.form = form;
                 self.player.form_timer = 0; // permanent
@@ -3109,10 +3141,10 @@ impl GameState {
             }
 
             SpecialRoomKind::ClassTrial => {
-                if !matches!(target_tile, Tile::Altar(_)) { return; }
+                if !matches!(target_tile, Tile::Terminal(_)) { return; }
                 self.mark_room_completed();
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 // Grant class-specific bonus
                 self.player.tone_bonus_damage += 1;
                 self.player.defense_bonus += 1;
@@ -3124,8 +3156,8 @@ impl GameState {
                 }
             }
 
-            SpecialRoomKind::RadicalFountain => {
-                if target_tile != Tile::SpiritSpringTile { return; }
+            SpecialRoomKind::DataArchive => {
+                if target_tile != Tile::MedBayTile { return; }
                 self.mark_room_completed();
                 // The spirit spring tile effect (heal) is handled by apply_player_tile_effect
                 // Additional: permanent spell power bonus
@@ -3135,11 +3167,11 @@ impl GameState {
                 self.flash = Some((150, 255, 200, 0.3));
             }
 
-            SpecialRoomKind::AncestorTomb => {
-                if target_tile != Tile::Chest { return; }
+            SpecialRoomKind::AncestorCrypt => {
+                if target_tile != Tile::SupplyCrate { return; }
                 self.mark_room_completed();
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 // Give a high-tier weapon
                 let high_tier = &EQUIPMENT_POOL[2]; // Dragon Fang Pen (+3 dmg)
                 self.player.equip(high_tier, ItemState::Blessed);
@@ -3152,11 +3184,11 @@ impl GameState {
             }
 
             // ── Story/Lore Rooms ─────────────────────────────────────
-            SpecialRoomKind::ProphecyRoom => {
-                if target_tile != Tile::MirrorPool { return; }
+            SpecialRoomKind::WisdomCore => {
+                if target_tile != Tile::HoloPool { return; }
                 self.mark_room_completed();
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 // Reveal the map + give info
                 for i in 0..self.level.revealed.len() {
                     self.level.revealed[i] = true;
@@ -3170,10 +3202,10 @@ impl GameState {
             }
 
             SpecialRoomKind::SealedMemory => {
-                if target_tile != Tile::Shrine { return; }
+                if target_tile != Tile::CircuitShrine { return; }
                 self.mark_room_completed();
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 // XP/spirit reward for recalling memories
                 self.player.spirit = self.player.max_spirit;
                 self.player.gold += 25;
@@ -3192,7 +3224,7 @@ impl GameState {
                 if target_tile != Tile::Npc(3) { return; }
                 self.mark_room_completed();
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 // Accept the deal: +3 max HP but next floor enemies are tougher
                 self.player.max_hp += 3;
                 self.player.hp += 3;
@@ -3207,7 +3239,7 @@ impl GameState {
             }
 
             SpecialRoomKind::PhoenixNest => {
-                if target_tile == Tile::SpiritSpringTile {
+                if target_tile == Tile::MedBayTile {
                     // Full heal from stepping on spring (handled by tile effect)
                     // Also grant +2 max HP
                     if !self.is_room_completed() {
@@ -3218,11 +3250,11 @@ impl GameState {
                         self.message_timer = 120;
                         self.flash = Some((255, 150, 50, 0.3));
                     }
-                } else if target_tile == Tile::Chest {
+                } else if target_tile == Tile::SupplyCrate {
                     // PhoenixPlume item
                     let idx = self.level.idx(self.player.x, self.player.y);
-                    self.level.tiles[idx] = Tile::Floor;
-                    let _ = self.player.add_item(Item::PhoenixPlume(self.player.max_hp / 2), ItemState::Blessed);
+                    self.level.tiles[idx] = Tile::MetalFloor;
+                    let _ = self.player.add_item(Item::Revitalizer(self.player.max_hp / 2), ItemState::Blessed);
                     self.message = "🔥 You find a blessed Phoenix Plume! Auto-revive on death!".to_string();
                     self.message_timer = 100;
                     if let Some(ref audio) = self.audio {
@@ -3232,10 +3264,10 @@ impl GameState {
             }
 
             SpecialRoomKind::CalligraphyContest => {
-                if target_tile != Tile::InkWell { return; }
+                if target_tile != Tile::DataWell { return; }
                 self.mark_room_completed();
                 let idx = self.level.idx(self.player.x, self.player.y);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 // Score-based gold reward
                 let score = 20 + (self.rng_next() % 40) as i32;
                 self.player.gold += score;
@@ -3254,8 +3286,8 @@ impl GameState {
 
     /// Effective FOV radius (reduced in Dark rooms and Shadow Realm).
     fn effective_fov(&self) -> i32 {
-        let base = if self.current_room_modifier() == Some(RoomModifier::Dark)
-            || self.current_special_room() == Some(SpecialRoomKind::ShadowRealm)
+        let base = if self.current_room_modifier() == Some(RoomModifier::PoweredDown)
+            || self.current_special_room() == Some(SpecialRoomKind::DarkSector)
         {
             2
         } else {
@@ -3425,7 +3457,7 @@ impl GameState {
 
         let (nx, ny) = self.player.intended_move(dx, dy);
         let target_tile = self.level.tile(nx, ny);
-        if target_tile == Tile::Crate {
+        if target_tile == Tile::CargoCrate {
             let pdx = nx - self.player.x;
             let pdy = ny - self.player.y;
             let px = nx + pdx;
@@ -3444,20 +3476,20 @@ impl GameState {
             // Allow pushing into open space or liquids
             let can_push = matches!(
                 push_target_tile,
-                Tile::Floor
-                    | Tile::Corridor
-                    | Tile::Water
-                    | Tile::DeepWater
-                    | Tile::Oil
-                    | Tile::Spikes
-                    | Tile::Bridge
+                Tile::MetalFloor
+                    | Tile::Hallway
+                    | Tile::CoolantPool
+                    | Tile::VacuumBreach
+                    | Tile::Coolant
+                    | Tile::LaserGrid
+                    | Tile::Catwalk
             );
             let enemy_behind = self.enemy_at(px, py).is_some();
 
             if can_push && !enemy_behind {
-                if matches!(push_target_tile, Tile::Water | Tile::DeepWater) {
-                    self.level.tiles[push_target_idx] = Tile::Bridge;
-                    self.message = if push_target_tile == Tile::DeepWater {
+                if matches!(push_target_tile, Tile::CoolantPool | Tile::VacuumBreach) {
+                    self.level.tiles[push_target_idx] = Tile::Catwalk;
+                    self.message = if push_target_tile == Tile::VacuumBreach {
                         "The crate drops into the pool, forming a rough bridge!".to_string()
                     } else {
                         "The crate splashes into place, forming a bridge!".to_string()
@@ -3470,12 +3502,12 @@ impl GameState {
                         audio.play_bridge();
                     }
                 } else {
-                    self.level.tiles[push_target_idx] = Tile::Crate;
+                    self.level.tiles[push_target_idx] = Tile::CargoCrate;
                     self.message = "You shove the crate aside.".to_string();
                     self.message_timer = 40;
                 }
                 let current_idx = self.level.idx(nx, ny);
-                self.level.tiles[current_idx] = Tile::Floor;
+                self.level.tiles[current_idx] = Tile::MetalFloor;
 
                 // Player moves into the spot
                 self.player.x = nx;
@@ -3500,20 +3532,20 @@ impl GameState {
 
         if matches!(
             target_tile,
-            Tile::Wall | Tile::CrackedWall | Tile::BrittleWall
+            Tile::Bulkhead | Tile::DamagedBulkhead | Tile::WeakBulkhead
         ) {
             // Check for digging using weapon effect
             let can_dig = self
                 .player
                 .weapon
                 .map_or(false, |eq| matches!(eq.effect, EquipEffect::Digging))
-                || self.player.form == PlayerForm::Stone;
+                || self.player.form == PlayerForm::Cybernetic;
 
             if can_dig {
-                let cracked_wall = target_tile == Tile::CrackedWall;
-                let brittle_wall = target_tile == Tile::BrittleWall;
+                let cracked_wall = target_tile == Tile::DamagedBulkhead;
+                let brittle_wall = target_tile == Tile::WeakBulkhead;
                 let idx = self.level.idx(nx, ny);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 let (sx, sy) = self.tile_to_screen(nx, ny);
                 self.particles.spawn_dig(sx, sy, &mut self.rng_state);
                 self.trigger_shake(if cracked_wall {
@@ -3553,24 +3585,24 @@ impl GameState {
                 return;
             }
 
-            if target_tile == Tile::CrackedWall {
+            if target_tile == Tile::DamagedBulkhead {
                 self.message =
                     "The wall is cracked. A digging tool could break through.".to_string();
                 self.message_timer = 90;
-            } else if target_tile == Tile::BrittleWall {
+            } else if target_tile == Tile::WeakBulkhead {
                 self.message =
                     "The brittle wall could be smashed open with a digging tool.".to_string();
                 self.message_timer = 90;
             }
         }
 
-        if target_tile == Tile::LockedDoor {
+        if target_tile == Tile::SealedHatch {
             self.start_locked_door(nx, ny);
             return;
         }
 
         // Boulder pushing (similar to crate)
-        if target_tile == Tile::Boulder {
+        if target_tile == Tile::CargoCrate {
             let pdx = nx - self.player.x;
             let pdy = ny - self.player.y;
             let px = nx + pdx;
@@ -3578,11 +3610,11 @@ impl GameState {
             if self.level.in_bounds(px, py) {
                 let push_idx = self.level.idx(px, py);
                 let push_tile = self.level.tiles[push_idx];
-                if push_tile == Tile::PressurePlate || push_tile == Tile::Floor {
+                if push_tile == Tile::PressureSensor || push_tile == Tile::MetalFloor {
                     let boulder_idx = self.level.idx(nx, ny);
-                    self.level.tiles[boulder_idx] = Tile::Floor;
-                    self.level.tiles[push_idx] = Tile::Boulder;
-                    if push_tile == Tile::PressurePlate {
+                    self.level.tiles[boulder_idx] = Tile::MetalFloor;
+                    self.level.tiles[push_idx] = Tile::CargoCrate;
+                    if push_tile == Tile::PressureSensor {
                         self.message = "🪨 The boulder clicks onto the pressure plate!".to_string();
                         self.trigger_shake(4);
                     } else {
@@ -3614,20 +3646,20 @@ impl GameState {
         }
 
         // Bookshelf interaction
-        if target_tile == Tile::Bookshelf {
+        if target_tile == Tile::DataRack {
             self.message = "📚 You study the ancient texts and feel wiser.".to_string();
             self.message_timer = 60;
             let idx = self.level.idx(nx, ny);
-            self.level.tiles[idx] = Tile::Floor;
+            self.level.tiles[idx] = Tile::MetalFloor;
             return;
         }
 
         // GoldOre mining
-        if target_tile == Tile::GoldOre {
+        if target_tile == Tile::OreVein {
             let gold = 5 + (self.rng_next() % 11) as i32;
             self.player.gold += gold;
             let idx = self.level.idx(nx, ny);
-            self.level.tiles[idx] = Tile::Floor;
+            self.level.tiles[idx] = Tile::MetalFloor;
             self.message = format!("⛏ You mine {} gold from the ore vein!", gold);
             self.message_timer = 60;
             self.trigger_shake(3);
@@ -3635,22 +3667,22 @@ impl GameState {
         }
 
         // Crystal wall — not walkable, just shows message
-        if target_tile == Tile::Crystal {
+        if target_tile == Tile::CrystalPanel {
             self.message = "💎 The crystal formation is too solid to pass.".to_string();
             self.message_timer = 40;
             return;
         }
 
         // Bamboo — not walkable without cutting
-        if target_tile == Tile::Bamboo {
+        if target_tile == Tile::CargoPipes {
             let can_dig = self
                 .player
                 .weapon
                 .map_or(false, |eq| matches!(eq.effect, EquipEffect::Digging))
-                || self.player.form == PlayerForm::Stone;
+                || self.player.form == PlayerForm::Cybernetic;
             if can_dig {
                 let idx = self.level.idx(nx, ny);
-                self.level.tiles[idx] = Tile::Floor;
+                self.level.tiles[idx] = Tile::MetalFloor;
                 self.message = "🎋 You cut through the bamboo thicket!".to_string();
                 self.message_timer = 50;
                 self.trigger_shake(3);
@@ -3747,7 +3779,7 @@ impl GameState {
             return;
         }
 
-        if target_tile == Tile::StairsDown {
+        if target_tile == Tile::Airlock {
             if let Some(blocker) = self.tutorial_exit_blocker() {
                 self.message = blocker.to_string();
                 self.message_timer = 150;
@@ -3760,22 +3792,22 @@ impl GameState {
             audio.play_step();
         }
 
-        if let Tile::Sign(sign_id) = target_tile {
+        if let Tile::InfoPanel(sign_id) = target_tile {
             self.show_tutorial_sign(sign_id);
         }
 
-        if let Tile::Seal(kind) = target_tile {
+        if let Tile::SecurityLock(kind) = target_tile {
             self.trigger_seal(nx, ny, kind, None);
         }
 
         // Stairs
-        if target_tile == Tile::StairsDown {
+        if target_tile == Tile::Airlock {
             self.descend_floor(false);
             return;
         }
 
         // Forge workbench
-        if target_tile == Tile::Forge {
+        if target_tile == Tile::QuantumForge {
             if self.player.radicals.is_empty() {
                 self.message = "Forge workbench — but you have no radicals!".to_string();
                 self.message_timer = 60;
@@ -3802,7 +3834,7 @@ impl GameState {
         }
 
         // Shop
-        if target_tile == Tile::Shop {
+        if target_tile == Tile::TradeTerminal {
             if self.shop_banned {
                 self.message =
                     "🚫 The shopkeeper slams the door shut. You're not welcome here!".to_string();
@@ -3820,17 +3852,17 @@ impl GameState {
         }
 
         // Chest
-        if target_tile == Tile::Chest {
+        if target_tile == Tile::SupplyCrate {
             self.open_chest(nx, ny);
         }
 
         // NPC companion recruit or quest
         if let Tile::Npc(npc_type) = target_tile {
             let comp = match npc_type {
-                0 => Companion::Teacher,
-                1 => Companion::Monk,
-                2 => Companion::Merchant,
-                _ => Companion::Guard,
+                0 => Companion::ScienceOfficer,
+                1 => Companion::Medic,
+                2 => Companion::Quartermaster,
+                _ => Companion::SecurityChief,
             };
             if self.companion.is_some() {
                 if self.quests.len() < 2 {
@@ -3859,105 +3891,105 @@ impl GameState {
             }
             self.message_timer = 100;
             let idx = self.level.idx(nx, ny);
-            self.level.tiles[idx] = Tile::Floor;
+            self.level.tiles[idx] = Tile::MetalFloor;
         }
 
-        if let Tile::Altar(kind) = target_tile {
+        if let Tile::Terminal(kind) = target_tile {
             self.invoke_altar(nx, ny, kind);
         }
 
         // Tone shrine interaction
-        if target_tile == Tile::Shrine {
+        if target_tile == Tile::CircuitShrine {
             self.start_tone_battle();
             let idx = self.level.idx(nx, ny);
-            self.level.tiles[idx] = Tile::Floor;
+            self.level.tiles[idx] = Tile::MetalFloor;
             return;
         }
 
-        if target_tile == Tile::StrokeShrine {
+        if target_tile == Tile::CompoundShrine {
             self.start_stroke_order();
             let idx = self.level.idx(nx, ny);
-            self.level.tiles[idx] = Tile::Floor;
+            self.level.tiles[idx] = Tile::MetalFloor;
             return;
         }
 
-        if target_tile == Tile::ToneWall {
+        if target_tile == Tile::FrequencyWall {
             self.start_tone_defense();
             let idx = self.level.idx(nx, ny);
-            self.level.tiles[idx] = Tile::Floor;
+            self.level.tiles[idx] = Tile::MetalFloor;
             return;
         }
 
         if target_tile == Tile::CompoundShrine {
             self.start_compound_builder();
             let idx = self.level.idx(nx, ny);
-            self.level.tiles[idx] = Tile::Floor;
+            self.level.tiles[idx] = Tile::MetalFloor;
             return;
         }
 
-        if target_tile == Tile::ClassifierShrine {
+        if target_tile == Tile::ClassifierNode {
             self.start_classifier_match();
             let idx = self.level.idx(nx, ny);
-            self.level.tiles[idx] = Tile::Floor;
+            self.level.tiles[idx] = Tile::MetalFloor;
             return;
         }
 
-        if target_tile == Tile::InkWell {
+        if target_tile == Tile::DataWell {
             self.start_ink_well();
             let idx = self.level.idx(nx, ny);
-            self.level.tiles[idx] = Tile::Floor;
+            self.level.tiles[idx] = Tile::MetalFloor;
             return;
         }
 
-        if target_tile == Tile::AncestorShrine {
+        if target_tile == Tile::MemorialNode {
             self.start_ancestor_challenge();
             let idx = self.level.idx(nx, ny);
-            self.level.tiles[idx] = Tile::Floor;
+            self.level.tiles[idx] = Tile::MetalFloor;
             return;
         }
 
-        if target_tile == Tile::TranslationAltar {
+        if target_tile == Tile::TranslationTerminal {
             self.start_translation_challenge();
             let idx = self.level.idx(nx, ny);
-            self.level.tiles[idx] = Tile::Floor;
+            self.level.tiles[idx] = Tile::MetalFloor;
             return;
         }
 
-        if target_tile == Tile::RadicalGarden {
+        if target_tile == Tile::RadicalLab {
             self.start_radical_garden();
             let idx = self.level.idx(nx, ny);
-            self.level.tiles[idx] = Tile::Floor;
+            self.level.tiles[idx] = Tile::MetalFloor;
             return;
         }
 
-        if target_tile == Tile::MirrorPool {
+        if target_tile == Tile::HoloPool {
             self.start_mirror_pool();
             let idx = self.level.idx(nx, ny);
-            self.level.tiles[idx] = Tile::Floor;
+            self.level.tiles[idx] = Tile::MetalFloor;
             return;
         }
 
-        if target_tile == Tile::StoneTutor {
+        if target_tile == Tile::DroidTutor {
             self.start_stone_tutor();
             let idx = self.level.idx(nx, ny);
-            self.level.tiles[idx] = Tile::Floor;
+            self.level.tiles[idx] = Tile::MetalFloor;
             return;
         }
 
-        if target_tile == Tile::CodexShrine {
+        if target_tile == Tile::CodexTerminal {
             self.start_codex_challenge();
             let idx = self.level.idx(nx, ny);
-            self.level.tiles[idx] = Tile::Floor;
+            self.level.tiles[idx] = Tile::MetalFloor;
             return;
         }
 
-        if target_tile == Tile::WordBridge {
+        if target_tile == Tile::DataBridge {
             let dirs = [(0, -1), (0, 1), (-1, 0), (1, 0)];
             let mut bridge_target = (nx, ny);
             for (ddx, ddy) in &dirs {
                 let bx = nx + ddx;
                 let by = ny + ddy;
-                if self.level.in_bounds(bx, by) && self.level.tile(bx, by) == Tile::DeepWater {
+                if self.level.in_bounds(bx, by) && self.level.tile(bx, by) == Tile::VacuumBreach {
                     bridge_target = (bx, by);
                     break;
                 }
@@ -3966,16 +3998,16 @@ impl GameState {
             return;
         }
 
-        if target_tile == Tile::CursedFloor {
+        if target_tile == Tile::CorruptedFloor {
             self.player.move_to(nx, ny);
             let idx = self.level.idx(nx, ny);
-            self.level.tiles[idx] = Tile::Floor;
+            self.level.tiles[idx] = Tile::MetalFloor;
             self.start_cursed_floor();
             return;
         }
 
         // Dragon Gate Portal interaction
-        if target_tile == Tile::DragonGatePortal {
+        if target_tile == Tile::WarpGatePortal {
             self.message = "🐉 The Dragon Gate pulses with ancient power! You are not yet ready...".to_string();
             self.message_timer = 100;
         }
@@ -4035,7 +4067,7 @@ impl GameState {
                 continue;
             }
 
-            if self.enemies[i].boss_kind == Some(BossKind::Gatekeeper) {
+            if self.enemies[i].boss_kind == Some(BossKind::PirateCaptain) {
                 if self.enemies[i].summon_cooldown > 0 {
                     self.enemies[i].summon_cooldown -= 1;
                 }
@@ -4066,13 +4098,13 @@ impl GameState {
                         let visible_idx = self.level.idx(self.enemies[i].x, self.enemies[i].y);
                         if self.level.visible[visible_idx] {
                             summon_message =
-                                Some("🚪 The Gatekeeper summons a warding spirit!".to_string());
+                                Some("🚪 The Pirate Captain deploys a shield drone!".to_string());
                         }
                     }
                 }
             }
 
-            if self.enemies[i].boss_kind == Some(BossKind::MimicKing) {
+            if self.enemies[i].boss_kind == Some(BossKind::VoidEntity) {
                 if self.enemies[i].summon_cooldown > 0 {
                     self.enemies[i].summon_cooldown -= 1;
                 }
@@ -4097,7 +4129,7 @@ impl GameState {
                             let visible_idx = self.level.idx(self.enemies[i].x, self.enemies[i].y);
                             if self.level.visible[visible_idx] {
                                 summon_message =
-                                    Some("👑 The Mimic King conjures a doppelgänger!".to_string());
+                                    Some("👑 The Void Entity warps in a doppelgänger!".to_string());
                             }
                         }
                     }
@@ -4295,12 +4327,12 @@ impl GameState {
                 self.codex.record(e_hanzi, e_pinyin, e_meaning, true);
                 self.run_correct_answers += 1;
                 // Hit with bonus damage from equipment + room modifiers
-                let cursed_bonus = if self.current_room_modifier() == Some(RoomModifier::Cursed) {
+                let cursed_bonus = if self.current_room_modifier() == Some(RoomModifier::Irradiated) {
                     1
                 } else {
                     0
                 };
-                let warrior_bonus = if self.player.class == PlayerClass::Warrior {
+                let warrior_bonus = if self.player.class == PlayerClass::Soldier {
                     1
                 } else {
                     0
@@ -4309,20 +4341,20 @@ impl GameState {
                 self.player.tone_bonus_damage = 0; // consumed
 
                 let form_bonus = match self.player.form {
-                    PlayerForm::Tiger => 2,
-                    PlayerForm::Flame => 1,
+                    PlayerForm::Void => 2,
+                    PlayerForm::Powered => 1,
                     _ => 0,
                 };
                 let empowered_bonus = status::empowered_amount(&self.player.statuses);
 
-                let iron_bonus = if self.player.get_piety(Deity::Iron) >= 10 {
+                let iron_bonus = if self.player.get_piety(Faction::MilitaryAlliance) >= 10 {
                     1
                 } else {
                     0
                 };
                 let tactical_insight = if e_is_elite
-                    && self.player.get_piety(Deity::Mirror) >= 10
-                    && self.player.get_piety(Deity::Iron) >= 10
+                    && self.player.get_piety(Faction::Technocracy) >= 10
+                    && self.player.get_piety(Faction::MilitaryAlliance) >= 10
                 {
                     2
                 } else {
@@ -4369,7 +4401,7 @@ impl GameState {
                             3,
                         ));
                 }
-                if self.player.form == PlayerForm::Flame {
+                if self.player.form == PlayerForm::Powered {
                     self.enemies[enemy_idx]
                         .statuses
                         .push(status::StatusInstance::new(
@@ -4454,12 +4486,12 @@ impl GameState {
                     self.flash = Some((255, 255, 255, 0.3));
                     // Rewards
                     let mut gold_gain = e_gold;
-                    if self.player.get_piety(Deity::Iron) >= 10
-                        && self.player.get_piety(Deity::Gold) >= 10
+                    if self.player.get_piety(Faction::MilitaryAlliance) >= 10
+                        && self.player.get_piety(Faction::AncientOrder) >= 10
                     {
                         gold_gain *= 2;
                     }
-                    if self.player.get_piety(Deity::Gold) >= 10 {
+                    if self.player.get_piety(Faction::AncientOrder) >= 10 {
                         gold_gain += 3;
                     }
                     gold_gain = (gold_gain as f64 * self.floor_profile.gold_multiplier()) as i32;
@@ -4511,7 +4543,7 @@ impl GameState {
 
                     // Heal on kill from charm
                     let mut heal = self.player.heal_on_kill();
-                    if self.player.get_piety(Deity::Jade) >= 10 {
+                    if self.player.get_piety(Faction::Consortium) >= 10 {
                         heal += 1;
                     }
                     if heal > 0 {
@@ -4634,9 +4666,9 @@ impl GameState {
                     // Boss bonus sentence challenge (scaled by floor)
                     if e_is_boss
                         && self.floor_num >= 5
-                        && self.enemies[enemy_idx].boss_kind != Some(BossKind::Scholar)
-                        && self.enemies[enemy_idx].boss_kind != Some(BossKind::InkSage)
-                        && self.enemies[enemy_idx].boss_kind != Some(BossKind::Gatekeeper)
+                        && self.enemies[enemy_idx].boss_kind != Some(BossKind::HiveQueen)
+                        && self.enemies[enemy_idx].boss_kind != Some(BossKind::AncientGuardian)
+                        && self.enemies[enemy_idx].boss_kind != Some(BossKind::PirateCaptain)
                     {
                         let base_reward = 15 + self.floor_num * 2;
                         self.begin_sentence_challenge(
@@ -4694,7 +4726,7 @@ impl GameState {
                 self.achievements.record_miss();
 
                 let mut thief_stole = None;
-                if self.enemies[enemy_idx].boss_kind == Some(BossKind::RadicalThief)
+                if self.enemies[enemy_idx].boss_kind == Some(BossKind::DriftLeviathan)
                     && !self.player.radicals.is_empty()
                 {
                     let steal_idx = self.rng_next() as usize % self.player.radicals.len();
@@ -4732,14 +4764,14 @@ impl GameState {
                         )
                     };
                     self.message_timer = if e_is_elite { 70 } else { 60 };
-                } else if self.companion == Some(Companion::Guard) && !self.guard_used_this_fight {
+                } else if self.companion == Some(Companion::SecurityChief) && !self.guard_used_this_fight {
                     let lvl = self.companion_level();
-                    let max_blocks = Companion::Guard.guard_max_blocks(lvl);
+                    let max_blocks = Companion::SecurityChief.guard_max_blocks(lvl);
                     self.guard_blocks_used += 1;
                     if self.guard_blocks_used >= max_blocks {
                         self.guard_used_this_fight = true;
                     } else {
-                        let second_chance = Companion::Guard.guard_second_block_chance(lvl);
+                        let second_chance = Companion::SecurityChief.guard_second_block_chance(lvl);
                         if (self.rng_next() % 100) >= second_chance {
                             self.guard_used_this_fight = true;
                         }
@@ -4758,7 +4790,7 @@ impl GameState {
                     self.message_timer = if e_is_elite { 70 } else { 60 };
                 } else {
                     let mut evaded = false;
-                    if self.player.get_piety(Deity::Gale) >= 10 {
+                    if self.player.get_piety(Faction::FreeTraders) >= 10 {
                         if (self.rng_next() % 100) < 15 {
                             evaded = true;
                         }
@@ -4817,13 +4849,13 @@ impl GameState {
                     }
                 }
 
-                if self.player.get_piety(Deity::Mirror) >= 10 {
+                if self.player.get_piety(Faction::Technocracy) >= 10 {
                     self.mirror_hint = true;
                 }
 
                 if let Some(stolen) = thief_stole {
                     self.message
-                        .push_str(&format!(" 🥷 The Radical Thief stole {}!", stolen));
+                        .push_str(&format!(" 🥷 The Drift Leviathan absorbed {}!", stolen));
                 }
 
                 // Radical actions: enemy uses abilities based on its hanzi components
@@ -6216,7 +6248,7 @@ impl GameState {
         items.push(ShopItem {
             label: "🍙 Rice Ball".to_string(),
             cost: 8,
-            kind: ShopItemKind::Consumable(crate::player::Item::RiceBall(40)),
+            kind: ShopItemKind::Consumable(crate::player::Item::RationPack(40)),
         });
 
         items
@@ -6297,10 +6329,10 @@ impl GameState {
             }
 
             let mut chance: i64 = 40;
-            if self.player.class == PlayerClass::Thief {
+            if self.player.class == PlayerClass::Operative {
                 chance += 25;
             }
-            if self.player.class == PlayerClass::Assassin {
+            if self.player.class == PlayerClass::Operative {
                 chance += 15;
             }
             chance -= (self.theft_catches as i64) * 10;
@@ -6396,7 +6428,7 @@ impl GameState {
             return;
         }
         let has_merchant_l3 =
-            self.companion == Some(Companion::Merchant) && self.companion_level() >= 3;
+            self.companion == Some(Companion::Quartermaster) && self.companion_level() >= 3;
         if !has_merchant_l3 {
             return;
         }
@@ -6471,7 +6503,7 @@ impl GameState {
                     audio.play_spell();
                 }
                 // Arcane room doubles spell damage
-                let arcane_mult = if self.current_room_modifier() == Some(RoomModifier::Arcane) {
+                let arcane_mult = if self.current_room_modifier() == Some(RoomModifier::HighTech) {
                     2
                 } else {
                     1
@@ -6511,7 +6543,7 @@ impl GameState {
                     | SpellEffect::FreezeGround(_) => None,
                 };
                 let elementalist_resisted = enemy_idx < self.enemies.len()
-                    && self.enemies[enemy_idx].boss_kind == Some(BossKind::Elementalist)
+                    && self.enemies[enemy_idx].boss_kind == Some(BossKind::RogueAICore)
                     && spell_school.is_some()
                     && self.enemies[enemy_idx].resisted_spell == spell_school;
                 match spell.effect {
@@ -6544,7 +6576,7 @@ impl GameState {
                         let (oil_tiles, scorched, oil_kills) = self.ignite_visible_oil(oil_bonus);
                         killed += oil_kills;
                         let resist_text = if boss_resisted {
-                            " The Elementalist dampens the repeated fire spell!"
+                            " The Rogue AI Core dampens the repeated fire spell!"
                         } else {
                             ""
                         };
@@ -6637,7 +6669,7 @@ impl GameState {
                                     e_hanzi,
                                     self.enemies[enemy_idx].hp,
                                     if elementalist_resisted {
-                                        " The Elementalist resists the repeated school."
+                                        " The Rogue AI Core resists the repeated school."
                                     } else {
                                         ""
                                     }
@@ -6688,7 +6720,7 @@ impl GameState {
                                     applied_dmg,
                                     self.enemies[enemy_idx].hp,
                                     if elementalist_resisted {
-                                        " The Elementalist resists the repeated school."
+                                        " The Rogue AI Core resists the repeated school."
                                     } else {
                                         ""
                                     }
@@ -7136,7 +7168,7 @@ impl GameState {
                 }
 
                 if enemy_idx < self.enemies.len()
-                    && self.enemies[enemy_idx].boss_kind == Some(BossKind::Elementalist)
+                    && self.enemies[enemy_idx].boss_kind == Some(BossKind::RogueAICore)
                 {
                     if let Some(school) = spell_school {
                         self.enemies[enemy_idx].resisted_spell = Some(school);
@@ -7201,7 +7233,7 @@ impl GameState {
         let p_screen = self.tile_to_screen(self.player.x, self.player.y);
         let spell_power = self.player.spell_power_bonus + self.player.spell_power_temp_bonus;
         self.player.spell_power_temp_bonus = 0;
-        let arcane_mult = if self.current_room_modifier() == Some(RoomModifier::Arcane) {
+        let arcane_mult = if self.current_room_modifier() == Some(RoomModifier::HighTech) {
             2
         } else {
             1
@@ -7255,7 +7287,7 @@ impl GameState {
             return;
         }
         let effect = self.player.spells[spell_idx].effect;
-        let arcane_mult = if self.current_room_modifier() == Some(RoomModifier::Arcane) {
+        let arcane_mult = if self.current_room_modifier() == Some(RoomModifier::HighTech) {
             2
         } else {
             1
@@ -7558,7 +7590,7 @@ impl GameState {
 
         // Remove chest tile
         let idx = self.level.idx(cx, cy);
-        self.level.tiles[idx] = Tile::Floor;
+        self.level.tiles[idx] = Tile::MetalFloor;
 
         let roll = self.rng_next() % 100;
         if roll < 70 {
@@ -7685,37 +7717,37 @@ impl GameState {
     fn random_item(&mut self) -> crate::player::Item {
         use crate::player::Item;
         match self.rng_next() % 32 {
-            0 => Item::HealthPotion(4 + self.floor_num),
-            1 => Item::PoisonFlask(2, 3),
-            2 => Item::RevealScroll,
-            3 => Item::TeleportScroll,
-            4 => Item::HastePotion(5),
-            5 => Item::StunBomb,
-            6 | 7 => Item::RiceBall(40),
-            8 => Item::MeditationIncense(5),
-            9 => Item::AncestralWine(3),
-            10 => Item::SmokeScreen(4),
-            11 => Item::FireCracker(3 + self.floor_num / 2),
-            12 => Item::IronSkinElixir(5),
-            13 => Item::ClarityTea,
-            14 => Item::GoldIngot(8 + self.floor_num * 2),
-            15 => Item::ThunderTalisman(5 + self.floor_num),
-            16 => Item::JadeSalve(2),
-            17 => Item::SerpentFang,
-            18 => Item::WardingCharm(5),
-            19 => Item::InkBomb,
-            20 => Item::MirrorShard,
-            21 => Item::FrostVial(1),
-            22 => Item::ShadowCloak(2),
-            23 => Item::DragonScale(3),
-            24 => Item::BambooFlute(2),
-            25 => Item::JadeCompass,
-            26 => Item::SilkRope,
-            27 => Item::LotusElixir,
-            28 => Item::ThunderDrum(2),
-            29 => Item::CinnabarInk,
-            30 => Item::AncestorToken(5),
-            _ => Item::WindFan,
+            0 => Item::MedHypo(4 + self.floor_num),
+            1 => Item::ToxinGrenade(2, 3),
+            2 => Item::ScannerPulse,
+            3 => Item::PersonalTeleporter,
+            4 => Item::StimPack(5),
+            5 => Item::EMPGrenade,
+            6 | 7 => Item::RationPack(40),
+            8 => Item::FocusStim(5),
+            9 => Item::SynthAle(3),
+            10 => Item::HoloDecoy(4),
+            11 => Item::PlasmaBurst(3 + self.floor_num / 2),
+            12 => Item::NanoShield(5),
+            13 => Item::NeuralBoost,
+            14 => Item::CreditChip(8 + self.floor_num * 2),
+            15 => Item::ShockModule(5 + self.floor_num),
+            16 => Item::BiogelPatch(2),
+            17 => Item::VenomDart,
+            18 => Item::DeflectorDrone(5),
+            19 => Item::NaniteSwarm,
+            20 => Item::ReflectorPlate,
+            21 => Item::CryoGrenade(1),
+            22 => Item::CloakingDevice(2),
+            23 => Item::PlasmaShield(3),
+            24 => Item::SignalJammer(2),
+            25 => Item::NavComputer,
+            26 => Item::GrappleLine,
+            27 => Item::OmniGel,
+            28 => Item::SonicEmitter(2),
+            29 => Item::CircuitInk,
+            30 => Item::DataCore(5),
+            _ => Item::ThrusterPack,
         }
     }
 
@@ -7735,8 +7767,8 @@ impl GameState {
         }
 
         match item {
-            crate::player::Item::HealthPotion(heal) => {
-                let heal = if self.player.class == PlayerClass::Alchemist {
+            crate::player::Item::MedHypo(heal) => {
+                let heal = if self.player.class == PlayerClass::Mechanic {
                     heal * 2
                 } else {
                     heal
@@ -7767,7 +7799,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::PoisonFlask(dmg, turns) => {
+            crate::player::Item::ToxinGrenade(dmg, turns) => {
                 let dmg = match item_state {
                     ItemState::Blessed => dmg * 2,
                     _ => dmg,
@@ -7804,7 +7836,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::RevealScroll => {
+            crate::player::Item::ScannerPulse => {
                 self.reveal_entire_floor();
                 let prefix = match item_state {
                     ItemState::Cursed => "💀 Cursed! ",
@@ -7852,7 +7884,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::TeleportScroll => {
+            crate::player::Item::PersonalTeleporter => {
                 // Find random explored walkable tile
                 let mut candidates = Vec::new();
                 for y in 0..self.level.height {
@@ -7891,7 +7923,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::HastePotion(turns) => {
+            crate::player::Item::StimPack(turns) => {
                 let turns = match item_state {
                     ItemState::Blessed => turns * 2,
                     _ => turns,
@@ -7920,7 +7952,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::StunBomb => {
+            crate::player::Item::EMPGrenade => {
                 let mut count = 0;
                 for e in &mut self.enemies {
                     if e.is_alive() {
@@ -7949,7 +7981,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::RiceBall(amount) => {
+            crate::player::Item::RationPack(amount) => {
                 let amount = match item_state {
                     ItemState::Cursed => amount / 2,
                     ItemState::Blessed => (amount as f64 * 1.5) as i32,
@@ -7964,7 +7996,7 @@ impl GameState {
                 self.message = format!("{}🍙 Restored {} spirit energy!", prefix, amount);
                 self.message_timer = 60;
             }
-            crate::player::Item::MeditationIncense(turns) => {
+            crate::player::Item::FocusStim(turns) => {
                 let turns = match item_state {
                     ItemState::Cursed => (turns / 2).max(1),
                     ItemState::Blessed => turns + 3,
@@ -7984,7 +8016,7 @@ impl GameState {
                 self.message = format!("{}🌕 Spirit Shield active for {} turns!", prefix, turns);
                 self.message_timer = 60;
             }
-            crate::player::Item::AncestralWine(confuse_turns) => {
+            crate::player::Item::SynthAle(confuse_turns) => {
                 let confuse_turns = match item_state {
                     ItemState::Cursed => confuse_turns + 3,
                     ItemState::Blessed => 0,
@@ -8015,7 +8047,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::SmokeScreen(turns) => {
+            crate::player::Item::HoloDecoy(turns) => {
                 let turns = match item_state {
                     ItemState::Cursed => (turns / 2).max(1),
                     ItemState::Blessed => turns * 2,
@@ -8039,7 +8071,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::FireCracker(damage) => {
+            crate::player::Item::PlasmaBurst(damage) => {
                 let damage = match item_state {
                     ItemState::Blessed => damage * 2,
                     _ => damage,
@@ -8077,7 +8109,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::IronSkinElixir(turns) => {
+            crate::player::Item::NanoShield(turns) => {
                 let prefix = match item_state {
                     ItemState::Cursed => "💀 Cursed! ",
                     ItemState::Blessed => "✨ Blessed! ",
@@ -8110,7 +8142,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::ClarityTea => {
+            crate::player::Item::NeuralBoost => {
                 let prefix = match item_state {
                     ItemState::Cursed => "💀 Cursed! ",
                     ItemState::Blessed => "✨ Blessed! ",
@@ -8137,7 +8169,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::GoldIngot(amount) => {
+            crate::player::Item::CreditChip(amount) => {
                 let amount = match item_state {
                     ItemState::Cursed => (amount / 2).max(1),
                     ItemState::Blessed => amount * 2,
@@ -8152,7 +8184,7 @@ impl GameState {
                 self.message = format!("{}🪙 Gained {} gold!", prefix, amount);
                 self.message_timer = 60;
             }
-            crate::player::Item::ThunderTalisman(damage) => {
+            crate::player::Item::ShockModule(damage) => {
                 let damage = match item_state {
                     ItemState::Cursed => (damage / 2).max(1),
                     ItemState::Blessed => damage * 2,
@@ -8188,7 +8220,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::JadeSalve(regen) => {
+            crate::player::Item::BiogelPatch(regen) => {
                 let regen = match item_state {
                     ItemState::Cursed => (regen / 2).max(1),
                     ItemState::Blessed => regen * 2,
@@ -8213,7 +8245,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::SerpentFang => {
+            crate::player::Item::VenomDart => {
                 let prefix = match item_state {
                     ItemState::Cursed => "💀 Cursed! ",
                     ItemState::Blessed => "✨ Blessed! ",
@@ -8245,7 +8277,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::WardingCharm(turns) => {
+            crate::player::Item::DeflectorDrone(turns) => {
                 let turns = match item_state {
                     ItemState::Cursed => (turns / 2).max(1),
                     _ => turns,
@@ -8280,7 +8312,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::InkBomb => {
+            crate::player::Item::NaniteSwarm => {
                 let mut count = 0;
                 let stun_turns = if item_state == ItemState::Blessed {
                     5
@@ -8318,7 +8350,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::PhoenixPlume(_) => {
+            crate::player::Item::Revitalizer(_) => {
                 let prefix = match item_state {
                     ItemState::Cursed => "💀 Cursed! ",
                     ItemState::Blessed => "✨ Blessed! ",
@@ -8332,7 +8364,7 @@ impl GameState {
                 self.player.items.insert(idx, item);
                 self.player.item_states.insert(idx, item_state);
             }
-            crate::player::Item::MirrorShard => {
+            crate::player::Item::ReflectorPlate => {
                 let prefix = match item_state {
                     ItemState::Cursed => "💀 Cursed! ",
                     ItemState::Blessed => "✨ Blessed! ",
@@ -8354,7 +8386,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::FrostVial(turns) => {
+            crate::player::Item::CryoGrenade(turns) => {
                 let turns = match item_state {
                     ItemState::Cursed => 1,
                     ItemState::Blessed => turns + 1,
@@ -8390,7 +8422,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::ShadowCloak(turns) => {
+            crate::player::Item::CloakingDevice(turns) => {
                 let turns = match item_state {
                     ItemState::Cursed => 1,
                     ItemState::Blessed => turns * 2,
@@ -8418,7 +8450,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::DragonScale(armor) => {
+            crate::player::Item::PlasmaShield(armor) => {
                 let armor = match item_state {
                     ItemState::Cursed => (armor / 2).max(1),
                     ItemState::Blessed => armor + 2,
@@ -8440,7 +8472,7 @@ impl GameState {
                 );
                 self.message_timer = 60;
             }
-            crate::player::Item::BambooFlute(turns) => {
+            crate::player::Item::SignalJammer(turns) => {
                 let turns = match item_state {
                     ItemState::Cursed => 1,
                     ItemState::Blessed => turns + 2,
@@ -8477,7 +8509,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::JadeCompass => {
+            crate::player::Item::NavComputer => {
                 let prefix = match item_state {
                     ItemState::Cursed => "💀 Cursed! ",
                     ItemState::Blessed => "✨ Blessed! ",
@@ -8500,7 +8532,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::SilkRope => {
+            crate::player::Item::GrappleLine => {
                 let prefix = match item_state {
                     ItemState::Cursed => "💀 Cursed! ",
                     ItemState::Blessed => "✨ Blessed! ",
@@ -8549,7 +8581,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::LotusElixir => {
+            crate::player::Item::OmniGel => {
                 let prefix = match item_state {
                     ItemState::Cursed => "💀 Cursed! ",
                     ItemState::Blessed => "✨ Blessed! ",
@@ -8574,7 +8606,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::ThunderDrum(damage) => {
+            crate::player::Item::SonicEmitter(damage) => {
                 let damage = match item_state {
                     ItemState::Cursed => (damage / 2).max(1),
                     ItemState::Blessed => damage * 2,
@@ -8612,7 +8644,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::CinnabarInk => {
+            crate::player::Item::CircuitInk => {
                 let prefix = match item_state {
                     ItemState::Cursed => "💀 Cursed! ",
                     ItemState::Blessed => "✨ Blessed! ",
@@ -8637,7 +8669,7 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
-            crate::player::Item::AncestorToken(_) => {
+            crate::player::Item::DataCore(_) => {
                 let prefix = match item_state {
                     ItemState::Cursed => "💀 Cursed! ",
                     ItemState::Blessed => "✨ Blessed! ",
@@ -8651,7 +8683,7 @@ impl GameState {
                 self.player.items.insert(idx, item);
                 self.player.item_states.insert(idx, item_state);
             }
-            crate::player::Item::WindFan => {
+            crate::player::Item::ThrusterPack => {
                 let prefix = match item_state {
                     ItemState::Cursed => "💀 Cursed! ",
                     ItemState::Blessed => "✨ Blessed! ",
@@ -8711,12 +8743,12 @@ impl GameState {
             .player
             .items
             .iter()
-            .position(|item| matches!(item, crate::player::Item::PhoenixPlume(_)));
+            .position(|item| matches!(item, crate::player::Item::Revitalizer(_)));
         if let Some(idx) = plume_pos {
             let item = self.player.items.remove(idx);
             let item_state = self.player.item_states.remove(idx);
             let heal = match &item {
-                crate::player::Item::PhoenixPlume(h) => *h,
+                crate::player::Item::Revitalizer(h) => *h,
                 _ => 1,
             };
             let heal = match item_state {
@@ -8742,12 +8774,12 @@ impl GameState {
             .player
             .items
             .iter()
-            .position(|item| matches!(item, crate::player::Item::AncestorToken(_)));
+            .position(|item| matches!(item, crate::player::Item::DataCore(_)));
         if let Some(idx) = token_pos {
             let item = self.player.items.remove(idx);
             let item_state = self.player.item_states.remove(idx);
             let heal = match &item {
-                crate::player::Item::AncestorToken(h) => *h,
+                crate::player::Item::DataCore(h) => *h,
                 _ => 5,
             };
             let heal = match item_state {
@@ -8782,17 +8814,17 @@ impl GameState {
 
         // Basic offering logic
         let piety_gain = match (deity, item.kind()) {
-            (Deity::Jade, ItemKind::HealthPotion) => 5,
-            (Deity::Jade, _) => 1,
-            (Deity::Gale, ItemKind::HastePotion | ItemKind::TeleportScroll) => 5,
-            (Deity::Mirror, ItemKind::RevealScroll) => 5,
-            (Deity::Iron, ItemKind::StunBomb | ItemKind::PoisonFlask) => 5,
-            (Deity::Gold, _) => 2,
+            (Faction::Consortium, ItemKind::MedHypo) => 5,
+            (Faction::Consortium, _) => 1,
+            (Faction::FreeTraders, ItemKind::StimPack | ItemKind::PersonalTeleporter) => 5,
+            (Faction::Technocracy, ItemKind::ScannerPulse) => 5,
+            (Faction::MilitaryAlliance, ItemKind::EMPGrenade | ItemKind::ToxinGrenade) => 5,
+            (Faction::AncientOrder, _) => 2,
             _ => 1,
         };
 
         self.player.add_piety(deity, piety_gain);
-        let bonus_text = self.player.devotion_bonus(deity);
+        let bonus_text = self.player.faction_bonus(deity);
         self.message = if bonus_text == "None" || bonus_text == "Minor devotion" {
             format!(
                 "Offered {} to {}. (+{} favor).",
@@ -8826,26 +8858,26 @@ impl GameState {
             // Grant Boon
             self.player.add_piety(deity, -20);
             match deity {
-                Deity::Jade => {
+                Faction::Consortium => {
                     self.player.max_hp += 5;
                     self.player.hp = self.player.max_hp;
                     self.message = "Jade Emperor grants you vitality! (+5 Max HP)".to_string();
                 }
-                Deity::Gale => {
-                    self.player.set_form(PlayerForm::Mist, 50);
+                Faction::FreeTraders => {
+                    self.player.set_form(PlayerForm::Holographic, 50);
                     self.message = "Wind Walker grants you form of Mist!".to_string();
                 }
-                Deity::Mirror => {
+                Faction::Technocracy => {
                     for i in 0..ITEM_KIND_COUNT {
                         self.identified_items[i] = true;
                     }
                     self.message = "Mirror Sage reveals all truths!".to_string();
                 }
-                Deity::Iron => {
-                    self.player.set_form(PlayerForm::Tiger, 50);
+                Faction::MilitaryAlliance => {
+                    self.player.set_form(PlayerForm::Void, 50);
                     self.message = "Iron General grants you form of Tiger!".to_string();
                 }
-                Deity::Gold => {
+                Faction::AncientOrder => {
                     self.player.gold += 100;
                     self.message = "Golden Toad rains coins upon you!".to_string();
                 }
@@ -8857,7 +8889,7 @@ impl GameState {
             self.message = format!("{} is offended by your pestering! (-5 HP)", deity.name());
             if let Some(ref audio) = self.audio { audio.play_damage(); }
         } else {
-            let bonus = self.player.devotion_bonus(deity);
+            let bonus = self.player.faction_bonus(deity);
             if bonus == "None" || bonus == "Minor devotion" {
                 self.message = format!("{} ignores you. (Favor: {})", deity.name(), piety);
             } else {
@@ -8900,14 +8932,14 @@ impl GameState {
             0 => {
                 // Weapon
                 if let Some(_) = self.player.weapon {
-                    if matches!(potion.kind(), ItemKind::PoisonFlask) {
+                    if matches!(potion.kind(), ItemKind::ToxinGrenade) {
                         self.message =
                             "Coated weapon with poison! (Attacks poison enemies)".to_string();
                         self.player.statuses.push(status::StatusInstance::new(
                             status::StatusKind::Envenomed,
                             20,
                         ));
-                    } else if matches!(potion.kind(), ItemKind::HastePotion) {
+                    } else if matches!(potion.kind(), ItemKind::StimPack) {
                         self.message = "Coated weapon with speed! (Attacks empowered)".to_string();
                         self.player.statuses.push(status::StatusInstance::new(
                             status::StatusKind::Empowered { amount: 1 },
@@ -8988,11 +9020,11 @@ impl GameState {
             self.flash = Some((255, 255, 255, 0.3));
 
             let mut gold_gain = e_gold_base;
-            if self.player.get_piety(Deity::Iron) >= 10 && self.player.get_piety(Deity::Gold) >= 10
+            if self.player.get_piety(Faction::MilitaryAlliance) >= 10 && self.player.get_piety(Faction::AncientOrder) >= 10
             {
                 gold_gain *= 2;
             }
-            if self.player.get_piety(Deity::Gold) >= 10 {
+            if self.player.get_piety(Faction::AncientOrder) >= 10 {
                 gold_gain += 3;
             }
             gold_gain = (gold_gain as f64 * self.floor_profile.gold_multiplier()) as i32;
@@ -9041,7 +9073,7 @@ impl GameState {
             }
 
             let mut heal = self.player.heal_on_kill();
-            if self.player.get_piety(Deity::Jade) >= 10 {
+            if self.player.get_piety(Faction::Consortium) >= 10 {
                 heal += 1;
             }
             if heal > 0 {
@@ -9076,7 +9108,7 @@ impl GameState {
             };
             if (self.rng_next() % 100) < item_chance {
                 let drop_item = if e_is_boss && (self.rng_next() % 5) == 0 {
-                    crate::player::Item::PhoenixPlume(self.player.max_hp / 2)
+                    crate::player::Item::Revitalizer(self.player.max_hp / 2)
                 } else {
                     self.random_item()
                 };
@@ -9124,9 +9156,9 @@ impl GameState {
 
             if e_is_boss
                 && self.floor_num >= 5
-                && self.enemies[ei].boss_kind != Some(BossKind::Scholar)
-                && self.enemies[ei].boss_kind != Some(BossKind::InkSage)
-                && self.enemies[ei].boss_kind != Some(BossKind::Gatekeeper)
+                && self.enemies[ei].boss_kind != Some(BossKind::HiveQueen)
+                && self.enemies[ei].boss_kind != Some(BossKind::AncientGuardian)
+                && self.enemies[ei].boss_kind != Some(BossKind::PirateCaptain)
             {
                 let base_reward = 15 + self.floor_num * 2;
                 sentence_challenge = Some((
@@ -9213,7 +9245,7 @@ impl GameState {
         self.save_high_score();
         self.save_stats();
         self.srs = crate::srs::load_srs();
-        self.player = Player::new(0, 0, PlayerClass::Scholar);
+        self.player = Player::new(0, 0, PlayerClass::Envoy);
         self.floor_num = 0;
         self.run_kills = 0;
         self.run_gold_earned = 0;
@@ -9515,7 +9547,7 @@ impl GameState {
     ];
 
     const BOSS_NAMES: &'static [&'static str] = &[
-        "Gatekeeper", "Scholar", "Elementalist", "MimicKing", "InkSage", "RadicalThief",
+        "PirateCaptain", "HiveQueen", "RogueAICore", "VoidEntity", "AncientGuardian", "DriftLeviathan",
     ];
 
     const FIGHT_TYPES: &'static [&'static str] = &["normal", "elite", "boss"];
@@ -9795,26 +9827,26 @@ impl GameState {
                 if let Some(name) = parts.get(1) {
                     let lower = name.to_lowercase();
                     let item = match lower.as_str() {
-                        "healthpotion" => Some(Item::HealthPotion(5 + self.floor_num)),
-                        "poisonflask" => Some(Item::PoisonFlask(2, 3)),
-                        "revealscroll" => Some(Item::RevealScroll),
-                        "teleportscroll" => Some(Item::TeleportScroll),
-                        "hastepotion" => Some(Item::HastePotion(5)),
-                        "stunbomb" => Some(Item::StunBomb),
-                        "riceball" => Some(Item::RiceBall(40)),
-                        "meditationincense" => Some(Item::MeditationIncense(5)),
-                        "ancestralwine" => Some(Item::AncestralWine(3)),
-                        "smokescreen" => Some(Item::SmokeScreen(4)),
-                        "firecracker" => Some(Item::FireCracker(3 + self.floor_num / 2)),
-                        "ironskinelixir" => Some(Item::IronSkinElixir(5)),
-                        "claritytea" => Some(Item::ClarityTea),
-                        "goldingot" => Some(Item::GoldIngot(8 + self.floor_num * 2)),
-                        "thundertalisman" => Some(Item::ThunderTalisman(5 + self.floor_num)),
-                        "jadesalve" => Some(Item::JadeSalve(2)),
-                        "serpentfang" => Some(Item::SerpentFang),
-                        "wardingcharm" => Some(Item::WardingCharm(5)),
-                        "inkbomb" => Some(Item::InkBomb),
-                        "phoenixplume" => Some(Item::PhoenixPlume(5)),
+                        "healthpotion" => Some(Item::MedHypo(5 + self.floor_num)),
+                        "poisonflask" => Some(Item::ToxinGrenade(2, 3)),
+                        "revealscroll" => Some(Item::ScannerPulse),
+                        "teleportscroll" => Some(Item::PersonalTeleporter),
+                        "hastepotion" => Some(Item::StimPack(5)),
+                        "stunbomb" => Some(Item::EMPGrenade),
+                        "riceball" => Some(Item::RationPack(40)),
+                        "meditationincense" => Some(Item::FocusStim(5)),
+                        "ancestralwine" => Some(Item::SynthAle(3)),
+                        "smokescreen" => Some(Item::HoloDecoy(4)),
+                        "firecracker" => Some(Item::PlasmaBurst(3 + self.floor_num / 2)),
+                        "ironskinelixir" => Some(Item::NanoShield(5)),
+                        "claritytea" => Some(Item::NeuralBoost),
+                        "goldingot" => Some(Item::CreditChip(8 + self.floor_num * 2)),
+                        "thundertalisman" => Some(Item::ShockModule(5 + self.floor_num)),
+                        "jadesalve" => Some(Item::BiogelPatch(2)),
+                        "serpentfang" => Some(Item::VenomDart),
+                        "wardingcharm" => Some(Item::DeflectorDrone(5)),
+                        "inkbomb" => Some(Item::NaniteSwarm),
+                        "phoenixplume" => Some(Item::Revitalizer(5)),
                         _ => None,
                     };
                     match item {
@@ -9982,12 +10014,12 @@ impl GameState {
                 if let Some(name) = parts.get(1) {
                     let lower = name.to_lowercase();
                     let boss_kind = match lower.as_str() {
-                        "gatekeeper" => Some((BossKind::Gatekeeper, 5)),
-                        "scholar" => Some((BossKind::Scholar, 10)),
-                        "elementalist" => Some((BossKind::Elementalist, 15)),
-                        "mimicking" => Some((BossKind::MimicKing, 20)),
-                        "inksage" => Some((BossKind::InkSage, 25)),
-                        "radicalthief" => Some((BossKind::RadicalThief, 30)),
+                        "piratecaptain" | "gatekeeper" => Some((BossKind::PirateCaptain, 5)),
+                        "hivequeen" | "scholar" => Some((BossKind::HiveQueen, 10)),
+                        "rogueaicore" | "elementalist" => Some((BossKind::RogueAICore, 15)),
+                        "voidentity" | "mimicking" => Some((BossKind::VoidEntity, 20)),
+                        "ancientguardian" | "inksage" => Some((BossKind::AncientGuardian, 25)),
+                        "driftleviathan" | "radicalthief" => Some((BossKind::DriftLeviathan, 30)),
                         _ => None,
                     };
                     match boss_kind {
@@ -10023,12 +10055,12 @@ impl GameState {
                             label
                         }
                         None => format!(
-                            "Unknown boss '{}'. Options: Gatekeeper, Scholar, Elementalist, MimicKing, InkSage, RadicalThief",
+                            "Unknown boss '{}'. Options: PirateCaptain, HiveQueen, RogueAICore, VoidEntity, AncientGuardian, DriftLeviathan",
                             name
                         ),
                     }
                 } else {
-                    "Usage: boss <name> (Gatekeeper/Scholar/Elementalist/MimicKing/InkSage/RadicalThief)".into()
+                    "Usage: boss <name> (PirateCaptain/HiveQueen/RogueAICore/VoidEntity/AncientGuardian/DriftLeviathan)".into()
                 }
             }
             other => {
@@ -10177,87 +10209,90 @@ fn in_look_range(origin_x: i32, origin_y: i32, target_x: i32, target_y: i32) -> 
 
 fn tile_look_text(tile: Tile) -> String {
     match tile {
-        Tile::Wall => "Solid wall.".to_string(),
-        Tile::CrackedWall => {
+        Tile::Bulkhead => "Solid wall.".to_string(),
+        Tile::DamagedBulkhead => {
             "Cracked wall — a digging tool could break into a hidden room.".to_string()
         }
-        Tile::BrittleWall => {
+        Tile::WeakBulkhead => {
             "Brittle wall — a digging tool could break into the cache behind it.".to_string()
         }
-        Tile::Floor => "Open floor.".to_string(),
-        Tile::Corridor => "Corridor passage.".to_string(),
-        Tile::StairsDown => "Stairs down to the next floor.".to_string(),
-        Tile::Forge => "Forge — combine radicals or enchant gear here.".to_string(),
-        Tile::Shop => "Shop — buy gear, radicals, and consumables.".to_string(),
-        Tile::Chest => "Treasure chest — step onto it to open it.".to_string(),
-        Tile::Crate => "Crate — push it, or shove it into deep water to make a bridge.".to_string(),
-        Tile::Spikes => "Spike trap — hurts anything that steps on it.".to_string(),
-        Tile::Oil => "Oil slick — fire can ignite it.".to_string(),
-        Tile::Water => {
+        Tile::MetalFloor => "Open floor.".to_string(),
+        Tile::Hallway => "Corridor passage.".to_string(),
+        Tile::Airlock => "Stairs down to the next floor.".to_string(),
+        Tile::QuantumForge => "Forge — combine radicals or enchant gear here.".to_string(),
+        Tile::TradeTerminal => "Shop — buy gear, radicals, and consumables.".to_string(),
+        Tile::SupplyCrate => "Treasure chest — step onto it to open it.".to_string(),
+        Tile::CargoCrate => "Crate — push it, or shove it into deep water to make a bridge.".to_string(),
+        Tile::LaserGrid => "Spike trap — hurts anything that steps on it.".to_string(),
+        Tile::Coolant => "Oil slick — fire can ignite it.".to_string(),
+        Tile::CoolantPool => {
             "Shallow water — you can wade through it, and lightning arcs through it.".to_string()
         }
-        Tile::DeepWater => {
+        Tile::VacuumBreach => {
             "Deep water — too deep to cross on foot; a crate could bridge it.".to_string()
         }
-        Tile::Npc(0) => format!("{} — offers meaning hints.", Companion::Teacher.name()),
-        Tile::Npc(1) => format!("{} — heals you between floors.", Companion::Monk.name()),
+        Tile::Npc(0) => format!("{} — offers meaning hints.", Companion::ScienceOfficer.name()),
+        Tile::Npc(1) => format!("{} — heals you between floors.", Companion::Medic.name()),
         Tile::Npc(2) => format!(
             "{} — discounts goods and may offer quests.",
-            Companion::Merchant.name()
+            Companion::Quartermaster.name()
         ),
         Tile::Npc(_) => format!(
             "{} — can block the first hit in a fight.",
-            Companion::Guard.name()
+            Companion::SecurityChief.name()
         ),
-        Tile::Shrine => "Tone shrine — complete a tone challenge for bonus damage.".to_string(),
-        Tile::StrokeShrine => "Stroke shrine — arrange character components in order.".to_string(),
-        Tile::ToneWall => "Tone wall — identify tones to defend against attacks.".to_string(),
+        Tile::CircuitShrine => "Tone shrine — complete a tone challenge for bonus damage.".to_string(),
+        Tile::CompoundShrine => "Stroke shrine — arrange character components in order.".to_string(),
+        Tile::FrequencyWall => "Tone wall — identify tones to defend against attacks.".to_string(),
         Tile::CompoundShrine => {
             "Compound shrine — combine characters into compound words.".to_string()
         }
-        Tile::ClassifierShrine => {
+        Tile::ClassifierNode => {
             "Classifier shrine — match nouns with correct classifiers.".to_string()
         }
-        Tile::Altar(kind) => format!("{} — offer items here, or pray with 20 favor.", kind.name()),
-        Tile::Seal(kind) => format!(
+        Tile::Terminal(kind) => format!("{} — offer items here, or pray with 20 favor.", kind.name()),
+        Tile::SecurityLock(kind) => format!(
             "{} — one-shot script seal that reshapes the room.",
             kind.label()
         ),
-        Tile::Sign(_) => "Tutorial sign — step onto it to read the guidance.".to_string(),
-        Tile::Bridge => "Bridge — safe footing laid over water.".to_string(),
-        Tile::InkWell => "Ink well — guess the component count to restore HP.".to_string(),
-        Tile::AncestorShrine => "Ancestor shrine — complete the proverb for gold.".to_string(),
-        Tile::TranslationAltar => {
+        Tile::InfoPanel(_) => "Tutorial sign — step onto it to read the guidance.".to_string(),
+        Tile::Catwalk => "Bridge — safe footing laid over water.".to_string(),
+        Tile::DataWell => "Ink well — guess the component count to restore HP.".to_string(),
+        Tile::MemorialNode => "Ancestor shrine — complete the proverb for gold.".to_string(),
+        Tile::TranslationTerminal => {
             "Translation altar — pick the correct Chinese for English meaning.".to_string()
         }
-        Tile::RadicalGarden => "Radical garden — identify the radical to harvest it.".to_string(),
-        Tile::MirrorPool => "Mirror pool — type the pinyin to gain spell power.".to_string(),
-        Tile::StoneTutor => "Stone tutor — study, then prove you learned the tone.".to_string(),
-        Tile::CodexShrine => "Codex shrine — quiz on characters you've encountered.".to_string(),
-        Tile::WordBridge => "Word bridge — answer correctly to bridge the water.".to_string(),
-        Tile::LockedDoor => "Locked door — translate to unlock.".to_string(),
-        Tile::CursedFloor => "Cursed floor — a hidden trap awaits the unwary.".to_string(),
+        Tile::RadicalLab => "Radical garden — identify the radical to harvest it.".to_string(),
+        Tile::HoloPool => "Mirror pool — type the pinyin to gain spell power.".to_string(),
+        Tile::DroidTutor => "Stone tutor — study, then prove you learned the tone.".to_string(),
+        Tile::CodexTerminal => "Codex shrine — quiz on characters you've encountered.".to_string(),
+        Tile::DataBridge => "Word bridge — answer correctly to bridge the water.".to_string(),
+        Tile::SealedHatch => "Locked door — translate to unlock.".to_string(),
+        Tile::CorruptedFloor => "Cursed floor — a hidden trap awaits the unwary.".to_string(),
         Tile::Trap(_) => "Open floor.".to_string(),
-        Tile::GoldOre => "Gold ore vein — mine it for gold.".to_string(),
-        Tile::Lava => "Molten lava — stepping on it will burn you!".to_string(),
-        Tile::Ice => "Ice — slippery surface, be careful.".to_string(),
-        Tile::Bamboo => "Dense bamboo — blocks passage.".to_string(),
-        Tile::Mushroom => "Giant mushroom — spore cloud causes disorientation.".to_string(),
-        Tile::PoisonGas => "Poison gas — toxic fumes linger here.".to_string(),
-        Tile::Bookshelf => "Bookshelf — ancient texts and scrolls.".to_string(),
-        Tile::PressurePlate => "Pressure plate — something heavy might activate it.".to_string(),
-        Tile::Boulder => "Heavy boulder — push it onto a pressure plate.".to_string(),
-        Tile::Crystal => "Crystal formation — reflects light beautifully.".to_string(),
-        Tile::DragonGatePortal => "Dragon Gate — an otherworldly portal shimmering with power.".to_string(),
-        Tile::SpiritSpringTile => "Spirit spring — step in to restore HP and spirit.".to_string(),
-        Tile::GoldPile => "Gold pile — walk over it to collect.".to_string(),
+        Tile::OreVein => "Gold ore vein — mine it for gold.".to_string(),
+        Tile::PlasmaVent => "Molten lava — stepping on it will burn you!".to_string(),
+        Tile::FrozenDeck => "Ice — slippery surface, be careful.".to_string(),
+        Tile::CargoPipes => "Dense bamboo — blocks passage.".to_string(),
+        Tile::ToxicFungus => "Giant mushroom — spore cloud causes disorientation.".to_string(),
+        Tile::ToxicGas => "Poison gas — toxic fumes linger here.".to_string(),
+        Tile::DataRack => "Data rack — interact for information.".to_string(),
+        Tile::SalvageCrate => "Salvage crate — smash for loot.".to_string(),
+        Tile::NavBeacon => "Nav beacon — activate for map.".to_string(),
+        Tile::SpecialRoom(_) => "Special room.".to_string(),
+        Tile::PressureSensor => "Pressure plate — something heavy might activate it.".to_string(),
+        Tile::CargoCrate => "Heavy boulder — push it onto a pressure plate.".to_string(),
+        Tile::CrystalPanel => "Crystal formation — reflects light beautifully.".to_string(),
+        Tile::WarpGatePortal => "Dragon Gate — an otherworldly portal shimmering with power.".to_string(),
+        Tile::MedBayTile => "Spirit spring — step in to restore HP and spirit.".to_string(),
+        Tile::CreditCache => "Gold pile — walk over it to collect.".to_string(),
     }
 }
 
 fn tile_allows_enemy_spawn(tile: Tile) -> bool {
     matches!(
         tile,
-        Tile::Floor | Tile::Corridor | Tile::Oil | Tile::Water | Tile::Spikes | Tile::Bridge
+        Tile::MetalFloor | Tile::Hallway | Tile::Coolant | Tile::CoolantPool | Tile::LaserGrid | Tile::Catwalk
     )
 }
 
@@ -10355,7 +10390,7 @@ fn tutorial_exit_blocker_for(tutorial: Option<&TutorialState>) -> Option<&'stati
 fn can_be_reshaped_by_seal(tile: Tile) -> bool {
     matches!(
         tile,
-        Tile::Floor | Tile::Corridor | Tile::Oil | Tile::Water | Tile::Spikes
+        Tile::MetalFloor | Tile::Hallway | Tile::Coolant | Tile::CoolantPool | Tile::LaserGrid
     )
 }
 
@@ -10438,12 +10473,12 @@ mod tests {
 
     #[test]
     fn cracked_wall_look_text_mentions_hidden_room() {
-        assert!(tile_look_text(Tile::CrackedWall).contains("hidden room"));
+        assert!(tile_look_text(Tile::DamagedBulkhead).contains("hidden room"));
     }
 
     #[test]
     fn deep_water_look_text_mentions_bridge() {
-        assert!(tile_look_text(Tile::DeepWater).contains("bridge"));
+        assert!(tile_look_text(Tile::VacuumBreach).contains("bridge"));
     }
 
     #[test]
@@ -10538,10 +10573,10 @@ mod tests {
 
     #[test]
     fn only_mutable_ground_can_be_reshaped_by_seals() {
-        assert!(can_be_reshaped_by_seal(Tile::Floor));
-        assert!(can_be_reshaped_by_seal(Tile::Water));
-        assert!(!can_be_reshaped_by_seal(Tile::Forge));
-        assert!(!can_be_reshaped_by_seal(Tile::Chest));
+        assert!(can_be_reshaped_by_seal(Tile::MetalFloor));
+        assert!(can_be_reshaped_by_seal(Tile::CoolantPool));
+        assert!(!can_be_reshaped_by_seal(Tile::QuantumForge));
+        assert!(!can_be_reshaped_by_seal(Tile::SupplyCrate));
     }
 
     #[test]
@@ -10679,62 +10714,62 @@ mod tests {
 
     #[test]
     fn merchant_discount_scales_with_level() {
-        assert_eq!(Companion::Merchant.shop_discount_pct(1), 20);
-        assert_eq!(Companion::Merchant.shop_discount_pct(2), 25);
-        assert_eq!(Companion::Merchant.shop_discount_pct(3), 25);
+        assert_eq!(Companion::Quartermaster.shop_discount_pct(1), 20);
+        assert_eq!(Companion::Quartermaster.shop_discount_pct(2), 25);
+        assert_eq!(Companion::Quartermaster.shop_discount_pct(3), 25);
     }
 
     #[test]
     fn non_merchant_has_no_discount() {
-        assert_eq!(Companion::Teacher.shop_discount_pct(3), 0);
-        assert_eq!(Companion::Monk.shop_discount_pct(3), 0);
-        assert_eq!(Companion::Guard.shop_discount_pct(3), 0);
+        assert_eq!(Companion::ScienceOfficer.shop_discount_pct(3), 0);
+        assert_eq!(Companion::Medic.shop_discount_pct(3), 0);
+        assert_eq!(Companion::SecurityChief.shop_discount_pct(3), 0);
     }
 
     #[test]
     fn monk_heal_scales_with_level() {
-        assert_eq!(Companion::Monk.heal_per_floor(1), 1);
-        assert_eq!(Companion::Monk.heal_per_floor(2), 2);
-        assert_eq!(Companion::Monk.heal_per_floor(3), 2);
+        assert_eq!(Companion::Medic.heal_per_floor(1), 1);
+        assert_eq!(Companion::Medic.heal_per_floor(2), 2);
+        assert_eq!(Companion::Medic.heal_per_floor(3), 2);
     }
 
     #[test]
     fn non_monk_has_no_heal() {
-        assert_eq!(Companion::Teacher.heal_per_floor(3), 0);
-        assert_eq!(Companion::Guard.heal_per_floor(3), 0);
+        assert_eq!(Companion::ScienceOfficer.heal_per_floor(3), 0);
+        assert_eq!(Companion::SecurityChief.heal_per_floor(3), 0);
     }
 
     #[test]
     fn guard_blocks_scale_with_level() {
-        assert_eq!(Companion::Guard.guard_max_blocks(1), 1);
-        assert_eq!(Companion::Guard.guard_max_blocks(2), 1);
-        assert_eq!(Companion::Guard.guard_max_blocks(3), 2);
+        assert_eq!(Companion::SecurityChief.guard_max_blocks(1), 1);
+        assert_eq!(Companion::SecurityChief.guard_max_blocks(2), 1);
+        assert_eq!(Companion::SecurityChief.guard_max_blocks(3), 2);
     }
 
     #[test]
     fn guard_second_block_chance_scales_with_level() {
-        assert_eq!(Companion::Guard.guard_second_block_chance(1), 0);
-        assert_eq!(Companion::Guard.guard_second_block_chance(2), 50);
-        assert_eq!(Companion::Guard.guard_second_block_chance(3), 100);
+        assert_eq!(Companion::SecurityChief.guard_second_block_chance(1), 0);
+        assert_eq!(Companion::SecurityChief.guard_second_block_chance(2), 50);
+        assert_eq!(Companion::SecurityChief.guard_second_block_chance(3), 100);
     }
 
     #[test]
     fn non_guard_has_no_blocks() {
-        assert_eq!(Companion::Teacher.guard_max_blocks(3), 0);
-        assert_eq!(Companion::Monk.guard_max_blocks(3), 0);
+        assert_eq!(Companion::ScienceOfficer.guard_max_blocks(3), 0);
+        assert_eq!(Companion::Medic.guard_max_blocks(3), 0);
     }
 
     #[test]
     fn teacher_hint_reveals_more_at_higher_levels() {
         let entry = friend_entry();
         let enemy = Enemy::from_vocab(entry, 5, 5, 1);
-        let l1 = Companion::Teacher
+        let l1 = Companion::ScienceOfficer
             .contextual_hint(&enemy, 10, 10, false, 1)
             .unwrap();
-        let l2 = Companion::Teacher
+        let l2 = Companion::ScienceOfficer
             .contextual_hint(&enemy, 10, 10, false, 2)
             .unwrap();
-        let l3 = Companion::Teacher
+        let l3 = Companion::ScienceOfficer
             .contextual_hint(&enemy, 10, 10, false, 3)
             .unwrap();
         assert!(!l1.contains(&enemy.pinyin));
@@ -10746,11 +10781,11 @@ mod tests {
     fn guard_hint_shows_block_count_at_higher_levels() {
         let entry = friend_entry();
         let enemy = Enemy::from_vocab(entry, 5, 5, 1);
-        let l1 = Companion::Guard
+        let l1 = Companion::SecurityChief
             .contextual_hint(&enemy, 10, 10, false, 1)
             .unwrap();
         assert!(l1.contains("first hit"));
-        let l3 = Companion::Guard
+        let l3 = Companion::SecurityChief
             .contextual_hint(&enemy, 10, 10, false, 3)
             .unwrap();
         assert!(l3.contains("2 hits"));
@@ -10760,7 +10795,7 @@ mod tests {
     fn guard_hint_none_when_already_used() {
         let entry = friend_entry();
         let enemy = Enemy::from_vocab(entry, 5, 5, 1);
-        assert!(Companion::Guard
+        assert!(Companion::SecurityChief
             .contextual_hint(&enemy, 10, 10, true, 1)
             .is_none());
     }
@@ -10853,9 +10888,9 @@ pub fn init_game() -> Result<(), JsValue> {
     let renderer = Renderer::new(canvas).map_err(|e| JsValue::from_str(e))?;
 
     let seed = win.performance().map(|p| p.now() as u64).unwrap_or(42);
-    let level = DungeonLevel::generate(MAP_W, MAP_H, seed, 1);
+    let level = DungeonLevel::generate(MAP_W, MAP_H, seed, 1, crate::world::LocationType::OrbitalPlatform);
     let (sx, sy) = level.start_pos();
-    let player = Player::new(sx, sy, PlayerClass::Scholar);
+    let player = Player::new(sx, sy, PlayerClass::Envoy);
 
     let best_floor = GameState::load_high_score();
     let srs = crate::srs::load_srs();
@@ -10948,6 +10983,57 @@ pub fn init_game() -> Result<(), JsValue> {
         crafting_mode: false,
         crafting_first: None,
         crafting_cursor: 0,
+        game_mode: GameMode::ShipInterior,
+        sector_map: Some({
+            let s = generate_sector(0, 1, seed as u32);
+            let start = s.start_system;
+            SectorMap {
+                sectors: vec![s],
+                current_sector: 0,
+                current_system: start,
+            }
+        }),
+        ship_layout: generate_ship_layout(),
+        ship: Ship {
+            hull: 100,
+            max_hull: 100,
+            fuel: 50,
+            max_fuel: 100,
+            shields: 20,
+            max_shields: 50,
+            weapon_power: 10,
+            engine_power: 10,
+            sensor_range: 2,
+            cargo_capacity: 100,
+            cargo_used: 0,
+        },
+        crew: vec![
+            CrewMember {
+                name: "First Officer Chen".to_string(),
+                role: CrewRole::Pilot,
+                hp: 10,
+                max_hp: 10,
+                level: 1,
+                xp: 0,
+                morale: 50,
+                skill: 1,
+            },
+            CrewMember {
+                name: "Engineer Rodriguez".to_string(),
+                role: CrewRole::Engineer,
+                hp: 10,
+                max_hp: 10,
+                level: 1,
+                xp: 0,
+                morale: 50,
+                skill: 1,
+            },
+        ],
+        current_event: None,
+        event_choice_cursor: 0,
+        ship_player_x: 5,
+        ship_player_y: 5,
+        starmap_cursor: 0,
     }));
 
     // Initial setup
@@ -12206,10 +12292,10 @@ pub fn init_game() -> Result<(), JsValue> {
                             .record(correct_hanzi, correct_pinyin, meaning, correct);
                         if correct {
                             let bidx = s.level.idx(bridge_x, bridge_y);
-                            s.level.tiles[bidx] = Tile::Bridge;
+                            s.level.tiles[bidx] = Tile::Catwalk;
                             let widx = s.level.idx(s.player.x, s.player.y);
-                            if s.level.tiles[widx] == Tile::WordBridge {
-                                s.level.tiles[widx] = Tile::Floor;
+                            if s.level.tiles[widx] == Tile::DataBridge {
+                                s.level.tiles[widx] = Tile::MetalFloor;
                             }
                             let (sx, sy) = s.tile_to_screen(bridge_x, bridge_y);
                             let gs = &mut *s;
@@ -12265,7 +12351,7 @@ pub fn init_game() -> Result<(), JsValue> {
                         s.codex.record(hanzi, pinyin, correct_meaning, correct);
                         if correct {
                             let didx = s.level.idx(door_x, door_y);
-                            s.level.tiles[didx] = Tile::Floor;
+                            s.level.tiles[didx] = Tile::MetalFloor;
                             let (sx, sy) = s.tile_to_screen(door_x, door_y);
                             let gs = &mut *s;
                             gs.particles.spawn_dig(sx, sy, &mut gs.rng_state);
@@ -12515,7 +12601,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                     s.enemies[boss_idx].hp -= applied;
                                     s.enemies[boss_idx].stunned = true;
                                     s.message = format!(
-                                        "✓ Correct! \"{}\" — The Scholar loses {} HP and is stunned!",
+                                        "✓ Correct! \"{}\" — The boss loses {} HP and is stunned!",
                                         meaning, applied
                                     );
                                 } else {
@@ -12524,7 +12610,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                         (before + failure_heal).min(s.enemies[boss_idx].max_hp);
                                     let healed = s.enemies[boss_idx].hp - before;
                                     s.message = format!(
-                                        "✗ Wrong order! Correct: {} — The Scholar regains {} HP.",
+                                        "✗ Wrong order! Correct: {} — The boss regains {} HP.",
                                         correct_text, healed
                                     );
                                 }
@@ -12565,7 +12651,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                     s.enemies[boss_idx].hp -= applied;
                                     s.enemies[boss_idx].stunned = true;
                                     s.message = format!(
-                                        "✓ Seal shattered! \"{}\" — The Gatekeeper loses {} HP and is stunned!",
+                                        "✓ Seal shattered! \"{}\" — The Pirate Captain loses {} HP and is stunned!",
                                         meaning, applied
                                     );
                                 } else {
@@ -12577,7 +12663,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                     if s.player.hp <= 0 && !s.try_phoenix_revive() {
                                         let fl = s.floor_num;
                                         s.run_journal.log(crate::game::RunEvent::DiedTo(
-                                            "Gatekeeper's Seal".to_string(),
+                                            "Pirate Captain's Seal".to_string(),
                                             fl,
                                         ));
                                         s.combat = CombatState::GameOver;
@@ -12649,7 +12735,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                 }
                                 s.typing.clear();
                                 s.message = format!(
-                                    "You abandon the syntax duel. The Scholar regains {} HP!",
+                                    "You abandon the syntax duel. The boss regains {} HP!",
                                     healed
                                 );
                             } else {
@@ -12691,7 +12777,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                 if s.player.hp <= 0 && !s.try_phoenix_revive() {
                                     let fl = s.floor_num;
                                     s.run_journal
-                                        .log(RunEvent::DiedTo("Gatekeeper's Seal".to_string(), fl));
+                                        .log(RunEvent::DiedTo("Pirate Captain's Seal".to_string(), fl));
                                     s.post_mortem_page = 0;
                                     s.combat = CombatState::GameOver;
                                 }
@@ -12719,9 +12805,9 @@ pub fn init_game() -> Result<(), JsValue> {
                     s.seed = daily_seed;
                     s.rng_state = daily_seed;
                     s.daily_mode = true;
-                    s.level = DungeonLevel::generate(MAP_W, MAP_H, daily_seed, 1);
+                    s.level = DungeonLevel::generate(MAP_W, MAP_H, daily_seed, 1, crate::world::LocationType::OrbitalPlatform);
                     let (sx, sy) = s.level.start_pos();
-                    s.player = s.make_player(sx, sy, PlayerClass::Scholar);
+                    s.player = s.make_player(sx, sy, PlayerClass::Envoy);
                     s.reset_item_lore();
                     s.combat = CombatState::Explore;
                     s.message =
@@ -13433,9 +13519,9 @@ pub fn init_game() -> Result<(), JsValue> {
                             let kind = s.player.items[cursor].kind();
                             if matches!(
                                 kind,
-                                ItemKind::HealthPotion
-                                    | ItemKind::PoisonFlask
-                                    | ItemKind::HastePotion
+                                ItemKind::MedHypo
+                                    | ItemKind::ToxinGrenade
+                                    | ItemKind::StimPack
                             ) {
                                 s.combat = CombatState::DippingTarget {
                                     source_idx: cursor,
@@ -13644,7 +13730,7 @@ pub fn init_game() -> Result<(), JsValue> {
                     return;
                 }
                 "o" | "O" => {
-                    if let Tile::Altar(kind) = s.level.tile(s.player.x, s.player.y) {
+                    if let Tile::Terminal(kind) = s.level.tile(s.player.x, s.player.y) {
                         if s.player.items.is_empty() {
                             s.message = "You have nothing to offer.".to_string();
                             s.message_timer = 60;
@@ -13663,7 +13749,7 @@ pub fn init_game() -> Result<(), JsValue> {
                     return;
                 }
                 "p" | "P" => {
-                    if let Tile::Altar(kind) = s.level.tile(s.player.x, s.player.y) {
+                    if let Tile::Terminal(kind) = s.level.tile(s.player.x, s.player.y) {
                         s.pray_at_altar(kind);
                     } else {
                         s.message = "You pray to the void. Silence.".to_string();
@@ -13797,7 +13883,7 @@ pub fn init_game() -> Result<(), JsValue> {
                         let cw = gs.renderer.canvas_w;
                         let ch = gs.renderer.canvas_h;
                         match weather {
-                            combat::Weather::Rain => {
+                            combat::Weather::CoolantLeak => {
                                 for _ in 0..3 {
                                     let x = (gs.rng_state & 0xFFFF) as f64 / 65536.0 * cw;
                                     gs.rng_state ^= gs.rng_state << 13;
@@ -13806,7 +13892,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                     gs.particles.spawn_rain_drop(x, 0.0, &mut gs.rng_state);
                                 }
                             }
-                            combat::Weather::Fog => {
+                            combat::Weather::SmokeScreen => {
                                 if gs.rng_state % 4 == 0 {
                                     let x = (gs.rng_state & 0xFFFF) as f64 / 65536.0 * cw;
                                     gs.rng_state ^= gs.rng_state << 13;
@@ -13820,7 +13906,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                     gs.particles.spawn_fog_wisp(x, y, &mut gs.rng_state);
                                 }
                             }
-                            combat::Weather::Sandstorm => {
+                            combat::Weather::DebrisStorm => {
                                 for _ in 0..2 {
                                     let y = (gs.rng_state & 0xFFFF) as f64 / 65536.0 * ch;
                                     gs.rng_state ^= gs.rng_state << 13;
@@ -13829,7 +13915,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                     gs.particles.spawn_sand_grain(0.0, y, &mut gs.rng_state);
                                 }
                             }
-                            combat::Weather::SpiritualInk => {
+                            combat::Weather::EnergyFlux => {
                                 if gs.rng_state % 3 == 0 {
                                     let x = (gs.rng_state & 0xFFFF) as f64 / 65536.0 * cw;
                                     gs.rng_state ^= gs.rng_state << 13;
@@ -13843,7 +13929,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                     gs.particles.spawn_ink_mote(x, y, &mut gs.rng_state);
                                 }
                             }
-                            combat::Weather::Clear => {}
+                            combat::Weather::Normal => {}
                         }
                     }
                 }
@@ -13995,15 +14081,15 @@ mod item_state_tests {
     #[test]
     fn item_state_parallel_vec_stays_in_sync() {
         use crate::player::{Item, ItemState, Player, PlayerClass};
-        let mut p = Player::new(0, 0, PlayerClass::Scholar);
-        assert!(p.add_item(Item::HealthPotion(5), ItemState::Normal));
-        assert!(p.add_item(Item::StunBomb, ItemState::Cursed));
-        assert!(p.add_item(Item::RevealScroll, ItemState::Blessed));
+        let mut p = Player::new(0, 0, PlayerClass::Envoy);
+        assert!(p.add_item(Item::MedHypo(5), ItemState::Normal));
+        assert!(p.add_item(Item::EMPGrenade, ItemState::Cursed));
+        assert!(p.add_item(Item::ScannerPulse, ItemState::Blessed));
         assert_eq!(p.items.len(), 3);
         assert_eq!(p.item_states.len(), 3);
         assert_eq!(p.item_states[1], ItemState::Cursed);
         let (item, state) = p.take_item(1).unwrap();
-        assert!(matches!(item, Item::StunBomb));
+        assert!(matches!(item, Item::EMPGrenade));
         assert_eq!(state, ItemState::Cursed);
         assert_eq!(p.items.len(), 2);
         assert_eq!(p.item_states.len(), 2);
@@ -14014,7 +14100,7 @@ mod item_state_tests {
     #[test]
     fn cursed_equipment_cannot_be_replaced() {
         use crate::player::{ItemState, Player, PlayerClass, EQUIPMENT_POOL};
-        let mut p = Player::new(0, 0, PlayerClass::Scholar);
+        let mut p = Player::new(0, 0, PlayerClass::Envoy);
         p.equip(&EQUIPMENT_POOL[0], ItemState::Cursed);
         assert_eq!(p.weapon_state, ItemState::Cursed);
         assert_eq!(
@@ -14026,7 +14112,7 @@ mod item_state_tests {
     #[test]
     fn spirit_decreases_on_move() {
         use crate::player::{Player, PlayerClass};
-        let mut p = Player::new(0, 0, PlayerClass::Scholar);
+        let mut p = Player::new(0, 0, PlayerClass::Envoy);
         assert_eq!(p.spirit, 160);
         p.spirit -= 1;
         assert_eq!(p.spirit, 159);
@@ -14035,7 +14121,7 @@ mod item_state_tests {
     #[test]
     fn rice_ball_restores_spirit() {
         use crate::player::{Player, PlayerClass};
-        let mut p = Player::new(0, 0, PlayerClass::Scholar);
+        let mut p = Player::new(0, 0, PlayerClass::Envoy);
         p.spirit = 50;
         let restore = 40;
         p.spirit = (p.spirit + restore).min(p.max_spirit);
@@ -14079,7 +14165,7 @@ mod item_state_tests {
     fn trap_tile_looks_like_floor_in_look_text() {
         use crate::dungeon::Tile;
         let trap_text = super::tile_look_text(Tile::Trap(0));
-        let floor_text = super::tile_look_text(Tile::Floor);
+        let floor_text = super::tile_look_text(Tile::MetalFloor);
         assert_eq!(trap_text, floor_text);
     }
 
@@ -14109,3 +14195,5 @@ mod item_state_tests {
         }
     }
 }
+
+

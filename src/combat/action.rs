@@ -34,7 +34,7 @@ pub fn move_unit(
     }
 
     let mut messages = Vec::new();
-    if battle.arena.tile(dest_x, dest_y) == Some(BattleTile::Thorns) {
+    if battle.arena.tile(dest_x, dest_y) == Some(BattleTile::ElectrifiedWire) {
         let actual = deal_damage(battle, unit_idx, 1);
         let name = if battle.units[unit_idx].is_player() {
             "You".to_string()
@@ -44,7 +44,7 @@ pub fn move_unit(
         messages.push(format!("{} is pierced by thorns! (-{} HP)", name, actual));
     }
     // Water tile: apply Wet status for 3 turns
-    if battle.arena.tile(dest_x, dest_y) == Some(BattleTile::Water) {
+    if battle.arena.tile(dest_x, dest_y) == Some(BattleTile::CoolantPool) {
         use crate::status::{has_wet, StatusInstance, StatusKind};
         if !has_wet(&battle.units[unit_idx].statuses) {
             battle.units[unit_idx]
@@ -61,16 +61,16 @@ pub fn move_unit(
         messages.append(&mut combo_msgs);
     }
     // SpiritWell: one-time spirit restore, convert to Open
-    if battle.arena.tile(dest_x, dest_y) == Some(BattleTile::SpiritWell)
+    if battle.arena.tile(dest_x, dest_y) == Some(BattleTile::EnergyNode)
         && battle.units[unit_idx].is_player()
     {
-        battle.arena.set_tile(dest_x, dest_y, BattleTile::Open);
+        battle.arena.set_tile(dest_x, dest_y, BattleTile::MetalFloor);
         battle.pending_spirit_delta += 15;
         messages.push("🌊 The Spirit Well restores your energy! (+15 spirit)".to_string());
     }
     // TrapTile: trigger hidden or revealed spike trap
     let dest_tile = battle.arena.tile(dest_x, dest_y);
-    if dest_tile == Some(BattleTile::TrapTile) || dest_tile == Some(BattleTile::TrapTileRevealed) {
+    if dest_tile == Some(BattleTile::MineTile) || dest_tile == Some(BattleTile::MineTileRevealed) {
         let mut trap_msgs =
             crate::combat::terrain::trigger_trap(battle, unit_idx, dest_x, dest_y);
         messages.append(&mut trap_msgs);
@@ -84,10 +84,10 @@ pub fn move_unit(
     // Terrain audio cues (only for the player to avoid spam)
     if battle.units[unit_idx].is_player() {
         let dest = battle.arena.tile(dest_x, dest_y);
-        if dest == Some(BattleTile::Water) {
+        if dest == Some(BattleTile::CoolantPool) {
             battle.audio_events.push(AudioEvent::WaterSplash);
         }
-        if dest == Some(BattleTile::Lava) {
+        if dest == Some(BattleTile::PlasmaPool) {
             battle.audio_events.push(AudioEvent::LavaRumble);
         }
     }
@@ -147,7 +147,7 @@ pub fn wait(battle: &mut TacticalBattle, unit_idx: usize) {
     if is_player {
         battle.player_acted = true;
         let tile = battle.arena.tile(ux, uy);
-        if tile == Some(BattleTile::MeditationStone) {
+        if tile == Some(BattleTile::ChargingPad) {
             battle.pending_spirit_delta += 10;
             battle.log_message("You meditate on the stone... (+10 spirit)");
         } else {
@@ -166,7 +166,7 @@ pub fn deal_damage(battle: &mut TacticalBattle, target_idx: usize, raw_damage: i
 
     // Guard passive: intercept attacks aimed at player if Guard is adjacent
     if target_idx == 0 {
-        if let Some(crate::game::Companion::Guard) = battle.companion_kind {
+        if let Some(crate::game::Companion::SecurityChief) = battle.companion_kind {
             let px = battle.units[0].x;
             let py = battle.units[0].y;
             let guard_adj = battle.units.iter().position(|u| {
@@ -216,7 +216,7 @@ pub fn deal_damage(battle: &mut TacticalBattle, target_idx: usize, raw_damage: i
     // Apply stance armor modifier when player is the target
     if target_idx == 0 {
         damage -= battle.player_stance.armor_mod();
-        // Apply spell combo armor bonus (Tempering)
+        // Apply ability combo armor bonus (Tempering)
         damage -= battle.combo_armor_bonus;
     }
 
@@ -252,7 +252,7 @@ pub fn deal_damage(battle: &mut TacticalBattle, target_idx: usize, raw_damage: i
         if !battle.units[target_idx].is_player() {
             let dx = battle.units[target_idx].x;
             let dy = battle.units[target_idx].y;
-            if battle.arena.tile(dx, dy) == Some(BattleTile::SoulTrap) {
+            if battle.arena.tile(dx, dy) == Some(BattleTile::GravityTrap) {
                 battle.pending_spirit_delta += 10;
                 battle.log_message("💀 Soul Trap captures the fallen spirit! (+10 spirit)");
             }
@@ -322,9 +322,9 @@ pub fn deal_damage_from(
     // High ground damage modifier
     let atk_tile = battle.arena.tile(battle.units[attacker_idx].x, battle.units[attacker_idx].y);
     let def_tile = battle.arena.tile(battle.units[target_idx].x, battle.units[target_idx].y);
-    if atk_tile == Some(BattleTile::HighGround) && def_tile != Some(BattleTile::HighGround) {
+    if atk_tile == Some(BattleTile::ElevatedPlatform) && def_tile != Some(BattleTile::ElevatedPlatform) {
         modified += 1;
-    } else if atk_tile != Some(BattleTile::HighGround) && def_tile == Some(BattleTile::HighGround) {
+    } else if atk_tile != Some(BattleTile::ElevatedPlatform) && def_tile == Some(BattleTile::ElevatedPlatform) {
         modified = (modified - 1).max(1);
     }
 
@@ -353,7 +353,7 @@ pub fn deal_damage_from(
     let mut retaliation_msg = None;
 
     if target.thorn_armor_turns > 0 {
-        // ThornsAura + Fortify synergy: thorns damage boosted by fortify stacks
+        // ElectrifiedBarrier + Fortify synergy: barrier damage boosted by fortify stacks
         let mut fortify_boost = target.fortify_stacks;
         // Aggressive stance + Fortify synergy: fortify stacks doubled
         if target_idx == 0 && battle.player_stance == crate::combat::PlayerStance::Aggressive {
@@ -375,14 +375,14 @@ pub fn deal_damage_from(
         .any(|s| matches!(s.kind, crate::status::StatusKind::Thorns))
     {
         let mut thorn_dmg = 2;
-        // Defensive stance + Thorns synergy: +1 thorn damage
+        // Defensive stance + Electrified barrier synergy: +1 barrier damage
         if target_idx == 0 && battle.player_stance == crate::combat::PlayerStance::Defensive {
             thorn_dmg += 1;
         }
         attacker_damage += thorn_dmg;
         let msg = match retaliation_msg {
             Some(prev) => format!("{} Thorns aura retaliates for {} damage!", prev, thorn_dmg),
-            None => format!("Thorns aura retaliates for {} damage!", thorn_dmg),
+            None => format!("Electrified barrier retaliates for {} damage!", thorn_dmg),
         };
         retaliation_msg = Some(msg);
     }
@@ -487,10 +487,10 @@ pub fn check_status_combos(battle: &mut TacticalBattle, unit_idx: usize) -> Vec<
         .statuses
         .iter()
         .any(|s| matches!(s.kind, crate::status::StatusKind::Cursed));
-    let on_oil = battle
+    let on_lubricant = battle
         .arena
         .tile(battle.units[unit_idx].x, battle.units[unit_idx].y)
-        == Some(BattleTile::Oil);
+        == Some(BattleTile::Lubricant);
 
     let name = if battle.units[unit_idx].is_player() {
         "You".to_string()
@@ -532,18 +532,18 @@ pub fn check_status_combos(battle: &mut TacticalBattle, unit_idx: usize) -> Vec<
         ));
     }
 
-    // Oil tile + Burn → Explosion (3 damage to unit and adjacent, Scorched tiles)
-    if on_oil && has_burn {
+    // Lubricant tile + Burn → Explosion (3 damage to unit and adjacent, BlastMark tiles)
+    if on_lubricant && has_burn {
         use crate::status::StatusKind;
         battle.units[unit_idx]
             .statuses
             .retain(|s| !matches!(s.kind, StatusKind::Burn { .. }));
         let ux = battle.units[unit_idx].x;
         let uy = battle.units[unit_idx].y;
-        battle.arena.set_tile(ux, uy, BattleTile::Scorched);
+        battle.arena.set_tile(ux, uy, BattleTile::BlastMark);
         let actual = deal_damage(battle, unit_idx, 3);
         messages.push(format!(
-            "💥 Oil + Burn = Explosion! {} takes {} damage!",
+            "💥 Lubricant + Burn = Explosion! {} takes {} damage!",
             name, actual
         ));
         let deltas: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
@@ -551,8 +551,8 @@ pub fn check_status_combos(battle: &mut TacticalBattle, unit_idx: usize) -> Vec<
             let ax = ux + dx;
             let ay = uy + dy;
             if let Some(adj_tile) = battle.arena.tile(ax, ay) {
-                if adj_tile == BattleTile::Oil {
-                    battle.arena.set_tile(ax, ay, BattleTile::Scorched);
+                if adj_tile == BattleTile::Lubricant {
+                    battle.arena.set_tile(ax, ay, BattleTile::BlastMark);
                 }
             }
             if let Some(aidx) = battle.unit_at(ax, ay) {
@@ -683,10 +683,12 @@ pub fn critical_backstab_check(battle: &TacticalBattle, target_idx: usize) -> bo
     flank >= 0.50
 }
 
-/// SpellPowerBoost terrain synergy: terrain spells affect 1 extra tile.
+/// AbilityPowerBoost terrain synergy: terrain abilities affect 1 extra tile.
 #[allow(dead_code)]
 pub fn spell_power_extra_tiles(battle: &TacticalBattle) -> bool {
     battle.player_equip_effects.iter().any(|e| {
         matches!(e, crate::player::EquipEffect::SpellPowerBoost(_))
     })
 }
+
+

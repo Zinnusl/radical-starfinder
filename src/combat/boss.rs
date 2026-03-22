@@ -9,19 +9,19 @@ use crate::enemy::{AiBehavior, BossKind};
 pub fn boss_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<String> {
     let boss_kind = battle.units[unit_idx].boss_kind?;
     match boss_kind {
-        BossKind::Gatekeeper => gatekeeper_action(battle, unit_idx),
-        BossKind::Scholar => scholar_action(battle, unit_idx),
-        BossKind::Elementalist => elementalist_action(battle, unit_idx),
-        BossKind::MimicKing => mimic_king_action(battle, unit_idx),
-        BossKind::InkSage => ink_sage_action(battle, unit_idx),
-        BossKind::RadicalThief => radical_thief_action(battle, unit_idx),
+        BossKind::PirateCaptain => pirate_captain_action(battle, unit_idx),
+        BossKind::HiveQueen => hive_queen_action(battle, unit_idx),
+        BossKind::RogueAICore => rogue_ai_core_action(battle, unit_idx),
+        BossKind::VoidEntity => void_entity_action(battle, unit_idx),
+        BossKind::AncientGuardian => ancient_guardian_action(battle, unit_idx),
+        BossKind::DriftLeviathan => drift_leviathan_action(battle, unit_idx),
     }
 }
 
-// ── Gatekeeper ───────────────────────────────────────────────────────────────
-// Summons 门 ward tiles that block movement. Player must type "men2" to destroy.
+// ── Pirate Captain ────────────────────────────────────────────────────────────
+// Deploys shield generator tiles that block movement. Player must type "men2" to destroy.
 
-fn gatekeeper_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<String> {
+fn pirate_captain_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<String> {
     let turn = battle.turn_number;
     if turn % 3 != 0 || battle.ward_tiles.len() >= 4 {
         return None;
@@ -47,7 +47,7 @@ fn gatekeeper_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<Str
         if !battle.arena.in_bounds(wx, wy) {
             continue;
         }
-        if battle.arena.tile(wx, wy) != Some(BattleTile::Open) {
+        if battle.arena.tile(wx, wy) != Some(BattleTile::MetalFloor) {
             continue;
         }
         if battle.unit_at(wx, wy).is_some() {
@@ -56,9 +56,9 @@ fn gatekeeper_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<Str
         if battle.ward_tiles.contains(&(wx, wy)) {
             continue;
         }
-        battle.arena.set_tile(wx, wy, BattleTile::Obstacle);
+        battle.arena.set_tile(wx, wy, BattleTile::CoverBarrier);
         battle.ward_tiles.push((wx, wy));
-        return Some(format!("Gatekeeper summons a 门 ward at ({},{})!", wx, wy));
+        return Some(format!("Pirate Captain deploys a shield generator at ({},{})!", wx, wy));
     }
     None
 }
@@ -71,17 +71,17 @@ pub fn try_destroy_ward(battle: &mut TacticalBattle, x: i32, y: i32) -> bool {
         .position(|&(wx, wy)| wx == x && wy == y)
     {
         battle.ward_tiles.remove(pos);
-        battle.arena.set_tile(x, y, BattleTile::Open);
+        battle.arena.set_tile(x, y, BattleTile::MetalFloor);
         true
     } else {
         false
     }
 }
 
-// ── Scholar ──────────────────────────────────────────────────────────────────
+// ── Hive Queen ───────────────────────────────────────────────────────────────
 // At 50% HP switches to Retreat AI. Sentence duel handled by game.rs.
 
-fn scholar_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<String> {
+fn hive_queen_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<String> {
     let unit = &battle.units[unit_idx];
     let hp_ratio = unit.hp as f64 / unit.max_hp.max(1) as f64;
 
@@ -95,18 +95,18 @@ fn scholar_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<String
         if dist <= 1 {
             if let Some((nx, ny)) = step_away(battle, fx, fy, px, py) {
                 move_unit(battle, unit_idx, nx, ny);
-                return Some("Scholar retreats, muttering ancient verses...".to_string());
+                return Some("Hive Queen retreats, emitting pheromone signals...".to_string());
             }
         }
-        return Some("Scholar studies you cautiously...".to_string());
+        return Some("Hive Queen studies you cautiously...".to_string());
     }
     None
 }
 
-// ── Elementalist ─────────────────────────────────────────────────────────────
-// Adapts resistance to last spell school. Terrain shifts every 4th turn.
+// ── Rogue AI Core ────────────────────────────────────────────────────────────
+// Adapts resistance to last system hacked. Terrain shifts every 4th turn.
 
-fn elementalist_action(battle: &mut TacticalBattle, _unit_idx: usize) -> Option<String> {
+fn rogue_ai_core_action(battle: &mut TacticalBattle, _unit_idx: usize) -> Option<String> {
     let turn = battle.turn_number;
 
     if turn % 4 == 0 {
@@ -127,33 +127,33 @@ fn elementalist_action(battle: &mut TacticalBattle, _unit_idx: usize) -> Option<
             if battle.unit_at(x, y).is_some() {
                 continue;
             }
-            let current = battle.arena.tile(x, y).unwrap_or(BattleTile::Open);
-            if current == BattleTile::Obstacle {
+            let current = battle.arena.tile(x, y).unwrap_or(BattleTile::MetalFloor);
+            if current == BattleTile::CoverBarrier {
                 continue;
             }
             let new_tile = match hash % 4 {
-                0 => BattleTile::Water,
-                1 => BattleTile::Ice,
-                2 => BattleTile::InkPool,
-                _ => BattleTile::Grass,
+                0 => BattleTile::CoolantPool,
+                1 => BattleTile::FrozenCoolant,
+                2 => BattleTile::OilSlick,
+                _ => BattleTile::WiringPanel,
             };
             battle.arena.set_tile(x, y, new_tile);
             shifted += 1;
         }
         if shifted > 0 {
-            return Some("Elementalist reshapes the terrain!".to_string());
+            return Some("Rogue AI Core reconfigures the environment!".to_string());
         }
     }
     None
 }
 
-/// Returns damage multiplier for spells against Elementalist (0.5 if resisted).
+/// Returns damage multiplier for spells against Rogue AI Core (0.5 if resisted).
 pub fn elementalist_resistance(
     battle: &TacticalBattle,
     target_idx: usize,
     spell_school: &str,
 ) -> f64 {
-    if let Some(BossKind::Elementalist) = battle.units[target_idx].boss_kind {
+    if let Some(BossKind::RogueAICore) = battle.units[target_idx].boss_kind {
         if let Some(resisted) = battle.last_spell_school {
             if resisted == spell_school {
                 return 0.5;
@@ -163,10 +163,10 @@ pub fn elementalist_resistance(
     1.0
 }
 
-// ── MimicKing ────────────────────────────────────────────────────────────────
+// ── Void Entity ──────────────────────────────────────────────────────────────
 // Spawns decoy copies every 5 turns. Decoys have same hanzi but different pinyin.
 
-fn mimic_king_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<String> {
+fn void_entity_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<String> {
     let turn = battle.turn_number;
     if turn % 5 != 0 {
         return None;
@@ -252,16 +252,16 @@ fn mimic_king_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<Str
             battle.turn_queue_pos = 0;
         }
 
-        return Some("Mimic King conjures a decoy! Which is real?".to_string());
+        return Some("Void Entity warps a decoy into existence! Which is real?".to_string());
     }
     None
 }
 
-// ── InkSage ──────────────────────────────────────────────────────────────────
-// Creates InkPool terrain every 2nd turn. +2 damage bonus on InkPool.
-// Calligraphy trial at 50% HP handled by game.rs.
+// ── Ancient Guardian ──────────────────────────────────────────────────────────
+// Creates OilSlick terrain every 2nd turn. +2 damage bonus on OilSlick.
+// Holographic trial at 50% HP handled by game.rs.
 
-fn ink_sage_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<String> {
+fn ancient_guardian_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<String> {
     let turn = battle.turn_number;
     if turn % 2 != 0 {
         return None;
@@ -277,39 +277,39 @@ fn ink_sage_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<Strin
         if !battle.arena.in_bounds(x, y) {
             continue;
         }
-        let tile = battle.arena.tile(x, y).unwrap_or(BattleTile::Open);
-        if tile == BattleTile::Open || tile == BattleTile::Grass {
-            battle.arena.set_tile(x, y, BattleTile::InkPool);
+        let tile = battle.arena.tile(x, y).unwrap_or(BattleTile::MetalFloor);
+        if tile == BattleTile::MetalFloor || tile == BattleTile::WiringPanel {
+            battle.arena.set_tile(x, y, BattleTile::OilSlick);
             placed += 1;
         }
     }
 
     if placed > 0 {
-        Some("Ink Sage spills ink across the battlefield!".to_string())
+        Some("Ancient Guardian floods the area with energy fields!".to_string())
     } else {
         None
     }
 }
 
-/// Ink Sage damage bonus: +2 when standing on InkPool.
+/// Ancient Guardian damage bonus: +2 when standing on OilSlick.
 pub fn ink_sage_bonus(battle: &TacticalBattle, unit_idx: usize) -> i32 {
-    if let Some(BossKind::InkSage) = battle.units[unit_idx].boss_kind {
+    if let Some(BossKind::AncientGuardian) = battle.units[unit_idx].boss_kind {
         let tile = battle
             .arena
             .tile(battle.units[unit_idx].x, battle.units[unit_idx].y);
-        if tile == Some(BattleTile::InkPool) {
+        if tile == Some(BattleTile::OilSlick) {
             return 2;
         }
     }
     0
 }
 
-// ── RadicalThief ─────────────────────────────────────────────────────────────
-// Steals a spell on wrong answer. Stolen spells appear as grid pickups.
-// Spell theft handled in input.rs (resolve_basic_attack on wrong answer).
-// This function handles the thief's own tactical behavior.
+// ── Drift Leviathan ──────────────────────────────────────────────────────────
+// Absorbs a module on wrong answer. Absorbed modules appear as grid pickups.
+// Module absorption handled in input.rs (resolve_basic_attack on wrong answer).
+// This function handles the leviathan's own tactical behavior.
 
-fn radical_thief_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<String> {
+fn drift_leviathan_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<String> {
     if !battle.stolen_spells.is_empty() {
         let (sx, sy, _, _, _) = battle.stolen_spells[0];
         let fx = battle.units[unit_idx].x;
@@ -320,17 +320,17 @@ fn radical_thief_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<
         if dist_to_spell > 1 && dist_to_player > dist_to_spell {
             if let Some((nx, ny)) = step_toward(battle, fx, fy, sx, sy) {
                 move_unit(battle, unit_idx, nx, ny);
-                return Some("Radical Thief guards the stolen spell!".to_string());
+                return Some("Drift Leviathan guards the absorbed module!".to_string());
             }
         }
     }
     None
 }
 
-/// Steal a random spell from the player's available spells and place it on the grid.
-/// Returns a log message if a spell was stolen.
+/// Absorb a random module from the player's available modules and place it on the grid.
+/// Returns a log message if a module was absorbed.
 pub fn steal_spell(battle: &mut TacticalBattle, unit_idx: usize) -> Option<String> {
-    if battle.units[unit_idx].boss_kind != Some(BossKind::RadicalThief) {
+    if battle.units[unit_idx].boss_kind != Some(BossKind::DriftLeviathan) {
         return None;
     }
     if battle.available_spells.is_empty() {
@@ -366,7 +366,7 @@ pub fn steal_spell(battle: &mut TacticalBattle, unit_idx: usize) -> Option<Strin
         battle.stolen_spells.push((tx, ty, hanzi, pinyin, effect));
     }
 
-    Some(format!("Radical Thief steals {}!", hanzi))
+    Some(format!("Drift Leviathan absorbs {}!", hanzi))
 }
 
 /// Try to pick up a stolen spell at position (x, y). Returns log message if picked up.
@@ -377,5 +377,5 @@ pub fn try_pickup_stolen_spell(battle: &mut TacticalBattle, x: i32, y: i32) -> O
         .position(|&(sx, sy, _, _, _)| sx == x && sy == y)?;
     let (_, _, hanzi, pinyin, effect) = battle.stolen_spells.remove(pos);
     battle.available_spells.push((hanzi, pinyin, effect));
-    Some(format!("Recovered stolen spell {}!", hanzi))
+    Some(format!("Recovered stolen module {}!", hanzi))
 }

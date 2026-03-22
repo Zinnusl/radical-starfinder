@@ -1,4 +1,4 @@
-//! Character Codex — encyclopedia of encountered characters.
+//! Character Xenopedia — encyclopedia of encountered hostile creatures.
 
 use std::collections::HashMap;
 
@@ -83,7 +83,7 @@ impl Codex {
                 })
                 .collect::<Vec<_>>()
                 .join(";");
-            let _ = storage.set_item("radical_roguelike_codex", &data);
+            let _ = storage.set_item("radical_starfinder_codex", &data);
         }
     }
 
@@ -92,7 +92,7 @@ impl Codex {
         let mut codex = Self::new();
         let storage = web_sys::window().and_then(|w| w.local_storage().ok().flatten());
         if let Some(storage) = storage {
-            if let Ok(Some(data)) = storage.get_item("radical_roguelike_codex") {
+            if let Ok(Some(data)) = storage.get_item("radical_starfinder_codex") {
                 for entry_str in data.split(';') {
                     let parts: Vec<&str> = entry_str.split('|').collect();
                     if parts.len() >= 5 {

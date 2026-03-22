@@ -47,9 +47,9 @@ pub enum PlayerStance {
     Aggressive,
     /// +2 armor, -1 damage, +0 movement.
     Defensive,
-    /// +2 movement, -1 damage, can't cast spells.
+    /// +2 movement, -1 damage, can't use abilities.
     Mobile,
-    /// +1 spell power, +1 spell range, -1 movement, -1 damage.
+    /// +1 ability power, +1 ability range, -1 movement, -1 damage.
     Focused,
 }
 
@@ -138,7 +138,7 @@ impl PlayerStance {
             Self::Aggressive => "+2 dmg, -1 armor, -1 move",
             Self::Defensive => "+2 armor, -1 dmg",
             Self::Mobile => "+2 move, -1 dmg, no spells",
-            Self::Focused => "+1 spell pwr/range, -1 move/dmg",
+            Self::Focused => "+1 ability pwr/range, -1 move/dmg",
         }
     }
 
@@ -217,55 +217,55 @@ impl WuxingElement {
 /// Dynamic environmental events that trigger periodically during combat.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArenaEvent {
-    /// Water tiles expand to adjacent Open tiles.
-    RisingWater,
-    /// 3-5 random tiles become CrumblingFloor/CrackedFloor.
-    EarthTremor,
-    /// 2-3 InkPool tiles appear randomly.
-    SpiritSurge,
+    /// Coolant tiles expand to adjacent MetalFloor tiles.
+    CoolantFlood,
+    /// 3-5 random tiles become WeakenedPlating/DamagedFloor.
+    HullBreach,
+    /// 2-3 OilSlick tiles appear randomly.
+    PowerSurge,
     /// All units pushed 1 tile in random cardinal direction.
-    WindGust,
-    /// Random tile hit with 3 damage + chain to Water.
-    LightningStrike,
-    /// 2-3 Lava tiles appear at arena edges, spread inward.
-    LavaFlow,
+    VentBlast,
+    /// Random tile hit with 3 damage + chain to CoolantPool.
+    ArcDischarge,
+    /// 2-3 PlasmaPool tiles appear at arena edges, spread inward.
+    PlasmaLeak,
     /// All units heal 2 HP.
-    HealingMist,
-    /// All Water tiles freeze to Ice, Wet units get Slow.
-    FrostSnap,
-    /// 4-6 random tiles become Sand, all units lose 1 movement this round.
-    SandstormBurst,
+    MediGas,
+    /// All CoolantPool tiles freeze to FrozenCoolant, Wet units get Slow.
+    CryoVent,
+    /// 4-6 random tiles become Debris, all units lose 1 movement this round.
+    DebrisBurst,
     /// All status effect durations extended by 1 turn.
-    SpiritualEcho,
-    /// Grass tiles expand, some upgrade to BambooThicket.
-    WildGrowth,
-    /// Single tile becomes Lava + ExplosiveBarrel spawns adjacent.
-    VolcanicVent,
+    SystemGlitch,
+    /// WiringPanel tiles expand, some upgrade to PipeTangle.
+    NaniteSpread,
+    /// Single tile becomes PlasmaPool + FuelCanister spawns adjacent.
+    ReactorBlowout,
 }
 
 impl ArenaEvent {
     pub fn name(self) -> &'static str {
         match self {
-            Self::RisingWater => "Rising Water",
-            Self::EarthTremor => "Earth Tremor",
-            Self::SpiritSurge => "Spirit Surge",
-            Self::WindGust => "Wind Gust",
-            Self::LightningStrike => "Lightning Strike",
-            Self::LavaFlow => "Lava Flow",
-            Self::HealingMist => "Healing Mist",
-            Self::FrostSnap => "Frost Snap",
-            Self::SandstormBurst => "Sandstorm Burst",
-            Self::SpiritualEcho => "Spiritual Echo",
-            Self::WildGrowth => "Wild Growth",
-            Self::VolcanicVent => "Volcanic Vent",
+            Self::CoolantFlood => "Coolant Flood",
+            Self::HullBreach => "Hull Breach",
+            Self::PowerSurge => "Power Surge",
+            Self::VentBlast => "Vent Blast",
+            Self::ArcDischarge => "Arc Discharge",
+            Self::PlasmaLeak => "Plasma Leak",
+            Self::MediGas => "Medi-Gas",
+            Self::CryoVent => "Cryo Vent",
+            Self::DebrisBurst => "Debris Burst",
+            Self::SystemGlitch => "System Glitch",
+            Self::NaniteSpread => "Nanite Spread",
+            Self::ReactorBlowout => "Reactor Blowout",
         }
     }
 
     /// Danger category for color-coding: "damaging", "environmental", "beneficial".
     pub fn danger_level(self) -> &'static str {
         match self {
-            Self::LightningStrike | Self::LavaFlow | Self::VolcanicVent => "damaging",
-            Self::HealingMist | Self::SpiritualEcho | Self::WildGrowth => "beneficial",
+            Self::ArcDischarge | Self::PlasmaLeak | Self::ReactorBlowout => "damaging",
+            Self::MediGas | Self::SystemGlitch | Self::NaniteSpread => "beneficial",
             _ => "environmental",
         }
     }
@@ -273,29 +273,29 @@ impl ArenaEvent {
 
 // ── Weather System ───────────────────────────────────────────────────────────
 
-/// Arena-wide weather effect that modifies combat rules.
+/// Arena-wide environmental effect that modifies combat rules.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Weather {
-    /// No weather — baseline.
-    Clear,
-    /// Rain: Water tiles spread, Fire damage -1, Lightning chains +1 tile.
-    Rain,
-    /// Fog: Line of sight reduced by 2, ranged spell range -1.
-    Fog,
-    /// Sandstorm: Movement costs +1, accuracy reduced (miss chance +10%).
-    Sandstorm,
-    /// Spiritual Ink: Spell power +1, focus regen +1 per turn.
-    SpiritualInk,
+    /// No environmental effect — baseline.
+    Normal,
+    /// Coolant leak: Coolant tiles spread, Plasma damage -1, Arc discharge chains +1 tile.
+    CoolantLeak,
+    /// Smoke screen: Line of sight reduced by 2, ranged ability range -1.
+    SmokeScreen,
+    /// Debris storm: Movement costs +1, accuracy reduced (miss chance +10%).
+    DebrisStorm,
+    /// Energy flux: Ability power +1, focus regen +1 per turn.
+    EnergyFlux,
 }
 
 impl Weather {
     pub fn name(self) -> &'static str {
         match self {
-            Self::Clear => "Clear",
-            Self::Rain => "Rain",
-            Self::Fog => "Fog",
-            Self::Sandstorm => "Sandstorm",
-            Self::SpiritualInk => "Spiritual Ink",
+            Self::Normal => "Normal",
+            Self::CoolantLeak => "Coolant Leak",
+            Self::SmokeScreen => "Smoke Screen",
+            Self::DebrisStorm => "Debris Storm",
+            Self::EnergyFlux => "Energy Flux",
         }
     }
 }
@@ -418,231 +418,231 @@ impl Direction {
 }
 
 /// Arena biome — determines tileset and terrain mix.
-/// Derived from the dungeon `RoomModifier` of the room where combat starts.
+/// Derived from the sector modifier of the area where combat starts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArenaBiome {
-    /// Default stone dungeon.
-    Stone,
-    /// Shadow / reduced visibility rooms.
-    Dark,
-    /// Arcane / magical rooms.
-    Arcane,
-    /// Cursed / corrupted rooms.
-    Cursed,
-    /// Overgrown garden with bamboo and grass.
-    Garden,
-    /// Frozen tundra with ice and snow.
-    Frozen,
-    /// Volcanic inferno with lava and fire.
-    Infernal,
+    /// Default station interior.
+    StationInterior,
+    /// Derelict ship / reduced visibility.
+    DerelictShip,
+    /// Alien ruins / anomalous areas.
+    AlienRuins,
+    /// Irradiated zone / hazardous areas.
+    IrradiatedZone,
+    /// Hydroponics bay with pipes and wiring.
+    Hydroponics,
+    /// Cryo bay with frozen coolant.
+    CryoBay,
+    /// Reactor room with plasma and heat.
+    ReactorRoom,
 }
 
 impl ArenaBiome {
     pub fn from_room_modifier(m: Option<crate::dungeon::RoomModifier>) -> Self {
         match m {
-            Some(crate::dungeon::RoomModifier::Dark) => ArenaBiome::Dark,
-            Some(crate::dungeon::RoomModifier::Arcane) => ArenaBiome::Arcane,
-            Some(crate::dungeon::RoomModifier::Cursed) => ArenaBiome::Cursed,
-            Some(crate::dungeon::RoomModifier::Garden) => ArenaBiome::Garden,
-            Some(crate::dungeon::RoomModifier::Frozen) => ArenaBiome::Frozen,
-            Some(crate::dungeon::RoomModifier::Infernal) => ArenaBiome::Infernal,
-            None => ArenaBiome::Stone,
+            Some(crate::dungeon::RoomModifier::PoweredDown) => ArenaBiome::DerelictShip,
+            Some(crate::dungeon::RoomModifier::HighTech) => ArenaBiome::AlienRuins,
+            Some(crate::dungeon::RoomModifier::Irradiated) => ArenaBiome::IrradiatedZone,
+            Some(crate::dungeon::RoomModifier::Hydroponics) => ArenaBiome::Hydroponics,
+            Some(crate::dungeon::RoomModifier::Cryogenic) => ArenaBiome::CryoBay,
+            Some(crate::dungeon::RoomModifier::OverheatedReactor) => ArenaBiome::ReactorRoom,
+            None => ArenaBiome::StationInterior,
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BattleTile {
-    Open,
+    MetalFloor,
     /// Impassable — blocks movement and line of sight.
-    Obstacle,
-    Grass,
+    CoverBarrier,
+    WiringPanel,
     /// Costs 2 movement to enter.
-    Water,
-    Ice,
-    Scorched,
-    /// +1 spell power for units standing in it.
-    InkPool,
+    CoolantPool,
+    FrozenCoolant,
+    BlastMark,
+    /// +1 ability power for units standing in it.
+    OilSlick,
     /// Costs 2 movement to enter.
-    BrokenGround,
+    DamagedPlating,
     /// Blocks line of sight, decays after N turns. Walkable.
-    Steam,
+    VentSteam,
     /// Deals 2 damage per turn to units standing on it. Costs 2 movement.
-    Lava,
+    PlasmaPool,
     /// Deals 1 damage on entry.
-    Thorns,
-    /// +2 spell power for units standing on it (stronger InkPool).
-    ArcaneGlyph,
-    /// Costs 2 movement to enter (like BrokenGround but thematic).
-    Sand,
-    /// Blocks movement, blocks LOS. Bamboo thicket (Garden biome).
-    BambooThicket,
-    /// Slows movement (+1 cost). Frozen ground (Frozen biome).
-    FrozenGround,
-    /// One-time spirit restore (+15). Becomes Open after use.
-    SpiritWell,
-    /// Drains 3 spirit per turn while standing on it.
-    SpiritDrain,
-    /// Wait on this tile to restore 10 spirit.
-    MeditationStone,
-    /// When an enemy dies on this tile, player gains 10 spirit.
-    SoulTrap,
-    /// Pushable rock. Blocks movement. Slides when hit, damages entities it collides with.
-    Boulder,
-    /// Flowing water — pushes units 1 tile at end of each round.
-    FlowNorth,
-    FlowSouth,
-    FlowEast,
-    FlowWest,
-    /// Explodes when hit. 3 damage to adjacent units, chain-reacts with other barrels.
-    ExplosiveBarrel,
-    /// Floor that cracks on first step. Walkable until it collapses.
-    CrumblingFloor,
-    /// Cracked floor — collapses into Pit next time it is stepped on or at end of round.
-    CrackedFloor,
-    /// Collapsed pit. Impassable.
-    Pit,
-    /// Hidden spike trap. Deals 2 damage + Slow on trigger.
-    TrapTile,
-    /// Revealed spike trap. Permanent hazard: 2 damage + Slow on entry.
-    TrapTileRevealed,
-    /// Slippery oil. Flammable: fire turns it into Scorched + AoE damage.
-    Oil,
-    /// Holy ground. Heals units at start of turn. Timed (uses steam_timers).
-    HolyGround,
-    /// Elevated terrain. +1 damage attacking downhill, -1 damage received from below.
-    HighGround,
+    ElectrifiedWire,
+    /// +2 ability power for units standing on it (stronger OilSlick).
+    HoloTrap,
+    /// Costs 2 movement to enter.
+    Debris,
+    /// Blocks movement, blocks LOS. Pipe tangle.
+    PipeTangle,
+    /// Slows movement (+1 cost). Cryo zone.
+    CryoZone,
+    /// One-time energy restore (+15). Becomes MetalFloor after use.
+    EnergyNode,
+    /// Drains 3 energy per turn while standing on it.
+    PowerDrain,
+    /// Wait on this tile to restore 10 energy.
+    ChargingPad,
+    /// When an enemy dies on this tile, player gains 10 energy.
+    GravityTrap,
+    /// Pushable crate. Blocks movement. Slides when hit, damages entities it collides with.
+    CargoCrate,
+    /// Conveyor belt — pushes units 1 tile at end of each round.
+    ConveyorN,
+    ConveyorS,
+    ConveyorE,
+    ConveyorW,
+    /// Explodes when hit. 3 damage to adjacent units, chain-reacts with other canisters.
+    FuelCanister,
+    /// Plating that cracks on first step. Walkable until it collapses.
+    WeakenedPlating,
+    /// Damaged floor — collapses into breach next time it is stepped on or at end of round.
+    DamagedFloor,
+    /// Breached floor. Impassable.
+    BreachedFloor,
+    /// Hidden proximity mine. Deals 2 damage + Slow on trigger.
+    MineTile,
+    /// Revealed proximity mine. Permanent hazard: 2 damage + Slow on entry.
+    MineTileRevealed,
+    /// Slippery lubricant. Flammable: fire turns it into BlastMark + AoE damage.
+    Lubricant,
+    /// Shield zone. Heals units at start of turn. Timed (uses steam_timers).
+    ShieldZone,
+    /// Elevated platform. +1 damage attacking downhill, -1 damage received from below.
+    ElevatedPlatform,
 }
 
 impl BattleTile {
     pub fn is_walkable(self) -> bool {
         !matches!(
             self,
-            BattleTile::Obstacle
-                | BattleTile::BambooThicket
-                | BattleTile::Boulder
-                | BattleTile::ExplosiveBarrel
-                | BattleTile::Pit
+            BattleTile::CoverBarrier
+                | BattleTile::PipeTangle
+                | BattleTile::CargoCrate
+                | BattleTile::FuelCanister
+                | BattleTile::BreachedFloor
         )
     }
 
     pub fn blocks_los(self) -> bool {
         matches!(
             self,
-            BattleTile::Obstacle | BattleTile::Steam | BattleTile::BambooThicket
+            BattleTile::CoverBarrier | BattleTile::VentSteam | BattleTile::PipeTangle
         )
     }
 
     pub fn extra_move_cost(self) -> i32 {
         match self {
-            BattleTile::Water | BattleTile::BrokenGround | BattleTile::Lava | BattleTile::Sand => 1,
-            BattleTile::FrozenGround => 1,
-            BattleTile::FlowNorth
-            | BattleTile::FlowSouth
-            | BattleTile::FlowEast
-            | BattleTile::FlowWest => 1,
+            BattleTile::CoolantPool | BattleTile::DamagedPlating | BattleTile::PlasmaPool | BattleTile::Debris => 1,
+            BattleTile::CryoZone => 1,
+            BattleTile::ConveyorN
+            | BattleTile::ConveyorS
+            | BattleTile::ConveyorE
+            | BattleTile::ConveyorW => 1,
             _ => 0,
         }
     }
 
     pub fn description(self) -> &'static str {
         match self {
-            BattleTile::Open => "Open ground. No special effects.",
-            BattleTile::Obstacle => "Obstacle. Impassable.",
-            BattleTile::Grass => "Grass. No special effects.",
-            BattleTile::Water => "Water. Costs 2 movement.",
-            BattleTile::Ice => "Ice. Slippery surface.",
-            BattleTile::Scorched => "Scorched. 1 damage/turn.",
-            BattleTile::InkPool => "Ink Pool. Spells +1 damage.",
-            BattleTile::BrokenGround => "Broken ground. Costs 2 movement.",
-            BattleTile::Steam => "Steam. Blocks line of sight.",
-            BattleTile::Lava => "Lava. 2 damage/turn. Costs 2 movement.",
-            BattleTile::Thorns => "Thorns. 1 damage on entry.",
-            BattleTile::ArcaneGlyph => "Arcane Glyph. Spells +2 damage.",
-            BattleTile::Sand => "Sand. Costs 2 movement.",
-            BattleTile::BambooThicket => "Bamboo Thicket. Impassable, blocks sight.",
-            BattleTile::FrozenGround => "Frozen Ground. Costs 2 movement.",
-            BattleTile::SpiritWell => "Spirit Well. +15 spirit (one-time).",
-            BattleTile::SpiritDrain => "Spirit Drain. -3 spirit/turn.",
-            BattleTile::MeditationStone => "Meditation Stone. Wait to restore 10 spirit.",
-            BattleTile::SoulTrap => "Soul Trap. Enemy death here grants +10 spirit.",
-            BattleTile::Boulder => "Boulder. Pushable when attacked. Damages what it hits.",
-            BattleTile::FlowNorth => "Flowing Water (↑). Pushes units north each round.",
-            BattleTile::FlowSouth => "Flowing Water (↓). Pushes units south each round.",
-            BattleTile::FlowEast => "Flowing Water (→). Pushes units east each round.",
-            BattleTile::FlowWest => "Flowing Water (←). Pushes units west each round.",
-            BattleTile::ExplosiveBarrel => "Explosive Barrel. Explodes when hit, 3 damage to adjacent.",
-            BattleTile::CrumblingFloor => "Crumbling Floor. Will crack when stepped on.",
-            BattleTile::CrackedFloor => "Cracked Floor. Will collapse into a pit!",
-            BattleTile::Pit => "Pit. Impassable.",
-            BattleTile::TrapTile => "Open ground. No special effects.",
-            BattleTile::TrapTileRevealed => "Spike Trap. 2 damage + Slow on entry.",
-            BattleTile::Oil => "Oil. Slippery (slide 1 extra tile). Flammable!",
-            BattleTile::HolyGround => "Holy Ground. Heals units at start of turn.",
-            BattleTile::HighGround => "High Ground. +1 damage attacking down, -1 damage from below.",
+            BattleTile::MetalFloor => "Metal floor. No special effects.",
+            BattleTile::CoverBarrier => "Cover barrier. Impassable.",
+            BattleTile::WiringPanel => "Wiring panel. No special effects.",
+            BattleTile::CoolantPool => "Coolant pool. Costs 2 movement.",
+            BattleTile::FrozenCoolant => "Frozen coolant. Slippery surface.",
+            BattleTile::BlastMark => "Blast mark. 1 damage/turn.",
+            BattleTile::OilSlick => "Oil slick. Abilities +1 damage.",
+            BattleTile::DamagedPlating => "Damaged plating. Costs 2 movement.",
+            BattleTile::VentSteam => "Vent steam. Blocks line of sight.",
+            BattleTile::PlasmaPool => "Plasma pool. 2 damage/turn. Costs 2 movement.",
+            BattleTile::ElectrifiedWire => "Electrified wire. 1 damage on entry.",
+            BattleTile::HoloTrap => "Holo trap. Abilities +2 damage.",
+            BattleTile::Debris => "Debris. Costs 2 movement.",
+            BattleTile::PipeTangle => "Pipe tangle. Impassable, blocks sight.",
+            BattleTile::CryoZone => "Cryo zone. Costs 2 movement.",
+            BattleTile::EnergyNode => "Energy node. +15 energy (one-time).",
+            BattleTile::PowerDrain => "Power drain. -3 energy/turn.",
+            BattleTile::ChargingPad => "Charging pad. Wait to restore 10 energy.",
+            BattleTile::GravityTrap => "Gravity trap. Enemy death here grants +10 energy.",
+            BattleTile::CargoCrate => "Cargo crate. Pushable when attacked. Damages what it hits.",
+            BattleTile::ConveyorN => "Conveyor (↑). Pushes units north each round.",
+            BattleTile::ConveyorS => "Conveyor (↓). Pushes units south each round.",
+            BattleTile::ConveyorE => "Conveyor (→). Pushes units east each round.",
+            BattleTile::ConveyorW => "Conveyor (←). Pushes units west each round.",
+            BattleTile::FuelCanister => "Fuel canister. Explodes when hit, 3 damage to adjacent.",
+            BattleTile::WeakenedPlating => "Weakened plating. Will crack when stepped on.",
+            BattleTile::DamagedFloor => "Damaged floor. Will collapse into a breach!",
+            BattleTile::BreachedFloor => "Breached floor. Impassable.",
+            BattleTile::MineTile => "Metal floor. No special effects.",
+            BattleTile::MineTileRevealed => "Proximity mine. 2 damage + Slow on entry.",
+            BattleTile::Lubricant => "Lubricant. Slippery (slide 1 extra tile). Flammable!",
+            BattleTile::ShieldZone => "Shield zone. Heals units at start of turn.",
+            BattleTile::ElevatedPlatform => "Elevated platform. +1 damage attacking down, -1 damage from below.",
         }
     }
 
     pub fn name(self) -> &'static str {
         match self {
-            BattleTile::Open | BattleTile::TrapTile => "Open Ground",
-            BattleTile::Obstacle => "Obstacle",
-            BattleTile::Grass => "Grass",
-            BattleTile::Water => "Water",
-            BattleTile::Ice => "Ice",
-            BattleTile::Scorched => "Scorched",
-            BattleTile::InkPool => "Ink Pool",
-            BattleTile::BrokenGround => "Broken Ground",
-            BattleTile::Steam => "Steam",
-            BattleTile::Lava => "Lava",
-            BattleTile::Thorns => "Thorns",
-            BattleTile::ArcaneGlyph => "Arcane Glyph",
-            BattleTile::Sand => "Sand",
-            BattleTile::BambooThicket => "Bamboo Thicket",
-            BattleTile::FrozenGround => "Frozen Ground",
-            BattleTile::SpiritWell => "Spirit Well",
-            BattleTile::SpiritDrain => "Spirit Drain",
-            BattleTile::MeditationStone => "Meditation Stone",
-            BattleTile::SoulTrap => "Soul Trap",
-            BattleTile::Boulder => "Boulder",
-            BattleTile::FlowNorth => "Flow ↑",
-            BattleTile::FlowSouth => "Flow ↓",
-            BattleTile::FlowEast => "Flow →",
-            BattleTile::FlowWest => "Flow ←",
-            BattleTile::ExplosiveBarrel => "Explosive Barrel",
-            BattleTile::CrumblingFloor => "Crumbling Floor",
-            BattleTile::CrackedFloor => "Cracked Floor",
-            BattleTile::Pit => "Pit",
-            BattleTile::TrapTileRevealed => "Spike Trap",
-            BattleTile::Oil => "Oil",
-            BattleTile::HolyGround => "Holy Ground",
-            BattleTile::HighGround => "High Ground",
+            BattleTile::MetalFloor | BattleTile::MineTile => "Metal Floor",
+            BattleTile::CoverBarrier => "Cover Barrier",
+            BattleTile::WiringPanel => "Wiring Panel",
+            BattleTile::CoolantPool => "Coolant Pool",
+            BattleTile::FrozenCoolant => "Frozen Coolant",
+            BattleTile::BlastMark => "Blast Mark",
+            BattleTile::OilSlick => "Oil Slick",
+            BattleTile::DamagedPlating => "Damaged Plating",
+            BattleTile::VentSteam => "Vent Steam",
+            BattleTile::PlasmaPool => "Plasma Pool",
+            BattleTile::ElectrifiedWire => "Electrified Wire",
+            BattleTile::HoloTrap => "Holo Trap",
+            BattleTile::Debris => "Debris",
+            BattleTile::PipeTangle => "Pipe Tangle",
+            BattleTile::CryoZone => "Cryo Zone",
+            BattleTile::EnergyNode => "Energy Node",
+            BattleTile::PowerDrain => "Power Drain",
+            BattleTile::ChargingPad => "Charging Pad",
+            BattleTile::GravityTrap => "Gravity Trap",
+            BattleTile::CargoCrate => "Cargo Crate",
+            BattleTile::ConveyorN => "Conv ↑",
+            BattleTile::ConveyorS => "Conv ↓",
+            BattleTile::ConveyorE => "Conv →",
+            BattleTile::ConveyorW => "Conv ←",
+            BattleTile::FuelCanister => "Fuel Canister",
+            BattleTile::WeakenedPlating => "Weakened Plating",
+            BattleTile::DamagedFloor => "Damaged Floor",
+            BattleTile::BreachedFloor => "Breached Floor",
+            BattleTile::MineTileRevealed => "Proximity Mine",
+            BattleTile::Lubricant => "Lubricant",
+            BattleTile::ShieldZone => "Shield Zone",
+            BattleTile::ElevatedPlatform => "Elevated Platform",
         }
     }
 
     pub fn special_effects(self) -> Option<&'static str> {
         match self {
-            BattleTile::Scorched => Some("1 damage/turn"),
-            BattleTile::Lava => Some("2 damage/turn"),
-            BattleTile::Thorns => Some("1 damage on entry"),
-            BattleTile::InkPool => Some("Spells +1 damage"),
-            BattleTile::ArcaneGlyph => Some("Spells +2 damage"),
-            BattleTile::Ice => Some("Slippery surface"),
-            BattleTile::Steam => Some("Blocks LOS"),
-            BattleTile::BambooThicket => Some("Blocks LOS"),
-            BattleTile::SpiritWell => Some("+15 spirit (one-time)"),
-            BattleTile::SpiritDrain => Some("-3 spirit/turn"),
-            BattleTile::MeditationStone => Some("Wait to restore 10 spr"),
-            BattleTile::SoulTrap => Some("Kill here: +10 spirit"),
-            BattleTile::Boulder => Some("Pushable, damages on hit"),
-            BattleTile::FlowNorth | BattleTile::FlowSouth | BattleTile::FlowEast | BattleTile::FlowWest => Some("Pushes units each round"),
-            BattleTile::ExplosiveBarrel => Some("Explodes: 3 dmg AoE"),
-            BattleTile::CrumblingFloor => Some("Cracks when stepped on"),
-            BattleTile::CrackedFloor => Some("Collapses into pit!"),
-            BattleTile::TrapTileRevealed => Some("2 dmg + Slow on entry"),
-            BattleTile::Oil => Some("Slippery + Flammable"),
-            BattleTile::HolyGround => Some("Heals at start of turn"),
-            BattleTile::HighGround => Some("+1 dmg down, -1 dmg up"),
+            BattleTile::BlastMark => Some("1 damage/turn"),
+            BattleTile::PlasmaPool => Some("2 damage/turn"),
+            BattleTile::ElectrifiedWire => Some("1 damage on entry"),
+            BattleTile::OilSlick => Some("Abilities +1 damage"),
+            BattleTile::HoloTrap => Some("Abilities +2 damage"),
+            BattleTile::FrozenCoolant => Some("Slippery surface"),
+            BattleTile::VentSteam => Some("Blocks LOS"),
+            BattleTile::PipeTangle => Some("Blocks LOS"),
+            BattleTile::EnergyNode => Some("+15 energy (one-time)"),
+            BattleTile::PowerDrain => Some("-3 energy/turn"),
+            BattleTile::ChargingPad => Some("Wait to restore 10 eng"),
+            BattleTile::GravityTrap => Some("Kill here: +10 energy"),
+            BattleTile::CargoCrate => Some("Pushable, damages on hit"),
+            BattleTile::ConveyorN | BattleTile::ConveyorS | BattleTile::ConveyorE | BattleTile::ConveyorW => Some("Pushes units each round"),
+            BattleTile::FuelCanister => Some("Explodes: 3 dmg AoE"),
+            BattleTile::WeakenedPlating => Some("Cracks when stepped on"),
+            BattleTile::DamagedFloor => Some("Collapses into breach!"),
+            BattleTile::MineTileRevealed => Some("2 dmg + Slow on entry"),
+            BattleTile::Lubricant => Some("Slippery + Flammable"),
+            BattleTile::ShieldZone => Some("Heals at start of turn"),
+            BattleTile::ElevatedPlatform => Some("+1 dmg down, -1 dmg up"),
             _ => None,
         }
     }
@@ -653,11 +653,11 @@ pub struct TacticalArena {
     pub width: usize,
     pub height: usize,
     pub tiles: Vec<BattleTile>,
-    /// Per-tile turn countdown for Steam decay (0 = no timer).
+    /// Per-tile turn countdown for VentSteam decay (0 = no timer).
     pub steam_timers: Vec<u8>,
-    /// Per-tile turn countdown for HolyGround decay (0 = no timer).
+    /// Per-tile turn countdown for ShieldZone decay (0 = no timer).
     pub holy_timers: Vec<u8>,
-    /// Per-tile age counter for Lava cooling (0 = fresh or non-lava).
+    /// Per-tile age counter for PlasmaPool cooling (0 = fresh or non-plasma).
     pub lava_timers: Vec<u8>,
     pub biome: ArenaBiome,
 }
@@ -668,7 +668,7 @@ impl TacticalArena {
         Self {
             width,
             height,
-            tiles: vec![BattleTile::Open; count],
+            tiles: vec![BattleTile::MetalFloor; count],
             steam_timers: vec![0; count],
             holy_timers: vec![0; count],
             lava_timers: vec![0; count],
@@ -699,17 +699,17 @@ impl TacticalArena {
 
     pub fn set_steam(&mut self, x: i32, y: i32, turns: u8) {
         if let Some(i) = self.idx(x, y) {
-            self.tiles[i] = BattleTile::Steam;
+            self.tiles[i] = BattleTile::VentSteam;
             self.steam_timers[i] = turns;
         }
     }
 
     pub fn tick_steam(&mut self) {
         for i in 0..self.tiles.len() {
-            if self.tiles[i] == BattleTile::Steam && self.steam_timers[i] > 0 {
+            if self.tiles[i] == BattleTile::VentSteam && self.steam_timers[i] > 0 {
                 self.steam_timers[i] -= 1;
                 if self.steam_timers[i] == 0 {
-                    self.tiles[i] = BattleTile::Open;
+                    self.tiles[i] = BattleTile::MetalFloor;
                 }
             }
         }
@@ -717,17 +717,17 @@ impl TacticalArena {
 
     pub fn set_holy(&mut self, x: i32, y: i32, turns: u8) {
         if let Some(i) = self.idx(x, y) {
-            self.tiles[i] = BattleTile::HolyGround;
+            self.tiles[i] = BattleTile::ShieldZone;
             self.holy_timers[i] = turns;
         }
     }
 
     pub fn tick_holy(&mut self) {
         for i in 0..self.tiles.len() {
-            if self.tiles[i] == BattleTile::HolyGround && self.holy_timers[i] > 0 {
+            if self.tiles[i] == BattleTile::ShieldZone && self.holy_timers[i] > 0 {
                 self.holy_timers[i] -= 1;
                 if self.holy_timers[i] == 0 {
-                    self.tiles[i] = BattleTile::Open;
+                    self.tiles[i] = BattleTile::MetalFloor;
                 }
             }
         }
@@ -1012,6 +1012,8 @@ pub enum TargetMode {
     /// Selecting an enemy to break a component shield (transitions to typing).
     #[allow(dead_code)]
     ShieldBreak,
+    /// Selecting a target for a standalone skill (K key).
+    Skill,
 }
 
 // ── Top-level battle state ───────────────────────────────────────────────────
@@ -1060,9 +1062,9 @@ pub struct TacticalBattle {
     /// Index of a spell that was just consumed (cast successfully).
     /// Consumed by `game.rs` to remove from `player.spells`.
     pub spent_spell_index: Option<usize>,
-    /// Ward tile positions placed by Gatekeeper boss.
+    /// Ward tile positions placed by PirateCaptain boss.
     pub ward_tiles: Vec<(i32, i32)>,
-    /// Last spell school used by the player (for Elementalist resistance).
+    /// Last spell school used by the player (for RogueAICore resistance).
     pub last_spell_school: Option<&'static str>,
     /// Last spell element (Wuxing) used by the player (for spell combo chains).
     pub last_spell_element: Option<WuxingElement>,
@@ -1078,7 +1080,7 @@ pub struct TacticalBattle {
     pub combo_armor_turns: i32,
     /// Bonus damage on next N basic attacks from Frozen Edge combo.
     pub frozen_edge_charges: i32,
-    /// Stolen spell pickups on the grid (RadicalThief).
+    /// Stolen module pickups on the grid (DriftLeviathan).
     /// Each entry: (x, y, hanzi, pinyin, effect).
     pub stolen_spells: Vec<(
         i32,
@@ -1106,7 +1108,7 @@ pub struct TacticalBattle {
     pub chengyu_history: Vec<String>,
     /// Enemy intents calculated at start of each round.
     pub intents_calculated: bool,
-    /// Accumulated spirit delta from tile effects (applied by game.rs each tick).
+    /// Accumulated energy delta from tile effects (applied by game.rs each tick).
     pub pending_spirit_delta: i32,
     /// Player radical abilities available this combat.
     pub player_radical_abilities: Vec<(&'static str, crate::enemy::PlayerRadicalAbility)>,
@@ -1118,6 +1120,10 @@ pub struct TacticalBattle {
     pub radical_picker_open: bool,
     /// Cursor position in radical picker (0 = normal attack, 1+ = abilities).
     pub radical_picker_cursor: usize,
+    /// Whether the skill menu is open (K key).
+    pub skill_menu_open: bool,
+    /// Cursor position in skill menu.
+    pub skill_menu_cursor: usize,
     pub projectiles: Vec<Projectile>,
     pub arcing_projectiles: Vec<ArcingProjectile>,
     pub god_mode: bool,
@@ -1193,7 +1199,7 @@ impl TacticalBattle {
     /// 5-7=1.3, 8-11=1.5, 12+=1.75.
     /// Teacher companion: +1 effective streak for combo tier calculation.
     pub fn combo_multiplier(&self) -> f64 {
-        let effective_streak = if self.companion_kind == Some(crate::game::Companion::Teacher) {
+        let effective_streak = if self.companion_kind == Some(crate::game::Companion::ScienceOfficer) {
             self.combo_streak + 1
         } else {
             self.combo_streak
@@ -1220,3 +1226,5 @@ impl TacticalBattle {
         }
     }
 }
+
+

@@ -1,33 +1,33 @@
 //! Spaced Repetition System — tracks per-character pinyin accuracy
-//! and biases enemy spawning towards characters the player gets wrong.
+//! and biases hostile spawning towards characters the player gets wrong.
 
 use std::collections::HashMap;
 
 /// Tracks per-character accuracy for spaced repetition.
 pub struct SrsTracker {
-    /// Map from hanzi -> (correct_count, total_attempts, last_seen_floor)
+    /// Map from hanzi -> (correct_count, total_attempts, last_seen_deck)
     pub stats: HashMap<String, (u32, u32, i32)>,
-    /// Current floor number (updated externally so spawn_weight can decay)
-    pub current_floor: i32,
+    /// Current deck number (updated externally so spawn_weight can decay)
+    pub current_deck: i32,
 }
 
 impl SrsTracker {
     pub fn new() -> Self {
         SrsTracker {
             stats: HashMap::new(),
-            current_floor: 0,
+            current_deck: 0,
         }
     }
 
-    /// Record an attempt (correct or not). Updates last_seen_floor.
+    /// Record an attempt (correct or not). Updates last_seen_deck.
     pub fn record(&mut self, hanzi: &str, correct: bool) {
-        let floor = self.current_floor;
-        let entry = self.stats.entry(hanzi.to_string()).or_insert((0, 0, floor));
+        let deck = self.current_deck;
+        let entry = self.stats.entry(hanzi.to_string()).or_insert((0, 0, deck));
         if correct {
             entry.0 += 1;
         }
         entry.1 += 1;
-        entry.2 = floor;
+        entry.2 = deck;
     }
 
     /// Get accuracy for a character (0.0 to 1.0), returns 0.5 if never seen.
@@ -62,7 +62,7 @@ impl SrsTracker {
 
     /// Get spawn weight for a character — lower accuracy = higher weight,
     /// but weights decay back toward 1x if the character hasn't been seen
-    /// for several floors (temporal decay).
+    /// for several decks (temporal decay).
     pub fn spawn_weight(&self, hanzi: &str) -> u32 {
         let acc = self.accuracy(hanzi);
         let base = if acc < 0.5 {
@@ -75,13 +75,13 @@ impl SrsTracker {
         if base <= 1 {
             return 1;
         }
-        let floor_gap = match self.stats.get(hanzi) {
-            Some(&(_, _, last_floor)) => (self.current_floor - last_floor).max(0),
+        let deck_gap = match self.stats.get(hanzi) {
+            Some(&(_, _, last_deck)) => (self.current_deck - last_deck).max(0),
             None => return 1,
         };
-        if floor_gap >= 8 {
+        if deck_gap >= 8 {
             1
-        } else if floor_gap >= 4 {
+        } else if deck_gap >= 4 {
             ((base + 1) / 2).max(1)
         } else {
             base
@@ -111,8 +111,8 @@ impl SrsTracker {
 
     /// Serialize to JSON string for localStorage.
     pub fn to_json(&self) -> String {
-        let mut json = String::from("{\"floor\":");
-        json.push_str(&self.current_floor.to_string());
+        let mut json = String::from("{\"deck\":");
+        json.push_str(&self.current_deck.to_string());
         json.push_str(",\"stats\":{");
         let mut first = true;
         for (hanzi, &(correct, total, last_floor)) in &self.stats {
@@ -145,12 +145,12 @@ impl SrsTracker {
         let mut tracker = SrsTracker::new();
         let json = json.trim();
 
-        if let Some(floor_start) = json.find("\"floor\":") {
-            let rest = &json[floor_start + 8..];
+        if let Some(deck_start) = json.find("\"deck\":") {
+            let rest = &json[deck_start + 7..];
             let end = rest
                 .find(|c: char| !c.is_ascii_digit() && c != '-')
                 .unwrap_or(rest.len());
-            tracker.current_floor = rest[..end].parse::<i32>().unwrap_or(0);
+            tracker.current_deck = rest[..end].parse::<i32>().unwrap_or(0);
         }
 
         let stats_start = match json.find("\"stats\":{") {
@@ -215,7 +215,7 @@ pub fn load_srs() -> SrsTracker {
     let storage: Option<web_sys::Storage> =
         web_sys::window().and_then(|w: web_sys::Window| w.local_storage().ok().flatten());
     storage
-        .and_then(|s: web_sys::Storage| s.get_item("radical_roguelike_srs").ok().flatten())
+        .and_then(|s: web_sys::Storage| s.get_item("radical_starfinder_srs").ok().flatten())
         .map(|json: String| SrsTracker::from_json(&json))
         .unwrap_or_else(SrsTracker::new)
 }
@@ -225,7 +225,7 @@ pub fn save_srs(tracker: &SrsTracker) {
     let storage: Option<web_sys::Storage> =
         web_sys::window().and_then(|w: web_sys::Window| w.local_storage().ok().flatten());
     if let Some(storage) = storage {
-        let _ = storage.set_item("radical_roguelike_srs", &tracker.to_json());
+        let _ = storage.set_item("radical_starfinder_srs", &tracker.to_json());
     }
 }
 
@@ -236,7 +236,7 @@ mod tests {
     #[test]
     fn record_tracks_correct_and_total() {
         let mut tracker = SrsTracker::new();
-        tracker.current_floor = 5;
+        tracker.current_deck = 5;
         tracker.record("好", true);
         tracker.record("好", true);
         tracker.record("好", false);
@@ -254,7 +254,7 @@ mod tests {
     #[test]
     fn spawn_weight_low_accuracy_is_high() {
         let mut tracker = SrsTracker::new();
-        tracker.current_floor = 1;
+        tracker.current_deck = 1;
         tracker.record("错", false);
         tracker.record("错", false);
         tracker.record("错", true);
@@ -263,17 +263,17 @@ mod tests {
     }
 
     #[test]
-    fn spawn_weight_decays_over_floors() {
+    fn spawn_weight_decays_over_decks() {
         let mut tracker = SrsTracker::new();
-        tracker.current_floor = 1;
+        tracker.current_deck = 1;
         tracker.record("错", false);
 
         assert_eq!(tracker.spawn_weight("错"), 4);
 
-        tracker.current_floor = 5;
+        tracker.current_deck = 5;
         assert_eq!(tracker.spawn_weight("错"), 2);
 
-        tracker.current_floor = 10;
+        tracker.current_deck = 10;
         assert_eq!(tracker.spawn_weight("错"), 1);
     }
 }

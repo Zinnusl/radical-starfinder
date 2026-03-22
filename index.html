@@ -4,13 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="manifest" href="manifest.json" />
-  <meta name="theme-color" content="#ffcc33" />
-  <title>Radical Dungeon</title>
+  <meta name="theme-color" content="#00ccdd" />
+  <title>Radical Starfinder</title>
   <link data-trunk rel="copy-dir" href="assets" />
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      background: #0d0b14;
+      background: #060612;
       color: #ccc;
       font-family: 'Segoe UI', monospace;
       display: flex;
@@ -21,7 +21,7 @@
     }
     h1 {
       font-size: 1.4rem;
-      color: #ffcc33;
+      color: #00ccdd;
       margin-bottom: 8px;
       letter-spacing: 2px;
     }
@@ -31,7 +31,7 @@
       opacity: 0.7;
     }
     #game-canvas {
-      border: 2px solid #2a2040;
+      border: 2px solid #1a2a40;
       border-radius: 4px;
     }
     .controls {
@@ -42,9 +42,9 @@
   </style>
 </head>
 <body>
-  <h1>⚗️ Radical Dungeon</h1>
-  <div id="loading">Loading WASM…</div>
-  <div class="controls">WASD/Arrows=move · Bump=fight · Type pinyin+Enter=attack · Q=cycle spell · Space=cast · ⚒=forge · L=listen · C=codex</div>
+  <h1>🚀 Radical Starfinder</h1>
+  <div id="loading">Initializing systems…</div>
+  <div class="controls">WASD/Arrows=move · Bump=fight · Type pinyin+Enter=attack · Q=cycle ability · Space=use · M=starmap · Tab=ship · C=codex</div>
 
   <!-- Mobile touch controls -->
   <div id="touch-controls">
@@ -96,16 +96,16 @@
       width: 52px;
       height: 52px;
       font-size: 22px;
-      background: rgba(255,204,51,0.15);
-      border: 1px solid rgba(255,204,51,0.4);
+      background: rgba(0,204,221,0.15);
+      border: 1px solid rgba(0,204,221,0.4);
       border-radius: 8px;
-      color: #ffcc33;
+      color: #00ccdd;
       cursor: pointer;
       touch-action: manipulation;
       user-select: none;
       -webkit-user-select: none;
     }
-    .dpad-btn:active { background: rgba(255,204,51,0.4); }
+    .dpad-btn:active { background: rgba(0,204,221,0.4); }
     .dpad-center { background: rgba(100,100,100,0.1); border-color: #333; color: #555; }
     #action-btns {
       display: grid;
@@ -133,7 +133,7 @@
   <script type="module">
     let start_game;
     try {
-      const mod = await import('./pkg/radical_roguelike.js');
+      const mod = await import('./pkg/radical_starfinder.js');
       await mod.default();
       start_game = mod.start_game;
     } catch (_) {

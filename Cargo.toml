@@ -1,8 +1,8 @@
 [package]
-name = "radical-roguelike"
+name = "radical-starfinder"
 version = "0.1.0"
 edition = "2021"
-description = "Radical Dungeon — a language-learning roguelike where you forge Chinese characters from radicals"
+description = "Radical Starfinder — a language-learning space roguelike where you forge Chinese characters from quantum glyphs"
 license = "MIT OR Apache-2.0"
 
 [lib]

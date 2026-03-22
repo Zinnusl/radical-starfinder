@@ -648,14 +648,14 @@ pub fn path_toward(
         if let Some(tile) = battle.arena.tile(rx, ry) {
             if matches!(
                 tile,
-                crate::combat::BattleTile::FlowNorth
-                    | crate::combat::BattleTile::FlowSouth
-                    | crate::combat::BattleTile::FlowEast
-                    | crate::combat::BattleTile::FlowWest
+                crate::combat::BattleTile::ConveyorN
+                    | crate::combat::BattleTile::ConveyorS
+                    | crate::combat::BattleTile::ConveyorE
+                    | crate::combat::BattleTile::ConveyorW
             ) {
                 score -= 30;
             }
-            if tile == crate::combat::BattleTile::TrapTileRevealed {
+            if tile == crate::combat::BattleTile::MineTileRevealed {
                 score -= 40;
             }
         }
@@ -664,7 +664,7 @@ pub fn path_toward(
             let nx = rx + dx;
             let ny = ry + dy;
             if let Some(adj) = battle.arena.tile(nx, ny) {
-                if adj == crate::combat::BattleTile::ExplosiveBarrel {
+                if adj == crate::combat::BattleTile::FuelCanister {
                     score -= 50;
                 }
             }
@@ -716,14 +716,14 @@ pub fn path_away(
         if let Some(tile) = battle.arena.tile(rx, ry) {
             if matches!(
                 tile,
-                crate::combat::BattleTile::FlowNorth
-                    | crate::combat::BattleTile::FlowSouth
-                    | crate::combat::BattleTile::FlowEast
-                    | crate::combat::BattleTile::FlowWest
+                crate::combat::BattleTile::ConveyorN
+                    | crate::combat::BattleTile::ConveyorS
+                    | crate::combat::BattleTile::ConveyorE
+                    | crate::combat::BattleTile::ConveyorW
             ) {
                 adj_d -= 3;
             }
-            if tile == crate::combat::BattleTile::TrapTileRevealed {
+            if tile == crate::combat::BattleTile::MineTileRevealed {
                 adj_d -= 4;
             }
         }
@@ -731,7 +731,7 @@ pub fn path_away(
             let nx = rx + dx;
             let ny = ry + dy;
             if let Some(adj) = battle.arena.tile(nx, ny) {
-                if adj == crate::combat::BattleTile::ExplosiveBarrel {
+                if adj == crate::combat::BattleTile::FuelCanister {
                     adj_d -= 5;
                 }
             }
@@ -821,7 +821,7 @@ fn build_path(
             if let Some(tile) = arena.tile(nx, ny) {
                 step_cost += tile.extra_move_cost();
             }
-            if battle.weather == crate::combat::Weather::Sandstorm {
+            if battle.weather == crate::combat::Weather::DebrisStorm {
                 step_cost += 1;
             }
 

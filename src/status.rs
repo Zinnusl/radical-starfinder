@@ -1,65 +1,66 @@
-//! Status effects that can be applied to players and enemies.
+//! Status effects that can be applied to crew and hostiles.
 
 /// A timed status effect.
 #[derive(Clone, Debug)]
 pub enum StatusKind {
-    /// Damage per turn for N turns
+    /// Radiation damage per turn for N turns
     Poison {
         damage: i32,
     },
-    /// Heal per turn for N turns
+    /// Auto-repair per turn for N turns
     #[allow(dead_code)]
     Regen {
         heal: i32,
     },
-    /// Player gets extra actions (enemy_turn skipped on even ticks)
+    /// Overdrive: extra actions (enemy turn skipped on even ticks)
     Haste,
-    /// Player movement is randomized
+    /// Scrambled: movement is randomized
     #[allow(dead_code)]
     Confused,
-    /// Entire map revealed
+    /// Entire sector map revealed
     #[allow(dead_code)]
     Revealed,
-    /// Weapon coated in poison: attacks apply Poison
+    /// Weapon contaminated: attacks apply Radiation
     Envenomed,
-    /// Weapon coated in flame/magic: bonus damage
+    /// Weapon supercharged with energy: bonus damage
     Empowered {
         amount: i32,
     },
-    /// Burn damage over time
+    /// Plasma burn damage over time
     Burn {
         damage: i32,
     },
-    /// Blocks spirit drain for N turns (overworld).
+    /// Energy shield blocks drain for N turns (overworld).
     SpiritShield,
-    /// Frozen: skip next turn, then clears
+    /// Cryofreeze: skip next turn, then clears
     Freeze,
-    /// Slow: movement reduced by 1
+    /// Impeded: movement reduced by 1
     Slow,
-    /// Fear: forced to move away from source
+    /// Panicked: forced to move away from source
     Fear,
-    /// Bleeding: damage per turn (stacks)
+    /// Shrapnel wound: damage per turn (stacks)
     Bleed {
         damage: i32,
     },
+    /// Electrified armor: damages attackers on hit
     Thorns,
-    /// Each stack adds +1 damage to next attack, consumed on hit
+    /// Reinforced: each stack adds +1 damage to next attack, consumed on hit
     Fortify {
         stacks: i32,
     },
-    /// Can't be targeted by enemies; breaks on attack or spell cast
+    /// Cloaked: can't be targeted by hostiles; breaks on attack or ability use
     Invisible,
-    /// Cannot move but gain +2 armor
+    /// Anchored: cannot move but gain +2 armor
     #[allow(dead_code)]
     Rooted,
-    /// Deal 50% less damage
+    /// Disrupted: deal 50% less damage
     Weakened,
-    /// Take 1 extra damage from all sources
+    /// Malware: take 1 extra damage from all sources
     #[allow(dead_code)]
     Cursed,
-    /// Deal +1 damage and take -1 damage from all sources
+    /// Optimized: deal +1 damage and take -1 damage from all sources
     Blessed,
-    /// Wet: harmless alone, but enables combos (Wet+Burn=Steam, Wet+Freeze=deep freeze)
+    /// Soaked: harmless alone, but enables combos (Soaked+PlasmaBurn=Steam, Soaked+Cryofreeze=deep freeze)
     Wet,
 }
 
@@ -84,27 +85,27 @@ impl StatusInstance {
 
     pub fn label(&self) -> &'static str {
         match self.kind {
-            StatusKind::Poison { .. } => "☠Psn",
-            StatusKind::Burn { .. } => "🔥Brn",
-            StatusKind::Regen { .. } => "♥Rgn",
-            StatusKind::Haste => "⚡Hst",
-            StatusKind::Confused => "?Cnf",
+            StatusKind::Poison { .. } => "☢Rad",
+            StatusKind::Burn { .. } => "🔥Pls",
+            StatusKind::Regen { .. } => "🔧Rep",
+            StatusKind::Haste => "⚡Ovr",
+            StatusKind::Confused => "?Scr",
             StatusKind::Revealed => "👁Map",
-            StatusKind::Envenomed => "☠Wep",
-            StatusKind::Empowered { .. } => "💪Pow",
-            StatusKind::SpiritShield => "🌕Spr",
-            StatusKind::Freeze => "❄Frz",
-            StatusKind::Slow => "🐌Slw",
-            StatusKind::Fear => "😨Fer",
-            StatusKind::Bleed { .. } => "🩸Bld",
-            StatusKind::Thorns => "🌿Thn",
-            StatusKind::Fortify { .. } => "💪Frt",
-            StatusKind::Invisible => "👻Inv",
-            StatusKind::Rooted => "🌳Rte",
-            StatusKind::Weakened => "⬇Wkn",
-            StatusKind::Cursed => "💀Crs",
-            StatusKind::Blessed => "✨Bls",
-            StatusKind::Wet => "💧Wet",
+            StatusKind::Envenomed => "☢Wep",
+            StatusKind::Empowered { .. } => "⚡Sup",
+            StatusKind::SpiritShield => "🛡Shd",
+            StatusKind::Freeze => "❄Cry",
+            StatusKind::Slow => "🐌Imp",
+            StatusKind::Fear => "😨Pnk",
+            StatusKind::Bleed { .. } => "🩸Shr",
+            StatusKind::Thorns => "⚡Elc",
+            StatusKind::Fortify { .. } => "🛡Rnf",
+            StatusKind::Invisible => "👻Clk",
+            StatusKind::Rooted => "⚓Anc",
+            StatusKind::Weakened => "⬇Dis",
+            StatusKind::Cursed => "💀Mlw",
+            StatusKind::Blessed => "✨Opt",
+            StatusKind::Wet => "💧Skd",
         }
     }
 
@@ -123,10 +124,10 @@ impl StatusInstance {
             StatusKind::Slow => "#aaaaaa",
             StatusKind::Fear => "#660066",
             StatusKind::Bleed { .. } => "#aa0000",
-            StatusKind::Thorns => "#44cc44",
+            StatusKind::Thorns => "#44aaff",
             StatusKind::Fortify { .. } => "#ffaa00",
             StatusKind::Invisible => "#aaccff",
-            StatusKind::Rooted => "#886633",
+            StatusKind::Rooted => "#7788aa",
             StatusKind::Weakened => "#888888",
             StatusKind::Cursed => "#660044",
             StatusKind::Blessed => "#ffffaa",
@@ -163,11 +164,11 @@ pub fn tick_statuses(statuses: &mut Vec<StatusInstance>) -> (i32, i32) {
             s.fresh = false;
         } else {
             match s.kind {
-                StatusKind::Poison { damage: d } => damage += d,
-                StatusKind::Burn { damage: d } => damage += d,
-                StatusKind::Bleed { damage: d } => damage += d,
-                StatusKind::Regen { heal: h } => heal += h,
-                StatusKind::Cursed => damage += 1,
+                StatusKind::Poison { damage: d } => damage += d,  // radiation
+                StatusKind::Burn { damage: d } => damage += d,    // plasma burn
+                StatusKind::Bleed { damage: d } => damage += d,   // shrapnel wound
+                StatusKind::Regen { heal: h } => heal += h,       // auto-repair
+                StatusKind::Cursed => damage += 1,                 // malware corruption
                 _ => {}
             }
         }
@@ -319,20 +320,20 @@ mod tests {
     fn fresh_status_skips_first_tick() {
         let mut statuses = vec![StatusInstance::new(StatusKind::Regen { heal: 2 }, 3)];
 
-        // First tick: fresh → skip heal
+        // First tick: fresh → skip auto-repair
         let (damage, heal) = tick_statuses(&mut statuses);
         assert_eq!(damage, 0);
         assert_eq!(heal, 0);
         assert_eq!(statuses.len(), 1);
 
-        // Second tick: heal applies
+        // Second tick: auto-repair applies
         let (damage, heal) = tick_statuses(&mut statuses);
         assert_eq!(damage, 0);
         assert_eq!(heal, 2);
     }
 
     #[test]
-    fn final_regen_tick_removes_the_status() {
+    fn final_autorepair_tick_removes_the_status() {
         let mut statuses = vec![StatusInstance::new(StatusKind::Regen { heal: 1 }, 1)];
 
         let _ = tick_statuses(&mut statuses);
@@ -348,14 +349,14 @@ mod tests {
     }
 
     #[test]
-    fn burn_does_not_deal_instant_damage() {
+    fn plasma_burn_does_not_deal_instant_damage() {
         let mut statuses = vec![StatusInstance::new(StatusKind::Burn { damage: 1 }, 2)];
 
         // First tick: fresh → no damage
         let (damage, _) = tick_statuses(&mut statuses);
         assert_eq!(damage, 0);
 
-        // Second tick: damage applies
+        // Second tick: plasma burn damage applies
         let (damage, _) = tick_statuses(&mut statuses);
         assert_eq!(damage, 1);
         assert!(statuses.is_empty());

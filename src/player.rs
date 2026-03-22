@@ -70,10 +70,10 @@ impl EquipEffect {
                 format!("Earn +{} bonus gold from each enemy defeated.", n)
             }
             EquipEffect::Digging => {
-                "Allows you to dig through dungeon walls by walking into them.".to_string()
+                "Allows you to breach through bulkheads by walking into them.".to_string()
             }
             EquipEffect::SpiritSustain => {
-                "Halves spirit drain rate — lose 1 spirit every 2 moves instead of every move."
+                "Halves energy drain rate — lose 1 energy every 2 moves instead of every move."
                     .to_string()
             }
             EquipEffect::SpellPowerBoost(n) => {
@@ -109,7 +109,7 @@ impl Equipment {
         let slot = match self.slot {
             EquipSlot::Weapon => "Weapon",
             EquipSlot::Armor => "Armor",
-            EquipSlot::Charm => "Charm",
+            EquipSlot::Charm => "Module",
         };
         format!("[{}] {}", slot, self.effect.description())
     }
@@ -119,74 +119,74 @@ impl Equipment {
 pub const MAX_ITEMS: usize = 5;
 pub const ITEM_KIND_COUNT: usize = 32;
 pub const MYSTERY_ITEM_APPEARANCES: [&str; ITEM_KIND_COUNT] = [
-    "Vermilion Seal 朱符",
-    "Jade Seal 玉符",
-    "Cloud Seal 云符",
-    "Ink Seal 墨符",
-    "Mirror Seal 镜符",
-    "Storm Seal 雷符",
-    "Phoenix Seal 凤符",
-    "Moon Seal 月符",
-    "Dragon Seal 龙符",
-    "Tiger Seal 虎符",
-    "Flame Seal 火符",
-    "Mountain Seal 山符",
-    "Lotus Seal 莲符",
-    "River Seal 河符",
-    "Star Seal 星符",
-    "Serpent Seal 蛇符",
-    "Bamboo Seal 竹符",
-    "Iron Seal 铁符",
-    "Sun Seal 日符",
-    "Wind Seal 风符",
-    "Frost Seal 霜符",
-    "Shadow Seal 影符",
-    "Pearl Seal 珠符",
-    "Crane Seal 鹤符",
-    "Thunder Seal 雷符",
-    "Silk Seal 丝符",
-    "Orchid Seal 兰符",
-    "Willow Seal 柳符",
-    "Amber Seal 琥符",
-    "Coral Seal 珊符",
-    "Spirit Seal 灵符",
-    "Dawn Seal 曦符",
+    "Red Canister ⬡",
+    "Blue Vial ◆",
+    "Green Capsule ◇",
+    "Black Module ■",
+    "Silver Disc ○",
+    "Orange Tube ◈",
+    "Gold Cylinder ◉",
+    "White Cartridge △",
+    "Purple Injector ▽",
+    "Cyan Cell ☆",
+    "Crimson Syringe ◎",
+    "Bronze Container ▣",
+    "Teal Ampule ⬢",
+    "Amber Flask ▲",
+    "Neon Charge ★",
+    "Gray Pellet ▥",
+    "Indigo Pod ◐",
+    "Chrome Pack ◑",
+    "Cobalt Vial ⬟",
+    "Violet Sphere ⬠",
+    "Frost Canister ❄",
+    "Shadow Module ◩",
+    "Pearl Cell ◬",
+    "Emerald Capsule ◭",
+    "Spark Cartridge ⚡",
+    "Silk Tube ◮",
+    "Orchid Injector ✦",
+    "Steel Pod ✧",
+    "Plasma Charge ⚛",
+    "Coral Syringe ✶",
+    "Quantum Cell ✸",
+    "Nova Canister ✹",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ItemKind {
-    HealthPotion,
-    PoisonFlask,
-    RevealScroll,
-    TeleportScroll,
-    HastePotion,
-    StunBomb,
-    RiceBall,
-    MeditationIncense,
-    AncestralWine,
-    SmokeScreen,
-    FireCracker,
-    IronSkinElixir,
-    ClarityTea,
-    GoldIngot,
-    ThunderTalisman,
-    JadeSalve,
-    SerpentFang,
-    WardingCharm,
-    InkBomb,
-    PhoenixPlume,
-    MirrorShard,
-    FrostVial,
-    ShadowCloak,
-    DragonScale,
-    BambooFlute,
-    JadeCompass,
-    SilkRope,
-    LotusElixir,
-    ThunderDrum,
-    CinnabarInk,
-    AncestorToken,
-    WindFan,
+    MedHypo,
+    ToxinGrenade,
+    ScannerPulse,
+    PersonalTeleporter,
+    StimPack,
+    EMPGrenade,
+    RationPack,
+    FocusStim,
+    SynthAle,
+    HoloDecoy,
+    PlasmaBurst,
+    NanoShield,
+    NeuralBoost,
+    CreditChip,
+    ShockModule,
+    BiogelPatch,
+    VenomDart,
+    DeflectorDrone,
+    NaniteSwarm,
+    Revitalizer,
+    ReflectorPlate,
+    CryoGrenade,
+    CloakingDevice,
+    PlasmaShield,
+    SignalJammer,
+    NavComputer,
+    GrappleLine,
+    OmniGel,
+    SonicEmitter,
+    CircuitInk,
+    DataCore,
+    ThrusterPack,
 }
 
 /// A recipe for combining two consumable items into a new one.
@@ -198,21 +198,21 @@ pub struct CraftingRecipe {
 }
 
 pub const CRAFTING_RECIPES: &[CraftingRecipe] = &[
-    CraftingRecipe { input1: ItemKind::HealthPotion, input2: ItemKind::PoisonFlask, output: ItemKind::LotusElixir, output_name: "🪷 Lotus Elixir" },
-    CraftingRecipe { input1: ItemKind::FireCracker, input2: ItemKind::InkBomb, output: ItemKind::ThunderDrum, output_name: "🥁 Thunder Drum" },
-    CraftingRecipe { input1: ItemKind::FrostVial, input2: ItemKind::ThunderDrum, output: ItemKind::StunBomb, output_name: "💥 Stun Bomb" },
-    CraftingRecipe { input1: ItemKind::HealthPotion, input2: ItemKind::HealthPotion, output: ItemKind::AncestralWine, output_name: "🍶 Ancestral Wine" },
-    CraftingRecipe { input1: ItemKind::SmokeScreen, input2: ItemKind::PoisonFlask, output: ItemKind::ShadowCloak, output_name: "👻 Shadow Cloak" },
-    CraftingRecipe { input1: ItemKind::IronSkinElixir, input2: ItemKind::DragonScale, output: ItemKind::WardingCharm, output_name: "🔮 Warding Charm" },
-    CraftingRecipe { input1: ItemKind::MeditationIncense, input2: ItemKind::ClarityTea, output: ItemKind::LotusElixir, output_name: "🪷 Lotus Elixir" },
-    CraftingRecipe { input1: ItemKind::SerpentFang, input2: ItemKind::PoisonFlask, output: ItemKind::SerpentFang, output_name: "🐍 Serpent Fang+" },
-    CraftingRecipe { input1: ItemKind::FireCracker, input2: ItemKind::FireCracker, output: ItemKind::FireCracker, output_name: "🧨 Fire Cracker+" },
-    CraftingRecipe { input1: ItemKind::JadeSalve, input2: ItemKind::HealthPotion, output: ItemKind::JadeSalve, output_name: "💎 Jade Salve+" },
-    CraftingRecipe { input1: ItemKind::WindFan, input2: ItemKind::SilkRope, output: ItemKind::BambooFlute, output_name: "🎋 Bamboo Flute" },
-    CraftingRecipe { input1: ItemKind::MirrorShard, input2: ItemKind::WardingCharm, output: ItemKind::MirrorShard, output_name: "🪞 Mirror Shard+" },
-    CraftingRecipe { input1: ItemKind::ThunderTalisman, input2: ItemKind::FrostVial, output: ItemKind::ThunderDrum, output_name: "🥁 Thunder Drum" },
-    CraftingRecipe { input1: ItemKind::GoldIngot, input2: ItemKind::GoldIngot, output: ItemKind::PhoenixPlume, output_name: "🔥 Phoenix Plume" },
-    CraftingRecipe { input1: ItemKind::HastePotion, input2: ItemKind::ClarityTea, output: ItemKind::HastePotion, output_name: "⚡ Haste Potion+" },
+    CraftingRecipe { input1: ItemKind::MedHypo, input2: ItemKind::ToxinGrenade, output: ItemKind::OmniGel, output_name: "🧬 Omni-Gel" },
+    CraftingRecipe { input1: ItemKind::PlasmaBurst, input2: ItemKind::NaniteSwarm, output: ItemKind::SonicEmitter, output_name: "📡 Sonic Emitter" },
+    CraftingRecipe { input1: ItemKind::CryoGrenade, input2: ItemKind::SonicEmitter, output: ItemKind::EMPGrenade, output_name: "⚡ EMP Grenade" },
+    CraftingRecipe { input1: ItemKind::MedHypo, input2: ItemKind::MedHypo, output: ItemKind::SynthAle, output_name: "🍺 Synth-Ale" },
+    CraftingRecipe { input1: ItemKind::HoloDecoy, input2: ItemKind::ToxinGrenade, output: ItemKind::CloakingDevice, output_name: "👻 Cloaking Device" },
+    CraftingRecipe { input1: ItemKind::NanoShield, input2: ItemKind::PlasmaShield, output: ItemKind::DeflectorDrone, output_name: "🛸 Deflector Drone" },
+    CraftingRecipe { input1: ItemKind::FocusStim, input2: ItemKind::NeuralBoost, output: ItemKind::OmniGel, output_name: "🧬 Omni-Gel" },
+    CraftingRecipe { input1: ItemKind::VenomDart, input2: ItemKind::ToxinGrenade, output: ItemKind::VenomDart, output_name: "☠ Venom Dart+" },
+    CraftingRecipe { input1: ItemKind::PlasmaBurst, input2: ItemKind::PlasmaBurst, output: ItemKind::PlasmaBurst, output_name: "💥 Plasma Burst+" },
+    CraftingRecipe { input1: ItemKind::BiogelPatch, input2: ItemKind::MedHypo, output: ItemKind::BiogelPatch, output_name: "💊 Biogel Patch+" },
+    CraftingRecipe { input1: ItemKind::ThrusterPack, input2: ItemKind::GrappleLine, output: ItemKind::SignalJammer, output_name: "📶 Signal Jammer" },
+    CraftingRecipe { input1: ItemKind::ReflectorPlate, input2: ItemKind::DeflectorDrone, output: ItemKind::ReflectorPlate, output_name: "🪞 Reflector Plate+" },
+    CraftingRecipe { input1: ItemKind::ShockModule, input2: ItemKind::CryoGrenade, output: ItemKind::SonicEmitter, output_name: "📡 Sonic Emitter" },
+    CraftingRecipe { input1: ItemKind::CreditChip, input2: ItemKind::CreditChip, output: ItemKind::Revitalizer, output_name: "💉 Revitalizer" },
+    CraftingRecipe { input1: ItemKind::StimPack, input2: ItemKind::NeuralBoost, output: ItemKind::StimPack, output_name: "⚡ Stim-Pack+" },
 ];
 
 /// Look up a crafting recipe by two item kinds (order-independent).
@@ -230,93 +230,93 @@ pub fn has_recipe_with(selected: ItemKind, candidate: ItemKind) -> bool {
 /// Create the output item for a crafting recipe, using input items to scale stats.
 pub fn crafted_item(recipe: &CraftingRecipe, item1: &Item, item2: &Item) -> Item {
     match recipe.output {
-        ItemKind::LotusElixir => Item::LotusElixir,
-        ItemKind::ThunderDrum => {
+        ItemKind::OmniGel => Item::OmniGel,
+        ItemKind::SonicEmitter => {
             let base = match (item1, item2) {
-                (Item::FireCracker(d), _) | (_, Item::FireCracker(d)) => *d,
-                (Item::ThunderTalisman(d), _) | (_, Item::ThunderTalisman(d)) => *d,
-                (Item::ThunderDrum(d), _) | (_, Item::ThunderDrum(d)) => *d,
+                (Item::PlasmaBurst(d), _) | (_, Item::PlasmaBurst(d)) => *d,
+                (Item::ShockModule(d), _) | (_, Item::ShockModule(d)) => *d,
+                (Item::SonicEmitter(d), _) | (_, Item::SonicEmitter(d)) => *d,
                 _ => 4,
             };
-            Item::ThunderDrum(base + 3)
+            Item::SonicEmitter(base + 3)
         }
-        ItemKind::StunBomb => Item::StunBomb,
-        ItemKind::AncestralWine => Item::AncestralWine(6),
-        ItemKind::ShadowCloak => Item::ShadowCloak(5),
-        ItemKind::WardingCharm => {
+        ItemKind::EMPGrenade => Item::EMPGrenade,
+        ItemKind::SynthAle => Item::SynthAle(6),
+        ItemKind::CloakingDevice => Item::CloakingDevice(5),
+        ItemKind::DeflectorDrone => {
             let base = match (item1, item2) {
-                (Item::WardingCharm(d), _) | (_, Item::WardingCharm(d)) => *d,
-                (Item::IronSkinElixir(d), _) | (_, Item::IronSkinElixir(d)) => *d,
+                (Item::DeflectorDrone(d), _) | (_, Item::DeflectorDrone(d)) => *d,
+                (Item::NanoShield(d), _) | (_, Item::NanoShield(d)) => *d,
                 _ => 5,
             };
-            Item::WardingCharm(base + 3)
+            Item::DeflectorDrone(base + 3)
         }
-        ItemKind::SerpentFang => Item::SerpentFang,
-        ItemKind::FireCracker => {
+        ItemKind::VenomDart => Item::VenomDart,
+        ItemKind::PlasmaBurst => {
             let base = match (item1, item2) {
-                (Item::FireCracker(d1), Item::FireCracker(d2)) => (*d1).max(*d2),
-                (Item::FireCracker(d), _) | (_, Item::FireCracker(d)) => *d,
+                (Item::PlasmaBurst(d1), Item::PlasmaBurst(d2)) => (*d1).max(*d2),
+                (Item::PlasmaBurst(d), _) | (_, Item::PlasmaBurst(d)) => *d,
                 _ => 5,
             };
-            Item::FireCracker(base + 4)
+            Item::PlasmaBurst(base + 4)
         }
-        ItemKind::JadeSalve => {
+        ItemKind::BiogelPatch => {
             let base = match (item1, item2) {
-                (Item::JadeSalve(d), _) | (_, Item::JadeSalve(d)) => *d,
+                (Item::BiogelPatch(d), _) | (_, Item::BiogelPatch(d)) => *d,
                 _ => 2,
             };
-            Item::JadeSalve(base + 2)
+            Item::BiogelPatch(base + 2)
         }
-        ItemKind::BambooFlute => Item::BambooFlute(4),
-        ItemKind::MirrorShard => Item::MirrorShard,
-        ItemKind::PhoenixPlume => Item::PhoenixPlume(15),
-        ItemKind::HastePotion => {
+        ItemKind::SignalJammer => Item::SignalJammer(4),
+        ItemKind::ReflectorPlate => Item::ReflectorPlate,
+        ItemKind::Revitalizer => Item::Revitalizer(15),
+        ItemKind::StimPack => {
             let base = match (item1, item2) {
-                (Item::HastePotion(d), _) | (_, Item::HastePotion(d)) => *d,
+                (Item::StimPack(d), _) | (_, Item::StimPack(d)) => *d,
                 _ => 5,
             };
-            Item::HastePotion(base + 3)
+            Item::StimPack(base + 3)
         }
         // Fallback for any future recipes
-        _ => Item::HealthPotion(10),
+        _ => Item::MedHypo(10),
     }
 }
 
 impl ItemKind {
     pub fn index(self) -> usize {
         match self {
-            ItemKind::HealthPotion => 0,
-            ItemKind::PoisonFlask => 1,
-            ItemKind::RevealScroll => 2,
-            ItemKind::TeleportScroll => 3,
-            ItemKind::HastePotion => 4,
-            ItemKind::StunBomb => 5,
-            ItemKind::RiceBall => 6,
-            ItemKind::MeditationIncense => 7,
-            ItemKind::AncestralWine => 8,
-            ItemKind::SmokeScreen => 9,
-            ItemKind::FireCracker => 10,
-            ItemKind::IronSkinElixir => 11,
-            ItemKind::ClarityTea => 12,
-            ItemKind::GoldIngot => 13,
-            ItemKind::ThunderTalisman => 14,
-            ItemKind::JadeSalve => 15,
-            ItemKind::SerpentFang => 16,
-            ItemKind::WardingCharm => 17,
-            ItemKind::InkBomb => 18,
-            ItemKind::PhoenixPlume => 19,
-            ItemKind::MirrorShard => 20,
-            ItemKind::FrostVial => 21,
-            ItemKind::ShadowCloak => 22,
-            ItemKind::DragonScale => 23,
-            ItemKind::BambooFlute => 24,
-            ItemKind::JadeCompass => 25,
-            ItemKind::SilkRope => 26,
-            ItemKind::LotusElixir => 27,
-            ItemKind::ThunderDrum => 28,
-            ItemKind::CinnabarInk => 29,
-            ItemKind::AncestorToken => 30,
-            ItemKind::WindFan => 31,
+            ItemKind::MedHypo => 0,
+            ItemKind::ToxinGrenade => 1,
+            ItemKind::ScannerPulse => 2,
+            ItemKind::PersonalTeleporter => 3,
+            ItemKind::StimPack => 4,
+            ItemKind::EMPGrenade => 5,
+            ItemKind::RationPack => 6,
+            ItemKind::FocusStim => 7,
+            ItemKind::SynthAle => 8,
+            ItemKind::HoloDecoy => 9,
+            ItemKind::PlasmaBurst => 10,
+            ItemKind::NanoShield => 11,
+            ItemKind::NeuralBoost => 12,
+            ItemKind::CreditChip => 13,
+            ItemKind::ShockModule => 14,
+            ItemKind::BiogelPatch => 15,
+            ItemKind::VenomDart => 16,
+            ItemKind::DeflectorDrone => 17,
+            ItemKind::NaniteSwarm => 18,
+            ItemKind::Revitalizer => 19,
+            ItemKind::ReflectorPlate => 20,
+            ItemKind::CryoGrenade => 21,
+            ItemKind::CloakingDevice => 22,
+            ItemKind::PlasmaShield => 23,
+            ItemKind::SignalJammer => 24,
+            ItemKind::NavComputer => 25,
+            ItemKind::GrappleLine => 26,
+            ItemKind::OmniGel => 27,
+            ItemKind::SonicEmitter => 28,
+            ItemKind::CircuitInk => 29,
+            ItemKind::DataCore => 30,
+            ItemKind::ThrusterPack => 31,
         }
     }
 }
@@ -325,181 +325,181 @@ impl ItemKind {
 #[derive(Clone, Debug)]
 pub enum Item {
     /// Heal N HP instantly
-    HealthPotion(i32),
+    MedHypo(i32),
     /// Apply poison (dmg, turns) to adjacent enemies
-    PoisonFlask(i32, i32),
+    ToxinGrenade(i32, i32),
     /// Reveal entire floor map
-    RevealScroll,
+    ScannerPulse,
     /// Teleport to random explored walkable tile
-    TeleportScroll,
+    PersonalTeleporter,
     /// Grant haste for N turns
-    HastePotion(i32),
+    StimPack(i32),
     /// Stun all visible enemies
-    StunBomb,
+    EMPGrenade,
     /// Restore spirit energy
-    RiceBall(i32),
+    RationPack(i32),
     /// Block spirit drain for N moves
-    MeditationIncense(i32),
+    FocusStim(i32),
     /// Full spirit restore + Confused for N turns
-    AncestralWine(i32),
+    SynthAle(i32),
     /// Grant Haste for N turns (smoke cover)
-    SmokeScreen(i32),
+    HoloDecoy(i32),
     /// AoE damage to all visible enemies
-    FireCracker(i32),
+    PlasmaBurst(i32),
     /// Grant Shield + Regen for N turns
-    IronSkinElixir(i32),
+    NanoShield(i32),
     /// Remove all negative status effects
-    ClarityTea,
+    NeuralBoost,
     /// Gain N gold instantly
-    GoldIngot(i32),
+    CreditChip(i32),
     /// High damage to nearest enemy
-    ThunderTalisman(i32),
+    ShockModule(i32),
     /// Regen N per turn for 5 turns
-    JadeSalve(i32),
+    BiogelPatch(i32),
     /// Apply Envenomed to self weapon for 5 turns
-    SerpentFang,
+    VenomDart,
     /// Grant Shield + SpiritShield for N turns
-    WardingCharm(i32),
-    /// Stun all visible enemies + confuse (like enhanced StunBomb)
-    InkBomb,
+    DeflectorDrone(i32),
+    /// Stun all visible enemies + confuse (like enhanced EMPGrenade)
+    NaniteSwarm,
     /// Auto-revive on death, restoring N HP (passive, consumed on death)
-    PhoenixPlume(i32),
+    Revitalizer(i32),
     /// Reflect next attack back at attacker (1 use)
-    MirrorShard,
+    ReflectorPlate,
     /// Freeze all adjacent enemies for N turns
-    FrostVial(i32),
+    CryoGrenade(i32),
     /// Become invisible for N turns
-    ShadowCloak(i32),
+    CloakingDevice(i32),
     /// Gain +N armor for the rest of combat
-    DragonScale(i32),
+    PlasmaShield(i32),
     /// Confuse all enemies for N turns
-    BambooFlute(i32),
+    SignalJammer(i32),
     /// Reveal all traps and hidden tiles on the floor
-    JadeCompass,
+    NavComputer,
     /// Pull a distant enemy to adjacent tile
-    SilkRope,
+    GrappleLine,
     /// Cure all negative status effects
-    LotusElixir,
+    OmniGel,
     /// Deal N damage to all enemies + Slow 1
-    ThunderDrum(i32),
+    SonicEmitter(i32),
     /// Next spell deals double damage
-    CinnabarInk,
+    CircuitInk,
     /// Revive with N HP on death (passive, consumed on use)
-    AncestorToken(i32),
+    DataCore(i32),
     /// Push all adjacent enemies 2 tiles away
-    WindFan,
+    ThrusterPack,
 }
 
 impl Item {
     pub fn kind(&self) -> ItemKind {
         match self {
-            Item::HealthPotion(_) => ItemKind::HealthPotion,
-            Item::PoisonFlask(_, _) => ItemKind::PoisonFlask,
-            Item::RevealScroll => ItemKind::RevealScroll,
-            Item::TeleportScroll => ItemKind::TeleportScroll,
-            Item::HastePotion(_) => ItemKind::HastePotion,
-            Item::StunBomb => ItemKind::StunBomb,
-            Item::RiceBall(_) => ItemKind::RiceBall,
-            Item::MeditationIncense(_) => ItemKind::MeditationIncense,
-            Item::AncestralWine(_) => ItemKind::AncestralWine,
-            Item::SmokeScreen(_) => ItemKind::SmokeScreen,
-            Item::FireCracker(_) => ItemKind::FireCracker,
-            Item::IronSkinElixir(_) => ItemKind::IronSkinElixir,
-            Item::ClarityTea => ItemKind::ClarityTea,
-            Item::GoldIngot(_) => ItemKind::GoldIngot,
-            Item::ThunderTalisman(_) => ItemKind::ThunderTalisman,
-            Item::JadeSalve(_) => ItemKind::JadeSalve,
-            Item::SerpentFang => ItemKind::SerpentFang,
-            Item::WardingCharm(_) => ItemKind::WardingCharm,
-            Item::InkBomb => ItemKind::InkBomb,
-            Item::PhoenixPlume(_) => ItemKind::PhoenixPlume,
-            Item::MirrorShard => ItemKind::MirrorShard,
-            Item::FrostVial(_) => ItemKind::FrostVial,
-            Item::ShadowCloak(_) => ItemKind::ShadowCloak,
-            Item::DragonScale(_) => ItemKind::DragonScale,
-            Item::BambooFlute(_) => ItemKind::BambooFlute,
-            Item::JadeCompass => ItemKind::JadeCompass,
-            Item::SilkRope => ItemKind::SilkRope,
-            Item::LotusElixir => ItemKind::LotusElixir,
-            Item::ThunderDrum(_) => ItemKind::ThunderDrum,
-            Item::CinnabarInk => ItemKind::CinnabarInk,
-            Item::AncestorToken(_) => ItemKind::AncestorToken,
-            Item::WindFan => ItemKind::WindFan,
+            Item::MedHypo(_) => ItemKind::MedHypo,
+            Item::ToxinGrenade(_, _) => ItemKind::ToxinGrenade,
+            Item::ScannerPulse => ItemKind::ScannerPulse,
+            Item::PersonalTeleporter => ItemKind::PersonalTeleporter,
+            Item::StimPack(_) => ItemKind::StimPack,
+            Item::EMPGrenade => ItemKind::EMPGrenade,
+            Item::RationPack(_) => ItemKind::RationPack,
+            Item::FocusStim(_) => ItemKind::FocusStim,
+            Item::SynthAle(_) => ItemKind::SynthAle,
+            Item::HoloDecoy(_) => ItemKind::HoloDecoy,
+            Item::PlasmaBurst(_) => ItemKind::PlasmaBurst,
+            Item::NanoShield(_) => ItemKind::NanoShield,
+            Item::NeuralBoost => ItemKind::NeuralBoost,
+            Item::CreditChip(_) => ItemKind::CreditChip,
+            Item::ShockModule(_) => ItemKind::ShockModule,
+            Item::BiogelPatch(_) => ItemKind::BiogelPatch,
+            Item::VenomDart => ItemKind::VenomDart,
+            Item::DeflectorDrone(_) => ItemKind::DeflectorDrone,
+            Item::NaniteSwarm => ItemKind::NaniteSwarm,
+            Item::Revitalizer(_) => ItemKind::Revitalizer,
+            Item::ReflectorPlate => ItemKind::ReflectorPlate,
+            Item::CryoGrenade(_) => ItemKind::CryoGrenade,
+            Item::CloakingDevice(_) => ItemKind::CloakingDevice,
+            Item::PlasmaShield(_) => ItemKind::PlasmaShield,
+            Item::SignalJammer(_) => ItemKind::SignalJammer,
+            Item::NavComputer => ItemKind::NavComputer,
+            Item::GrappleLine => ItemKind::GrappleLine,
+            Item::OmniGel => ItemKind::OmniGel,
+            Item::SonicEmitter(_) => ItemKind::SonicEmitter,
+            Item::CircuitInk => ItemKind::CircuitInk,
+            Item::DataCore(_) => ItemKind::DataCore,
+            Item::ThrusterPack => ItemKind::ThrusterPack,
         }
     }
 
     pub fn name(&self) -> &'static str {
         match self {
-            Item::HealthPotion(_) => "💚 Health Potion",
-            Item::PoisonFlask(_, _) => "☠ Poison Flask",
-            Item::RevealScroll => "👁 Reveal Scroll",
-            Item::TeleportScroll => "✦ Teleport Scroll",
-            Item::HastePotion(_) => "⚡ Haste Potion",
-            Item::StunBomb => "💥 Stun Bomb",
-            Item::RiceBall(_) => "🍙 Rice Ball",
-            Item::MeditationIncense(_) => "🧘 Meditation Incense",
-            Item::AncestralWine(_) => "🍶 Ancestral Wine",
-            Item::SmokeScreen(_) => "🌫 Smoke Screen",
-            Item::FireCracker(_) => "🧨 Fire Cracker",
-            Item::IronSkinElixir(_) => "🛡 Iron Skin Elixir",
-            Item::ClarityTea => "🍵 Clarity Tea",
-            Item::GoldIngot(_) => "🪙 Gold Ingot",
-            Item::ThunderTalisman(_) => "⚡ Thunder Talisman",
-            Item::JadeSalve(_) => "💎 Jade Salve",
-            Item::SerpentFang => "🐍 Serpent Fang",
-            Item::WardingCharm(_) => "🔮 Warding Charm",
-            Item::InkBomb => "🖤 Ink Bomb",
-            Item::PhoenixPlume(_) => "🔥 Phoenix Plume",
-            Item::MirrorShard => "🪞 Mirror Shard",
-            Item::FrostVial(_) => "❄ Frost Vial",
-            Item::ShadowCloak(_) => "👻 Shadow Cloak",
-            Item::DragonScale(_) => "🐉 Dragon Scale",
-            Item::BambooFlute(_) => "🎋 Bamboo Flute",
-            Item::JadeCompass => "🧭 Jade Compass",
-            Item::SilkRope => "🪢 Silk Rope",
-            Item::LotusElixir => "🪷 Lotus Elixir",
-            Item::ThunderDrum(_) => "🥁 Thunder Drum",
-            Item::CinnabarInk => "🖊 Cinnabar Ink",
-            Item::AncestorToken(_) => "🏺 Ancestor Token",
-            Item::WindFan => "🌬 Wind Fan",
+            Item::MedHypo(_) => "💊 Med-Hypo",
+            Item::ToxinGrenade(_, _) => "☠ Toxin Grenade",
+            Item::ScannerPulse => "📡 Scanner Pulse",
+            Item::PersonalTeleporter => "✦ Personal Teleporter",
+            Item::StimPack(_) => "⚡ Stim-Pack",
+            Item::EMPGrenade => "⚡ EMP Grenade",
+            Item::RationPack(_) => "🍱 Ration Pack",
+            Item::FocusStim(_) => "🧠 Focus Stim",
+            Item::SynthAle(_) => "🍺 Synth-Ale",
+            Item::HoloDecoy(_) => "👤 Holo-Decoy",
+            Item::PlasmaBurst(_) => "💥 Plasma Burst",
+            Item::NanoShield(_) => "🛡 Nano-Shield",
+            Item::NeuralBoost => "🧠 Neural Boost",
+            Item::CreditChip(_) => "💰 Credit Chip",
+            Item::ShockModule(_) => "⚡ Shock Module",
+            Item::BiogelPatch(_) => "💊 Biogel Patch",
+            Item::VenomDart => "☠ Venom Dart",
+            Item::DeflectorDrone(_) => "🛸 Deflector Drone",
+            Item::NaniteSwarm => "🤖 Nanite Swarm",
+            Item::Revitalizer(_) => "💉 Revitalizer",
+            Item::ReflectorPlate => "🪞 Reflector Plate",
+            Item::CryoGrenade(_) => "❄ Cryo Grenade",
+            Item::CloakingDevice(_) => "👻 Cloaking Device",
+            Item::PlasmaShield(_) => "🔰 Plasma Shield",
+            Item::SignalJammer(_) => "📶 Signal Jammer",
+            Item::NavComputer => "🧭 Nav Computer",
+            Item::GrappleLine => "🪝 Grapple Line",
+            Item::OmniGel => "🧬 Omni-Gel",
+            Item::SonicEmitter(_) => "📡 Sonic Emitter",
+            Item::CircuitInk => "🔧 Circuit Ink",
+            Item::DataCore(_) => "💾 Data Core",
+            Item::ThrusterPack => "🚀 Thruster Pack",
         }
     }
 
     #[allow(dead_code)]
     pub fn short_name(&self) -> &'static str {
         match self {
-            Item::HealthPotion(_) => "HP Pot",
-            Item::PoisonFlask(_, _) => "Poison",
-            Item::RevealScroll => "Reveal",
-            Item::TeleportScroll => "Teleport",
-            Item::HastePotion(_) => "Haste",
-            Item::StunBomb => "Stun",
-            Item::RiceBall(_) => "Rice",
-            Item::MeditationIncense(_) => "Incense",
-            Item::AncestralWine(_) => "Wine",
-            Item::SmokeScreen(_) => "Smoke",
-            Item::FireCracker(_) => "Cracker",
-            Item::IronSkinElixir(_) => "IronSkin",
-            Item::ClarityTea => "Clarity",
-            Item::GoldIngot(_) => "Gold",
-            Item::ThunderTalisman(_) => "Thunder",
-            Item::JadeSalve(_) => "Salve",
-            Item::SerpentFang => "Fang",
-            Item::WardingCharm(_) => "Ward",
-            Item::InkBomb => "InkBomb",
-            Item::PhoenixPlume(_) => "Phoenix",
-            Item::MirrorShard => "Mirror",
-            Item::FrostVial(_) => "Frost",
-            Item::ShadowCloak(_) => "Shadow",
-            Item::DragonScale(_) => "Scale",
-            Item::BambooFlute(_) => "Flute",
-            Item::JadeCompass => "Compass",
-            Item::SilkRope => "Rope",
-            Item::LotusElixir => "Lotus",
-            Item::ThunderDrum(_) => "Drum",
-            Item::CinnabarInk => "Cinnabar",
-            Item::AncestorToken(_) => "Ancestor",
-            Item::WindFan => "Fan",
+            Item::MedHypo(_) => "MedHypo",
+            Item::ToxinGrenade(_, _) => "Toxin",
+            Item::ScannerPulse => "Scanner",
+            Item::PersonalTeleporter => "Teleport",
+            Item::StimPack(_) => "Stim",
+            Item::EMPGrenade => "EMP",
+            Item::RationPack(_) => "Ration",
+            Item::FocusStim(_) => "Focus",
+            Item::SynthAle(_) => "SynthAle",
+            Item::HoloDecoy(_) => "HoloDecoy",
+            Item::PlasmaBurst(_) => "Plasma",
+            Item::NanoShield(_) => "NanoShld",
+            Item::NeuralBoost => "Neural",
+            Item::CreditChip(_) => "Credits",
+            Item::ShockModule(_) => "Shock",
+            Item::BiogelPatch(_) => "Biogel",
+            Item::VenomDart => "Venom",
+            Item::DeflectorDrone(_) => "Deflect",
+            Item::NaniteSwarm => "Nanites",
+            Item::Revitalizer(_) => "Revital",
+            Item::ReflectorPlate => "Reflect",
+            Item::CryoGrenade(_) => "Cryo",
+            Item::CloakingDevice(_) => "Cloak",
+            Item::PlasmaShield(_) => "PShield",
+            Item::SignalJammer(_) => "Jammer",
+            Item::NavComputer => "NavComp",
+            Item::GrappleLine => "Grapple",
+            Item::OmniGel => "OmniGel",
+            Item::SonicEmitter(_) => "Sonic",
+            Item::CircuitInk => "Circuit",
+            Item::DataCore(_) => "DataCore",
+            Item::ThrusterPack => "Thruster",
         }
     }
 
@@ -513,162 +513,165 @@ impl Item {
 
     pub fn description(&self) -> &'static str {
         match self {
-            Item::HealthPotion(_) => "Restores HP instantly when used. Drink during exploration or combat to heal wounds.",
-            Item::PoisonFlask(_, _) => "Throw at an adjacent enemy to inflict poison damage over several turns.",
-            Item::RevealScroll => "Reveals the entire floor map, showing all rooms, corridors, and hidden areas.",
-            Item::TeleportScroll => "Instantly teleport to a random explored tile. Useful for escaping danger.",
-            Item::HastePotion(_) => "Grants Haste, letting you take extra actions each turn for a short duration.",
-            Item::StunBomb => "Stuns all visible enemies for several turns, preventing them from acting.",
-            Item::RiceBall(_) => "Restores spirit energy. Eat to stave off spiritual exhaustion.",
-            Item::MeditationIncense(_) => "Burns fragrant incense that shields your spirit from decay for several moves.",
-            Item::AncestralWine(_) => "Potent rice wine that fully restores spirit but leaves you confused and disoriented.",
-            Item::SmokeScreen(_) => "Releases a burst of smoke granting you swift movement for several turns.",
-            Item::FireCracker(_) => "Explodes with a thunderous crack, dealing damage to all visible enemies.",
-            Item::IronSkinElixir(_) => "Hardens your skin like iron, granting a protective shield and slow regeneration.",
-            Item::ClarityTea => "A calming brew that purges all negative effects from your body and mind.",
-            Item::GoldIngot(_) => "A gleaming bar of pure gold. Can be sold or used for instant wealth.",
-            Item::ThunderTalisman(_) => "Channels a bolt of lightning at the nearest enemy, dealing heavy damage.",
-            Item::JadeSalve(_) => "A soothing jade ointment that slowly regenerates your wounds over time.",
-            Item::SerpentFang => "Coats your weapon in deadly venom, envenoming your strikes for several turns.",
-            Item::WardingCharm(_) => "Erects a protective ward that shields both body and spirit from harm.",
-            Item::InkBomb => "Splatters blinding ink on all visible enemies, stunning them in place.",
-            Item::PhoenixPlume(_) => "A mystical feather that burns on death, reviving you from the brink of destruction.",
-            Item::MirrorShard => "A shard of enchanted mirror that reflects the next attack back at the attacker.",
-            Item::FrostVial(_) => "Shatters on impact, freezing all adjacent enemies solid for a short time.",
-            Item::ShadowCloak(_) => "Wraps you in shadow, making you invisible to enemies for several turns.",
-            Item::DragonScale(_) => "A hardened dragon scale that grants bonus armor for the rest of combat.",
-            Item::BambooFlute(_) => "Plays a haunting melody that confuses all enemies for several turns.",
-            Item::JadeCompass => "An ancient compass that reveals all traps and hidden tiles on the floor.",
-            Item::SilkRope => "A magically weighted rope that pulls a distant enemy to an adjacent tile.",
-            Item::LotusElixir => "A pure lotus extract that cures all negative status effects instantly.",
-            Item::ThunderDrum(_) => "A war drum that sends shockwaves dealing damage to all enemies and slowing them.",
-            Item::CinnabarInk => "Mystical red ink that empowers your next spell to deal double damage.",
-            Item::AncestorToken(_) => "A sacred ancestral token that revives you with HP upon death. Consumed on use.",
-            Item::WindFan => "A powerful fan that blasts all adjacent enemies away with a gust of wind.",
+            Item::MedHypo(_) => "Injects nanite-infused medicine to restore HP instantly. Use during exploration or combat.",
+            Item::ToxinGrenade(_, _) => "Lob at an adjacent enemy to inflict toxic damage over several turns.",
+            Item::ScannerPulse => "Emits a wide-band scan revealing the entire deck layout, rooms, and hidden areas.",
+            Item::PersonalTeleporter => "Short-range teleport to a random explored tile. Perfect for emergency extraction.",
+            Item::StimPack(_) => "Military-grade stimulant granting Haste for extra actions each turn.",
+            Item::EMPGrenade => "Electromagnetic pulse that disables all visible enemies for several turns.",
+            Item::RationPack(_) => "Standard-issue rations that restore spirit energy to stave off exhaustion.",
+            Item::FocusStim(_) => "Neural stabilizer that shields your spirit from decay for several moves.",
+            Item::SynthAle(_) => "Potent synthetic alcohol that fully restores spirit but leaves you disoriented.",
+            Item::HoloDecoy(_) => "Projects a holographic duplicate, granting you swift movement for several turns.",
+            Item::PlasmaBurst(_) => "Overcharged plasma cell that detonates dealing damage to all visible enemies.",
+            Item::NanoShield(_) => "Deploys a nanite barrier granting a protective shield and slow regeneration.",
+            Item::NeuralBoost => "Cortical stimulant that purges all negative effects from your neural system.",
+            Item::CreditChip(_) => "A high-denomination credit chip. Can be cashed in for instant wealth.",
+            Item::ShockModule(_) => "Discharges a focused energy bolt at the nearest enemy, dealing heavy damage.",
+            Item::BiogelPatch(_) => "Medical-grade biogel that slowly regenerates wounds over time.",
+            Item::VenomDart => "Coats your weapon in synthesized neurotoxin, envenoming strikes for several turns.",
+            Item::DeflectorDrone(_) => "Deploys a drone that projects shields protecting both body and spirit.",
+            Item::NaniteSwarm => "Releases blinding nanites on all visible enemies, stunning them in place.",
+            Item::Revitalizer(_) => "Emergency revival system that activates on death, restoring you from critical state.",
+            Item::ReflectorPlate => "Energy-reflective plating that bounces the next attack back at the attacker.",
+            Item::CryoGrenade(_) => "Flash-freezes all adjacent enemies solid for a short time on detonation.",
+            Item::CloakingDevice(_) => "Bends light around you, making you invisible to enemies for several turns.",
+            Item::PlasmaShield(_) => "Hardened plasma barrier that grants bonus armor for the rest of combat.",
+            Item::SignalJammer(_) => "Scrambles enemy communications, confusing all enemies for several turns.",
+            Item::NavComputer => "Portable navigation computer that reveals all traps and hidden areas on the deck.",
+            Item::GrappleLine => "Magnetic grapple line that pulls a distant enemy to an adjacent tile.",
+            Item::OmniGel => "Universal repair compound that cures all negative status effects instantly.",
+            Item::SonicEmitter(_) => "Emits destructive sound waves dealing damage to all enemies and slowing them.",
+            Item::CircuitInk => "Conductive nano-ink that empowers your next spell to deal double damage.",
+            Item::DataCore(_) => "Emergency backup data core that revives you with HP upon death. Consumed on use.",
+            Item::ThrusterPack => "Directional thruster burst that blasts all adjacent enemies away.",
         }
     }
 }
 
 pub const EQUIPMENT_POOL: &[Equipment] = &[
     Equipment {
-        name: "Brush of Clarity",
+        name: "Laser Pistol",
         slot: EquipSlot::Weapon,
         effect: EquipEffect::BonusDamage(1),
     },
     Equipment {
-        name: "Scholar's Quill",
+        name: "Plasma Rifle",
         slot: EquipSlot::Weapon,
         effect: EquipEffect::BonusDamage(2),
     },
     Equipment {
-        name: "Dragon Fang Pen",
+        name: "Arc Emitter",
         slot: EquipSlot::Weapon,
         effect: EquipEffect::BonusDamage(3),
     },
     Equipment {
-        name: "Jade Vest",
+        name: "Flight Suit",
         slot: EquipSlot::Armor,
         effect: EquipEffect::DamageReduction(1),
     },
     Equipment {
-        name: "Iron Silk Robe",
+        name: "Kevlar Vest",
         slot: EquipSlot::Armor,
         effect: EquipEffect::DamageReduction(2),
     },
     Equipment {
-        name: "Phoenix Mantle",
+        name: "Power Armor",
         slot: EquipSlot::Armor,
         effect: EquipEffect::DamageReduction(3),
     },
     Equipment {
-        name: "Radical Magnet",
+        name: "Scanner Array",
         slot: EquipSlot::Charm,
         effect: EquipEffect::ExtraRadicalDrop(50),
     },
     Equipment {
-        name: "Life Jade",
+        name: "Auto-Repair Module",
         slot: EquipSlot::Charm,
         effect: EquipEffect::HealOnKill(2),
     },
     Equipment {
-        name: "Gold Toad",
+        name: "Salvage Processor",
         slot: EquipSlot::Charm,
         effect: EquipEffect::GoldBonus(10),
     },
     Equipment {
-        name: "Phoenix Feather",
+        name: "Targeting Computer",
         slot: EquipSlot::Charm,
         effect: EquipEffect::HealOnKill(3),
     },
     Equipment {
-        name: "Iron Pickaxe",
+        name: "Plasma Torch",
         slot: EquipSlot::Weapon,
         effect: EquipEffect::Digging,
     },
     Equipment {
-        name: "Spirit Talisman",
+        name: "Energy Recycler",
         slot: EquipSlot::Charm,
         effect: EquipEffect::SpiritSustain,
     },
     Equipment {
-        name: "Jade Bracelet",
+        name: "Psi Amplifier",
         slot: EquipSlot::Charm,
         effect: EquipEffect::SpellPowerBoost(1),
     },
     Equipment {
-        name: "Dragon Fang Sword",
+        name: "Zero Blade",
         slot: EquipSlot::Weapon,
         effect: EquipEffect::LifeSteal(1),
     },
     Equipment {
-        name: "Silk Armor",
+        name: "Nanoweave Suit",
         slot: EquipSlot::Armor,
         effect: EquipEffect::DodgeChance(15),
     },
     Equipment {
-        name: "Inkstone Pendant",
+        name: "Neural Uplink",
         slot: EquipSlot::Charm,
         effect: EquipEffect::FocusRegen(1),
     },
     Equipment {
-        name: "Iron Gauntlets",
+        name: "Ion Cannon",
         slot: EquipSlot::Weapon,
         effect: EquipEffect::KnockbackStrike,
     },
     Equipment {
-        name: "Bamboo Shield",
+        name: "Energy Shield",
         slot: EquipSlot::Armor,
         effect: EquipEffect::ThornsAura(1),
     },
     Equipment {
-        name: "Oracle Bone",
+        name: "Threat Analyzer",
         slot: EquipSlot::Charm,
         effect: EquipEffect::EnemyIntentReveal,
     },
     Equipment {
-        name: "Tiger Claw",
+        name: "Void Lance",
         slot: EquipSlot::Weapon,
         effect: EquipEffect::CriticalStrike(20),
     },
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Deity {
-    Jade,   // Life
-    Gale,   // Travel
-    Mirror, // Knowledge
-    Iron,   // War
-    Gold,   // Wealth
+pub enum Faction {
+    Consortium,       // Commerce & diplomacy
+    FreeTraders,      // Exploration & freedom
+    Technocracy,      // Knowledge & technology
+    MilitaryAlliance, // Warfare & defense
+    AncientOrder,     // Wealth & ancient secrets
 }
 
-impl Deity {
+// Type alias for backward compatibility with other modules
+pub type Deity = Faction;
+
+impl Faction {
     pub fn name(&self) -> &'static str {
         match self {
-            Deity::Jade => "Jade Emperor (Life)",
-            Deity::Gale => "Wind Walker (Travel)",
-            Deity::Mirror => "Mirror Sage (Knowledge)",
-            Deity::Iron => "Iron General (War)",
-            Deity::Gold => "Golden Toad (Wealth)",
+            Faction::Consortium => "Stellar Consortium (Commerce)",
+            Faction::FreeTraders => "Free Traders Guild (Exploration)",
+            Faction::Technocracy => "Technocracy (Knowledge)",
+            Faction::MilitaryAlliance => "Military Alliance (Defense)",
+            Faction::AncientOrder => "Ancient Order (Secrets)",
         }
     }
 }
@@ -676,11 +679,11 @@ impl Deity {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlayerForm {
     Human,
-    Flame, // Immune to fire, burn on touch
+    Powered, // Energy damage aura, immune to energy
     #[allow(dead_code)]
-    Stone, // High Def, slow
-    Mist,  // High Evasion, weak atk
-    Tiger, // High Atk, fast
+    Cybernetic, // Enhanced armor, reduced speed
+    Holographic, // Phase through, weak attack
+    Void, // Void damage, fast
 }
 
 impl PlayerForm {
@@ -688,30 +691,30 @@ impl PlayerForm {
     pub fn name(&self) -> &'static str {
         match self {
             PlayerForm::Human => "Human",
-            PlayerForm::Flame => "Flame Avatar",
-            PlayerForm::Stone => "Stone Golem",
-            PlayerForm::Mist => "Mist Spirit",
-            PlayerForm::Tiger => "Tiger Demon",
+            PlayerForm::Powered => "Powered Suit",
+            PlayerForm::Cybernetic => "Cybernetic",
+            PlayerForm::Holographic => "Holographic",
+            PlayerForm::Void => "Void Walker",
         }
     }
 
     pub fn glyph(&self) -> &'static str {
         match self {
             PlayerForm::Human => "@",
-            PlayerForm::Flame => "火",
-            PlayerForm::Stone => "石",
-            PlayerForm::Mist => "气",
-            PlayerForm::Tiger => "虎",
+            PlayerForm::Powered => "⚡",
+            PlayerForm::Cybernetic => "⛨",
+            PlayerForm::Holographic => "◇",
+            PlayerForm::Void => "◈",
         }
     }
 
     pub fn color(&self) -> &'static str {
         match self {
             PlayerForm::Human => "#ffffff",
-            PlayerForm::Flame => "#ff5500",
-            PlayerForm::Stone => "#888888",
-            PlayerForm::Mist => "#aaddff",
-            PlayerForm::Tiger => "#ffaa00",
+            PlayerForm::Powered => "#ff5500",
+            PlayerForm::Cybernetic => "#888888",
+            PlayerForm::Holographic => "#aaddff",
+            PlayerForm::Void => "#ffaa00",
         }
     }
 }
@@ -728,195 +731,78 @@ pub struct ClassData {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PlayerClass {
-    Scholar,
-    Warrior,
-    Alchemist,
-    Monk,
-    Thief,
-    Calligrapher,
-    Exorcist,
-    Herbalist,
-    Diviner,
-    Swordsman,
-    Merchant,
-    Pilgrim,
-    Beastmaster,
-    Scribe,
-    Assassin,
-    Earthmover,
-    Shaman,
-    Wanderer,
-    Ironclad,
-    Inkmaster,
+    Envoy,
+    Mechanic,
+    Mystic,
+    Operative,
+    Solarian,
+    Soldier,
+    Technomancer,
 }
 
 impl PlayerClass {
     pub fn all() -> Vec<PlayerClass> {
         vec![
-            PlayerClass::Scholar,
-            PlayerClass::Warrior,
-            PlayerClass::Alchemist,
-            PlayerClass::Monk,
-            PlayerClass::Thief,
-            PlayerClass::Calligrapher,
-            PlayerClass::Exorcist,
-            PlayerClass::Herbalist,
-            PlayerClass::Diviner,
-            PlayerClass::Swordsman,
-            PlayerClass::Merchant,
-            PlayerClass::Pilgrim,
-            PlayerClass::Beastmaster,
-            PlayerClass::Scribe,
-            PlayerClass::Assassin,
-            PlayerClass::Earthmover,
-            PlayerClass::Shaman,
-            PlayerClass::Wanderer,
-            PlayerClass::Ironclad,
-            PlayerClass::Inkmaster,
+            PlayerClass::Envoy,
+            PlayerClass::Mechanic,
+            PlayerClass::Mystic,
+            PlayerClass::Operative,
+            PlayerClass::Solarian,
+            PlayerClass::Soldier,
+            PlayerClass::Technomancer,
         ]
     }
 
     pub fn data(&self) -> ClassData {
         match self {
-            PlayerClass::Scholar => ClassData {
-                name_en: "Scholar",
-                name_cn: "学者",
-                lore: "Balanced, hints in combat.",
+            PlayerClass::Envoy => ClassData {
+                name_en: "Envoy",
+                name_cn: "使节",
+                lore: "Diplomat. Crew morale+, shop discount.",
                 color: "#88ccff",
-                icon: "S",
-            },
-            PlayerClass::Warrior => ClassData {
-                name_en: "Warrior",
-                name_cn: "武士",
-                lore: "+3 HP, +1 dmg.",
-                color: "#ff8888",
-                icon: "W",
-            },
-            PlayerClass::Alchemist => ClassData {
-                name_en: "Alchemist",
-                name_cn: "炼丹师",
-                lore: "2x potion healing, +2 slots.",
-                color: "#88ff88",
-                icon: "A",
-            },
-            PlayerClass::Monk => ClassData {
-                name_en: "Monk",
-                name_cn: "僧侣",
-                lore: "Regen 1HP/floor.",
-                color: "#ffcc88",
-                icon: "M",
-            },
-            PlayerClass::Thief => ClassData {
-                name_en: "Thief",
-                name_cn: "盗贼",
-                lore: "Start with gold, extra gold drops.",
-                color: "#cc88ff",
-                icon: "T",
-            },
-            PlayerClass::Calligrapher => ClassData {
-                name_en: "Calligrapher",
-                name_cn: "书法家",
-                lore: "Bonus spell power.",
-                color: "#ffffff",
-                icon: "C",
-            },
-            PlayerClass::Exorcist => ClassData {
-                name_en: "Exorcist",
-                name_cn: "驱魔师",
-                lore: "Bonus vs bosses.",
-                color: "#ff88cc",
                 icon: "E",
             },
-            PlayerClass::Herbalist => ClassData {
-                name_en: "Herbalist",
-                name_cn: "草药师",
-                lore: "Start w/ 2 health pots.",
-                color: "#aaffaa",
-                icon: "H",
+            PlayerClass::Mechanic => ClassData {
+                name_en: "Mechanic",
+                name_cn: "技师",
+                lore: "Tech expert. Repair+, drone ally.",
+                color: "#88ff88",
+                icon: "M",
             },
-            PlayerClass::Diviner => ClassData {
-                name_en: "Diviner",
-                name_cn: "占卜师",
-                lore: "Map partially revealed.",
-                color: "#ddaadd",
+            PlayerClass::Mystic => ClassData {
+                name_en: "Mystic",
+                name_cn: "秘术师",
+                lore: "Psychic powers. Spell+, sense foes.",
+                color: "#cc88ff",
+                icon: "Y",
+            },
+            PlayerClass::Operative => ClassData {
+                name_en: "Operative",
+                name_cn: "特工",
+                lore: "Stealth/skills. Init+, crit hits.",
+                color: "#aa4444",
+                icon: "O",
+            },
+            PlayerClass::Solarian => ClassData {
+                name_en: "Solarian",
+                name_cn: "恒星者",
+                lore: "Cosmic warrior. Melee+, solar mode.",
+                color: "#ffaa00",
+                icon: "S",
+            },
+            PlayerClass::Soldier => ClassData {
+                name_en: "Soldier",
+                name_cn: "士兵",
+                lore: "Heavy combat. HP+, armor+, ranged+.",
+                color: "#ff8888",
                 icon: "D",
             },
-            PlayerClass::Swordsman => ClassData {
-                name_en: "Swordsman",
-                name_cn: "剑客",
-                lore: "Start w/ weapon, crit chance.",
-                color: "#ffaaaa",
-                icon: "S",
-            },
-            PlayerClass::Merchant => ClassData {
-                name_en: "Merchant",
-                name_cn: "商人",
-                lore: "Shop discount, extra gold.",
-                color: "#ffffaa",
-                icon: "M",
-            },
-            PlayerClass::Pilgrim => ClassData {
-                name_en: "Pilgrim",
-                name_cn: "朝圣者",
-                lore: "Start w/ piety.",
-                color: "#ccccaa",
-                icon: "P",
-            },
-            PlayerClass::Beastmaster => ClassData {
-                name_en: "Beastmaster",
-                name_cn: "驯兽师",
-                lore: "Start w/ companion.",
-                color: "#ccaa88",
-                icon: "B",
-            },
-            PlayerClass::Scribe => ClassData {
-                name_en: "Scribe",
-                name_cn: "抄写员",
-                lore: "Bonus radical drops.",
-                color: "#eeeeee",
-                icon: "S",
-            },
-            PlayerClass::Assassin => ClassData {
-                name_en: "Assassin",
-                name_cn: "刺客",
-                lore: "High dmg, low HP.",
-                color: "#aa4444",
-                icon: "A",
-            },
-            PlayerClass::Earthmover => ClassData {
-                name_en: "Earthmover",
-                name_cn: "土行者",
-                lore: "Start w/ pickaxe.",
-                color: "#aa8866",
-                icon: "E",
-            },
-            PlayerClass::Shaman => ClassData {
-                name_en: "Shaman",
-                name_cn: "巫",
-                lore: "Start w/ 2 random spells.",
-                color: "#88ccaa",
-                icon: "S",
-            },
-            PlayerClass::Wanderer => ClassData {
-                name_en: "Wanderer",
-                name_cn: "浪人",
-                lore: "Random bonus each floor.",
-                color: "#aaaaaa",
-                icon: "W",
-            },
-            PlayerClass::Ironclad => ClassData {
-                name_en: "Ironclad",
-                name_cn: "铁甲",
-                lore: "Start w/ armor, high HP.",
-                color: "#8888aa",
-                icon: "I",
-            },
-            PlayerClass::Inkmaster => ClassData {
-                name_en: "Inkmaster",
-                name_cn: "墨师",
-                lore: "Start w/ extra radicals.",
-                color: "#444444",
-                icon: "I",
+            PlayerClass::Technomancer => ClassData {
+                name_en: "Technomancer",
+                name_cn: "技法师",
+                lore: "Tech+magic. Spell variety, hacking.",
+                color: "#ffffff",
+                icon: "T",
             },
         }
     }
@@ -973,8 +859,8 @@ pub struct Player {
     pub shop_discount_pct: i32,
     /// Permanent spell potency bonus from meta progression
     pub spell_power_bonus: i32,
-    /// Active god favor (piety)
-    pub piety: Vec<(Deity, i32)>,
+    /// Active faction favor (piety)
+    pub piety: Vec<(Faction, i32)>,
     /// Current physical form
     pub form: PlayerForm,
     /// Turns remaining in current form (0 = permanent/human)
@@ -984,25 +870,93 @@ pub struct Player {
     pub max_spirit: i32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum CrewRole {
+    ScienceOfficer,
+    Medic,
+    Quartermaster,
+    SecurityChief,
+    Pilot,
+    Engineer,
+}
+
+impl CrewRole {
+    pub fn name(&self) -> &'static str {
+        match self {
+            CrewRole::ScienceOfficer => "Science Officer",
+            CrewRole::Medic => "Medic",
+            CrewRole::Quartermaster => "Quartermaster",
+            CrewRole::SecurityChief => "Security Chief",
+            CrewRole::Pilot => "Pilot",
+            CrewRole::Engineer => "Engineer",
+        }
+    }
+
+    pub fn icon(&self) -> &'static str {
+        match self {
+            CrewRole::ScienceOfficer => "🔬",
+            CrewRole::Medic => "💊",
+            CrewRole::Quartermaster => "📦",
+            CrewRole::SecurityChief => "🛡",
+            CrewRole::Pilot => "🚀",
+            CrewRole::Engineer => "🔧",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Ship {
+    pub hull: i32,
+    pub max_hull: i32,
+    pub fuel: i32,
+    pub max_fuel: i32,
+    pub shields: i32,
+    pub max_shields: i32,
+    pub weapon_power: i32,
+    pub engine_power: i32,
+    pub sensor_range: i32,
+    pub cargo_capacity: i32,
+    pub cargo_used: i32,
+}
+
+impl Ship {
+    pub fn new() -> Self {
+        Self {
+            hull: 50,
+            max_hull: 50,
+            fuel: 100,
+            max_fuel: 100,
+            shields: 20,
+            max_shields: 20,
+            weapon_power: 5,
+            engine_power: 5,
+            sensor_range: 3,
+            cargo_capacity: 20,
+            cargo_used: 0,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CrewMember {
+    pub name: String,
+    pub role: CrewRole,
+    pub hp: i32,
+    pub max_hp: i32,
+    pub level: u8,
+    pub xp: u32,
+    pub skill: i32,
+    pub morale: i32,
+}
+
 impl Player {
     pub fn new(x: i32, y: i32, class: PlayerClass) -> Self {
         let (hp, max_hp) = match class {
-            PlayerClass::Warrior => (13, 13),
-            PlayerClass::Ironclad => (14, 14),
-            PlayerClass::Exorcist | PlayerClass::Swordsman | PlayerClass::Earthmover => (11, 11),
-            PlayerClass::Scholar
-            | PlayerClass::Alchemist
-            | PlayerClass::Pilgrim
-            | PlayerClass::Wanderer => (10, 10),
-            PlayerClass::Thief
-            | PlayerClass::Calligrapher
-            | PlayerClass::Herbalist
-            | PlayerClass::Merchant
-            | PlayerClass::Beastmaster
-            | PlayerClass::Scribe
-            | PlayerClass::Inkmaster => (9, 9),
-            PlayerClass::Monk | PlayerClass::Diviner | PlayerClass::Shaman => (8, 8),
-            PlayerClass::Assassin => (7, 7),
+            PlayerClass::Soldier => (13, 13),
+            PlayerClass::Solarian => (11, 11),
+            PlayerClass::Envoy | PlayerClass::Mechanic => (10, 10),
+            PlayerClass::Mystic | PlayerClass::Technomancer => (9, 9),
+            PlayerClass::Operative => (8, 8),
         };
         Self {
             x,
@@ -1040,9 +994,9 @@ impl Player {
 
     fn base_max_spirit(class: PlayerClass) -> i32 {
         match class {
-            PlayerClass::Monk | PlayerClass::Pilgrim => 180,
-            PlayerClass::Herbalist | PlayerClass::Calligrapher | PlayerClass::Inkmaster => 170,
-            PlayerClass::Scholar => 160,
+            PlayerClass::Mystic => 180,
+            PlayerClass::Technomancer | PlayerClass::Envoy => 170,
+            PlayerClass::Mechanic => 160,
             _ => 150,
         }
     }
@@ -1053,23 +1007,23 @@ impl Player {
             .unwrap_or(false)
     }
 
-    pub fn get_piety(&self, deity: Deity) -> i32 {
+    pub fn get_piety(&self, faction: Faction) -> i32 {
         self.piety
             .iter()
-            .find(|(d, _)| *d == deity)
+            .find(|(d, _)| *d == faction)
             .map(|(_, p)| *p)
             .unwrap_or(0)
     }
 
-    pub fn add_piety(&mut self, deity: Deity, amount: i32) {
-        if let Some((_, p)) = self.piety.iter_mut().find(|(d, _)| *d == deity) {
+    pub fn add_piety(&mut self, faction: Faction, amount: i32) {
+        if let Some((_, p)) = self.piety.iter_mut().find(|(d, _)| *d == faction) {
             *p += amount;
         } else {
-            self.piety.push((deity, amount));
+            self.piety.push((faction, amount));
         }
     }
 
-    pub fn highest_deity(&self) -> Option<Deity> {
+    pub fn highest_faction(&self) -> Option<Faction> {
         self.piety
             .iter()
             .filter(|&&(_, p)| p > 0)
@@ -1077,45 +1031,45 @@ impl Player {
             .map(|&(d, _)| d)
     }
 
-    pub fn devotion_bonus(&self, deity: Deity) -> &'static str {
-        let p = self.get_piety(deity);
+    pub fn faction_bonus(&self, faction: Faction) -> &'static str {
+        let p = self.get_piety(faction);
         if p >= 15 {
-            match deity {
-                Deity::Jade => "Major: +1 HP on kill",
-                Deity::Iron => "Major: +1 bonus damage",
-                Deity::Gold => "Major: +3 bonus gold on kill",
-                Deity::Gale => "Major: 15% evade on wrong answer",
-                Deity::Mirror => "Major: Show pinyin on wrong answer",
+            match faction {
+                Faction::Consortium => "Major: +1 HP on kill",
+                Faction::MilitaryAlliance => "Major: +1 bonus damage",
+                Faction::AncientOrder => "Major: +3 bonus credits on kill",
+                Faction::FreeTraders => "Major: 15% evade on wrong answer",
+                Faction::Technocracy => "Major: Show pinyin on wrong answer",
             }
         } else if p >= 10 {
-            match deity {
-                Deity::Jade => "Moderate: +1 HP on kill",
-                Deity::Iron => "Moderate: +1 bonus damage",
-                Deity::Gold => "Moderate: +3 bonus gold on kill",
-                Deity::Gale => "Moderate: 15% evade on wrong answer",
-                Deity::Mirror => "Moderate: Show pinyin on wrong answer",
+            match faction {
+                Faction::Consortium => "Moderate: +1 HP on kill",
+                Faction::MilitaryAlliance => "Moderate: +1 bonus damage",
+                Faction::AncientOrder => "Moderate: +3 bonus credits on kill",
+                Faction::FreeTraders => "Moderate: 15% evade on wrong answer",
+                Faction::Technocracy => "Moderate: Show pinyin on wrong answer",
             }
         } else if p >= 5 {
-            "Minor devotion"
+            "Minor standing"
         } else {
             "None"
         }
     }
 
-    pub fn deity_synergy(&self) -> Option<(&'static str, &'static str)> {
+    pub fn faction_synergy(&self) -> Option<(&'static str, &'static str)> {
         let p = |d| self.get_piety(d) >= 10;
-        if p(Deity::Jade) && p(Deity::Iron) {
-            Some(("Paladin's Vigor", "Heal 1 HP per kill AND +1 damage"))
-        } else if p(Deity::Jade) && p(Deity::Gold) {
-            Some(("Merchant's Blessing", "+5 gold per floor cleared"))
-        } else if p(Deity::Mirror) && p(Deity::Gale) {
-            Some(("Scholar's Wind", "Reveal map on floor entry (25% chance)"))
-        } else if p(Deity::Iron) && p(Deity::Gold) {
-            Some(("Warlord's Tithe", "Enemies drop double gold"))
-        } else if p(Deity::Mirror) && p(Deity::Iron) {
-            Some(("Tactical Insight", "+2 bonus damage to elites"))
-        } else if p(Deity::Gale) && p(Deity::Gold) {
-            Some(("Fortune's Breeze", "25% chance for extra item on floor"))
+        if p(Faction::Consortium) && p(Faction::MilitaryAlliance) {
+            Some(("Vanguard Protocol", "Heal 1 HP per kill AND +1 damage"))
+        } else if p(Faction::Consortium) && p(Faction::AncientOrder) {
+            Some(("Trade Accord", "+5 credits per deck cleared"))
+        } else if p(Faction::Technocracy) && p(Faction::FreeTraders) {
+            Some(("Deep Scan Array", "Reveal map on deck entry (25% chance)"))
+        } else if p(Faction::MilitaryAlliance) && p(Faction::AncientOrder) {
+            Some(("War Profiteer", "Enemies drop double credits"))
+        } else if p(Faction::Technocracy) && p(Faction::MilitaryAlliance) {
+            Some(("Tactical Uplink", "+2 bonus damage to elites"))
+        } else if p(Faction::FreeTraders) && p(Faction::AncientOrder) {
+            Some(("Smuggler's Luck", "25% chance for extra item on deck"))
         } else {
             None
         }
@@ -1153,24 +1107,10 @@ impl Player {
     /// Max items depends on class
     pub fn max_items(&self) -> usize {
         match self.class {
-            PlayerClass::Alchemist => 7,
-            PlayerClass::Thief | PlayerClass::Herbalist => 6,
-            PlayerClass::Scholar
-            | PlayerClass::Calligrapher
-            | PlayerClass::Diviner
-            | PlayerClass::Merchant
-            | PlayerClass::Scribe
-            | PlayerClass::Shaman
-            | PlayerClass::Wanderer
-            | PlayerClass::Inkmaster => 5,
-            PlayerClass::Warrior
-            | PlayerClass::Monk
-            | PlayerClass::Exorcist
-            | PlayerClass::Swordsman
-            | PlayerClass::Pilgrim
-            | PlayerClass::Beastmaster
-            | PlayerClass::Assassin => 4,
-            PlayerClass::Earthmover | PlayerClass::Ironclad => 3,
+            PlayerClass::Mechanic => 7,
+            PlayerClass::Envoy | PlayerClass::Technomancer => 6,
+            PlayerClass::Mystic | PlayerClass::Operative => 5,
+            PlayerClass::Soldier | PlayerClass::Solarian => 4,
         }
     }
 
@@ -1376,62 +1316,62 @@ impl Player {
 
 #[cfg(test)]
 mod tests {
-    use super::{Deity, Item, ItemKind, Player, PlayerClass};
+    use super::{Faction, Item, ItemKind, Player, PlayerClass};
 
     #[test]
     fn item_kind_matches_variant() {
-        assert_eq!(Item::HealthPotion(5).kind(), ItemKind::HealthPotion);
-        assert_eq!(Item::TeleportScroll.kind(), ItemKind::TeleportScroll);
+        assert_eq!(Item::MedHypo(5).kind(), ItemKind::MedHypo);
+        assert_eq!(Item::PersonalTeleporter.kind(), ItemKind::PersonalTeleporter);
     }
 
     #[test]
     fn item_display_name_uses_mystery_label_until_identified() {
-        let item = Item::RevealScroll;
+        let item = Item::ScannerPulse;
 
         assert_eq!(
-            item.display_name(false, "Cloud Seal 云符"),
-            "? Cloud Seal 云符"
+            item.display_name(false, "Green Capsule ◇"),
+            "? Green Capsule ◇"
         );
         assert_eq!(
-            item.display_name(true, "Cloud Seal 云符"),
-            "👁 Reveal Scroll"
-        );
-    }
-
-    #[test]
-    fn deity_synergy_requires_dual_devotion() {
-        let mut player = Player::new(0, 0, PlayerClass::Warrior);
-        player.add_piety(Deity::Jade, 10);
-        player.add_piety(Deity::Iron, 10);
-        assert_eq!(
-            player.deity_synergy(),
-            Some(("Paladin's Vigor", "Heal 1 HP per kill AND +1 damage"))
+            item.display_name(true, "Green Capsule ◇"),
+            "📡 Scanner Pulse"
         );
     }
 
     #[test]
-    fn deity_synergy_returns_none_without_threshold() {
-        let mut player = Player::new(0, 0, PlayerClass::Warrior);
-        player.add_piety(Deity::Jade, 9);
-        player.add_piety(Deity::Iron, 10);
-        assert_eq!(player.deity_synergy(), None);
+    fn faction_synergy_requires_dual_standing() {
+        let mut player = Player::new(0, 0, PlayerClass::Soldier);
+        player.add_piety(Faction::Consortium, 10);
+        player.add_piety(Faction::MilitaryAlliance, 10);
+        assert_eq!(
+            player.faction_synergy(),
+            Some(("Vanguard Protocol", "Heal 1 HP per kill AND +1 damage"))
+        );
     }
 
     #[test]
-    fn devotion_bonus_tiers() {
-        let mut player = Player::new(0, 0, PlayerClass::Warrior);
-        assert_eq!(player.devotion_bonus(Deity::Jade), "None");
+    fn faction_synergy_returns_none_without_threshold() {
+        let mut player = Player::new(0, 0, PlayerClass::Soldier);
+        player.add_piety(Faction::Consortium, 9);
+        player.add_piety(Faction::MilitaryAlliance, 10);
+        assert_eq!(player.faction_synergy(), None);
+    }
 
-        player.add_piety(Deity::Jade, 5);
-        assert_eq!(player.devotion_bonus(Deity::Jade), "Minor devotion");
+    #[test]
+    fn faction_bonus_tiers() {
+        let mut player = Player::new(0, 0, PlayerClass::Soldier);
+        assert_eq!(player.faction_bonus(Faction::Consortium), "None");
 
-        player.add_piety(Deity::Jade, 5);
+        player.add_piety(Faction::Consortium, 5);
+        assert_eq!(player.faction_bonus(Faction::Consortium), "Minor standing");
+
+        player.add_piety(Faction::Consortium, 5);
         assert_eq!(
-            player.devotion_bonus(Deity::Jade),
+            player.faction_bonus(Faction::Consortium),
             "Moderate: +1 HP on kill"
         );
 
-        player.add_piety(Deity::Jade, 5);
-        assert_eq!(player.devotion_bonus(Deity::Jade), "Major: +1 HP on kill");
+        player.add_piety(Faction::Consortium, 5);
+        assert_eq!(player.faction_bonus(Faction::Consortium), "Major: +1 HP on kill");
     }
 }

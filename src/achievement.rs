@@ -13,49 +13,49 @@ pub const ACHIEVEMENTS: &[AchievementDef] = &[
     AchievementDef {
         id: "first_kill",
         name: "First Blood",
-        desc: "Defeat your first enemy",
+        desc: "Defeat your first hostile",
         icon: "⚔",
     },
     AchievementDef {
         id: "kill_10",
         name: "Warrior",
-        desc: "Defeat 10 enemies total",
+        desc: "Defeat 10 hostiles total",
         icon: "⚔",
     },
     AchievementDef {
         id: "kill_50",
         name: "Slayer",
-        desc: "Defeat 50 enemies total",
+        desc: "Defeat 50 hostiles total",
         icon: "⚔",
     },
     AchievementDef {
         id: "kill_100",
         name: "Legend",
-        desc: "Defeat 100 enemies total",
+        desc: "Defeat 100 hostiles total",
         icon: "⚔",
     },
     AchievementDef {
         id: "floor_3",
         name: "Delver",
-        desc: "Reach floor 3",
+        desc: "Reach deck 3",
         icon: "🏔",
     },
     AchievementDef {
         id: "floor_5",
         name: "Explorer",
-        desc: "Reach floor 5",
+        desc: "Reach deck 5",
         icon: "🏔",
     },
     AchievementDef {
         id: "floor_10",
         name: "Deep Diver",
-        desc: "Reach floor 10",
+        desc: "Reach deck 10",
         icon: "🏔",
     },
     AchievementDef {
         id: "first_forge",
         name: "Apprentice",
-        desc: "Forge your first spell",
+        desc: "Synthesize your first character",
         icon: "🔨",
     },
     AchievementDef {
@@ -127,7 +127,7 @@ pub const ACHIEVEMENTS: &[AchievementDef] = &[
     AchievementDef {
         id: "spells_5",
         name: "Spellbook",
-        desc: "Have 5 spells at once",
+        desc: "Have 5 characters synthesized at once",
         icon: "✨",
     },
 ];
@@ -154,7 +154,7 @@ impl AchievementTracker {
         let mut tracker = Self::new();
         let storage = web_sys::window().and_then(|w| w.local_storage().ok().flatten());
         if let Some(storage) = storage {
-            if let Ok(Some(data)) = storage.get_item("radical_roguelike_achievements") {
+            if let Ok(Some(data)) = storage.get_item("radical_starfinder_achievements") {
                 tracker.unlocked = data
                     .split(',')
                     .filter(|s| !s.is_empty())
@@ -177,7 +177,7 @@ impl AchievementTracker {
         let storage = web_sys::window().and_then(|w| w.local_storage().ok().flatten());
         if let Some(storage) = storage {
             let data: String = self.unlocked.join(",");
-            let _ = storage.set_item("radical_roguelike_achievements", &data);
+            let _ = storage.set_item("radical_starfinder_achievements", &data);
         }
     }
 

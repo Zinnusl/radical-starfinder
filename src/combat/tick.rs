@@ -143,7 +143,7 @@ fn tick_projectiles(battle: &mut TacticalBattle) {
     }
 
     for (fx, fy, tx, ty, effect, _owner) in &finished {
-        if battle.arena.tile(*tx, *ty) == Some(BattleTile::Boulder) {
+        if battle.arena.tile(*tx, *ty) == Some(BattleTile::CargoCrate) {
             let raw_dx = *tx as f64 - fx;
             let raw_dy = *ty as f64 - fy;
             let (pdx, pdy) = if raw_dx.abs() >= raw_dy.abs() {
@@ -158,7 +158,7 @@ fn tick_projectiles(battle: &mut TacticalBattle) {
             continue;
         }
 
-        if battle.arena.tile(*tx, *ty) == Some(BattleTile::ExplosiveBarrel) {
+        if battle.arena.tile(*tx, *ty) == Some(BattleTile::FuelCanister) {
             let msgs = crate::combat::terrain::explode_barrel(battle, *tx, *ty);
             for msg in &msgs {
                 battle.log_message(msg);
@@ -249,7 +249,7 @@ fn apply_projectile_spell(
             // Lightning conducts through water, stunning units on connected water tiles
             let terrain_msgs = crate::combat::terrain::apply_terrain_interactions(
                 battle,
-                crate::combat::terrain::TerrainSource::LightningSpell,
+                crate::combat::terrain::TerrainSource::LightningAbility,
                 &[(tx, ty)],
             );
             for msg in &terrain_msgs {
@@ -343,7 +343,7 @@ fn advance_and_set_phase(battle: &mut TacticalBattle) -> BattleEvent {
             battle.log_message(msg);
         }
 
-        if battle.weather == Weather::Rain {
+        if battle.weather == Weather::CoolantLeak {
             spread_rain_water(&mut battle.arena);
         }
 
@@ -354,7 +354,7 @@ fn advance_and_set_phase(battle: &mut TacticalBattle) -> BattleEvent {
         }
 
         // ── Rain: apply Wet to all units ─────────────────────────────────
-        if battle.weather == Weather::Rain {
+        if battle.weather == Weather::CoolantLeak {
             for i in 0..battle.units.len() {
                 if !battle.units[i].alive {
                     continue;
@@ -372,7 +372,7 @@ fn advance_and_set_phase(battle: &mut TacticalBattle) -> BattleEvent {
                         ));
                 }
             }
-            battle.log_message("🌧 Rain soaks everyone!");
+            battle.log_message("🌧 Coolant leak soaks everyone!");
             // Check status combos after applying wet
             for i in 0..battle.units.len() {
                 if !battle.units[i].alive {
@@ -404,7 +404,7 @@ fn advance_and_set_phase(battle: &mut TacticalBattle) -> BattleEvent {
         }
 
         let focus_regen = match battle.weather {
-            Weather::SpiritualInk => 4,
+            Weather::EnergyFlux => 4,
             _ => 3,
         };
         battle.focus = (battle.focus + focus_regen).min(battle.max_focus);
@@ -457,12 +457,12 @@ fn apply_exhaustion(battle: &mut TacticalBattle) {
     let turn = battle.turn_number;
 
     if turn == warning_turn {
-        battle.log_message("The ink grows restless...");
+        battle.log_message("The reactor grows unstable...");
     } else if turn >= threshold {
         let escalation = (turn - threshold) / 2;
         let dmg = (1 + escalation as i32).min(5);
         battle.units[0].hp -= dmg;
-        battle.log_message(format!("Exhaustion! The ink sears for {} damage!", dmg));
+        battle.log_message(format!("Overload! The reactor sears for {} damage!", dmg));
         if battle.units[0].hp <= 0 {
             battle.units[0].hp = 0;
             battle.units[0].alive = false;
@@ -494,11 +494,11 @@ fn spread_rain_water(arena: &mut TacticalArena) {
     let mut new_water = Vec::new();
     for y in 0..h {
         for x in 0..w {
-            if arena.tile(x, y) == Some(BattleTile::Water) {
+            if arena.tile(x, y) == Some(BattleTile::CoolantPool) {
                 for (dx, dy) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
                     let nx = x + dx;
                     let ny = y + dy;
-                    if arena.tile(nx, ny) == Some(BattleTile::Open) {
+                    if arena.tile(nx, ny) == Some(BattleTile::MetalFloor) {
                         let roll =
                             ((nx as u64).wrapping_mul(31).wrapping_add(ny as u64 * 17)) % 100;
                         if roll < 20 {
@@ -510,7 +510,7 @@ fn spread_rain_water(arena: &mut TacticalArena) {
         }
     }
     for (wx, wy) in new_water {
-        arena.set_tile(wx, wy, BattleTile::Water);
+        arena.set_tile(wx, wy, BattleTile::CoolantPool);
     }
 }
 
@@ -594,10 +594,10 @@ fn apply_flow_water(battle: &mut TacticalBattle) -> Vec<String> {
         let uy = battle.units[idx].y;
         let tile = battle.arena.tile(ux, uy);
         let (dx, dy) = match tile {
-            Some(BattleTile::FlowNorth) => (0, -1),
-            Some(BattleTile::FlowSouth) => (0, 1),
-            Some(BattleTile::FlowEast) => (1, 0),
-            Some(BattleTile::FlowWest) => (-1, 0),
+            Some(BattleTile::ConveyorN) => (0, -1),
+            Some(BattleTile::ConveyorS) => (0, 1),
+            Some(BattleTile::ConveyorE) => (1, 0),
+            Some(BattleTile::ConveyorW) => (-1, 0),
             _ => continue,
         };
         let dest_x = ux + dx;
@@ -618,7 +618,7 @@ fn apply_flow_water(battle: &mut TacticalBattle) -> Vec<String> {
                     format!("{} is", battle.units[idx].hanzi)
                 };
                 messages.push(format!(
-                    "{} crushed against a wall by the current! ({} dmg)",
+                    "{} crushed against a wall by the conveyor! ({} dmg)",
                     name, actual
                 ));
                 continue;
@@ -639,7 +639,7 @@ fn apply_flow_water(battle: &mut TacticalBattle) -> Vec<String> {
             };
             battle.units[idx].x = dest_x;
             battle.units[idx].y = dest_y;
-            messages.push(format!("{} pushed by the current!", name));
+            messages.push(format!("{} pushed by the conveyor!", name));
         }
     }
 
@@ -658,7 +658,7 @@ pub fn push_boulder(
         Some(i) => i,
         None => return messages,
     };
-    if battle.arena.tiles[src_idx] != BattleTile::Boulder {
+    if battle.arena.tiles[src_idx] != BattleTile::CargoCrate {
         return messages;
     }
 
@@ -676,15 +676,15 @@ pub fn push_boulder(
         } else {
             format!("{} is", battle.units[unit_idx].hanzi)
         };
-        messages.push(format!("{} crushed by a boulder! ({} dmg)", name, actual));
-        battle.arena.tiles[src_idx] = BattleTile::Open;
-        battle.arena.tiles[dest_idx] = BattleTile::Boulder;
+        messages.push(format!("{} crushed by a cargo crate! ({} dmg)", name, actual));
+        battle.arena.tiles[src_idx] = BattleTile::MetalFloor;
+        battle.arena.tiles[dest_idx] = BattleTile::CargoCrate;
     } else if battle.arena.tiles[dest_idx].is_walkable() {
-        battle.arena.tiles[src_idx] = BattleTile::Open;
-        battle.arena.tiles[dest_idx] = BattleTile::Boulder;
-        messages.push("The boulder slides!".to_string());
+        battle.arena.tiles[src_idx] = BattleTile::MetalFloor;
+        battle.arena.tiles[dest_idx] = BattleTile::CargoCrate;
+        messages.push("The cargo crate slides!".to_string());
     } else {
-        messages.push("The boulder thuds against the wall.".to_string());
+        messages.push("The cargo crate thuds against the wall.".to_string());
     }
 
     messages
@@ -698,58 +698,58 @@ fn apply_weather_terrain_synergies(battle: &mut TacticalBattle) -> Vec<String> {
     let h = battle.arena.height as i32;
 
     match battle.weather {
-        Weather::Rain => {
-            // Rain + Fire tiles → Fire extinguishes after 1 turn → Steam
+        Weather::CoolantLeak => {
+            // CoolantLeak + fire tiles → fire extinguishes after 1 turn → VentSteam
             let mut fire_to_steam = Vec::new();
             for y in 0..h {
                 for x in 0..w {
-                    if battle.arena.tile(x, y) == Some(BattleTile::Scorched) {
+                    if battle.arena.tile(x, y) == Some(BattleTile::BlastMark) {
                         fire_to_steam.push((x, y));
                     }
                 }
             }
             for (x, y) in fire_to_steam {
                 battle.arena.set_steam(x, y, 2);
-                messages.push(format!("🌧🔥 Rain extinguishes fire at ({},{}) → Steam!", x, y));
+                messages.push(format!("🌧🔥 Coolant extinguishes fire at ({},{}) → Vent Steam!", x, y));
             }
 
-            // Rain + Ice tiles → Ice becomes Water
+            // CoolantLeak + FrozenCoolant tiles → FrozenCoolant becomes CoolantPool
             let mut ice_to_water = Vec::new();
             for y in 0..h {
                 for x in 0..w {
-                    if battle.arena.tile(x, y) == Some(BattleTile::Ice) {
+                    if battle.arena.tile(x, y) == Some(BattleTile::FrozenCoolant) {
                         ice_to_water.push((x, y));
                     }
                 }
             }
             for (x, y) in ice_to_water {
-                battle.arena.set_tile(x, y, BattleTile::Water);
-                messages.push(format!("🌧❄ Rain melts ice at ({},{}) → Water!", x, y));
+                battle.arena.set_tile(x, y, BattleTile::CoolantPool);
+                messages.push(format!("🌧❄ Coolant leak melts frozen coolant at ({},{}) → Coolant Pool!", x, y));
             }
         }
-        Weather::Sandstorm => {
-            // Sandstorm + Oil tiles → Oil covered (neutralized) by sand
+        Weather::DebrisStorm => {
+            // DebrisStorm + Lubricant tiles → Lubricant covered (neutralized) by debris
             let mut oil_to_sand = Vec::new();
             for y in 0..h {
                 for x in 0..w {
-                    if battle.arena.tile(x, y) == Some(BattleTile::Oil) {
+                    if battle.arena.tile(x, y) == Some(BattleTile::Lubricant) {
                         oil_to_sand.push((x, y));
                     }
                 }
             }
             if !oil_to_sand.is_empty() {
                 for (x, y) in oil_to_sand {
-                    battle.arena.set_tile(x, y, BattleTile::Sand);
+                    battle.arena.set_tile(x, y, BattleTile::Debris);
                 }
-                messages.push("🏜 Sandstorm covers oil tiles with sand!".to_string());
+                messages.push("🏜 Debris storm covers lubricant tiles with debris!".to_string());
             }
         }
-        Weather::Fog => {
-            // Fog + Steam → Combined thick fog (extend steam timer for thicker coverage)
+        Weather::SmokeScreen => {
+            // SmokeScreen + VentSteam → Combined thick smoke (extend steam timer for thicker coverage)
             for y in 0..h {
                 for x in 0..w {
                     if let Some(i) = battle.arena.idx(x, y) {
-                        if battle.arena.tiles[i] == BattleTile::Steam {
+                        if battle.arena.tiles[i] == BattleTile::VentSteam {
                             if battle.arena.steam_timers[i] < 4 {
                                 battle.arena.steam_timers[i] = 4;
                             }
@@ -758,10 +758,10 @@ fn apply_weather_terrain_synergies(battle: &mut TacticalBattle) -> Vec<String> {
                 }
             }
         }
-        Weather::SpiritualInk => {
-            // SpiritualInk + InkPool → +2 spell power (handled in tile_spell_bonus in input.rs)
+        Weather::EnergyFlux => {
+            // EnergyFlux + OilSlick → +2 spell power (handled in tile_spell_bonus in input.rs)
         }
-        Weather::Clear => {}
+        Weather::Normal => {}
     }
 
     messages
@@ -788,12 +788,12 @@ fn apply_companion_passives(battle: &mut TacticalBattle) -> Vec<String> {
 
     use crate::game::Companion;
     match companion_kind {
-        Companion::Monk => {
+        Companion::Medic => {
             // Passive: Heal player 1 HP at start of each round
             let player = &battle.units[0];
             if player.alive && player.hp < player.max_hp {
                 battle.units[0].hp = (battle.units[0].hp + 1).min(battle.units[0].max_hp);
-                messages.push("🧘 Monk's healing aura restores 1 HP!".to_string());
+                messages.push("💊 Medic's healing aura restores 1 HP!".to_string());
                 battle.audio_events.push(AudioEvent::Heal);
             }
             // Active: Purify — remove 1 negative status from player when player HP < 50%
@@ -807,13 +807,13 @@ fn apply_companion_passives(battle: &mut TacticalBattle) -> Vec<String> {
                     let removed_label = battle.units[0].statuses[idx].label().to_string();
                     battle.units[0].statuses.remove(idx);
                     messages.push(format!(
-                        "🧘✨ Monk purifies {}! Status removed!",
+                        "💊✨ Medic purifies {}! Status removed!",
                         removed_label
                     ));
                 }
             }
         }
-        Companion::Guard => {
+        Companion::SecurityChief => {
             // Active: Taunt — force nearest enemy to target Guard when player HP < 30%
             let player = &battle.units[0];
             if player.alive && player.hp * 10 < player.max_hp * 3 {
@@ -843,13 +843,13 @@ fn apply_companion_passives(battle: &mut TacticalBattle) -> Vec<String> {
                 }
             }
         }
-        Companion::Teacher => {
+        Companion::ScienceOfficer => {
             // Passive: +1 to combo multiplier buildup (checked in combo_multiplier)
             if battle.turn_number <= 2 {
                 messages.push("📚 Teacher's guidance boosts combo buildup!".to_string());
             }
         }
-        Companion::Merchant => {
+        Companion::Quartermaster => {
             // Active: Bribe — 50% chance to make an enemy skip turn when player HP < 40%
             let player = &battle.units[0];
             if player.alive && player.hp * 10 < player.max_hp * 4 {
@@ -888,18 +888,18 @@ fn apply_companion_passives(battle: &mut TacticalBattle) -> Vec<String> {
 // ── Arena Event System ──────────────────────────────────────────────────────
 
 const ALL_EVENTS: [ArenaEvent; 12] = [
-    ArenaEvent::RisingWater,
-    ArenaEvent::EarthTremor,
-    ArenaEvent::SpiritSurge,
-    ArenaEvent::WindGust,
-    ArenaEvent::LightningStrike,
-    ArenaEvent::LavaFlow,
-    ArenaEvent::HealingMist,
-    ArenaEvent::FrostSnap,
-    ArenaEvent::SandstormBurst,
-    ArenaEvent::SpiritualEcho,
-    ArenaEvent::WildGrowth,
-    ArenaEvent::VolcanicVent,
+    ArenaEvent::CoolantFlood,
+    ArenaEvent::HullBreach,
+    ArenaEvent::PowerSurge,
+    ArenaEvent::VentBlast,
+    ArenaEvent::ArcDischarge,
+    ArenaEvent::PlasmaLeak,
+    ArenaEvent::MediGas,
+    ArenaEvent::CryoVent,
+    ArenaEvent::DebrisBurst,
+    ArenaEvent::SystemGlitch,
+    ArenaEvent::NaniteSpread,
+    ArenaEvent::ReactorBlowout,
 ];
 
 /// Pick a random arena event, weighting by biome affinity.
@@ -907,23 +907,23 @@ fn pick_arena_event(rng: &mut Rng, biome: ArenaBiome) -> ArenaEvent {
     // Base weight 10 for every event; biome-favored events get +20.
     let mut weights: [u32; 12] = [10; 12];
     match biome {
-        ArenaBiome::Stone | ArenaBiome::Dark | ArenaBiome::Cursed => {
+        ArenaBiome::StationInterior | ArenaBiome::DerelictShip | ArenaBiome::IrradiatedZone => {
             weights[1] += 20; // EarthTremor
             weights[4] += 20; // LightningStrike
         }
-        ArenaBiome::Frozen => {
+        ArenaBiome::CryoBay => {
             weights[7] += 20; // FrostSnap
             weights[3] += 20; // WindGust
         }
-        ArenaBiome::Infernal => {
+        ArenaBiome::ReactorRoom => {
             weights[5] += 20; // LavaFlow
             weights[11] += 20; // VolcanicVent
         }
-        ArenaBiome::Garden => {
+        ArenaBiome::Hydroponics => {
             weights[10] += 20; // WildGrowth
             weights[6] += 20; // HealingMist
         }
-        ArenaBiome::Arcane => {
+        ArenaBiome::AlienRuins => {
             weights[2] += 20; // SpiritSurge
             weights[9] += 20; // SpiritualEcho
         }
@@ -996,15 +996,15 @@ fn execute_arena_event(
     let h = battle.arena.height as i32;
 
     match event {
-        ArenaEvent::RisingWater => {
+        ArenaEvent::CoolantFlood => {
             let mut new_water = Vec::new();
             for y in 0..h {
                 for x in 0..w {
-                    if battle.arena.tile(x, y) == Some(BattleTile::Water) {
+                    if battle.arena.tile(x, y) == Some(BattleTile::CoolantPool) {
                         for &(dx, dy) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
                             let nx = x + dx;
                             let ny = y + dy;
-                            if battle.arena.tile(nx, ny) == Some(BattleTile::Open) {
+                            if battle.arena.tile(nx, ny) == Some(BattleTile::MetalFloor) {
                                 new_water.push((nx, ny));
                             }
                         }
@@ -1012,7 +1012,7 @@ fn execute_arena_event(
                 }
             }
             for (wx, wy) in &new_water {
-                battle.arena.set_tile(*wx, *wy, BattleTile::Water);
+                battle.arena.set_tile(*wx, *wy, BattleTile::CoolantPool);
             }
             // Apply Wet to units standing on new water tiles
             for (wx, wy) in &new_water {
@@ -1035,54 +1035,54 @@ fn execute_arena_event(
             }
             if !new_water.is_empty() {
                 messages.push(format!(
-                    "🌊 Rising Water! {} tiles flooded!",
+                    "🌊 Coolant Flood! {} tiles flooded!",
                     new_water.len()
                 ));
                 battle.audio_events.push(AudioEvent::WaterSplash);
             } else {
-                messages.push("🌊 Rising Water! But no tiles to flood.".to_string());
+                messages.push("🌊 Coolant Flood! But no tiles to flood.".to_string());
             }
         }
 
-        ArenaEvent::EarthTremor => {
+        ArenaEvent::HullBreach => {
             let count = rng.range(3, 6);
             let mut affected = 0;
             for _ in 0..count {
                 let x = rng.range(0, w);
                 let y = rng.range(0, h);
-                if battle.arena.tile(x, y) == Some(BattleTile::Open)
+                if battle.arena.tile(x, y) == Some(BattleTile::MetalFloor)
                     && battle.unit_at(x, y).is_none()
                 {
                     let tile = if rng.range(0, 2) == 0 {
-                        BattleTile::CrumblingFloor
+                        BattleTile::WeakenedPlating
                     } else {
-                        BattleTile::CrackedFloor
+                        BattleTile::DamagedFloor
                     };
                     battle.arena.set_tile(x, y, tile);
                     affected += 1;
                 }
             }
-            messages.push(format!("🪨 Earth Tremor! {} tiles crumble!", affected));
+            messages.push(format!("🪨 Hull Breach! {} tiles fracture!", affected));
         }
 
-        ArenaEvent::SpiritSurge => {
+        ArenaEvent::PowerSurge => {
             let count = rng.range(2, 4);
             let mut placed = 0;
             for _ in 0..count {
                 let x = rng.range(0, w);
                 let y = rng.range(0, h);
-                if battle.arena.tile(x, y) == Some(BattleTile::Open) {
-                    battle.arena.set_tile(x, y, BattleTile::InkPool);
+                if battle.arena.tile(x, y) == Some(BattleTile::MetalFloor) {
+                    battle.arena.set_tile(x, y, BattleTile::OilSlick);
                     placed += 1;
                 }
             }
             messages.push(format!(
-                "🔮 Spirit Surge! {} InkPool tiles appear!",
+                "🔮 Power Surge! {} OilSlick tiles appear!",
                 placed
             ));
         }
 
-        ArenaEvent::WindGust => {
+        ArenaEvent::VentBlast => {
             let dirs: [(i32, i32); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
             let dir_names = ["north", "south", "west", "east"];
             let dir_idx = rng.range(0, 4) as usize;
@@ -1120,10 +1120,10 @@ fn execute_arena_event(
                 battle.units[idx].x = nx;
                 battle.units[idx].y = ny;
             }
-            messages.push(format!("💨 Wind Gust blows everyone {}!", dir_name));
+            messages.push(format!("💨 Vent Blast blows everyone {}!", dir_name));
         }
 
-        ArenaEvent::LightningStrike => {
+        ArenaEvent::ArcDischarge => {
             let mut target_x = rng.range(0, w);
             let mut target_y = rng.range(0, h);
             for _ in 0..20 {
@@ -1146,12 +1146,12 @@ fn execute_arena_event(
                     battle.units[idx].hanzi.to_string()
                 };
                 messages.push(format!(
-                    "⚡ Lightning strikes ({},{})! {} takes {} damage!",
+                    "⚡ Arc discharge at ({},{})! {} takes {} damage!",
                     target_x, target_y, name, actual
                 ));
             } else {
                 messages.push(format!(
-                    "⚡ Lightning strikes ({},{})!",
+                    "⚡ Arc discharge at ({},{})!",
                     target_x, target_y
                 ));
             }
@@ -1160,7 +1160,7 @@ fn execute_arena_event(
             for &(ddx, ddy) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
                 let cx = target_x + ddx;
                 let cy = target_y + ddy;
-                if battle.arena.tile(cx, cy) == Some(BattleTile::Water) {
+                if battle.arena.tile(cx, cy) == Some(BattleTile::CoolantPool) {
                     if let Some(idx) = battle.unit_at(cx, cy) {
                         let actual = deal_damage(battle, idx, 2);
                         let name = if battle.units[idx].is_player() {
@@ -1169,7 +1169,7 @@ fn execute_arena_event(
                             battle.units[idx].hanzi.to_string()
                         };
                         messages.push(format!(
-                            "⚡ Lightning chains through water! {} takes {} damage!",
+                            "⚡ Arc chains through coolant! {} takes {} damage!",
                             name, actual
                         ));
                     }
@@ -1177,7 +1177,7 @@ fn execute_arena_event(
             }
         }
 
-        ArenaEvent::LavaFlow => {
+        ArenaEvent::PlasmaLeak => {
             let count = rng.range(2, 4);
             let mut placed = 0;
             for _ in 0..count {
@@ -1188,10 +1188,10 @@ fn execute_arena_event(
                     2 => (0, rng.range(0, h)),
                     _ => (w - 1, rng.range(0, h)),
                 };
-                if battle.arena.tile(x, y) == Some(BattleTile::Open)
-                    || battle.arena.tile(x, y) == Some(BattleTile::Grass)
+                if battle.arena.tile(x, y) == Some(BattleTile::MetalFloor)
+                    || battle.arena.tile(x, y) == Some(BattleTile::WiringPanel)
                 {
-                    battle.arena.set_tile(x, y, BattleTile::Lava);
+                    battle.arena.set_tile(x, y, BattleTile::PlasmaPool);
                     placed += 1;
                     if let Some(idx) = battle.unit_at(x, y) {
                         let actual = deal_damage(battle, idx, 2);
@@ -1201,36 +1201,36 @@ fn execute_arena_event(
                             battle.units[idx].hanzi.to_string()
                         };
                         messages.push(format!(
-                            "🌋 {} is caught in lava! {} damage!",
+                            "🌋 {} is caught in plasma! {} damage!",
                             name, actual
                         ));
                     }
                 }
             }
             messages.push(format!(
-                "🌋 Lava Flow! {} tiles erupt at the edges!",
+                "🌋 Plasma Leak! {} tiles erupt at the edges!",
                 placed
             ));
             battle.audio_events.push(AudioEvent::LavaRumble);
         }
 
-        ArenaEvent::HealingMist => {
+        ArenaEvent::MediGas => {
             for idx in 0..battle.units.len() {
                 if battle.units[idx].alive {
                     let unit = &mut battle.units[idx];
                     unit.hp = (unit.hp + 2).min(unit.max_hp);
                 }
             }
-            messages.push("💚 Healing Mist! All units heal 2 HP!".to_string());
+            messages.push("💚 Medi-Gas! All units heal 2 HP!".to_string());
             battle.audio_events.push(AudioEvent::Heal);
         }
 
-        ArenaEvent::FrostSnap => {
+        ArenaEvent::CryoVent => {
             let mut frozen_count = 0;
             for y in 0..h {
                 for x in 0..w {
-                    if battle.arena.tile(x, y) == Some(BattleTile::Water) {
-                        battle.arena.set_tile(x, y, BattleTile::Ice);
+                    if battle.arena.tile(x, y) == Some(BattleTile::CoolantPool) {
+                        battle.arena.set_tile(x, y, BattleTile::FrozenCoolant);
                         frozen_count += 1;
                     }
                 }
@@ -1266,19 +1266,19 @@ fn execute_arena_event(
                 }
             }
             messages.push(format!(
-                "❄ Frost Snap! {} water tiles freeze to ice!",
+                "❄ Cryo Vent! {} coolant tiles freeze!",
                 frozen_count
             ));
         }
 
-        ArenaEvent::SandstormBurst => {
+        ArenaEvent::DebrisBurst => {
             let count = rng.range(4, 7);
             let mut placed = 0;
             for _ in 0..count {
                 let x = rng.range(0, w);
                 let y = rng.range(0, h);
-                if battle.arena.tile(x, y) == Some(BattleTile::Open) {
-                    battle.arena.set_tile(x, y, BattleTile::Sand);
+                if battle.arena.tile(x, y) == Some(BattleTile::MetalFloor) {
+                    battle.arena.set_tile(x, y, BattleTile::Debris);
                     placed += 1;
                 }
             }
@@ -1288,12 +1288,12 @@ fn execute_arena_event(
                 }
             }
             messages.push(format!(
-                "🏜 Sandstorm Burst! {} sand tiles appear! Movement hampered!",
+                "🏜 Debris Burst! {} debris tiles appear! Movement hampered!",
                 placed
             ));
         }
 
-        ArenaEvent::SpiritualEcho => {
+        ArenaEvent::SystemGlitch => {
             for idx in 0..battle.units.len() {
                 if !battle.units[idx].alive {
                     continue;
@@ -1302,18 +1302,18 @@ fn execute_arena_event(
                     status.turns_left += 1;
                 }
             }
-            messages.push("👻 Spiritual Echo! All status effects extended by 1 turn!".to_string());
+            messages.push("👻 System Glitch! All status effects extended by 1 turn!".to_string());
         }
 
-        ArenaEvent::WildGrowth => {
+        ArenaEvent::NaniteSpread => {
             let mut new_grass = Vec::new();
             for y in 0..h {
                 for x in 0..w {
-                    if battle.arena.tile(x, y) == Some(BattleTile::Grass) {
+                    if battle.arena.tile(x, y) == Some(BattleTile::WiringPanel) {
                         for &(dx, dy) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
                             let nx = x + dx;
                             let ny = y + dy;
-                            if battle.arena.tile(nx, ny) == Some(BattleTile::Open)
+                            if battle.arena.tile(nx, ny) == Some(BattleTile::MetalFloor)
                                 && rng.range(0, 100) < 40
                             {
                                 new_grass.push((nx, ny));
@@ -1325,7 +1325,7 @@ fn execute_arena_event(
             let mut upgrades = Vec::new();
             for y in 0..h {
                 for x in 0..w {
-                    if battle.arena.tile(x, y) == Some(BattleTile::Grass)
+                    if battle.arena.tile(x, y) == Some(BattleTile::WiringPanel)
                         && battle.unit_at(x, y).is_none()
                         && rng.range(0, 100) < 15
                     {
@@ -1334,19 +1334,19 @@ fn execute_arena_event(
                 }
             }
             for (gx, gy) in &new_grass {
-                battle.arena.set_tile(*gx, *gy, BattleTile::Grass);
+                battle.arena.set_tile(*gx, *gy, BattleTile::WiringPanel);
             }
             for (ux, uy) in &upgrades {
-                battle.arena.set_tile(*ux, *uy, BattleTile::BambooThicket);
+                battle.arena.set_tile(*ux, *uy, BattleTile::PipeTangle);
             }
             messages.push(format!(
-                "🌿 Wild Growth! {} new grass, {} bamboo thickets!",
+                "🌿 Nanite Spread! {} new wiring panels, {} pipe tangles!",
                 new_grass.len(),
                 upgrades.len()
             ));
         }
 
-        ArenaEvent::VolcanicVent => {
+        ArenaEvent::ReactorBlowout => {
             let px = battle.units[0].x;
             let py = battle.units[0].y;
             let mut best_x = w / 2;
@@ -1355,7 +1355,7 @@ fn execute_arena_event(
             for _ in 0..20 {
                 let x = rng.range(1, w - 1);
                 let y = rng.range(1, h - 1);
-                if battle.arena.tile(x, y) == Some(BattleTile::Open)
+                if battle.arena.tile(x, y) == Some(BattleTile::MetalFloor)
                     && battle.unit_at(x, y).is_none()
                 {
                     let dist = (x - px).abs() + (y - py).abs();
@@ -1366,19 +1366,19 @@ fn execute_arena_event(
                     }
                 }
             }
-            battle.arena.set_tile(best_x, best_y, BattleTile::Lava);
+            battle.arena.set_tile(best_x, best_y, BattleTile::PlasmaPool);
             for &(dx, dy) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
                 let bx = best_x + dx;
                 let by = best_y + dy;
-                if battle.arena.tile(bx, by) == Some(BattleTile::Open)
+                if battle.arena.tile(bx, by) == Some(BattleTile::MetalFloor)
                     && battle.unit_at(bx, by).is_none()
                 {
-                    battle.arena.set_tile(bx, by, BattleTile::ExplosiveBarrel);
+                    battle.arena.set_tile(bx, by, BattleTile::FuelCanister);
                     break;
                 }
             }
             messages.push(format!(
-                "🌋 Volcanic Vent erupts at ({},{})! Explosive debris nearby!",
+                "🌋 Reactor Blowout erupts at ({},{})! Fuel canisters nearby!",
                 best_x, best_y
             ));
             battle.audio_events.push(AudioEvent::LavaRumble);
@@ -1387,3 +1387,5 @@ fn execute_arena_event(
 
     messages
 }
+
+

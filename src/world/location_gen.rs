@@ -1,39 +1,9 @@
-//! BSP-based dungeon generation.
+//! BSP-based procedural location generation for space facilities.
 //!
-//! Splits a rectangular area recursively, places rooms in leaves,
-//! then connects sibling rooms with corridors.
+//! Splits a rectangular area recursively, places modules in leaves,
+//! then connects sibling compartments with hallways.
 
-use crate::player::Deity;
-use crate::world::{Tile, AltarKind, SealKind, SpecialRoomKind, RoomModifier, SecuritySeal, TerminalKind, LocationType, Rng};
-
-// ── Tile types ──────────────────────────────────────────────────────────────
-
-/* Enum AltarKind removed */
-
-
-#[derive(Clone)]
-pub struct Room {
-    pub x: i32,
-    pub y: i32,
-    pub w: i32,
-    pub h: i32,
-    pub modifier: Option<RoomModifier>,
-    pub special: Option<SpecialRoomKind>,
-}
-
-impl Room {
-    pub fn center(&self) -> (i32, i32) {
-        (self.x + self.w / 2, self.y + self.h / 2)
-    }
-
-    #[allow(dead_code)]
-    pub fn intersects(&self, other: &Room) -> bool {
-        self.x < other.x + other.w
-            && self.x + self.w > other.x
-            && self.y < other.y + other.h
-            && self.y + self.h > other.y
-    }
-}
+use super::*;
 
 // ── BSP node ────────────────────────────────────────────────────────────────
 
@@ -152,38 +122,8 @@ impl BspNode {
     }
 }
 
-// ── DungeonLevel ────────────────────────────────────────────────────────────
 
-pub struct DungeonLevel {
-    pub width: i32,
-    pub height: i32,
-    pub tiles: Vec<Tile>,
-    pub rooms: Vec<Room>,
-    pub visible: Vec<bool>,
-    pub revealed: Vec<bool>,
-}
-
-impl DungeonLevel {
-    pub fn idx(&self, x: i32, y: i32) -> usize {
-        (y * self.width + x) as usize
-    }
-
-    pub fn in_bounds(&self, x: i32, y: i32) -> bool {
-        x >= 0 && y >= 0 && x < self.width && y < self.height
-    }
-
-    pub fn tile(&self, x: i32, y: i32) -> Tile {
-        if self.in_bounds(x, y) {
-            self.tiles[self.idx(x, y)]
-        } else {
-            Tile::Bulkhead
-        }
-    }
-
-    pub fn is_walkable(&self, x: i32, y: i32) -> bool {
-        self.in_bounds(x, y) && self.tiles[self.idx(x, y)].is_walkable()
-    }
-
+impl LocationLevel {
     fn area_is_solid_wall(&self, x: i32, y: i32, w: i32, h: i32) -> bool {
         if x < 1 || y < 1 || x + w >= self.width - 1 || y + h >= self.height - 1 {
             return false;
@@ -237,7 +177,7 @@ impl DungeonLevel {
             }
             2 => {
                 let idx = self.idx(cx, cy);
-                self.tiles[idx] = Tile::CircuitShrine;
+                self.tiles[idx] = Tile::NavBeacon;
             }
             _ => {
                 let idx = self.idx(cx, cy);
@@ -637,7 +577,7 @@ impl DungeonLevel {
         let start = (rng.next_u64() as usize) % candidates.len();
         for offset in 0..candidates.len() {
             let (x, y, dx, dy) = candidates[(start + offset) % candidates.len()];
-            if self.try_place_puzzle_niche(x, y, dx, dy, Tile::Coolant, true) {
+            if self.try_place_puzzle_niche(x, y, dx, dy, Tile::VacuumBreach, true) {
                 return true;
             }
         }
@@ -645,7 +585,7 @@ impl DungeonLevel {
         false
     }
 
-    /// Spike bridge: 3-wide spike corridor with a chest on the far side.
+    /// Laser bridge: 3-wide laser grid corridor with a supply crate on the far side.
     fn try_place_spike_bridge(&mut self, room: &Room, rng: &mut Rng) -> bool {
         if room.w < 7 || room.h < 5 {
             return false;
@@ -664,14 +604,14 @@ impl DungeonLevel {
         }
         for dx in 0..3 {
             let idx = self.idx(sx + dx, cy);
-            self.tiles[idx] = Tile::Trap(0);
+            self.tiles[idx] = Tile::LaserGrid;
         }
         let idx = self.idx(reward_x, cy);
         self.tiles[idx] = Tile::SupplyCrate;
         true
     }
 
-    /// Oil-fire trap: oil slick leading to a chest, ignitable by fire spell.
+    /// Coolant-fire trap: coolant slick leading to a supply crate, ignitable by energy weapons.
     fn try_place_oil_fire_trap(&mut self, room: &Room, rng: &mut Rng) -> bool {
         if room.w < 6 || room.h < 5 {
             return false;
@@ -686,7 +626,7 @@ impl DungeonLevel {
         }
         for dx in 0..2 {
             let idx = self.idx(sx + dx, cy);
-            self.tiles[idx] = Tile::Trap(1);
+            self.tiles[idx] = Tile::Coolant;
         }
         let idx = self.idx(sx + 2, cy);
         self.tiles[idx] = Tile::SupplyCrate;
@@ -766,7 +706,7 @@ impl DungeonLevel {
         }
     }
 
-    /// Place stairs down in the last room.
+    /// Place airlock in the last module.
     pub fn place_stairs(&mut self) {
         if let Some(room) = self.rooms.last() {
             let (cx, cy) = room.center();
@@ -775,7 +715,7 @@ impl DungeonLevel {
         }
     }
 
-    /// Place forge workbenches in 1-2 middle rooms.
+    /// Place quantum forges in 1-2 middle modules.
     pub fn place_forges(&mut self, rng: &mut Rng) {
         if self.rooms.len() < 3 {
             return;
@@ -809,7 +749,7 @@ impl DungeonLevel {
         }
     }
 
-    /// Place a shop in one middle room (if enough rooms).
+    /// Place a trade terminal in one middle module (if enough modules).
     pub fn place_shop(&mut self, rng: &mut Rng) {
         if self.rooms.len() < 4 {
             return;
@@ -830,7 +770,7 @@ impl DungeonLevel {
         }
     }
 
-    /// Place treasure chests in one room (2-3 chests).
+    /// Place supply crates in one module (2-3 crates).
     pub fn place_chests(&mut self, rng: &mut Rng) {
         if self.rooms.len() < 5 {
             return;
@@ -876,7 +816,7 @@ impl DungeonLevel {
         }
     }
 
-    /// Place hazard tiles inspired by classic roguelikes.
+    /// Place environmental hazard tiles.
     pub fn place_hazards(&mut self, rng: &mut Rng) {
         if self.rooms.len() < 4 {
             return;
@@ -899,7 +839,7 @@ impl DungeonLevel {
                                     | Tile::Airlock
                                     | Tile::SupplyCrate
                                     | Tile::Npc(_)
-                                    | Tile::CircuitShrine
+                                    | Tile::NavBeacon
                                     | Tile::Terminal(_)
                                     | Tile::SecurityLock(_)
                                     | Tile::InfoPanel(_)
@@ -930,8 +870,8 @@ impl DungeonLevel {
                         Tile::CoolantPool
                     } else {
                         match rng.next_u64() % 3 {
-                            0 => Tile::Trap(0),
-                            1 => Tile::Trap(1),
+                            0 => Tile::LaserGrid,
+                            1 => Tile::Coolant,
                             _ => Tile::CoolantPool,
                         }
                     };
@@ -947,7 +887,7 @@ impl DungeonLevel {
         }
     }
 
-    /// Place smashable crates with supplies or trap gas.
+    /// Place smashable containers with supplies or hazardous gas.
     pub fn place_crates(&mut self, rng: &mut Rng) {
         if self.rooms.len() < 4 {
             return;
@@ -970,7 +910,7 @@ impl DungeonLevel {
                                     | Tile::Airlock
                                     | Tile::SupplyCrate
                                     | Tile::Npc(_)
-                                    | Tile::CircuitShrine
+                                    | Tile::NavBeacon
                                     | Tile::Terminal(_)
                                     | Tile::SecurityLock(_)
                                     | Tile::InfoPanel(_)
@@ -1009,20 +949,20 @@ impl DungeonLevel {
         }
     }
 
-    /// Get player start position (center of first room).
+    /// Get player start position (center of first module).
     pub fn start_pos(&self) -> (i32, i32) {
         self.rooms.first().map(|r| r.center()).unwrap_or((1, 1))
     }
 
-    /// Scripted tutorial floor used on the first run.
+    /// Scripted tutorial deck used on the first run.
     pub fn tutorial(width: i32, height: i32) -> Self {
         debug_assert!(
             width >= 44 && height >= 30,
-            "tutorial floor expects the default map size"
+            "tutorial deck expects the default map size"
         );
 
         let size = (width * height) as usize;
-        let mut level = DungeonLevel {
+        let mut level = LocationLevel {
             width,
             height,
             tiles: vec![Tile::Bulkhead; size],
@@ -1056,7 +996,7 @@ impl DungeonLevel {
             revealed: vec![false; size],
         };
 
-        fn carve_room(level: &mut DungeonLevel, room: &Room) {
+        fn carve_room(level: &mut LocationLevel, room: &Room) {
             for ry in room.y..room.y + room.h {
                 for rx in room.x..room.x + room.w {
                     let idx = level.idx(rx, ry);
@@ -1065,7 +1005,7 @@ impl DungeonLevel {
             }
         }
 
-        fn carve_h_corridor(level: &mut DungeonLevel, x1: i32, x2: i32, y: i32) {
+        fn carve_h_corridor(level: &mut LocationLevel, x1: i32, x2: i32, y: i32) {
             for x in x1.min(x2)..=x1.max(x2) {
                 let idx = level.idx(x, y);
                 if level.tiles[idx] == Tile::Bulkhead {
@@ -1098,7 +1038,7 @@ impl DungeonLevel {
         level
     }
 
-    pub fn generate(width: i32, height: i32, seed: u64, floor: i32) -> Self {
+    pub fn generate(width: i32, height: i32, seed: u64, floor: i32, location_type: LocationType) -> Self {
         let mut rng = Rng::new(seed);
         let size = (width * height) as usize;
         let mut tiles = vec![Tile::Bulkhead; size];
@@ -1185,7 +1125,7 @@ impl DungeonLevel {
         let visible = vec![false; size];
         let revealed = vec![false; size];
 
-        let mut level = DungeonLevel {
+        let mut level = LocationLevel {
             width,
             height,
             tiles,
@@ -1222,7 +1162,7 @@ impl DungeonLevel {
         level.place_secret_room(&mut rng);
         level.place_puzzle_rooms(&mut rng);
 
-        // Place trap tiles on deeper floors
+        // Place trap tiles on deeper decks
         if floor >= 2 {
             let trap_count = 2 + floor / 3;
             let mut placed = 0;
@@ -1241,10 +1181,70 @@ impl DungeonLevel {
             }
         }
 
+
+        // Location-type-specific adjustments
+        match location_type {
+            LocationType::SpaceStation => {
+                level.place_shop(&mut rng);
+            }
+            LocationType::AsteroidBase => {
+                for _ in 0..8 {
+                    let x = rng.range(1, width - 1);
+                    let y = rng.range(1, height - 1);
+                    let idx = (y * width + x) as usize;
+                    if idx < level.tiles.len() && level.tiles[idx] == Tile::Bulkhead {
+                        let mut near_hallway = false;
+                        for &(dx, dy) in &[(-1i32,0),(1,0),(0,-1),(0,1)] {
+                            let nx = x + dx;
+                            let ny = y + dy;
+                            if level.in_bounds(nx, ny) && level.tiles[level.idx(nx, ny)] == Tile::Hallway {
+                                near_hallway = true;
+                                break;
+                            }
+                        }
+                        if near_hallway {
+                            level.tiles[idx] = Tile::OreVein;
+                        }
+                    }
+                }
+            }
+            LocationType::DerelictShip => {
+                let breach_count = 3 + floor / 2;
+                let mut placed = 0;
+                for _ in 0..breach_count * 10 {
+                    let x = rng.range(1, width - 1);
+                    let y = rng.range(1, height - 1);
+                    let idx = (y * width + x) as usize;
+                    if idx < level.tiles.len() && level.tiles[idx] == Tile::MetalFloor {
+                        level.tiles[idx] = Tile::VacuumBreach;
+                        placed += 1;
+                        if placed >= breach_count {
+                            break;
+                        }
+                    }
+                }
+            }
+            LocationType::AlienRuins => {
+                for _ in 0..12 {
+                    let x = rng.range(1, width - 1);
+                    let y = rng.range(1, height - 1);
+                    let idx = (y * width + x) as usize;
+                    if idx < level.tiles.len() && level.tiles[idx] == Tile::MetalFloor {
+                        level.tiles[idx] = Tile::CrystalPanel;
+                    }
+                }
+            }
+            LocationType::TradingPost => {
+                level.place_shop(&mut rng);
+                level.place_shop(&mut rng);
+            }
+            _ => {}
+        }
+
         level
     }
 
-    /// Assign 2-4 rooms per floor as special rooms with unique layouts.
+    /// Assign 2-4 modules per deck as special compartments with unique layouts.
     fn place_special_rooms(&mut self, rng: &mut Rng, floor: i32) {
         let n = self.rooms.len();
         if n <= 4 {
@@ -1277,12 +1277,12 @@ impl DungeonLevel {
         }
     }
 
-    /// Generate tile layout for a special room.
+    /// Generate tile layout for a special compartment.
     fn generate_special_room(&mut self, kind: SpecialRoomKind, room: &Room, rng: &mut Rng) {
         let cx = room.x + room.w / 2;
         let cy = room.y + room.h / 2;
         match kind {
-            SpecialRoomKind::PirateStash => {
+            SpecialRoomKind::CargoBay => {
                 // Gold piles scattered around the vault
                 for y in room.y + 1..room.y + room.h - 1 {
                     for x in room.x + 1..room.x + room.w - 1 {
@@ -1384,7 +1384,7 @@ impl DungeonLevel {
                     }
                 }
             }
-            SpecialRoomKind::MemorialShrine => {
+            SpecialRoomKind::HallOfRecords => {
                 // Crystal candles along walls
                 for y in room.y + 1..room.y + room.h - 1 {
                     if (y - room.y) % 3 == 1 {
@@ -1433,7 +1433,7 @@ impl DungeonLevel {
                 // Jade altar at center
                 if self.in_bounds(cx, cy) {
                     let idx = self.idx(cx, cy);
-                    self.tiles[idx] = Tile::Terminal(TerminalKind::Quantum);
+                    self.tiles[idx] = Tile::Terminal(AltarKind::Quantum);
                 }
             }
             SpecialRoomKind::HiddenCache => {
@@ -1453,7 +1453,7 @@ impl DungeonLevel {
                     if self.in_bounds(x, cy) {
                         let idx = self.idx(x, cy);
                         if self.tiles[idx] == Tile::MetalFloor {
-                            self.tiles[idx] = Tile::Trap(1);
+                            self.tiles[idx] = Tile::Coolant;
                         }
                     }
                 }
@@ -1533,7 +1533,7 @@ impl DungeonLevel {
                 // Central altar
                 if self.in_bounds(cx, cy) {
                     let idx = self.idx(cx, cy);
-                    self.tiles[idx] = Tile::Terminal(TerminalKind::Commerce);
+                    self.tiles[idx] = Tile::Terminal(AltarKind::Commerce);
                 }
             }
             SpecialRoomKind::HydroponicsGarden => {
@@ -1672,7 +1672,7 @@ impl DungeonLevel {
                 // Jade altar behind chest
                 if self.in_bounds(cx, cy - 1) {
                     let idx = self.idx(cx, cy - 1);
-                    self.tiles[idx] = Tile::Terminal(TerminalKind::Quantum);
+                    self.tiles[idx] = Tile::Terminal(AltarKind::Quantum);
                 }
                 // Chest in center
                 if self.in_bounds(cx, cy) {
@@ -1726,7 +1726,7 @@ impl DungeonLevel {
                 // Mirror altar backdrop
                 if self.in_bounds(cx, cy - 1) {
                     let idx = self.idx(cx, cy - 1);
-                    self.tiles[idx] = Tile::Terminal(TerminalKind::Holographic);
+                    self.tiles[idx] = Tile::Terminal(AltarKind::Holographic);
                 }
                 // Chest (relic) at center
                 if self.in_bounds(cx, cy) {
@@ -1798,7 +1798,7 @@ impl DungeonLevel {
                         if self.in_bounds(x, y) && rng.next_u64() % 5 == 0 {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
-                                self.tiles[idx] = Tile::Trap(1);
+                                self.tiles[idx] = Tile::Coolant;
                             }
                         }
                     }
@@ -1808,8 +1808,8 @@ impl DungeonLevel {
                     for &y in &[room.y + 1, room.y + room.h - 2] {
                         if self.in_bounds(x, y) {
                             let idx = self.idx(x, y);
-                            if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Trap(1)) {
-                                self.tiles[idx] = Tile::Trap(0);
+                            if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Coolant) {
+                                self.tiles[idx] = Tile::LaserGrid;
                             }
                         }
                     }
@@ -1818,8 +1818,8 @@ impl DungeonLevel {
                     for &x in &[room.x + 1, room.x + room.w - 2] {
                         if self.in_bounds(x, y) {
                             let idx = self.idx(x, y);
-                            if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Trap(1)) {
-                                self.tiles[idx] = Tile::Trap(0);
+                            if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Coolant) {
+                                self.tiles[idx] = Tile::LaserGrid;
                             }
                         }
                     }
@@ -1830,7 +1830,7 @@ impl DungeonLevel {
                     let y = cy + dy;
                     if self.in_bounds(x, y) {
                         let idx = self.idx(x, y);
-                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Trap(1)) {
+                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Coolant) {
                             self.tiles[idx] = Tile::CargoCrate;
                         }
                     }
@@ -1841,7 +1841,7 @@ impl DungeonLevel {
                     let y = cy + dy * 2;
                     if self.in_bounds(x, y) {
                         let idx = self.idx(x, y);
-                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Trap(1)) {
+                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Coolant) {
                             self.tiles[idx] = Tile::PressureSensor;
                         }
                     }
@@ -1855,7 +1855,7 @@ impl DungeonLevel {
                     if self.in_bounds(x, y) {
                         let idx = self.idx(x, y);
                         if self.tiles[idx] == Tile::MetalFloor {
-                            self.tiles[idx] = Tile::Trap(0);
+                            self.tiles[idx] = Tile::LaserGrid;
                         }
                     }
                 }
@@ -1898,7 +1898,7 @@ impl DungeonLevel {
                         if self.in_bounds(x, y) && (x + y) % 3 == 0 {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
-                                self.tiles[idx] = Tile::Trap(1);
+                                self.tiles[idx] = Tile::Coolant;
                             }
                         }
                     }
@@ -1909,7 +1909,7 @@ impl DungeonLevel {
                         if self.in_bounds(x, y) && (x + y) % 2 == 0 {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
-                                self.tiles[idx] = Tile::Trap(0);
+                                self.tiles[idx] = Tile::LaserGrid;
                             }
                         }
                     }
@@ -2036,7 +2036,7 @@ impl DungeonLevel {
                         if self.in_bounds(x, y) && rng.next_u64() % 6 == 0 {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
-                                self.tiles[idx] = Tile::Trap(1);
+                                self.tiles[idx] = Tile::Coolant;
                             }
                         }
                     }
@@ -2144,11 +2144,11 @@ impl DungeonLevel {
                 }
                 // 5 elemental altars in cross pattern
                 let positions = [
-                    (cx, cy, TerminalKind::Quantum),
-                    (cx - 2, cy, TerminalKind::Stellar),
-                    (cx + 2, cy, TerminalKind::Tactical),
-                    (cx, cy - 2, TerminalKind::Holographic),
-                    (cx, cy + 2, TerminalKind::Commerce),
+                    (cx, cy, AltarKind::Quantum),
+                    (cx - 2, cy, AltarKind::Stellar),
+                    (cx + 2, cy, AltarKind::Tactical),
+                    (cx, cy - 2, AltarKind::Holographic),
+                    (cx, cy + 2, AltarKind::Commerce),
                 ];
                 for &(x, y, kind) in &positions {
                     if self.in_bounds(x, y) {
@@ -2164,7 +2164,7 @@ impl DungeonLevel {
                         if self.in_bounds(x, y) && (x - room.x) % 2 == 1 && (y - room.y) % 2 == 1 {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
-                                self.tiles[idx] = Tile::Trap(0);
+                                self.tiles[idx] = Tile::LaserGrid;
                             }
                         }
                     }
@@ -2175,7 +2175,7 @@ impl DungeonLevel {
                         if self.in_bounds(x, y) && rng.next_u64() % 5 == 0 {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
-                                self.tiles[idx] = Tile::Trap(1);
+                                self.tiles[idx] = Tile::Coolant;
                             }
                         }
                     }
@@ -2208,7 +2208,7 @@ impl DungeonLevel {
                         if self.in_bounds(x, y) && rng.next_u64() % 6 == 0 {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
-                                self.tiles[idx] = Tile::Trap(1);
+                                self.tiles[idx] = Tile::Coolant;
                             }
                         }
                     }
@@ -2219,7 +2219,7 @@ impl DungeonLevel {
                     let y = cy + dy;
                     if self.in_bounds(x, y) {
                         let idx = self.idx(x, y);
-                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Trap(1)) {
+                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Coolant) {
                             self.tiles[idx] = Tile::SalvageCrate;
                         }
                     }
@@ -2231,7 +2231,7 @@ impl DungeonLevel {
                     if self.in_bounds(x, y) {
                         let idx = self.idx(x, y);
                         let trap_type = (rng.next_u64() % 3) as u8;
-                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Trap(1)) {
+                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Coolant) {
                             self.tiles[idx] = Tile::Trap(trap_type);
                         }
                     }
@@ -2251,7 +2251,7 @@ impl DungeonLevel {
                         if self.in_bounds(x, y) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
-                                self.tiles[idx] = Tile::Trap(1);
+                                self.tiles[idx] = Tile::Coolant;
                             }
                         }
                     }
@@ -2263,7 +2263,7 @@ impl DungeonLevel {
                     if self.in_bounds(x, y) {
                         let idx = self.idx(x, y);
                         if self.tiles[idx] == Tile::MetalFloor {
-                            self.tiles[idx] = Tile::Trap(0);
+                            self.tiles[idx] = Tile::LaserGrid;
                         }
                     }
                 }
@@ -2520,7 +2520,7 @@ impl DungeonLevel {
                         if self.in_bounds(x, y) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
-                                self.tiles[idx] = Tile::Trap(1);
+                                self.tiles[idx] = Tile::Coolant;
                             }
                         }
                     }
@@ -2734,7 +2734,7 @@ impl DungeonLevel {
                 // Deep water well at center
                 if self.in_bounds(cx, cy) {
                     let idx = self.idx(cx, cy);
-                    self.tiles[idx] = Tile::Coolant;
+                    self.tiles[idx] = Tile::VacuumBreach;
                 }
                 // Stone tutor nearby
                 if self.in_bounds(cx + 2, cy) {
@@ -2750,7 +2750,7 @@ impl DungeonLevel {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
                                 self.tiles[idx] = if rng.next_u64() % 5 == 0 {
-                                    Tile::Coolant
+                                    Tile::VacuumBreach
                                 } else {
                                     Tile::CoolantPool
                                 };
@@ -2762,7 +2762,7 @@ impl DungeonLevel {
                 for x in room.x..room.x + room.w {
                     if self.in_bounds(x, cy) {
                         let idx = self.idx(x, cy);
-                        if matches!(self.tiles[idx], Tile::CoolantPool | Tile::Coolant) {
+                        if matches!(self.tiles[idx], Tile::CoolantPool | Tile::VacuumBreach) {
                             self.tiles[idx] = Tile::MetalFloor;
                         }
                     }
@@ -2773,7 +2773,7 @@ impl DungeonLevel {
                     let y = cy + dy;
                     if self.in_bounds(x, y) {
                         let idx = self.idx(x, y);
-                        if matches!(self.tiles[idx], Tile::CoolantPool | Tile::Coolant) {
+                        if matches!(self.tiles[idx], Tile::CoolantPool | Tile::VacuumBreach) {
                             self.tiles[idx] = Tile::CargoCrate;
                         }
                     }
@@ -2784,7 +2784,7 @@ impl DungeonLevel {
                     let y = cy + dy;
                     if self.in_bounds(x, y) {
                         let idx = self.idx(x, y);
-                        if matches!(self.tiles[idx], Tile::CoolantPool | Tile::Coolant) {
+                        if matches!(self.tiles[idx], Tile::CoolantPool | Tile::VacuumBreach) {
                             self.tiles[idx] = Tile::CrystalPanel;
                         }
                     }
@@ -2979,7 +2979,7 @@ impl DungeonLevel {
                     if self.in_bounds(x, cy) && x % 2 == 0 {
                         let idx = self.idx(x, cy);
                         if self.tiles[idx] == Tile::MetalFloor {
-                            self.tiles[idx] = Tile::Trap(1);
+                            self.tiles[idx] = Tile::Coolant;
                         }
                     }
                 }
@@ -2989,7 +2989,7 @@ impl DungeonLevel {
                         if self.in_bounds(x, y) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
-                                self.tiles[idx] = Tile::Trap(0);
+                                self.tiles[idx] = Tile::LaserGrid;
                             }
                         }
                     }
@@ -2999,7 +2999,7 @@ impl DungeonLevel {
                     let x = cx + dx;
                     if self.in_bounds(x, cy) {
                         let idx = self.idx(x, cy);
-                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Trap(1)) {
+                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Coolant) {
                             self.tiles[idx] = Tile::PressureSensor;
                         }
                     }
@@ -3010,7 +3010,7 @@ impl DungeonLevel {
                     let y = cy + dy;
                     if self.in_bounds(x, y) {
                         let idx = self.idx(x, y);
-                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Trap(0)) {
+                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::LaserGrid) {
                             self.tiles[idx] = Tile::CrystalPanel;
                         }
                     }
@@ -3117,7 +3117,7 @@ impl DungeonLevel {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
                                 self.tiles[idx] = if dy == 0 {
-                                    Tile::Coolant
+                                    Tile::VacuumBreach
                                 } else {
                                     Tile::CoolantPool
                                 };
@@ -3131,7 +3131,7 @@ impl DungeonLevel {
                     let y = cy + dy;
                     if self.in_bounds(x, y) {
                         let idx = self.idx(x, y);
-                        if matches!(self.tiles[idx], Tile::CoolantPool | Tile::Coolant) {
+                        if matches!(self.tiles[idx], Tile::CoolantPool | Tile::VacuumBreach) {
                             self.tiles[idx] = Tile::CargoCrate;
                         }
                     }
@@ -3162,7 +3162,7 @@ impl DungeonLevel {
                 for dy in -1..=1 {
                     if self.in_bounds(cx, cy + dy) {
                         let idx = self.idx(cx, cy + dy);
-                        self.tiles[idx] = Tile::DataBridge;
+                        self.tiles[idx] = Tile::Catwalk;
                     }
                 }
             }
@@ -3217,7 +3217,7 @@ impl DungeonLevel {
                         if self.in_bounds(x, y) && rng.next_u64() % 4 == 0 {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
-                                self.tiles[idx] = Tile::Trap(1);
+                                self.tiles[idx] = Tile::Coolant;
                             }
                         }
                     }
@@ -3228,7 +3228,7 @@ impl DungeonLevel {
                     let y = cy + dy;
                     if self.in_bounds(x, y) {
                         let idx = self.idx(x, y);
-                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Trap(1)) {
+                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Coolant) {
                             self.tiles[idx] = Tile::CorruptedFloor;
                         }
                     }
@@ -3239,7 +3239,7 @@ impl DungeonLevel {
                     let y = cy + dy;
                     if self.in_bounds(x, y) {
                         let idx = self.idx(x, y);
-                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Trap(1)) {
+                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Coolant) {
                             self.tiles[idx] = Tile::CrystalPanel;
                         }
                     }
@@ -3250,7 +3250,7 @@ impl DungeonLevel {
                     let y = rng.range(room.y + 1, room.y + room.h - 1);
                     if self.in_bounds(x, y) {
                         let idx = self.idx(x, y);
-                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Trap(1)) {
+                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Coolant) {
                             let trap_type = (rng.next_u64() % 3) as u8;
                             self.tiles[idx] = Tile::Trap(trap_type);
                         }
@@ -3352,7 +3352,7 @@ impl DungeonLevel {
                     if self.in_bounds(room.x + room.w - 2, y) && y != cy {
                         let idx = self.idx(room.x + room.w - 2, y);
                         if self.tiles[idx] == Tile::MetalFloor {
-                            self.tiles[idx] = Tile::Trap(0);
+                            self.tiles[idx] = Tile::LaserGrid;
                         }
                     }
                 }
@@ -3429,7 +3429,7 @@ impl DungeonLevel {
                 // Shrine at center
                 if self.in_bounds(cx, cy) {
                     let idx = self.idx(cx, cy);
-                    self.tiles[idx] = Tile::CircuitShrine;
+                    self.tiles[idx] = Tile::NavBeacon;
                 }
             }
             SpecialRoomKind::CantinaBay => {
@@ -3611,7 +3611,7 @@ impl DungeonLevel {
                     if self.in_bounds(x, y) {
                         let idx = self.idx(x, y);
                         if self.tiles[idx] == Tile::MetalFloor {
-                            self.tiles[idx] = Tile::Trap(1);
+                            self.tiles[idx] = Tile::Coolant;
                         }
                     }
                 }
@@ -3650,7 +3650,7 @@ impl DungeonLevel {
                     if self.in_bounds(x, y) {
                         let idx = self.idx(x, y);
                         if self.tiles[idx] == Tile::MetalFloor {
-                            self.tiles[idx] = Tile::Trap(1);
+                            self.tiles[idx] = Tile::Coolant;
                         }
                     }
                 }
@@ -3667,7 +3667,7 @@ impl DungeonLevel {
                     let y = cy + dy;
                     if self.in_bounds(x, y) {
                         let idx = self.idx(x, y);
-                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Trap(1)) {
+                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Coolant) {
                             self.tiles[idx] = Tile::SalvageCrate;
                         }
                     }
@@ -3683,7 +3683,7 @@ impl DungeonLevel {
                     let y = cy + dy;
                     if self.in_bounds(x, y) {
                         let idx = self.idx(x, y);
-                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Trap(1)) {
+                        if matches!(self.tiles[idx], Tile::MetalFloor | Tile::Coolant) {
                             let npc_type = (rng.next_u64() % 4) as u8;
                             self.tiles[idx] = Tile::Npc(npc_type);
                         }
@@ -3775,7 +3775,7 @@ impl DungeonLevel {
                 if self.in_bounds(cx, cy) {
                     let idx = self.idx(cx, cy);
                     if self.tiles[idx] == Tile::MetalFloor {
-                        self.tiles[idx] = Tile::Terminal(TerminalKind::Tactical);
+                        self.tiles[idx] = Tile::Terminal(AltarKind::Tactical);
                     }
                 }
                 for &(dx, dy) in &[(-1, -1), (1, -1), (-1, 1), (1, 1)] {
@@ -3784,7 +3784,7 @@ impl DungeonLevel {
                     if self.in_bounds(x, y) {
                         let idx = self.idx(x, y);
                         if self.tiles[idx] == Tile::MetalFloor {
-                            self.tiles[idx] = Tile::Trap(1);
+                            self.tiles[idx] = Tile::Coolant;
                         }
                     }
                 }
@@ -3842,7 +3842,7 @@ impl DungeonLevel {
                 if self.in_bounds(cx, cy) {
                     let idx = self.idx(cx, cy);
                     if self.tiles[idx] == Tile::MetalFloor {
-                        self.tiles[idx] = Tile::Coolant;
+                        self.tiles[idx] = Tile::VacuumBreach;
                     }
                 }
                 for &(dx, dy) in &[(-1,0),(1,0),(0,-1),(0,1)] {
@@ -3951,7 +3951,7 @@ impl DungeonLevel {
                     if self.in_bounds(x, cy) {
                         let idx = self.idx(x, cy);
                         if self.tiles[idx] == Tile::MetalFloor {
-                            self.tiles[idx] = Tile::CircuitShrine;
+                            self.tiles[idx] = Tile::NavBeacon;
                         }
                     }
                 }
@@ -3972,11 +3972,11 @@ impl DungeonLevel {
                     }
                 }
                 let altars = [
-                    (cx - 2, cy - 1, TerminalKind::Quantum),
-                    (cx + 2, cy - 1, TerminalKind::Stellar),
-                    (cx - 2, cy + 1, TerminalKind::Tactical),
-                    (cx + 2, cy + 1, TerminalKind::Commerce),
-                    (cx, cy + 2, TerminalKind::Holographic),
+                    (cx - 2, cy - 1, AltarKind::Quantum),
+                    (cx + 2, cy - 1, AltarKind::Stellar),
+                    (cx - 2, cy + 1, AltarKind::Tactical),
+                    (cx + 2, cy + 1, AltarKind::Commerce),
+                    (cx, cy + 2, AltarKind::Holographic),
                 ];
                 for &(ax, ay, akind) in &altars {
                     if self.in_bounds(ax, ay) {
@@ -4001,7 +4001,7 @@ impl DungeonLevel {
                         if self.in_bounds(x, y) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
-                                self.tiles[idx] = Tile::Trap(0);
+                                self.tiles[idx] = Tile::LaserGrid;
                             }
                         }
                     }
@@ -4011,7 +4011,7 @@ impl DungeonLevel {
                         if self.in_bounds(x, y) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
-                                self.tiles[idx] = Tile::Trap(0);
+                                self.tiles[idx] = Tile::LaserGrid;
                             }
                         }
                     }
@@ -4037,7 +4037,7 @@ impl DungeonLevel {
                         if self.in_bounds(x, y) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
-                                self.tiles[idx] = Tile::Trap(0);
+                                self.tiles[idx] = Tile::LaserGrid;
                             }
                         }
                     }
@@ -4047,7 +4047,7 @@ impl DungeonLevel {
                         if self.in_bounds(x, y) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
-                                self.tiles[idx] = Tile::Trap(0);
+                                self.tiles[idx] = Tile::LaserGrid;
                             }
                         }
                     }
@@ -4067,7 +4067,7 @@ impl DungeonLevel {
                         if self.in_bounds(x, y) && rng.next_u64() % 3 != 0 {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
-                                self.tiles[idx] = Tile::Trap(1);
+                                self.tiles[idx] = Tile::Coolant;
                             }
                         }
                     }
@@ -4089,7 +4089,7 @@ impl DungeonLevel {
                 if self.in_bounds(cx, cy) {
                     let idx = self.idx(cx, cy);
                     if self.tiles[idx] == Tile::MetalFloor {
-                        self.tiles[idx] = Tile::CircuitShrine;
+                        self.tiles[idx] = Tile::NavBeacon;
                     }
                 }
                 let markers = [
@@ -4123,7 +4123,7 @@ impl DungeonLevel {
                 if self.in_bounds(cx, cy) {
                     let idx = self.idx(cx, cy);
                     if self.tiles[idx] == Tile::MetalFloor {
-                        self.tiles[idx] = Tile::Terminal(TerminalKind::Tactical);
+                        self.tiles[idx] = Tile::Terminal(AltarKind::Tactical);
                     }
                 }
             }
@@ -4170,7 +4170,7 @@ impl DungeonLevel {
                 if self.in_bounds(cx, cy - 1) {
                     let idx = self.idx(cx, cy - 1);
                     if self.tiles[idx] == Tile::MetalFloor {
-                        self.tiles[idx] = Tile::Terminal(TerminalKind::Quantum);
+                        self.tiles[idx] = Tile::Terminal(AltarKind::Quantum);
                     }
                 }
                 for dx in -1..=1 {
@@ -4209,7 +4209,7 @@ impl DungeonLevel {
                 if self.in_bounds(cx, cy) {
                     let idx = self.idx(cx, cy);
                     if self.tiles[idx] == Tile::MetalFloor {
-                        self.tiles[idx] = Tile::CircuitShrine;
+                        self.tiles[idx] = Tile::NavBeacon;
                     }
                 }
                 for &(dx, dy) in &[(-1, 0), (1, 0), (0, -1), (0, 1)] {
@@ -4323,7 +4323,7 @@ impl DungeonLevel {
         }
     }
 
-    /// Assign random modifiers to some rooms (not first or last).
+    /// Assign random modifiers to some modules (not first or last).
     fn assign_room_modifiers(&mut self, rng: &mut Rng) {
         let n = self.rooms.len();
         if n <= 2 {
@@ -4343,7 +4343,7 @@ impl DungeonLevel {
         }
     }
 
-    /// Place a companion NPC in a random middle room (~40% chance per floor).
+    /// Place a companion NPC in a random middle module (~40% chance per deck).
     fn place_npcs(&mut self, rng: &mut Rng) {
         let n = self.rooms.len();
         if n <= 3 {
@@ -4379,7 +4379,7 @@ impl DungeonLevel {
         let cy = room.y + room.h / 2;
         let idx = self.idx(cx, cy);
         if self.tiles[idx] == Tile::MetalFloor {
-            self.tiles[idx] = Tile::CircuitShrine;
+            self.tiles[idx] = Tile::NavBeacon;
         }
     }
 
@@ -4397,7 +4397,7 @@ impl DungeonLevel {
         let cy = room.y + room.h / 2;
         let idx = self.idx(cx, cy);
         if self.tiles[idx] == Tile::MetalFloor {
-            self.tiles[idx] = Tile::RadicalLab;
+            self.tiles[idx] = Tile::CircuitShrine;
         }
     }
 
@@ -4583,7 +4583,7 @@ impl DungeonLevel {
 
     fn place_word_bridges(&mut self, rng: &mut Rng) {
         for i in 0..self.tiles.len() {
-            if self.tiles[i] == Tile::Coolant {
+            if self.tiles[i] == Tile::VacuumBreach {
                 let x = (i % self.width as usize) as i32;
                 let y = (i / self.width as usize) as i32;
                 for &(dx, dy) in &[(0, -1), (0, 1), (-1, 0), (1, 0)] {
@@ -4648,7 +4648,7 @@ impl DungeonLevel {
         }
     }
 
-    /// Place a blessing altar in a quiet side room (~35% chance).
+    /// Place a terminal in a quiet side module (~35% chance).
     fn place_altars(&mut self, rng: &mut Rng) {
         let n = self.rooms.len();
         if n <= 3 {
@@ -4671,7 +4671,7 @@ impl DungeonLevel {
                                 | Tile::Airlock
                                 | Tile::SupplyCrate
                                 | Tile::Npc(_)
-                                | Tile::CircuitShrine
+                                | Tile::NavBeacon
                                 | Tile::Terminal(_)
                                 | Tile::SecurityLock(_)
                                 | Tile::InfoPanel(_)
@@ -4698,7 +4698,7 @@ impl DungeonLevel {
         }
     }
 
-    /// Place 1-2 script seals that reshape rooms when stepped on.
+    /// Place 1-2 security locks that reshape modules when stepped on.
     fn place_seals(&mut self, rng: &mut Rng) {
         let n = self.rooms.len();
         if n <= 3 {
@@ -4729,7 +4729,7 @@ impl DungeonLevel {
                                 | Tile::Airlock
                                 | Tile::SupplyCrate
                                 | Tile::Npc(_)
-                                | Tile::CircuitShrine
+                                | Tile::NavBeacon
                                 | Tile::Terminal(_)
                                 | Tile::SecurityLock(_)
                                 | Tile::InfoPanel(_)
@@ -4760,14 +4760,15 @@ impl DungeonLevel {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
-    use super::{AltarKind, DungeonLevel, Rng, Room, SealKind, Tile};
+    use super::*;
 
-    fn make_clean_test_level() -> DungeonLevel {
+    fn make_clean_test_level() -> LocationLevel {
         let width = 24;
         let height = 24;
-        let mut level = DungeonLevel {
+        let mut level = LocationLevel {
             width,
             height,
             tiles: vec![Tile::Bulkhead; (width * height) as usize],
@@ -4827,10 +4828,10 @@ mod tests {
         level
     }
 
-    fn make_spacious_test_level() -> DungeonLevel {
+    fn make_spacious_test_level() -> LocationLevel {
         let width = 40;
         let height = 28;
-        let mut level = DungeonLevel {
+        let mut level = LocationLevel {
             width,
             height,
             tiles: vec![Tile::Bulkhead; (width * height) as usize],
@@ -4890,7 +4891,7 @@ mod tests {
         level
     }
 
-    fn has_pushable_bridge_setup(level: &DungeonLevel) -> bool {
+    fn has_pushable_bridge_setup(level: &LocationLevel) -> bool {
         let dirs = [(1, 0), (-1, 0), (0, 1), (0, -1)];
         for y in 0..level.height {
             for x in 0..level.width {
@@ -4920,7 +4921,7 @@ mod tests {
         false
     }
 
-    fn has_brittle_vault(level: &DungeonLevel) -> bool {
+    fn has_brittle_vault(level: &LocationLevel) -> bool {
         let dirs = [(1, 0), (-1, 0), (0, 1), (0, -1)];
         for y in 0..level.height {
             for x in 0..level.width {
@@ -4955,11 +4956,11 @@ mod tests {
         false
     }
 
-    fn has_deep_water_cache(level: &DungeonLevel) -> bool {
+    fn has_deep_water_cache(level: &LocationLevel) -> bool {
         let dirs = [(1, 0), (-1, 0), (0, 1), (0, -1)];
         for y in 0..level.height {
             for x in 0..level.width {
-                if level.tile(x, y) != Tile::Coolant {
+                if level.tile(x, y) != Tile::VacuumBreach {
                     continue;
                 }
 
@@ -5000,12 +5001,12 @@ mod tests {
         false
     }
 
-    fn has_spike_bridge(level: &DungeonLevel) -> bool {
+    fn has_spike_bridge(level: &LocationLevel) -> bool {
         for y in 0..level.height {
             for x in 0..level.width - 3 {
-                if level.tile(x, y) == Tile::Trap(0)
-                    && level.tile(x + 1, y) == Tile::Trap(0)
-                    && level.tile(x + 2, y) == Tile::Trap(0)
+                if level.tile(x, y) == Tile::LaserGrid
+                    && level.tile(x + 1, y) == Tile::LaserGrid
+                    && level.tile(x + 2, y) == Tile::LaserGrid
                     && level.tile(x + 3, y) == Tile::SupplyCrate
                 {
                     return true;
@@ -5015,11 +5016,11 @@ mod tests {
         false
     }
 
-    fn has_oil_fire_trap(level: &DungeonLevel) -> bool {
+    fn has_oil_fire_trap(level: &LocationLevel) -> bool {
         for y in 0..level.height {
             for x in 0..level.width - 2 {
-                if level.tile(x, y) == Tile::Trap(1)
-                    && level.tile(x + 1, y) == Tile::Trap(1)
+                if level.tile(x, y) == Tile::Coolant
+                    && level.tile(x + 1, y) == Tile::Coolant
                     && level.tile(x + 2, y) == Tile::SupplyCrate
                 {
                     return true;
@@ -5029,7 +5030,7 @@ mod tests {
         false
     }
 
-    fn has_seal_chain(level: &DungeonLevel) -> bool {
+    fn has_seal_chain(level: &LocationLevel) -> bool {
         for y in 0..level.height {
             for x in 0..level.width - 2 {
                 if matches!(level.tile(x, y), Tile::SecurityLock(_))
@@ -5042,7 +5043,7 @@ mod tests {
         false
     }
 
-    fn has_any_puzzle_room(level: &DungeonLevel) -> bool {
+    fn has_any_puzzle_room(level: &LocationLevel) -> bool {
         has_brittle_vault(level)
             || has_deep_water_cache(level)
             || has_spike_bridge(level)
@@ -5052,15 +5053,15 @@ mod tests {
 
     #[test]
     fn hazards_and_altars_are_walkable_but_crates_block() {
-        assert!(Tile::Trap(0).is_walkable());
-        assert!(Tile::Trap(1).is_walkable());
+        assert!(Tile::LaserGrid.is_walkable());
+        assert!(Tile::Coolant.is_walkable());
         assert!(Tile::CoolantPool.is_walkable());
-        assert!(Tile::Terminal(TerminalKind::Quantum).is_walkable());
-        assert!(Tile::SecurityLock(SealKind::Ember).is_walkable());
+        assert!(Tile::Terminal(AltarKind::Quantum).is_walkable());
+        assert!(Tile::SecurityLock(SealKind::Thermal).is_walkable());
         assert!(!Tile::SalvageCrate.is_walkable());
         assert!(!Tile::DamagedBulkhead.is_walkable());
         assert!(!Tile::WeakBulkhead.is_walkable());
-        assert!(!Tile::Coolant.is_walkable());
+        assert!(!Tile::VacuumBreach.is_walkable());
     }
 
     #[test]
@@ -5120,7 +5121,7 @@ mod tests {
         assert!(level.tiles.iter().any(|tile| {
             matches!(
                 tile,
-                Tile::SupplyCrate | Tile::QuantumForge | Tile::CircuitShrine | Tile::Terminal(_)
+                Tile::SupplyCrate | Tile::QuantumForge | Tile::NavBeacon | Tile::Terminal(_)
             )
         }));
     }
@@ -5129,7 +5130,7 @@ mod tests {
     fn generated_levels_hide_secret_rooms_on_most_runs() {
         let mut secret_count = 0;
         for seed in 1..=24 {
-            let level = DungeonLevel::generate(48, 48, seed, 1);
+            let level = LocationLevel::generate(48, 48, seed, 1, LocationType::SpaceStation);
             if level
                 .tiles
                 .iter()
@@ -5149,7 +5150,7 @@ mod tests {
     fn generated_levels_regularly_offer_bridge_building_setups() {
         let mut bridge_count = 0;
         for seed in 1..=24 {
-            let level = DungeonLevel::generate(48, 48, seed, 1);
+            let level = LocationLevel::generate(48, 48, seed, 1, LocationType::SpaceStation);
             if has_pushable_bridge_setup(&level) {
                 bridge_count += 1;
             }
@@ -5180,7 +5181,7 @@ mod tests {
         let mut oil_count = 0;
         let mut seal_count = 0;
         for seed in 1..=24 {
-            let level = DungeonLevel::generate(48, 48, seed, 1);
+            let level = LocationLevel::generate(48, 48, seed, 1, LocationType::SpaceStation);
             if has_any_puzzle_room(&level) {
                 puzzle_count += 1;
             }
@@ -5221,7 +5222,7 @@ mod tests {
 
     #[test]
     fn tutorial_floor_has_required_landmarks() {
-        let level = DungeonLevel::tutorial(48, 48);
+        let level = LocationLevel::tutorial(48, 48);
 
         assert_eq!(level.start_pos(), (8, 22));
         assert!(level.tiles.iter().any(|tile| matches!(tile, Tile::InfoPanel(0))));
@@ -5233,10 +5234,6 @@ mod tests {
         assert!(level.is_walkable(8, 20));
     }
 }
-
-
-
-
 
 
 

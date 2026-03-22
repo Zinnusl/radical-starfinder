@@ -44,7 +44,7 @@ pub fn reachable_tiles(
                 continue;
             }
             let mut step_cost = 1 + tile.extra_move_cost();
-            if battle.weather == Weather::Sandstorm {
+            if battle.weather == Weather::DebrisStorm {
                 step_cost += 1;
             }
             let new_cost = cur_cost + step_cost;
@@ -135,7 +135,7 @@ pub fn tiles_in_range_with_los(
 /// Adjust range based on weather conditions (e.g., Fog reduces range).
 pub fn weather_adjusted_range(base_range: i32, weather: Weather) -> i32 {
     match weather {
-        Weather::Fog => (base_range - 2).max(1),
+        Weather::SmokeScreen => (base_range - 2).max(1),
         _ => base_range,
     }
 }

@@ -30,7 +30,7 @@ fn reset_synergy_state(battle: &mut TacticalBattle) {
     }
 }
 
-// ── Sentinel Formation ───────────────────────────────────────────────────────
+// ── Shield Formation ───────────────────────────────────────────────────────
 
 /// Sentinels share 1 armor with adjacent allies. If 2+ Sentinels adjacent,
 /// each gets +1 additional armor.
@@ -69,7 +69,7 @@ fn apply_sentinel_formation(battle: &mut TacticalBattle) -> Vec<String> {
         for &si in &sentinel_formation_bonus {
             battle.units[si].radical_armor += 1;
         }
-        messages.push("🛡 Sentinel formation! Adjacent sentinels gain +1 armor.".to_string());
+        messages.push("🛡 Shield formation! Adjacent sentinels gain +1 armor.".to_string());
     }
 
     // Each sentinel shares 1 armor with adjacent allies.
@@ -168,7 +168,7 @@ fn apply_elemental_resonance(battle: &mut TacticalBattle) -> Vec<String> {
                         }
                     }
                 }
-                messages.push("🔥 Fire resonance! Burn effects intensify.".to_string());
+                messages.push("🔥 Plasma resonance! Burn effects intensify.".to_string());
             }
             WuxingElement::Water => {
                 // Slow effects last +1 turn.
@@ -181,7 +181,7 @@ fn apply_elemental_resonance(battle: &mut TacticalBattle) -> Vec<String> {
                         s.turns_left += 1;
                     }
                 }
-                messages.push("💧 Water resonance! Slow effects linger.".to_string());
+                messages.push("💧 Coolant resonance! Slow effects linger.".to_string());
             }
             WuxingElement::Earth => {
                 // +1 armor to all resonating enemies.
@@ -189,7 +189,7 @@ fn apply_elemental_resonance(battle: &mut TacticalBattle) -> Vec<String> {
                     battle.units[ri].elemental_resonance = true;
                     battle.units[ri].radical_armor += 1;
                 }
-                messages.push("🪨 Earth resonance! Enemies gain +1 armor.".to_string());
+                messages.push("🪨 Hull resonance! Enemies gain +1 armor.".to_string());
             }
             WuxingElement::Metal => {
                 // +1 damage to all resonating enemies.
@@ -206,7 +206,7 @@ fn apply_elemental_resonance(battle: &mut TacticalBattle) -> Vec<String> {
                     let unit = &mut battle.units[ri];
                     unit.hp = (unit.hp + 1).min(unit.max_hp);
                 }
-                messages.push("🌿 Wood resonance! Enemies regenerate 1 HP.".to_string());
+                messages.push("🌿 Bio resonance! Enemies regenerate 1 HP.".to_string());
             }
         }
     }
@@ -257,7 +257,7 @@ fn apply_elemental_clash(battle: &mut TacticalBattle) -> Vec<String> {
                 let fx = battle.units[fire_idx].x;
                 let fy = battle.units[fire_idx].y;
                 battle.arena.set_steam(fx, fy, 2);
-                messages.push("💨 Fire and Water clash — steam erupts!".to_string());
+                messages.push("💨 Plasma and Coolant clash — steam erupts!".to_string());
             }
 
             // Fire + Wood → Wood takes 1 burn damage
@@ -272,7 +272,7 @@ fn apply_elemental_clash(battle: &mut TacticalBattle) -> Vec<String> {
                 }
                 let name = battle.units[wood_idx].hanzi;
                 messages.push(format!(
-                    "🔥🌿 Fire scorches {} for 1 burn damage!",
+                    "🔥🌿 Plasma scorches {} for 1 burn damage!",
                     name
                 ));
             }
@@ -284,10 +284,10 @@ fn apply_elemental_clash(battle: &mut TacticalBattle) -> Vec<String> {
                 let water_idx = if ae == WuxingElement::Water { ai } else { bi };
                 let wx = battle.units[water_idx].x;
                 let wy = battle.units[water_idx].y;
-                if battle.arena.tile(wx, wy) == Some(BattleTile::Open) {
-                    battle.arena.set_tile(wx, wy, BattleTile::BrokenGround);
+                if battle.arena.tile(wx, wy) == Some(BattleTile::MetalFloor) {
+                    battle.arena.set_tile(wx, wy, BattleTile::DamagedPlating);
                     messages
-                        .push("💧🪨 Water and Earth mix — mud slows the ground!".to_string());
+                        .push("💧🪨 Coolant and Metal mix — sludge slows the ground!".to_string());
                 }
             }
         }
@@ -349,7 +349,7 @@ fn apply_leader_aura(battle: &mut TacticalBattle) -> Vec<String> {
             }
         }
         if boosted {
-            messages.push("⚡ Leader's aura! Nearby allies gain +1 speed.".to_string());
+            messages.push("⚡ Commander's aura! Nearby allies gain +1 speed.".to_string());
         }
     }
 

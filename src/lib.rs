@@ -1,4 +1,4 @@
-//! Radical Roguelike — WASM entry point.
+//! Radical Starfinder — WASM entry point.
 
 use wasm_bindgen::prelude::*;
 
@@ -17,6 +17,7 @@ mod sprites;
 mod srs;
 mod status;
 mod vocab;
+mod world;
 
 fn set_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
@@ -36,19 +37,19 @@ fn set_panic_hook() {
             let w = canvas.width() as f64;
             let h = canvas.height() as f64;
 
-            ctx.set_fill_style_str("#00cccc");
+            ctx.set_fill_style_str("#0066cc");
             ctx.fill_rect(0.0, 0.0, w, h);
 
-            ctx.set_stroke_style_str("#005555");
+            ctx.set_stroke_style_str("#002255");
             ctx.set_line_width(4.0);
             ctx.stroke_rect(8.0, 8.0, w - 16.0, h - 16.0);
 
             ctx.set_fill_style_str("#000000");
             ctx.set_font("bold 28px monospace");
-            let _ = ctx.fill_text("\u{26A0} PANIC \u{26A0}", 24.0, 50.0);
+            let _ = ctx.fill_text("\u{26A0} SYSTEM FAILURE \u{26A0}", 24.0, 50.0);
 
             ctx.set_font("16px monospace");
-            let _ = ctx.fill_text("The game has crashed. Details below:", 24.0, 80.0);
+            let _ = ctx.fill_text("Critical system failure. Details below:", 24.0, 80.0);
 
             ctx.set_font("13px monospace");
             let max_w = (w - 48.0) as usize / 8;
@@ -75,8 +76,8 @@ fn set_panic_hook() {
             }
 
             ctx.set_font("14px monospace");
-            ctx.set_fill_style_str("#003333");
-            let _ = ctx.fill_text("Refresh the page to restart.", 24.0, h - 16.0);
+            ctx.set_fill_style_str("#003366");
+            let _ = ctx.fill_text("Refresh to reinitialize systems.", 24.0, h - 16.0);
 
             Ok(())
         })();

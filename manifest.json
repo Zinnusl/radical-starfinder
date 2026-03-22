@@ -1,15 +1,15 @@
 {
-  "name": "Radical Dungeon",
-  "short_name": "RadDungeon",
-  "description": "Learn Chinese characters through roguelike dungeon exploration",
+  "name": "Radical Starfinder",
+  "short_name": "Starfinder",
+  "description": "Learn Chinese characters through roguelike space exploration",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
-  "background_color": "#0d0b14",
-  "theme_color": "#ffcc33",
+  "background_color": "#060612",
+  "theme_color": "#00ccdd",
   "icons": [
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚗️</text></svg>",
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>",
       "sizes": "any",
       "type": "image/svg+xml"
     }

@@ -5,7 +5,7 @@ use crate::combat::{
     arena_size_for_encounter, ArenaBiome, BattleTile, BattleUnit, Direction, TacticalArena,
     TacticalBattle, TacticalPhase, UnitKind, Weather, WuxingElement,
 };
-use crate::dungeon::RoomModifier;
+use crate::world::RoomModifier;
 use crate::enemy::{AiBehavior, Enemy};
 use crate::game::Companion;
 use crate::player::Player;
@@ -82,10 +82,10 @@ pub fn enter_combat(
     // Companion unit adjacent to player (if any).
     if let Some(companion) = companion {
         let (c_hp, c_damage, c_movement, c_speed, c_hanzi, c_pinyin) = match companion {
-            Companion::Guard => (8, 2, 2, 3, "卫", "wèi"),
-            Companion::Monk => (6, 1, 2, 3, "僧", "sēng"),
-            Companion::Teacher => (5, 1, 2, 3, "师", "shī"),
-            Companion::Merchant => (5, 1, 2, 3, "商", "shāng"),
+            Companion::SecurityChief => (8, 2, 2, 3, "卫", "wèi"),
+            Companion::Medic => (6, 1, 2, 3, "医", "yī"),
+            Companion::ScienceOfficer => (5, 1, 2, 3, "研", "yán"),
+            Companion::Quartermaster => (5, 1, 2, 3, "商", "shāng"),
         };
         let cx = px - 1;
         let cy = py;
@@ -324,6 +324,8 @@ pub fn enter_combat(
         selected_radical_ability: None,
         radical_picker_open: false,
         radical_picker_cursor: 0,
+        skill_menu_open: false,
+        skill_menu_cursor: 0,
         projectiles: Vec::new(),
         arcing_projectiles: Vec::new(),
         god_mode: false,
@@ -370,13 +372,13 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
         if y == (size as i32 - 2) && (x - mid).abs() <= 1 {
             continue;
         }
-        arena.set_tile(x, y, BattleTile::Obstacle);
+        arena.set_tile(x, y, BattleTile::CoverBarrier);
     }
 
     if floor >= 3 {
         let terrain_count = (floor / 5).min(4) as usize
             + match biome {
-                ArenaBiome::Stone => 0,
+                ArenaBiome::StationInterior => 0,
                 _ => 2,
             };
         for i in 0..terrain_count {
@@ -386,57 +388,57 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
                 .wrapping_mul(12345);
             let x = ((hash >> 16) % size as u64) as i32;
             let y = (1 + (hash >> 8) % (size as u64 - 3)) as i32;
-            if arena.tile(x, y) != Some(BattleTile::Open) {
+            if arena.tile(x, y) != Some(BattleTile::MetalFloor) {
                 continue;
             }
             let tile = match biome {
-                ArenaBiome::Stone => match hash % 5 {
-                    0 => BattleTile::Grass,
-                    1 => BattleTile::Water,
-                    2 => BattleTile::BrokenGround,
-                    3 => BattleTile::SpiritWell,
-                    _ => BattleTile::InkPool,
+                ArenaBiome::StationInterior => match hash % 5 {
+                    0 => BattleTile::WiringPanel,
+                    1 => BattleTile::CoolantPool,
+                    2 => BattleTile::DamagedPlating,
+                    3 => BattleTile::EnergyNode,
+                    _ => BattleTile::OilSlick,
                 },
-                ArenaBiome::Dark => match hash % 6 {
-                    0 => BattleTile::InkPool,
-                    1 => BattleTile::BrokenGround,
-                    2 => BattleTile::SpiritDrain,
-                    3 => BattleTile::SoulTrap,
-                    4 => BattleTile::Sand,
-                    _ => BattleTile::Thorns,
+                ArenaBiome::DerelictShip => match hash % 6 {
+                    0 => BattleTile::OilSlick,
+                    1 => BattleTile::DamagedPlating,
+                    2 => BattleTile::PowerDrain,
+                    3 => BattleTile::GravityTrap,
+                    4 => BattleTile::Debris,
+                    _ => BattleTile::ElectrifiedWire,
                 },
-                ArenaBiome::Arcane => match hash % 6 {
-                    0 => BattleTile::ArcaneGlyph,
-                    1 => BattleTile::InkPool,
-                    2 => BattleTile::Steam,
-                    3 => BattleTile::SpiritWell,
-                    4 => BattleTile::MeditationStone,
-                    _ => BattleTile::Ice,
+                ArenaBiome::AlienRuins => match hash % 6 {
+                    0 => BattleTile::HoloTrap,
+                    1 => BattleTile::OilSlick,
+                    2 => BattleTile::VentSteam,
+                    3 => BattleTile::EnergyNode,
+                    4 => BattleTile::ChargingPad,
+                    _ => BattleTile::FrozenCoolant,
                 },
-                ArenaBiome::Cursed => match hash % 5 {
-                    0 => BattleTile::Scorched,
-                    1 => BattleTile::Lava,
-                    2 => BattleTile::BrokenGround,
-                    3 => BattleTile::SpiritDrain,
-                    _ => BattleTile::Thorns,
+                ArenaBiome::IrradiatedZone => match hash % 5 {
+                    0 => BattleTile::BlastMark,
+                    1 => BattleTile::PlasmaPool,
+                    2 => BattleTile::DamagedPlating,
+                    3 => BattleTile::PowerDrain,
+                    _ => BattleTile::ElectrifiedWire,
                 },
-                ArenaBiome::Garden => match hash % 4 {
-                    0 => BattleTile::Grass,
-                    1 => BattleTile::Water,
-                    2 => BattleTile::BambooThicket,
-                    _ => BattleTile::Thorns,
+                ArenaBiome::Hydroponics => match hash % 4 {
+                    0 => BattleTile::WiringPanel,
+                    1 => BattleTile::CoolantPool,
+                    2 => BattleTile::PipeTangle,
+                    _ => BattleTile::ElectrifiedWire,
                 },
-                ArenaBiome::Frozen => match hash % 4 {
-                    0 => BattleTile::Ice,
-                    1 => BattleTile::FrozenGround,
-                    2 => BattleTile::Water,
-                    _ => BattleTile::BrokenGround,
+                ArenaBiome::CryoBay => match hash % 4 {
+                    0 => BattleTile::FrozenCoolant,
+                    1 => BattleTile::CryoZone,
+                    2 => BattleTile::CoolantPool,
+                    _ => BattleTile::DamagedPlating,
                 },
-                ArenaBiome::Infernal => match hash % 4 {
-                    0 => BattleTile::Lava,
-                    1 => BattleTile::Scorched,
-                    2 => BattleTile::Sand,
-                    _ => BattleTile::BrokenGround,
+                ArenaBiome::ReactorRoom => match hash % 4 {
+                    0 => BattleTile::PlasmaPool,
+                    1 => BattleTile::BlastMark,
+                    2 => BattleTile::Debris,
+                    _ => BattleTile::DamagedPlating,
                 },
             };
             arena.set_tile(x, y, tile);
@@ -457,10 +459,10 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
             if y >= (size as i32 - 2) && (x - mid).abs() <= 1 {
                 continue;
             }
-            if arena.tile(x, y) != Some(BattleTile::Open) {
+            if arena.tile(x, y) != Some(BattleTile::MetalFloor) {
                 continue;
             }
-            arena.set_tile(x, y, BattleTile::Boulder);
+            arena.set_tile(x, y, BattleTile::CargoCrate);
         }
     }
 
@@ -480,10 +482,10 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
             if y >= (size as i32 - 2) && (x - mid).abs() <= 1 {
                 continue;
             }
-            if arena.tile(x, y) != Some(BattleTile::Open) {
+            if arena.tile(x, y) != Some(BattleTile::MetalFloor) {
                 continue;
             }
-            arena.set_tile(x, y, BattleTile::ExplosiveBarrel);
+            arena.set_tile(x, y, BattleTile::FuelCanister);
         }
 
         // Crumbling floors: 1-2 per arena
@@ -495,10 +497,10 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
                 .wrapping_mul(30011);
             let x = ((hash >> 16) % size as u64) as i32;
             let y = (1 + (hash >> 8) % (size as u64 - 3)) as i32;
-            if arena.tile(x, y) != Some(BattleTile::Open) {
+            if arena.tile(x, y) != Some(BattleTile::MetalFloor) {
                 continue;
             }
-            arena.set_tile(x, y, BattleTile::CrumblingFloor);
+            arena.set_tile(x, y, BattleTile::WeakenedPlating);
         }
 
         // Trap tiles: 1-3 per arena
@@ -514,10 +516,10 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
             if y >= (size as i32 - 2) && (x - mid).abs() <= 1 {
                 continue;
             }
-            if arena.tile(x, y) != Some(BattleTile::Open) {
+            if arena.tile(x, y) != Some(BattleTile::MetalFloor) {
                 continue;
             }
-            arena.set_tile(x, y, BattleTile::TrapTile);
+            arena.set_tile(x, y, BattleTile::MineTile);
         }
     }
 
@@ -528,10 +530,10 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
         if should_place {
             let dir = flow_hash % 4;
             let (flow_tile, is_horizontal) = match dir {
-                0 => (BattleTile::FlowNorth, false),
-                1 => (BattleTile::FlowSouth, false),
-                2 => (BattleTile::FlowEast, true),
-                _ => (BattleTile::FlowWest, true),
+                0 => (BattleTile::ConveyorN, false),
+                1 => (BattleTile::ConveyorS, false),
+                2 => (BattleTile::ConveyorE, true),
+                _ => (BattleTile::ConveyorW, true),
             };
             let channel_len = 3 + (floor / 6).min(3) as i32;
             if is_horizontal {
@@ -542,7 +544,7 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
                     if x >= size as i32 {
                         break;
                     }
-                    if arena.tile(x, y) == Some(BattleTile::Open) {
+                    if arena.tile(x, y) == Some(BattleTile::MetalFloor) {
                         arena.set_tile(x, y, flow_tile);
                     }
                 }
@@ -554,7 +556,7 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
                     if y >= size as i32 - 1 {
                         break;
                     }
-                    if arena.tile(x, y) == Some(BattleTile::Open) {
+                    if arena.tile(x, y) == Some(BattleTile::MetalFloor) {
                         arena.set_tile(x, y, flow_tile);
                     }
                 }
@@ -577,10 +579,10 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
             if y >= (size as i32 - 2) && (x - mid).abs() <= 1 {
                 continue;
             }
-            if arena.tile(x, y) != Some(BattleTile::Open) {
+            if arena.tile(x, y) != Some(BattleTile::MetalFloor) {
                 continue;
             }
-            arena.set_tile(x, y, BattleTile::HighGround);
+            arena.set_tile(x, y, BattleTile::ElevatedPlatform);
         }
     }
 
@@ -714,25 +716,27 @@ fn apply_mastery_debuffs(unit: &mut BattleUnit) {
 
 fn pick_weather(floor: i32, biome: ArenaBiome) -> Weather {
     if floor < 5 {
-        return Weather::Clear;
+        return Weather::Normal;
     }
     let hash = (floor as u64)
         .wrapping_mul(2654435761)
         .wrapping_add(biome as u64);
     match hash % 10 {
-        0..=4 => Weather::Clear,
-        5 => Weather::Rain,
-        6 => Weather::Fog,
-        7 => Weather::Sandstorm,
+        0..=4 => Weather::Normal,
+        5 => Weather::CoolantLeak,
+        6 => Weather::SmokeScreen,
+        7 => Weather::DebrisStorm,
         8..=9 => match biome {
-            ArenaBiome::Arcane => Weather::SpiritualInk,
-            ArenaBiome::Dark => Weather::Fog,
-            ArenaBiome::Cursed => Weather::Sandstorm,
-            ArenaBiome::Stone => Weather::Rain,
-            ArenaBiome::Garden => Weather::Rain,
-            ArenaBiome::Frozen => Weather::Fog,
-            ArenaBiome::Infernal => Weather::Sandstorm,
+            ArenaBiome::AlienRuins => Weather::EnergyFlux,
+            ArenaBiome::DerelictShip => Weather::SmokeScreen,
+            ArenaBiome::IrradiatedZone => Weather::DebrisStorm,
+            ArenaBiome::StationInterior => Weather::CoolantLeak,
+            ArenaBiome::Hydroponics => Weather::CoolantLeak,
+            ArenaBiome::CryoBay => Weather::SmokeScreen,
+            ArenaBiome::ReactorRoom => Weather::DebrisStorm,
         },
-        _ => Weather::Clear,
+        _ => Weather::Normal,
     }
 }
+
+

@@ -24,7 +24,7 @@ pub fn apply_radical_action(
                 fire_tiles.push((ux + facing.dx() * i, uy + facing.dy() * i));
             }
             let terrain_msgs =
-                apply_terrain_interactions(battle, TerrainSource::FireSpell, &fire_tiles);
+                apply_terrain_interactions(battle, TerrainSource::FireAbility, &fire_tiles);
             for tm in terrain_msgs {
                 battle.log_message(&tm);
             }
@@ -795,7 +795,7 @@ pub fn apply_radical_action(
         RadicalAction::SinkholeSnare => {
             let px = battle.units[0].x;
             let py = battle.units[0].y;
-            battle.arena.set_tile(px, py, crate::combat::BattleTile::CrackedFloor);
+            battle.arena.set_tile(px, py, crate::combat::BattleTile::DamagedFloor);
             battle.arcing_projectiles.push(ArcingProjectile {
                 target_x: px,
                 target_y: py,
@@ -945,7 +945,7 @@ pub fn apply_radical_action(
                         {
                             battle
                                 .arena
-                                .set_tile(tx, ty, crate::combat::BattleTile::Steam);
+                                .set_tile(tx, ty, crate::combat::BattleTile::VentSteam);
                         }
                     }
                 }
@@ -968,20 +968,20 @@ pub fn apply_radical_action(
                             && tx < battle.arena.width as i32
                             && ty < battle.arena.height as i32
                         {
-                            if battle.arena.tile(tx, ty) == Some(crate::combat::BattleTile::Open) {
+                            if battle.arena.tile(tx, ty) == Some(crate::combat::BattleTile::MetalFloor) {
                                 battle
                                     .arena
-                                    .set_tile(tx, ty, crate::combat::BattleTile::Grass);
+                                    .set_tile(tx, ty, crate::combat::BattleTile::WiringPanel);
                             }
                         }
                     }
                 }
             }
-            // Count adjacent grass for armor
+            // Count adjacent wiring panels for armor
             let mut grass_count = 0;
             for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
                 if battle.arena.tile(ux + dx, uy + dy)
-                    == Some(crate::combat::BattleTile::Grass)
+                    == Some(crate::combat::BattleTile::WiringPanel)
                 {
                     grass_count += 1;
                 }
@@ -997,12 +997,12 @@ pub fn apply_radical_action(
             let px = battle.units[0].x;
             let py = battle.units[0].y;
             let on_water =
-                battle.arena.tile(px, py) == Some(crate::combat::BattleTile::Water);
+                battle.arena.tile(px, py) == Some(crate::combat::BattleTile::CoolantPool);
             battle
                 .arena
-                .set_tile(px, py, crate::combat::BattleTile::Water);
+                .set_tile(px, py, crate::combat::BattleTile::CoolantPool);
             if on_water {
-                // Extra damage if already on water
+                // Extra damage if already on coolant
                 let ex = battle.units[unit_idx].x;
                 let ey = battle.units[unit_idx].y;
                 battle.projectiles.push(Projectile {
@@ -1208,8 +1208,12 @@ pub fn apply_player_radical_ability(
             battle.units[attacker_idx]
                 .statuses
                 .retain(|s| !s.is_negative());
-            let actual = deal_damage(battle, target_idx, 2);
-            format!("{} — Debuffs cleared, +{} damage!", ability.name(), actual)
+            if target_idx != attacker_idx && target_alive {
+                let actual = deal_damage(battle, target_idx, 2);
+                format!("{} — Debuffs cleared, +{} damage!", ability.name(), actual)
+            } else {
+                format!("{} — Debuffs cleared!", ability.name())
+            }
         }
         PlayerRadicalAbility::MoonVenom => {
             if target_alive {
@@ -1567,7 +1571,7 @@ pub fn apply_player_radical_ability(
             let ty = battle.units[target_idx].y;
             let fire_tiles = vec![(tx - 1, ty), (tx + 1, ty), (tx, ty - 1), (tx, ty + 1)];
             let terrain_msgs =
-                apply_terrain_interactions(battle, TerrainSource::FireSpell, &fire_tiles);
+                apply_terrain_interactions(battle, TerrainSource::FireAbility, &fire_tiles);
             for tm in &terrain_msgs {
                 battle.log_message(tm);
             }

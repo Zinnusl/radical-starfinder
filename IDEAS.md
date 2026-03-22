@@ -1,6 +1,6 @@
-# Radical Dungeon — Game Design Ideas
+# Radical Starfinder — Game Design Ideas
 
-> A pixel-art dungeon crawler where you **combine Chinese radicals to forge characters**, **battle enemies by typing pinyin**, and explore procedural dungeons. The roguelike death loop naturally drives **spaced repetition** — words you struggle with haunt you more.
+> A pixel-art space roguelike where you **forge Chinese characters from quantum glyphs**, **battle hostile aliens by typing pinyin**, and explore procedural space stations. The roguelike death loop naturally drives **spaced repetition** — words you struggle with haunt you more.
 
 ## Tech Stack
 - **Rust → WebAssembly** (wasm-bindgen, web-sys) — same proven stack as hanzi-cat
@@ -256,7 +256,7 @@ src/
 
 ## Open Questions
 1. **Language scope**: Chinese only, or also support Japanese kanji / Korean hanja?
-2. **Multiplayer**: Co-op dungeon runs? Competitive leaderboards?
+2. **Multiplayer**: Co-op space station runs? Competitive leaderboards?
 3. **Mobile**: Touch controls from Phase 1, or add later?
 4. **Monetization**: Free + open source (like hanzi-cat)? Or premium content?
-5. **Name**: "Radical Dungeon"? "Forge & Foe"? "漢字地牢" (Hànzì Dìláo)?
+5. **Name**: "Radical Starfinder"? "Forge & Foe"? "漢字地牢" (Hànzì Dìláo)?

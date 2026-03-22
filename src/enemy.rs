@@ -1,4 +1,4 @@
-//! Enemy entities that live on the dungeon floor.
+//! Enemy entities that inhabit the station decks.
 
 use crate::status::StatusInstance;
 use crate::vocab::VocabEntry;
@@ -15,35 +15,35 @@ pub enum AiBehavior {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BossKind {
-    Gatekeeper,
-    Scholar,
-    Elementalist,
-    MimicKing,
-    InkSage,
-    RadicalThief,
+    PirateCaptain,
+    HiveQueen,
+    RogueAICore,
+    VoidEntity,
+    AncientGuardian,
+    DriftLeviathan,
 }
 
 impl BossKind {
     pub fn for_floor(floor: i32) -> Option<Self> {
         match floor {
-            5 => Some(Self::Gatekeeper),
-            10 => Some(Self::Scholar),
-            15 => Some(Self::Elementalist),
-            20 => Some(Self::MimicKing),
-            25 => Some(Self::InkSage),
-            30 => Some(Self::RadicalThief),
+            5 => Some(Self::PirateCaptain),
+            10 => Some(Self::HiveQueen),
+            15 => Some(Self::RogueAICore),
+            20 => Some(Self::VoidEntity),
+            25 => Some(Self::AncientGuardian),
+            30 => Some(Self::DriftLeviathan),
             _ => None,
         }
     }
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::Gatekeeper => "Gatekeeper",
-            Self::Scholar => "Scholar",
-            Self::Elementalist => "Elementalist",
-            Self::MimicKing => "Mimic King",
-            Self::InkSage => "Ink Sage",
-            Self::RadicalThief => "Radical Thief",
+            Self::PirateCaptain => "Pirate Captain",
+            Self::HiveQueen => "Hive Queen",
+            Self::RogueAICore => "Rogue AI Core",
+            Self::VoidEntity => "Void Entity",
+            Self::AncientGuardian => "Ancient Guardian",
+            Self::DriftLeviathan => "Drift Leviathan",
         }
     }
 }
@@ -54,9 +54,9 @@ include!(concat!(env!("OUT_DIR"), "/decomposition_data.rs"));
 /// Each radical maps to exactly ONE skill (1:1 mapping).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RadicalAction {
-    /// 火 fire — Burn DoT, spreading fire terrain
+    /// 火 fire — Plasma DoT, spreading plasma terrain
     SpreadingWildfire,
-    /// 水 water — Reduce defense, Slow
+    /// 水 water — Corrosive spray, Slow
     ErosiveFlow,
     /// 力 strength — Damage scales with missing HP
     OverwhelmingForce,
@@ -68,7 +68,7 @@ pub enum RadicalAction {
     WitnessMark,
     /// 手 hand — Swap positions with target
     SleightReversal,
-    /// 木 wood — Slow 2 turns, +1 armor to self
+    /// 木 wood — Gravity field, +1 armor to self
     RootingGrasp,
     /// 田 field — Execute if HP<40%, else 1 dmg
     HarvestReaping,
@@ -310,14 +310,14 @@ impl RadicalAction {
 
     pub fn name(self) -> &'static str {
         match self {
-            Self::SpreadingWildfire => "\u{1F525} Spreading Wildfire",
-            Self::ErosiveFlow => "\u{1F4A7} Erosive Flow",
+            Self::SpreadingWildfire => "\u{1F525} Plasma Overload",
+            Self::ErosiveFlow => "\u{1F4A7} Acid Spray",
             Self::OverwhelmingForce => "\u{1F4AA} Overwhelming Force",
             Self::DoubtSeed => "\u{1F49C} Doubt Seed",
             Self::DevouringMaw => "\u{1F444} Devouring Maw",
             Self::WitnessMark => "\u{1F441} Witness Mark",
             Self::SleightReversal => "\u{270B} Sleight Reversal",
-            Self::RootingGrasp => "\u{1F33F} Rooting Grasp",
+            Self::RootingGrasp => "\u{1F33F} Gravity Snare",
             Self::HarvestReaping => "\u{1F33E} Harvest Reaping",
             Self::RevealingDawn => "\u{2600} Revealing Dawn",
             Self::WaningCurse => "\u{1F319} Waning Curse",
@@ -376,14 +376,14 @@ impl RadicalAction {
     #[allow(dead_code)]
     pub fn description(self) -> &'static str {
         match self {
-            Self::SpreadingWildfire => "Burns for 1 damage over 3 turns, creates fire terrain",
-            Self::ErosiveFlow => "Reduces defense, Slows for 3 turns",
+            Self::SpreadingWildfire => "Burns for 1 damage over 3 turns, creates plasma terrain",
+            Self::ErosiveFlow => "Corrodes defense, Slows for 3 turns",
             Self::OverwhelmingForce => "Damage scales with missing HP",
             Self::DoubtSeed => "Confuses for 2 turns",
             Self::DevouringMaw => "Deals 1 damage and steals a buff",
             Self::WitnessMark => "Marks target: attacks auto-hit with +2 damage",
             Self::SleightReversal => "Swaps positions with target",
-            Self::RootingGrasp => "Slows for 2 turns, gains +1 armor",
+            Self::RootingGrasp => "Gravity locks for 2 turns, gains +1 armor",
             Self::HarvestReaping => "Execute if HP<40%, else 1 damage",
             Self::RevealingDawn => "Clears own debuffs, buffs nearby allies",
             Self::WaningCurse => "Poison DoT: 2 damage for 3 turns",
@@ -767,7 +767,87 @@ pub enum PlayerRadicalAbility {
     Purify,
 }
 
+/// How a player radical ability is targeted when used independently (K key).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SkillType {
+    /// No target needed — applied to self.
+    SelfBuff,
+    /// Needs an adjacent enemy.
+    MeleeTarget,
+    /// Needs an enemy within range.
+    RangedTarget(i32),
+    /// Needs a tile within range.
+    GroundTarget(i32),
+}
+
 impl PlayerRadicalAbility {
+    /// Categorise this ability for standalone skill usage.
+    pub fn skill_type(self) -> SkillType {
+        match self {
+            // Self-buffs: no target needed
+            Self::Insight
+            | Self::SwiftHands
+            | Self::Resilience
+            | Self::Guardian
+            | Self::Harvest
+            | Self::Fortify
+            | Self::Windstep
+            | Self::Evade
+            | Self::Riposte
+            | Self::HitAndRun
+            | Self::Inspire
+            | Self::Purify
+            | Self::Bulwark
+            | Self::Nourish
+            | Self::SolarFlare => SkillType::SelfBuff,
+
+            // Melee-range: needs adjacent enemy
+            Self::PowerStrike
+            | Self::Devour
+            | Self::TrueStrike
+            | Self::DoubleStrike
+            | Self::Execution
+            | Self::DeepCut
+            | Self::Lunge
+            | Self::Charge
+            | Self::Bulldoze
+            | Self::PreciseStab
+            | Self::Shatter
+            | Self::Concuss
+            | Self::Frenzy
+            | Self::Reap
+            | Self::Gamble
+            | Self::Plunder => SkillType::MeleeTarget,
+
+            // Ranged: needs enemy in range
+            Self::FireStrike
+            | Self::TidalSurge
+            | Self::Entangle
+            | Self::MoonVenom
+            | Self::Intimidate
+            | Self::GrowingStrike
+            | Self::Ensnare
+            | Self::Infest => SkillType::RangedTarget(3),
+            Self::Snipe => SkillType::RangedTarget(5),
+
+            // Ground-target: needs tile in range
+            Self::Earthquake
+            | Self::Downpour
+            | Self::Sabotage
+            | Self::Cleave => SkillType::GroundTarget(3),
+        }
+    }
+
+    /// Short label for the skill type shown in the skill menu.
+    pub fn skill_type_label(self) -> &'static str {
+        match self.skill_type() {
+            SkillType::SelfBuff => "Self",
+            SkillType::MeleeTarget => "Melee",
+            SkillType::RangedTarget(_) => "Ranged",
+            SkillType::GroundTarget(_) => "Area",
+        }
+    }
+
     #[allow(dead_code)]
     pub fn radical(self) -> &'static str {
         match self {
@@ -993,9 +1073,9 @@ pub struct Enemy {
     pub boss_kind: Option<BossKind>,
     /// Tracks one-time boss phase mechanics
     pub phase_triggered: bool,
-    /// Gatekeeper summon cadence
+    /// PirateCaptain summon cadence
     pub summon_cooldown: u8,
-    /// Elementalist resistance remembers the last spell school used
+    /// RogueAICore resistance remembers the last system hacked
     pub resisted_spell: Option<&'static str>,
     /// Elite compounds are dismantled syllable by syllable
     pub elite_chain: usize,
@@ -1075,12 +1155,12 @@ impl Enemy {
     pub fn boss_from_vocab(entry: &'static VocabEntry, x: i32, y: i32, floor: i32) -> Self {
         let boss_kind = BossKind::for_floor(floor);
         let (hp, damage, gold, cooldown) = match boss_kind {
-            Some(BossKind::Gatekeeper) => (16 + floor, 3 + floor / 3, 40 + floor * 4, 1),
-            Some(BossKind::Scholar) => (14 + floor, 3 + floor / 3, 45 + floor * 4, 0),
-            Some(BossKind::Elementalist) => (18 + floor, 4 + floor / 3, 50 + floor * 4, 0),
-            Some(BossKind::MimicKing) => (22 + floor, 4 + floor / 3, 55 + floor * 4, 2),
-            Some(BossKind::InkSage) => (20 + floor, 5 + floor / 3, 65 + floor * 4, 0),
-            Some(BossKind::RadicalThief) => (24 + floor, 5 + floor / 3, 80 + floor * 4, 0),
+            Some(BossKind::PirateCaptain) => (16 + floor, 3 + floor / 3, 40 + floor * 4, 1),
+            Some(BossKind::HiveQueen) => (14 + floor, 3 + floor / 3, 45 + floor * 4, 0),
+            Some(BossKind::RogueAICore) => (18 + floor, 4 + floor / 3, 50 + floor * 4, 0),
+            Some(BossKind::VoidEntity) => (22 + floor, 4 + floor / 3, 55 + floor * 4, 2),
+            Some(BossKind::AncientGuardian) => (20 + floor, 5 + floor / 3, 65 + floor * 4, 0),
+            Some(BossKind::DriftLeviathan) => (24 + floor, 5 + floor / 3, 80 + floor * 4, 0),
             None => (8 + floor, 2 + floor / 2, 20 + floor * 3, 0),
         };
         Self {
@@ -1196,24 +1276,28 @@ impl Enemy {
 
     pub fn boss_trait_text(&self) -> Option<String> {
         match self.boss_kind {
-            Some(BossKind::Gatekeeper) => Some("Summons 门 wards when cornered".to_string()),
-            Some(BossKind::Scholar) => Some(if self.phase_triggered {
+            Some(BossKind::PirateCaptain) => {
+                Some("Deploys shield generators when cornered".to_string())
+            }
+            Some(BossKind::HiveQueen) => Some(if self.phase_triggered {
                 "Sentence duel spent".to_string()
             } else {
                 "Triggers a sentence duel at half HP".to_string()
             }),
-            Some(BossKind::Elementalist) => Some(match self.resisted_spell {
-                Some(school) => format!("Resists last spell: {}", school),
-                None => "Adapts to the last spell you cast".to_string(),
+            Some(BossKind::RogueAICore) => Some(match self.resisted_spell {
+                Some(school) => format!("Resists last system: {}", school),
+                None => "Adapts to the last system you hacked".to_string(),
             }),
-            Some(BossKind::MimicKing) => Some("Disguises allies — answer carefully!".to_string()),
-            Some(BossKind::InkSage) => Some(if self.phase_triggered {
-                "Calligraphy trial spent".to_string()
+            Some(BossKind::VoidEntity) => {
+                Some("Warps reality — answer carefully!".to_string())
+            }
+            Some(BossKind::AncientGuardian) => Some(if self.phase_triggered {
+                "Glyph trial spent".to_string()
             } else {
-                "Triggers a calligraphy trial at half HP".to_string()
+                "Triggers a glyph trial at half HP".to_string()
             }),
-            Some(BossKind::RadicalThief) => {
-                Some("Steals a radical on each wrong answer".to_string())
+            Some(BossKind::DriftLeviathan) => {
+                Some("Absorbs a radical on each wrong answer".to_string())
             }
             None => None,
         }
@@ -1244,12 +1328,12 @@ mod tests {
 
     #[test]
     fn boss_kind_matches_key_floors() {
-        assert_eq!(BossKind::for_floor(5), Some(BossKind::Gatekeeper));
-        assert_eq!(BossKind::for_floor(10), Some(BossKind::Scholar));
-        assert_eq!(BossKind::for_floor(15), Some(BossKind::Elementalist));
-        assert_eq!(BossKind::for_floor(20), Some(BossKind::MimicKing));
-        assert_eq!(BossKind::for_floor(25), Some(BossKind::InkSage));
-        assert_eq!(BossKind::for_floor(30), Some(BossKind::RadicalThief));
+        assert_eq!(BossKind::for_floor(5), Some(BossKind::PirateCaptain));
+        assert_eq!(BossKind::for_floor(10), Some(BossKind::HiveQueen));
+        assert_eq!(BossKind::for_floor(15), Some(BossKind::RogueAICore));
+        assert_eq!(BossKind::for_floor(20), Some(BossKind::VoidEntity));
+        assert_eq!(BossKind::for_floor(25), Some(BossKind::AncientGuardian));
+        assert_eq!(BossKind::for_floor(30), Some(BossKind::DriftLeviathan));
         assert_eq!(BossKind::for_floor(35), None);
     }
 

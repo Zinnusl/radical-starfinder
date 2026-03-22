@@ -1,4 +1,4 @@
-//! Radical data, recipe system, and forge logic.
+//! Radical data, recipe system, and quantum forge logic for space tech modules.
 
 /// A Chinese radical with its unicode representation and meaning.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -9,7 +9,7 @@ pub struct Radical {
     pub rare: bool,
 }
 
-/// A recipe: combining radicals produces a character with an effect.
+/// A recipe: combining radicals in the quantum forge produces a character with a tech effect.
 #[derive(Clone, Copy, Debug)]
 pub struct Recipe {
     pub inputs: &'static [&'static str], // radical chars
@@ -19,209 +19,209 @@ pub struct Recipe {
     pub effect: SpellEffect,
 }
 
-/// What a forged character does when used as a spell in combat.
+/// What a synthesized character does when used as an ability in space combat.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SpellEffect {
-    /// Deal damage to all visible enemies
+    /// Deal plasma damage to all visible enemies
     FireAoe(i32),
-    /// Heal the player
+    /// Nano-repair the player's hull
     Heal(i32),
-    /// Reveal the current floor layout
+    /// Scan the current deck layout with sensors
     Reveal,
-    /// Block the next incoming hit
+    /// Project an energy barrier blocking the next incoming hit
     Shield,
-    /// Deal extra damage to current target
+    /// Deal extra kinetic damage to current target
     StrongHit(i32),
-    /// Damage target and heal player (vampiric)
+    /// Siphon energy from target, damaging and repairing player
     Drain(i32),
-    /// Stun current enemy (skips their next attack)
+    /// EMP current enemy (skips their next action)
     Stun,
-    /// Convince a foe to stand down
+    /// Override a hostile's systems, ending the fight
     Pacify,
-    /// Apply Slow status for N turns
+    /// Apply Cryo Beam status for N turns
     Slow(i32),
-    /// Swap positions with target enemy
+    /// Phase shift — swap positions with target enemy
     Teleport,
-    /// Apply poison damage over time
+    /// Apply corrosive damage over time
     Poison(i32, i32),
-    /// Restore mental focus
+    /// Recalibrate targeting systems
     FocusRestore(i32),
-    /// Strip enemy radical armor
+    /// Breach enemy shield plating
     ArmorBreak,
-    /// Dash in a straight line, damaging enemies in the path
+    /// Boost in a straight line, damaging enemies in the path
     Dash(i32),
-    /// Piercing line projectile hitting all enemies in a straight line
+    /// Penetrating shot hitting all enemies in a straight line
     Pierce(i32),
-    /// Pull target enemy toward the player
+    /// Tractor beam pulls target enemy toward the player
     PullToward,
-    /// Knock target back and deal damage
+    /// Repulsor blast — knock target back and deal damage
     KnockBack(i32),
-    /// Gain a thorns aura for N turns — counter-attack when hit
+    /// Deploy nanite cloud for N turns — counter-attack when hit
     Thorns(i32),
-    /// Cone AoE: 3-wide expanding cone in a direction
+    /// Arc blast: 3-wide expanding cone in a direction
     Cone(i32),
-    /// Create a wall of obstacles (length tiles)
+    /// Project a force wall of obstacles (length tiles)
     Wall(i32),
-    /// Create a 3×3 area of Oil tiles (flammable, slippery)
+    /// Create a 3×3 area of Lubricant tiles (flammable, slippery)
     OilSlick,
-    /// Freeze tiles in a cross pattern into Ice; deal i32 damage + Slow 2
+    /// Cryo field in a cross pattern; deal i32 damage + Slow 2
     FreezeGround(i32),
-    /// Set fire to target tile and adjacent tiles; apply Burn
+    /// Plasma ignition on target tile and adjacent tiles; apply Burn
     Ignite,
-    /// Create Grass in 3×3; upgrade existing Grass to BambooThicket
+    /// Nanite growth in 3×3; upgrade existing growth to dense thicket
     PlantGrowth,
-    /// Crack tiles in a large cross; Open→CrumblingFloor, CrumblingFloor→Pit; deal i32 damage
+    /// Seismic charge in a large cross; Open→CrumblingFloor, CrumblingFloor→Pit; deal i32 damage
     Earthquake(i32),
-    /// Create HolyGround tiles that heal i32 HP/turn for 3 rounds
+    /// Purify field tiles that repair i32 HP/turn for 3 rounds
     Sanctify(i32),
-    /// Wave of water: 5×3 line, push units 2 tiles, deal i32 damage, create Water tiles
+    /// Coolant wave: 5×3 line, push units 2 tiles, deal i32 damage, create coolant tiles
     FloodWave(i32),
-    /// Place a Boulder on target empty tile
+    /// Deploy a barrier on target empty tile
     SummonBoulder,
 }
 
 impl SpellEffect {
     pub fn label(&self) -> &'static str {
         match self {
-            SpellEffect::FireAoe(_) => "🔥 Fire",
-            SpellEffect::Heal(_) => "💚 Heal",
-            SpellEffect::Reveal => "👁 Reveal",
-            SpellEffect::Shield => "🛡 Shield",
-            SpellEffect::StrongHit(_) => "⚔ Strike",
-            SpellEffect::Drain(_) => "🩸 Drain",
-            SpellEffect::Stun => "⚡ Stun",
-            SpellEffect::Pacify => "☯ Pacify",
-            SpellEffect::Slow(_) => "❄ Slow",
-            SpellEffect::Teleport => "🌀 Swap",
-            SpellEffect::Poison(_, _) => "☠ Poison",
-            SpellEffect::FocusRestore(_) => "🧘 Focus",
-            SpellEffect::ArmorBreak => "💥 Shatter",
-            SpellEffect::Dash(_) => "💨 Dash",
-            SpellEffect::Pierce(_) => "🔱 Pierce",
-            SpellEffect::PullToward => "🧲 Pull",
-            SpellEffect::KnockBack(_) => "🤜 Push",
-            SpellEffect::Thorns(_) => "🌿 Thorns",
-            SpellEffect::Cone(_) => "🔺 Cone",
-            SpellEffect::Wall(_) => "🧱 Wall",
-            SpellEffect::OilSlick => "🛢 Oil",
-            SpellEffect::FreezeGround(_) => "🧊 Freeze",
-            SpellEffect::Ignite => "🔥 Ignite",
-            SpellEffect::PlantGrowth => "🌿 Growth",
-            SpellEffect::Earthquake(_) => "💥 Quake",
-            SpellEffect::Sanctify(_) => "✨ Sanctify",
-            SpellEffect::FloodWave(_) => "🌊 Flood",
-            SpellEffect::SummonBoulder => "🪨 Boulder",
+            SpellEffect::FireAoe(_) => "🔥 Plasma",
+            SpellEffect::Heal(_) => "💚 Nano Repair",
+            SpellEffect::Reveal => "👁 Sensor Scan",
+            SpellEffect::Shield => "🛡 Energy Barrier",
+            SpellEffect::StrongHit(_) => "⚔ Kinetic Strike",
+            SpellEffect::Drain(_) => "🩸 Siphon",
+            SpellEffect::Stun => "⚡ EMP",
+            SpellEffect::Pacify => "☯ Override",
+            SpellEffect::Slow(_) => "❄ Cryo Beam",
+            SpellEffect::Teleport => "🌀 Phase Shift",
+            SpellEffect::Poison(_, _) => "☠ Corrosion",
+            SpellEffect::FocusRestore(_) => "🎯 Recalibrate",
+            SpellEffect::ArmorBreak => "💥 Shield Breach",
+            SpellEffect::Dash(_) => "🏃 Boost",
+            SpellEffect::Pierce(_) => "🗡 Penetrator",
+            SpellEffect::PullToward => "🧲 Tractor Beam",
+            SpellEffect::KnockBack(_) => "💨 Repulsor",
+            SpellEffect::Thorns(_) => "🌿 Nanite Cloud",
+            SpellEffect::Cone(_) => "🔺 Arc Blast",
+            SpellEffect::Wall(_) => "🧱 Force Wall",
+            SpellEffect::OilSlick => "🛢 Lubricant",
+            SpellEffect::FreezeGround(_) => "❄ Cryo Field",
+            SpellEffect::Ignite => "🔥 Plasma Ignition",
+            SpellEffect::PlantGrowth => "🌱 Nanite Growth",
+            SpellEffect::Earthquake(_) => "💎 Seismic Charge",
+            SpellEffect::Sanctify(_) => "✨ Purify Field",
+            SpellEffect::FloodWave(_) => "🌊 Coolant Wave",
+            SpellEffect::SummonBoulder => "🪨 Deploy Barrier",
         }
     }
 
     pub fn description(&self) -> String {
         match self {
-            SpellEffect::FireAoe(dmg) => format!("Deals {} damage to all visible enemies.", dmg),
-            SpellEffect::Heal(amt) => format!("Restores {} HP instantly.", amt),
-            SpellEffect::Reveal => "Reveals the entire floor map.".to_string(),
-            SpellEffect::Shield => "Blocks the next incoming hit this combat.".to_string(),
-            SpellEffect::StrongHit(dmg) => format!("Deals {} bonus damage to current target.", dmg),
+            SpellEffect::FireAoe(dmg) => format!("Deals {} plasma damage to all visible enemies.", dmg),
+            SpellEffect::Heal(amt) => format!("Nano-repairs {} hull HP instantly.", amt),
+            SpellEffect::Reveal => "Scans the entire deck layout with sensors.".to_string(),
+            SpellEffect::Shield => "Projects an energy barrier blocking the next incoming hit.".to_string(),
+            SpellEffect::StrongHit(dmg) => format!("Deals {} bonus kinetic damage to current target.", dmg),
             SpellEffect::Drain(dmg) => {
-                format!("Deals {} damage and heals you for the same amount.", dmg)
+                format!("Siphons {} energy from target, repairing you for the same amount.", dmg)
             }
-            SpellEffect::Stun => "Stuns the current enemy, skipping their next attack.".to_string(),
+            SpellEffect::Stun => "EMP disrupts the current enemy, skipping their next action.".to_string(),
             SpellEffect::Pacify => {
-                "Convinces a foe to stand down, ending the fight peacefully.".to_string()
+                "Overrides a hostile's systems, ending the fight peacefully.".to_string()
             }
             SpellEffect::Slow(turns) => {
-                format!("Slows target for {} turns, reducing their movement.", turns)
+                format!("Cryo beam slows target for {} turns, reducing their movement.", turns)
             }
-            SpellEffect::Teleport => "Swap positions with target enemy.".to_string(),
+            SpellEffect::Teleport => "Phase shift — swap positions with target enemy.".to_string(),
             SpellEffect::Poison(dmg, turns) => {
                 format!(
-                    "Poisons target for {} damage/turn over {} turns.",
+                    "Corrodes target for {} damage/turn over {} turns.",
                     dmg, turns
                 )
             }
-            SpellEffect::FocusRestore(amt) => format!("Restores {} mental focus.", amt),
+            SpellEffect::FocusRestore(amt) => format!("Recalibrates targeting systems, restoring {} focus.", amt),
             SpellEffect::ArmorBreak => {
-                "Destroys target's radical armor, leaving them vulnerable.".to_string()
+                "Breaches target's shield plating, leaving them vulnerable.".to_string()
             }
             SpellEffect::Dash(dmg) => {
                 format!(
-                    "Dash in a straight line, dealing {} damage to enemies in the path.",
+                    "Boost in a straight line, dealing {} damage to enemies in the path.",
                     dmg
                 )
             }
             SpellEffect::Pierce(dmg) => {
                 format!(
-                    "Fire a piercing bolt that hits all enemies in a line for {} damage.",
+                    "Fire a penetrating shot that hits all enemies in a line for {} damage.",
                     dmg
                 )
             }
-            SpellEffect::PullToward => "Pull target enemy toward you by up to 3 tiles.".to_string(),
+            SpellEffect::PullToward => "Tractor beam pulls target enemy toward you by up to 3 tiles.".to_string(),
             SpellEffect::KnockBack(dmg) => {
                 format!(
-                    "Knock target back 2 tiles and deal {} damage. Extra damage if they hit a wall.",
+                    "Repulsor blast knocks target back 2 tiles and deals {} damage. Extra damage if they hit a wall.",
                     dmg
                 )
             }
             SpellEffect::Thorns(turns) => {
                 format!(
-                    "Gain a thorns aura for {} turns. Enemies that hit you take 2 counter-damage.",
+                    "Deploy nanite cloud for {} turns. Enemies that hit you take 2 counter-damage.",
                     turns
                 )
             }
             SpellEffect::Cone(dmg) => {
                 format!(
-                    "Blast a cone of energy dealing {} damage to all enemies in a 3-wide arc.",
+                    "Arc blast dealing {} damage to all enemies in a 3-wide cone.",
                     dmg
                 )
             }
             SpellEffect::Wall(len) => {
                 format!(
-                    "Raise a wall of {} obstacle tiles perpendicular to your aim direction.",
+                    "Project a force wall of {} obstacle tiles perpendicular to your aim direction.",
                     len
                 )
             }
             SpellEffect::OilSlick => {
-                "Create a 3×3 oil slick. Flammable! Units slide 1 extra tile.".to_string()
+                "Create a 3×3 lubricant slick. Flammable! Units slide 1 extra tile.".to_string()
             }
             SpellEffect::FreezeGround(dmg) => {
                 format!(
-                    "Freeze tiles in a cross pattern. {} damage + Slow 2 to units hit.",
+                    "Cryo field freezes tiles in a cross pattern. {} damage + Slow 2 to units hit.",
                     dmg
                 )
             }
             SpellEffect::Ignite => {
-                "Set fire to target area. Burns grass and oil. Applies Burn for 3 turns."
+                "Plasma ignition on target area. Burns nanites and lubricant. Applies Burn for 3 turns."
                     .to_string()
             }
             SpellEffect::PlantGrowth => {
-                "Grow grass in a 3×3 area. Existing grass becomes bamboo thicket. Heal 1 on grass."
+                "Nanite growth in a 3×3 area. Existing growth becomes dense thicket. Repair 1 on nanites."
                     .to_string()
             }
             SpellEffect::Earthquake(dmg) => {
                 format!(
-                    "Crack the earth in a large cross. {} damage. Open→Crumbling, Crumbling→Pit.",
+                    "Seismic charge detonates in a large cross. {} damage. Open→Crumbling, Crumbling→Pit.",
                     dmg
                 )
             }
             SpellEffect::Sanctify(heal) => {
                 format!(
-                    "Create holy ground that heals {} HP/turn for 3 rounds. Purifies cursed tiles.",
+                    "Create a purify field that repairs {} HP/turn for 3 rounds. Cleanses corrupted tiles.",
                     heal
                 )
             }
             SpellEffect::FloodWave(dmg) => {
                 format!(
-                    "Send a 5×3 wave of water. {} damage, pushes units 2 tiles, creates Water tiles.",
+                    "Send a 5×3 coolant wave. {} damage, pushes units 2 tiles, creates coolant tiles.",
                     dmg
                 )
             }
             SpellEffect::SummonBoulder => {
-                "Place a boulder on target tile. Blocks movement and line of sight.".to_string()
+                "Deploy a barrier on target tile. Blocks movement and line of sight.".to_string()
             }
         }
     }
 }
 
-/// A forged spell the player can use in combat.
+/// A synthesized ability the player can use in space combat.
 #[derive(Clone, Debug)]
 pub struct Spell {
     pub hanzi: &'static str,
@@ -461,7 +461,7 @@ pub const RADICALS: &[Radical] = &[
         meaning: "air/energy",
         rare: false,
     },
-    // ── Rare radicals (boss drops) ──────────────────────────────────────────
+    // ── Rare radicals (elite drops) ──────────────────────────────────────────
     Radical {
         ch: "龙",
         name: "lóng",
@@ -799,7 +799,7 @@ pub const RECIPES: &[Recipe] = &[
         output_meaning: "sincere/earnest",
         effect: SpellEffect::Stun,
     },
-    // ── Rare recipes (require boss-drop radicals) ───────────────────────────
+    // ── Rare recipes (require elite-drop radicals) ───────────────────────────
     Recipe {
         inputs: &["龙", "火"],
         output_hanzi: "炎龙",
@@ -1294,7 +1294,7 @@ pub const RECIPES: &[Recipe] = &[
     },
 ];
 
-/// Try to forge a character from a set of radicals. Order-independent.
+/// Try to synthesize a character from a set of radicals. Order-independent.
 #[allow(dead_code)]
 pub fn try_forge(radicals: &[&str]) -> Option<&'static Recipe> {
     for recipe in RECIPES {
@@ -1378,8 +1378,8 @@ pub fn craftable_recipes(player_radicals: &[&str]) -> Vec<usize> {
 /// Number of common (non-rare) radicals.
 const COMMON_RADICAL_COUNT: usize = 41;
 
-/// Get a subset of radicals available for a given floor.
-/// Earlier floors have fewer radicals. Excludes rare radicals.
+/// Get a subset of radicals available for a given deck.
+/// Earlier decks have fewer radicals. Excludes rare radicals.
 pub fn radicals_for_floor(floor: i32) -> &'static [Radical] {
     let count = match floor {
         1 => 10,
@@ -1392,7 +1392,7 @@ pub fn radicals_for_floor(floor: i32) -> &'static [Radical] {
     &RADICALS[..count.min(COMMON_RADICAL_COUNT)]
 }
 
-/// Get the list of rare radicals (boss drops only).
+/// Get the list of rare radicals (elite drops only).
 pub fn rare_radicals() -> &'static [Radical] {
     &RADICALS[COMMON_RADICAL_COUNT..]
 }
@@ -1403,8 +1403,8 @@ mod tests {
 
     #[test]
     fn utility_spell_labels_are_stable() {
-        assert_eq!(SpellEffect::Reveal.label(), "👁 Reveal");
-        assert_eq!(SpellEffect::Pacify.label(), "☯ Pacify");
+        assert_eq!(SpellEffect::Reveal.label(), "👁 Sensor Scan");
+        assert_eq!(SpellEffect::Pacify.label(), "☯ Override");
     }
 
     #[test]
