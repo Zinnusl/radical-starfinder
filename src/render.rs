@@ -116,6 +116,7 @@ impl Renderer {
         run_journal: &crate::game::RunJournal,
         post_mortem_page: usize,
         class_cursor: usize,
+        location_label: &str,
     ) {
         let anim_t = Date::now() / 1000.0;
         // Screen shake offset
@@ -165,7 +166,7 @@ impl Renderer {
                 self.ctx.fill_rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE);
 
                 let mut tile_sprite_drawn = false;
-                let sprite_key = tile_sprite_key(tile);
+                let sprite_key = tile_sprite_key(tile, location_label);
                 if self.sprites.is_loaded(sprite_key) {
                     if let Some(img) = self.sprites.get(sprite_key) {
                         if !visible {
@@ -582,7 +583,13 @@ impl Renderer {
         self.ctx.set_text_align("right");
         self.ctx.set_font("14px monospace");
         self.ctx.set_fill_style_str("#aaa");
-        let floor_label = if floor_num == 0 {
+        let floor_label = if !location_label.is_empty() {
+            if floor_num == 0 {
+                format!("{} — Tutorial  Best: {}", location_label, best_floor)
+            } else {
+                format!("{} — Deck {}  Best: {}", location_label, floor_num, best_floor)
+            }
+        } else if floor_num == 0 {
             format!("Tutorial  Best: {}", best_floor)
         } else {
             format!("Floor {}  Best: {}", floor_num, best_floor)
@@ -3062,12 +3069,13 @@ impl Renderer {
                 // Floor reached
                 self.ctx.set_fill_style_str("#aaa");
                 self.ctx.set_font("15px monospace");
+                let reached_label = if !location_label.is_empty() {
+                    format!("{} — Deck {} reached  (Best: {})", location_label, floor_num, best_floor)
+                } else {
+                    format!("Floor {} reached  (Best: {})", floor_num, best_floor)
+                };
                 self.ctx
-                    .fill_text(
-                        &format!("Floor {} reached  (Best: {})", floor_num, best_floor),
-                        cx,
-                        y,
-                    )
+                    .fill_text(&reached_label, cx, y)
                     .ok();
                 y += 26.0;
 
@@ -7713,78 +7721,127 @@ impl Renderer {
     }
 }
 
-fn tile_sprite_key(tile: Tile) -> &'static str {
+fn tile_sprite_key(tile: Tile, location_label: &str) -> &'static str {
+    // Map location label to sprite key prefix for wall/floor/corridor
+    let loc_prefix: Option<&'static str> = match location_label {
+        "Space Station" => Some("loc_space_station"),
+        "Asteroid Base" => Some("loc_asteroid_base"),
+        "Derelict Ship" => Some("loc_derelict_ship"),
+        "Alien Ruins" => Some("loc_alien_ruins"),
+        "Trading Post" => Some("loc_trading_post"),
+        "Orbital Platform" => Some("loc_orbital_platform"),
+        "Mining Colony" => Some("loc_mining_colony"),
+        "Research Lab" => Some("loc_research_lab"),
+        _ => None,
+    };
     match tile {
-        Tile::NavBeacon => "obj_shrine",
-        Tile::SpecialRoom(_) => "tile_floor",
-        Tile::SalvageCrate => "obj_crate",
-        Tile::Bulkhead => "tile_wall",
+        Tile::Bulkhead | Tile::CargoPipes | Tile::CrystalPanel => {
+            if let Some(p) = loc_prefix {
+                match p {
+                    "loc_space_station" => "loc_space_station_wall",
+                    "loc_asteroid_base" => "loc_asteroid_base_wall",
+                    "loc_derelict_ship" => "loc_derelict_ship_wall",
+                    "loc_alien_ruins" => "loc_alien_ruins_wall",
+                    "loc_trading_post" => "loc_trading_post_wall",
+                    "loc_orbital_platform" => "loc_orbital_platform_wall",
+                    "loc_mining_colony" => "loc_mining_colony_wall",
+                    "loc_research_lab" => "loc_research_lab_wall",
+                    _ => "tile_wall",
+                }
+            } else {
+                "tile_wall"
+            }
+        }
+        Tile::MetalFloor | Tile::CorruptedFloor | Tile::FrozenDeck | Tile::CreditCache
+        | Tile::ToxicFungus | Tile::ToxicGas | Tile::PressureSensor => {
+            if let Some(p) = loc_prefix {
+                match p {
+                    "loc_space_station" => "loc_space_station_floor",
+                    "loc_asteroid_base" => "loc_asteroid_base_floor",
+                    "loc_derelict_ship" => "loc_derelict_ship_floor",
+                    "loc_alien_ruins" => "loc_alien_ruins_floor",
+                    "loc_trading_post" => "loc_trading_post_floor",
+                    "loc_orbital_platform" => "loc_orbital_platform_floor",
+                    "loc_mining_colony" => "loc_mining_colony_floor",
+                    "loc_research_lab" => "loc_research_lab_floor",
+                    _ => "tile_floor",
+                }
+            } else {
+                "tile_floor"
+            }
+        }
+        Tile::Hallway | Tile::Catwalk | Tile::DataBridge => {
+            if let Some(p) = loc_prefix {
+                match p {
+                    "loc_space_station" => "loc_space_station_corridor",
+                    "loc_asteroid_base" => "loc_asteroid_base_corridor",
+                    "loc_derelict_ship" => "loc_derelict_ship_corridor",
+                    "loc_alien_ruins" => "loc_alien_ruins_corridor",
+                    "loc_trading_post" => "loc_trading_post_corridor",
+                    "loc_orbital_platform" => "loc_orbital_platform_corridor",
+                    "loc_mining_colony" => "loc_mining_colony_corridor",
+                    "loc_research_lab" => "loc_research_lab_corridor",
+                    _ => "tile_corridor",
+                }
+            } else {
+                "tile_corridor"
+            }
+        }
+        Tile::Airlock => "tile_stairs_down_scifi",
+        Tile::QuantumForge => "obj_quantum_forge",
+        Tile::TradeTerminal => "obj_space_shop",
+        Tile::SupplyCrate | Tile::SalvageCrate | Tile::CargoCrate => "obj_cargo_crate",
+        Tile::MedBayTile => "obj_medbay",
+        Tile::PlasmaVent => "obj_plasma_vent",
+        Tile::WarpGatePortal => "obj_warp_gate",
+        Tile::DataRack => "obj_data_archive",
+        Tile::OreVein => "obj_loot_container",
+        Tile::NavBeacon => "obj_holo_map",
+        Tile::SpecialRoom(_) => "obj_terminal",
         Tile::DamagedBulkhead => "tile_cracked_wall",
         Tile::WeakBulkhead => "tile_brittle_wall",
-        Tile::MetalFloor => "tile_floor",
-        Tile::Hallway => "tile_corridor",
-        Tile::Airlock => "tile_stairs_down",
-        Tile::QuantumForge => "tile_forge",
-        Tile::TradeTerminal => "tile_shop",
-        Tile::SupplyCrate => "tile_chest",
         Tile::LaserGrid => "tile_spikes",
         Tile::Coolant => "tile_oil",
         Tile::CoolantPool => "tile_water",
         Tile::VacuumBreach => "tile_deep_water",
-        Tile::Catwalk => "tile_bridge",
-        Tile::CircuitShrine => "obj_shrine",
-        Tile::RadicalLab => "obj_shrine",
-        Tile::FrequencyWall => "obj_shrine",
-        Tile::CompoundShrine => "obj_shrine",
-        Tile::ClassifierNode => "obj_shrine",
-        Tile::DataWell => "obj_shrine",
-        Tile::MemorialNode => "obj_shrine",
-        Tile::TranslationTerminal => "obj_shrine",
-        Tile::HoloPool => "obj_shrine",
-        Tile::DroidTutor => "obj_shrine",
-        Tile::CodexTerminal => "obj_shrine",
-        Tile::DataBridge => "tile_bridge",
-        Tile::SealedHatch => "obj_shrine",
-        Tile::CorruptedFloor => "tile_floor",
-        Tile::Terminal(TerminalKind::Quantum) => "obj_altar_jade",
-        Tile::Terminal(TerminalKind::Stellar) => "obj_altar_gale",
-        Tile::Terminal(TerminalKind::Holographic) => "obj_altar_mirror",
-        Tile::Terminal(TerminalKind::Tactical) => "obj_altar_iron",
-        Tile::Terminal(TerminalKind::Commerce) => "obj_altar_gold",
-        Tile::SecurityLock(SealKind::Thermal) => "obj_seal_ember",
-        Tile::SecurityLock(SealKind::Hydraulic) => "obj_seal_tide",
-        Tile::SecurityLock(SealKind::Kinetic) => "obj_seal_thorn",
-        Tile::SecurityLock(SealKind::Sonic) => "obj_seal_echo",
-        Tile::InfoPanel(_) => "obj_sign",
+        Tile::CircuitShrine => "obj_alien_artifact",
+        Tile::RadicalLab => "obj_reactor_core",
+        Tile::FrequencyWall => "obj_shield_generator",
+        Tile::CompoundShrine => "obj_alien_artifact",
+        Tile::ClassifierNode => "obj_terminal",
+        Tile::DataWell => "obj_data_archive",
+        Tile::MemorialNode => "obj_alien_artifact",
+        Tile::TranslationTerminal => "obj_terminal",
+        Tile::HoloPool => "obj_holo_map",
+        Tile::DroidTutor => "obj_robot_wreck",
+        Tile::CodexTerminal => "obj_terminal",
+        Tile::SealedHatch => "obj_containment_cell",
+        Tile::Terminal(TerminalKind::Quantum) => "obj_alien_artifact",
+        Tile::Terminal(TerminalKind::Stellar) => "obj_reactor_core",
+        Tile::Terminal(TerminalKind::Holographic) => "obj_holo_map",
+        Tile::Terminal(TerminalKind::Tactical) => "obj_weapon_rack",
+        Tile::Terminal(TerminalKind::Commerce) => "obj_space_shop",
+        Tile::SecurityLock(SealKind::Thermal) => "obj_shield_generator",
+        Tile::SecurityLock(SealKind::Hydraulic) => "obj_fuel_pump",
+        Tile::SecurityLock(SealKind::Kinetic) => "obj_turret",
+        Tile::SecurityLock(SealKind::Sonic) => "obj_containment_cell",
+        Tile::InfoPanel(_) => "obj_terminal",
         Tile::Npc(0) => "npc_teacher",
         Tile::Npc(1) => "npc_monk",
         Tile::Npc(2) => "npc_merchant",
         Tile::Npc(_) => "npc_guard",
         Tile::Trap(_) => "tile_floor",
-        Tile::OreVein => "tile_wall",
-        Tile::PlasmaVent => "tile_water",
-        Tile::FrozenDeck => "tile_floor",
-        Tile::CargoPipes => "tile_wall",
-        Tile::ToxicFungus => "tile_floor",
-        Tile::ToxicGas => "tile_floor",
-        Tile::DataRack => "obj_shrine",
-        Tile::PressureSensor => "tile_floor",
-        Tile::CargoCrate => "tile_crate",
-        Tile::CrystalPanel => "tile_wall",
-        Tile::WarpGatePortal => "obj_shrine",
-        Tile::MedBayTile => "obj_shrine",
-        Tile::CreditCache => "tile_floor",
     }
 }
 
 fn boss_sprite_key(kind: BossKind) -> &'static str {
     match kind {
-        BossKind::PirateCaptain => "boss_gatekeeper",
-        BossKind::HiveQueen => "boss_scholar",
-        BossKind::RogueAICore => "boss_elementalist",
-        BossKind::VoidEntity => "boss_mimic_king",
-        BossKind::AncientGuardian => "boss_ink_sage",
-        BossKind::DriftLeviathan => "boss_radical_thief",
+        BossKind::PirateCaptain => "boss_pirate_captain",
+        BossKind::HiveQueen => "boss_hive_queen",
+        BossKind::RogueAICore => "boss_rogue_ai_core",
+        BossKind::VoidEntity => "boss_void_entity",
+        BossKind::AncientGuardian => "boss_ancient_guardian",
+        BossKind::DriftLeviathan => "boss_drift_leviathan",
     }
 }
 

@@ -1414,6 +1414,8 @@ pub struct GameState {
     pub ship_player_y: i32,
     /// Cursor for starmap system selection
     pub starmap_cursor: usize,
+    /// Which LocationType the player is currently exploring (set when entering from starmap)
+    pub current_location_type: Option<crate::world::LocationType>,
 }
 
 impl GameState {
@@ -2592,7 +2594,7 @@ impl GameState {
         self.seed = self.seed.wrapping_mul(6364136223846793005).wrapping_add(1);
         self.rng_state = self.seed;
         self.floor_profile = FloorProfile::roll(self.floor_num, self.rng_next());
-        self.level = DungeonLevel::generate(MAP_W, MAP_H, self.seed, self.floor_num, crate::world::LocationType::OrbitalPlatform);
+        self.level = DungeonLevel::generate(MAP_W, MAP_H, self.seed, self.floor_num, self.current_location_type.unwrap_or(crate::world::LocationType::OrbitalPlatform));
         let (sx, sy) = self.level.start_pos();
         self.player.move_to(sx, sy);
         self.enemies.clear();
@@ -9516,6 +9518,7 @@ impl GameState {
             &self.run_journal,
             self.post_mortem_page,
             self.class_cursor,
+            self.current_location_type.map(|lt| lt.label()).unwrap_or(""),
         );
         if self.show_inventory {
             self.renderer.draw_inventory(
@@ -11044,6 +11047,7 @@ pub fn init_game() -> Result<(), JsValue> {
         ship_player_x: 5,
         ship_player_y: 5,
         starmap_cursor: 0,
+        current_location_type: None,
     }));
 
     // Initial setup
@@ -11151,7 +11155,7 @@ pub fn init_game() -> Result<(), JsValue> {
                 GameMode::Starmap => {
                     event.prevent_default();
                     // Collect data first to avoid borrow conflicts
-                    let (connections, current, current_name) = if let Some(ref map) = s.sector_map {
+                    let (connections, current, current_name, current_loc_type) = if let Some(ref map) = s.sector_map {
                         let sector = &map.sectors[map.current_sector];
                         let current = map.current_system;
                         let connections = if current < sector.systems.len() {
@@ -11164,9 +11168,14 @@ pub fn init_game() -> Result<(), JsValue> {
                         } else {
                             "Unknown"
                         };
-                        (connections, current, name)
+                        let loc_type = if current < sector.systems.len() {
+                            sector.systems[current].location_type
+                        } else {
+                            crate::world::LocationType::OrbitalPlatform
+                        };
+                        (connections, current, name, loc_type)
                     } else {
-                        (vec![], 0, "Unknown")
+                        (vec![], 0, "Unknown", crate::world::LocationType::OrbitalPlatform)
                     };
 
                     match key.as_str() {
@@ -11239,8 +11248,17 @@ pub fn init_game() -> Result<(), JsValue> {
                         }
                         "e" | "E" => {
                             // Enter current system (explore the location)
+                            s.current_location_type = Some(current_loc_type);
                             s.game_mode = GameMode::LocationExploration;
-                            s.message = format!("Entering {}...", current_name);
+                            s.level = DungeonLevel::generate(MAP_W, MAP_H, s.seed, s.floor_num, current_loc_type);
+                            let (sx, sy) = s.level.start_pos();
+                            s.player.move_to(sx, sy);
+                            s.enemies.clear();
+                            s.combat = CombatState::Explore;
+                            s.spawn_enemies();
+                            let (px, py) = (s.player.x, s.player.y);
+                            compute_fov(&mut s.level, px, py, FOV_RADIUS);
+                            s.message = format!("Entering {} ({})...", current_name, current_loc_type.label());
                             s.message_timer = 90;
                         }
                         "Escape" => {
@@ -13048,7 +13066,7 @@ pub fn init_game() -> Result<(), JsValue> {
                     s.seed = daily_seed;
                     s.rng_state = daily_seed;
                     s.daily_mode = true;
-                    s.level = DungeonLevel::generate(MAP_W, MAP_H, daily_seed, 1, crate::world::LocationType::OrbitalPlatform);
+                    s.level = DungeonLevel::generate(MAP_W, MAP_H, daily_seed, 1, s.current_location_type.unwrap_or(crate::world::LocationType::SpaceStation));
                     let (sx, sy) = s.level.start_pos();
                     s.player = s.make_player(sx, sy, PlayerClass::Envoy);
                     s.reset_item_lore();

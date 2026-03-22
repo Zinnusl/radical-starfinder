@@ -514,6 +514,82 @@ impl SpriteCache {
             "assets/sprites/tiles/arena_soul_trap.png",
         );
 
+        // ── Location-specific tiles ──────────────────────────────────────
+        // Space Station
+        register(&mut sprites, "loc_space_station_wall", "assets/sprites/tiles/locations/space_station/wall.png");
+        register(&mut sprites, "loc_space_station_floor", "assets/sprites/tiles/locations/space_station/floor.png");
+        register(&mut sprites, "loc_space_station_corridor", "assets/sprites/tiles/locations/space_station/corridor.png");
+        register(&mut sprites, "loc_space_station_door", "assets/sprites/tiles/locations/space_station/door.png");
+        // Asteroid Base
+        register(&mut sprites, "loc_asteroid_base_wall", "assets/sprites/tiles/locations/asteroid_base/wall.png");
+        register(&mut sprites, "loc_asteroid_base_floor", "assets/sprites/tiles/locations/asteroid_base/floor.png");
+        register(&mut sprites, "loc_asteroid_base_corridor", "assets/sprites/tiles/locations/asteroid_base/corridor.png");
+        // Derelict Ship
+        register(&mut sprites, "loc_derelict_ship_wall", "assets/sprites/tiles/locations/derelict_ship/wall.png");
+        register(&mut sprites, "loc_derelict_ship_floor", "assets/sprites/tiles/locations/derelict_ship/floor.png");
+        register(&mut sprites, "loc_derelict_ship_corridor", "assets/sprites/tiles/locations/derelict_ship/corridor.png");
+        // Alien Ruins
+        register(&mut sprites, "loc_alien_ruins_wall", "assets/sprites/tiles/locations/alien_ruins/wall.png");
+        register(&mut sprites, "loc_alien_ruins_floor", "assets/sprites/tiles/locations/alien_ruins/floor.png");
+        register(&mut sprites, "loc_alien_ruins_corridor", "assets/sprites/tiles/locations/alien_ruins/corridor.png");
+        // Trading Post
+        register(&mut sprites, "loc_trading_post_wall", "assets/sprites/tiles/locations/trading_post/wall.png");
+        register(&mut sprites, "loc_trading_post_floor", "assets/sprites/tiles/locations/trading_post/floor.png");
+        register(&mut sprites, "loc_trading_post_corridor", "assets/sprites/tiles/locations/trading_post/corridor.png");
+        // Orbital Platform
+        register(&mut sprites, "loc_orbital_platform_wall", "assets/sprites/tiles/locations/orbital_platform/wall.png");
+        register(&mut sprites, "loc_orbital_platform_floor", "assets/sprites/tiles/locations/orbital_platform/floor.png");
+        register(&mut sprites, "loc_orbital_platform_corridor", "assets/sprites/tiles/locations/orbital_platform/corridor.png");
+        // Mining Colony
+        register(&mut sprites, "loc_mining_colony_wall", "assets/sprites/tiles/locations/mining_colony/wall.png");
+        register(&mut sprites, "loc_mining_colony_floor", "assets/sprites/tiles/locations/mining_colony/floor.png");
+        register(&mut sprites, "loc_mining_colony_corridor", "assets/sprites/tiles/locations/mining_colony/corridor.png");
+        // Research Lab
+        register(&mut sprites, "loc_research_lab_wall", "assets/sprites/tiles/locations/research_lab/wall.png");
+        register(&mut sprites, "loc_research_lab_floor", "assets/sprites/tiles/locations/research_lab/floor.png");
+        register(&mut sprites, "loc_research_lab_corridor", "assets/sprites/tiles/locations/research_lab/corridor.png");
+
+        // ── Space object sprites ─────────────────────────────────────────
+        register(&mut sprites, "obj_quantum_forge", "assets/sprites/objects/quantum_forge.png");
+        register(&mut sprites, "obj_terminal", "assets/sprites/objects/terminal.png");
+        register(&mut sprites, "obj_cargo_crate", "assets/sprites/objects/cargo_crate.png");
+        register(&mut sprites, "obj_medbay", "assets/sprites/objects/medbay.png");
+        register(&mut sprites, "obj_shield_generator", "assets/sprites/objects/shield_generator.png");
+        register(&mut sprites, "obj_weapon_rack", "assets/sprites/objects/weapon_rack.png");
+        register(&mut sprites, "obj_alien_artifact", "assets/sprites/objects/alien_artifact.png");
+        register(&mut sprites, "obj_reactor_core", "assets/sprites/objects/reactor_core.png");
+        register(&mut sprites, "obj_space_shop", "assets/sprites/objects/space_shop.png");
+        register(&mut sprites, "obj_plasma_vent", "assets/sprites/objects/plasma_vent.png");
+        register(&mut sprites, "obj_data_archive", "assets/sprites/objects/data_archive.png");
+        register(&mut sprites, "obj_escape_pod", "assets/sprites/objects/escape_pod.png");
+        register(&mut sprites, "obj_warp_gate", "assets/sprites/objects/warp_gate.png");
+        register(&mut sprites, "obj_containment_cell", "assets/sprites/objects/containment_cell.png");
+        register(&mut sprites, "obj_holo_map", "assets/sprites/objects/holo_map.png");
+        register(&mut sprites, "obj_fuel_pump", "assets/sprites/objects/fuel_pump.png");
+        register(&mut sprites, "obj_robot_wreck", "assets/sprites/objects/robot_wreck.png");
+        register(&mut sprites, "obj_turret", "assets/sprites/objects/turret.png");
+        register(&mut sprites, "obj_loot_container", "assets/sprites/objects/loot_container.png");
+        register(&mut sprites, "obj_life_support", "assets/sprites/objects/life_support.png");
+
+        // ── Sci-fi stairs/airlock ────────────────────────────────────────
+        register(&mut sprites, "tile_stairs_down_scifi", "assets/sprites/tiles/stairs_down_scifi.png");
+
+        // ── Space enemy sprites ──────────────────────────────────────────
+        register(&mut sprites, "enemy_space_pirate", "assets/sprites/enemies/space_pirate.png");
+        register(&mut sprites, "enemy_rogue_ai", "assets/sprites/enemies/rogue_ai.png");
+        register(&mut sprites, "enemy_alien_warrior", "assets/sprites/enemies/alien_warrior.png");
+
+        // ── Space boss sprites ───────────────────────────────────────────
+        register(&mut sprites, "boss_pirate_captain", "assets/sprites/bosses/pirate_captain.png");
+        register(&mut sprites, "boss_hive_queen", "assets/sprites/bosses/hive_queen.png");
+        register(&mut sprites, "boss_rogue_ai_core", "assets/sprites/bosses/rogue_ai_core.png");
+        register(&mut sprites, "boss_void_entity", "assets/sprites/bosses/void_entity.png");
+        register(&mut sprites, "boss_ancient_guardian", "assets/sprites/bosses/ancient_guardian.png");
+        register(&mut sprites, "boss_drift_leviathan", "assets/sprites/bosses/drift_leviathan.png");
+
+        // ── Player sprite ────────────────────────────────────────────────
+        register(&mut sprites, "player_starfinder", "assets/sprites/player/starfinder.png");
+
         register(
             &mut sprites,
             "spell_fire",
