@@ -140,6 +140,329 @@ impl SealKind {
     }
 }
 
+// ── Special room types ──────────────────────────────────────────────────────
+
+/// 73 unique special room types for dungeon variety.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum SpecialRoomKind {
+    // Treasure & Reward (1–10)
+    TreasureVault,
+    GoldMine,
+    AncestralHall,
+    HiddenCache,
+    OfferingAltar,
+    LotusGarden,
+    DragonHoard,
+    JadeVault,
+    RelicChamber,
+    SpiritSpring,
+    // Challenge & Combat (11–20)
+    ArenaChallenge,
+    EliteGuardPost,
+    TrapGauntlet,
+    PoisonMaze,
+    BoulderPuzzle,
+    MirrorRoom,
+    ElementalNexus,
+    GraveyardRise,
+    BanditAmbush,
+    DuelCircle,
+    // Knowledge & Learning (21–30)
+    Library,
+    CalligraphyHall,
+    ScholarStudy,
+    OracleRoom,
+    InscriptionWall,
+    MasterDojo,
+    MeditationChamber,
+    TranslationChallenge,
+    AncientScroll,
+    WisdomWell,
+    // Environmental & Puzzle (31–40)
+    FloodedChamber,
+    FrozenCavern,
+    LavaCrossing,
+    BambooForest,
+    WindTunnel,
+    CrystalCave,
+    MushroomGrotto,
+    UndergroundRiver,
+    EchoingCavern,
+    ShadowRealm,
+    // NPC & Story (41–50)
+    WanderingMerchant,
+    HermitSage,
+    PrisonerCell,
+    SpiritShrine,
+    TeaHouse,
+    SmithyWorkshop,
+    AlchemyLab,
+    FortuneTeller,
+    RefugeeCamp,
+    DragonGate,
+    // Risk/Reward (51–55)
+    GamblingDen,
+    BloodAltar,
+    CursedTreasure,
+    SoulForge,
+    WishingWell,
+    // Puzzle (56–60)
+    RuneGate,
+    MirrorMaze,
+    WeightPuzzle,
+    ToneStaircase,
+    ElementalLock,
+    // Timed/Wave (61–64)
+    SurvivalPit,
+    TreasureRace,
+    CollapsingChamber,
+    InkFlood,
+    // Transformation/Permanent (65–68)
+    FormShrine,
+    ClassTrial,
+    RadicalFountain,
+    AncestorTomb,
+    // Story/Lore (69–73)
+    ProphecyRoom,
+    SealedMemory,
+    DemonSeal,
+    PhoenixNest,
+    CalligraphyContest,
+}
+
+impl SpecialRoomKind {
+    /// Human-readable name shown when the player enters the room.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::TreasureVault => "Treasure Vault",
+            Self::GoldMine => "Gold Mine",
+            Self::AncestralHall => "Ancestral Hall",
+            Self::HiddenCache => "Hidden Cache",
+            Self::OfferingAltar => "Offering Altar",
+            Self::LotusGarden => "Lotus Garden",
+            Self::DragonHoard => "Dragon Hoard",
+            Self::JadeVault => "Jade Vault",
+            Self::RelicChamber => "Relic Chamber",
+            Self::SpiritSpring => "Spirit Spring",
+            Self::ArenaChallenge => "Arena Challenge",
+            Self::EliteGuardPost => "Elite Guard Post",
+            Self::TrapGauntlet => "Trap Gauntlet",
+            Self::PoisonMaze => "Poison Maze",
+            Self::BoulderPuzzle => "Boulder Puzzle",
+            Self::MirrorRoom => "Mirror Room",
+            Self::ElementalNexus => "Elemental Nexus",
+            Self::GraveyardRise => "Graveyard Rise",
+            Self::BanditAmbush => "Bandit Ambush",
+            Self::DuelCircle => "Duel Circle",
+            Self::Library => "Library",
+            Self::CalligraphyHall => "Calligraphy Hall",
+            Self::ScholarStudy => "Scholar's Study",
+            Self::OracleRoom => "Oracle Room",
+            Self::InscriptionWall => "Inscription Wall",
+            Self::MasterDojo => "Master's Dojo",
+            Self::MeditationChamber => "Meditation Chamber",
+            Self::TranslationChallenge => "Translation Challenge",
+            Self::AncientScroll => "Ancient Scroll Room",
+            Self::WisdomWell => "Wisdom Well",
+            Self::FloodedChamber => "Flooded Chamber",
+            Self::FrozenCavern => "Frozen Cavern",
+            Self::LavaCrossing => "Lava Crossing",
+            Self::BambooForest => "Bamboo Forest",
+            Self::WindTunnel => "Wind Tunnel",
+            Self::CrystalCave => "Crystal Cave",
+            Self::MushroomGrotto => "Mushroom Grotto",
+            Self::UndergroundRiver => "Underground River",
+            Self::EchoingCavern => "Echoing Cavern",
+            Self::ShadowRealm => "Shadow Realm",
+            Self::WanderingMerchant => "Wandering Merchant",
+            Self::HermitSage => "Hermit Sage",
+            Self::PrisonerCell => "Prisoner Cell",
+            Self::SpiritShrine => "Spirit Shrine",
+            Self::TeaHouse => "Tea House",
+            Self::SmithyWorkshop => "Smithy Workshop",
+            Self::AlchemyLab => "Alchemy Lab",
+            Self::FortuneTeller => "Fortune Teller",
+            Self::RefugeeCamp => "Refugee Camp",
+            Self::DragonGate => "Dragon Gate",
+            Self::GamblingDen => "Gambling Den",
+            Self::BloodAltar => "Blood Altar",
+            Self::CursedTreasure => "Cursed Treasure",
+            Self::SoulForge => "Soul Forge",
+            Self::WishingWell => "Wishing Well",
+            Self::RuneGate => "Rune Gate",
+            Self::MirrorMaze => "Mirror Maze",
+            Self::WeightPuzzle => "Weight Puzzle",
+            Self::ToneStaircase => "Tone Staircase",
+            Self::ElementalLock => "Elemental Lock",
+            Self::SurvivalPit => "Survival Pit",
+            Self::TreasureRace => "Treasure Race",
+            Self::CollapsingChamber => "Collapsing Chamber",
+            Self::InkFlood => "Ink Flood",
+            Self::FormShrine => "Form Shrine",
+            Self::ClassTrial => "Class Trial",
+            Self::RadicalFountain => "Radical Fountain",
+            Self::AncestorTomb => "Ancestor's Tomb",
+            Self::ProphecyRoom => "Prophecy Room",
+            Self::SealedMemory => "Sealed Memory",
+            Self::DemonSeal => "Demon Seal",
+            Self::PhoenixNest => "Phoenix Nest",
+            Self::CalligraphyContest => "Calligraphy Contest",
+        }
+    }
+
+    /// Description shown when entering the room.
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::TreasureVault => "A locked vault with chests, guarded by a powerful sentinel.",
+            Self::GoldMine => "Glittering ore veins line the walls. Mine them for gold.",
+            Self::AncestralHall => "Ancestral tablets glow softly, offering their blessings.",
+            Self::HiddenCache => "A concealed alcove with rare supplies.",
+            Self::OfferingAltar => "An ancient altar. Sacrifice 50 gold for a powerful gift.",
+            Self::LotusGarden => "A tranquil garden of blooming lotus. Your wounds heal.",
+            Self::DragonHoard => "Piles of gold glitter across the chamber floor.",
+            Self::JadeVault => "A pristine vault containing a rare jade radical.",
+            Self::RelicChamber => "An ancient relic pulses with life energy. +1 max HP.",
+            Self::SpiritSpring => "Crystal water bubbles up, restoring spirit and health.",
+            Self::ArenaChallenge => "An arena where waves of challengers await!",
+            Self::EliteGuardPost => "Elite guards block the passage ahead.",
+            Self::TrapGauntlet => "A corridor bristling with deadly spike traps.",
+            Self::PoisonMaze => "Toxic fumes drift through this treacherous maze.",
+            Self::BoulderPuzzle => "Heavy boulders and pressure plates — a puzzle awaits.",
+            Self::MirrorRoom => "Your shadow separates and turns hostile!",
+            Self::ElementalNexus => "Five elemental forces converge in this nexus.",
+            Self::GraveyardRise => "The dead stir in their graves...",
+            Self::BanditAmbush => "Seems quiet... too quiet.",
+            Self::DuelCircle => "A ritual dueling circle. Face a champion 1v1.",
+            Self::Library => "Dusty bookshelves hold forgotten knowledge.",
+            Self::CalligraphyHall => "Practice halls echo with the scratch of brush on paper.",
+            Self::ScholarStudy => "A scholar's collection of hanzi reference texts.",
+            Self::OracleRoom => "The oracle's eye reveals all that is hidden on this floor.",
+            Self::InscriptionWall => "Ancient inscriptions teach a forgotten radical.",
+            Self::MasterDojo => "A training hall. Push yourself to gain +1 base damage.",
+            Self::MeditationChamber => "A place of deep stillness. Spirit energy gathers here.",
+            Self::TranslationChallenge => "Stone tablets await correct pinyin translations.",
+            Self::AncientScroll => "A weathered scroll contains a rare spell formula.",
+            Self::WisdomWell => "A well of wisdom. Answer its riddle for a reward.",
+            Self::FloodedChamber => "Water has flooded this chamber. Currents pull at you.",
+            Self::FrozenCavern => "Ice coats every surface. Movement is treacherous.",
+            Self::LavaCrossing => "Molten lava flows between narrow stone paths.",
+            Self::BambooForest => "Dense bamboo thickets obscure your vision.",
+            Self::WindTunnel => "A howling gale pushes through this narrow passage.",
+            Self::CrystalCave => "Luminous crystals line the walls, refracting light.",
+            Self::MushroomGrotto => "Giant mushrooms release clouds of disorienting spores.",
+            Self::UndergroundRiver => "An underground river rushes through the chamber.",
+            Self::EchoingCavern => "Every sound reverberates endlessly in this cavern.",
+            Self::ShadowRealm => "Impenetrable darkness limits your sight to 2 tiles.",
+            Self::WanderingMerchant => "A traveling merchant offers rare and unique wares.",
+            Self::HermitSage => "A wise hermit offers to trade HP for spell power.",
+            Self::PrisonerCell => "Someone is locked in a cell! Free them for an ally.",
+            Self::SpiritShrine => "A sacred shrine radiates divine energy.",
+            Self::TeaHouse => "A cozy rest stop. Enjoy tea and hear rumors.",
+            Self::SmithyWorkshop => "A master smith can upgrade one piece of equipment.",
+            Self::AlchemyLab => "Bubbling cauldrons and strange reagents fill the room.",
+            Self::FortuneTeller => "A mysterious seer offers to reveal the boss's weakness.",
+            Self::RefugeeCamp => "Displaced travelers seek aid. Help them for karma.",
+            Self::DragonGate => "An otherworldly portal shimmers with draconic power.",
+            Self::GamblingDen => "Three mysterious urns await. Pick one — fortune or ruin?",
+            Self::BloodAltar => "A crimson altar pulses with dark energy. Sacrifice HP for power.",
+            Self::CursedTreasure => "An ornate chest radiates ominous energy. Great reward… or great cost.",
+            Self::SoulForge => "Ethereal flames can transform one radical into another.",
+            Self::WishingWell => "A shimmering well. Throw gold to receive a gift from the depths.",
+            Self::RuneGate => "Four elemental runes must be stepped on in Wuxing cycle order.",
+            Self::MirrorMaze => "Reflective surfaces distort space. Navigate carefully to the center.",
+            Self::WeightPuzzle => "Pressure plates and boulders. Push all boulders onto plates to unlock.",
+            Self::ToneStaircase => "Four ascending steps glow with tonal marks. Ascend with correct tones.",
+            Self::ElementalLock => "A sealed door requires elemental energy — cast one spell of each element.",
+            Self::SurvivalPit => "The exits seal shut! Survive waves of enemies for a reward.",
+            Self::TreasureRace => "Gold coins materialize on random tiles! Grab them before they vanish!",
+            Self::CollapsingChamber => "The floor crumbles from the edges inward! Reach the center treasure!",
+            Self::InkFlood => "Dark ink seeps across the floor. Stand in it for power, but beware the drain.",
+            Self::FormShrine => "An ancient shrine offers transformation into a new form. Choose wisely.",
+            Self::ClassTrial => "A trial chamber tests your abilities. Succeed for a class bonus.",
+            Self::RadicalFountain => "Luminous waters refine all radicals you carry. Spells gain +1 damage.",
+            Self::AncestorTomb => "An ancient warrior's tomb. Pray to receive their legendary weapon.",
+            Self::ProphecyRoom => "Murals depict the boss of this tier and hint at its weakness.",
+            Self::SealedMemory => "Echoes of the past. Recall what you've learned for a reward.",
+            Self::DemonSeal => "A sealed demon offers dark power — but at what cost?",
+            Self::PhoenixNest => "A radiant nest of eternal flame. The phoenix bestows its blessing.",
+            Self::CalligraphyContest => "A master calligrapher challenges you. Speed and accuracy earn gold.",
+        }
+    }
+
+    /// Weighted random selection based on floor level.
+    fn random_for_floor(rng: &mut Rng, floor: i32) -> Self {
+        // Build a weighted pool based on floor progression
+        let mut pool: Vec<Self> = Vec::new();
+
+        // Always available
+        pool.extend_from_slice(&[
+            Self::TreasureVault, Self::GoldMine, Self::AncestralHall,
+            Self::LotusGarden, Self::DragonHoard, Self::RelicChamber,
+            Self::SpiritSpring, Self::ArenaChallenge, Self::EliteGuardPost,
+            Self::TrapGauntlet, Self::BanditAmbush,
+            Self::Library, Self::CalligraphyHall, Self::ScholarStudy,
+            Self::InscriptionWall, Self::MasterDojo, Self::MeditationChamber,
+            Self::TranslationChallenge, Self::WisdomWell,
+            Self::FloodedChamber, Self::FrozenCavern, Self::LavaCrossing,
+            Self::BambooForest, Self::WindTunnel, Self::CrystalCave,
+            Self::MushroomGrotto, Self::EchoingCavern, Self::ShadowRealm,
+            Self::WanderingMerchant, Self::TeaHouse, Self::SmithyWorkshop,
+            Self::SpiritShrine, Self::RefugeeCamp,
+            // New: always available
+            Self::GamblingDen, Self::WishingWell, Self::TreasureRace,
+            Self::CalligraphyContest, Self::ProphecyRoom,
+        ]);
+
+        // Floor 3+: harder challenges and more rewards
+        if floor >= 3 {
+            pool.extend_from_slice(&[
+                Self::HiddenCache, Self::OfferingAltar, Self::JadeVault,
+                Self::PoisonMaze, Self::BoulderPuzzle, Self::MirrorRoom,
+                Self::GraveyardRise, Self::DuelCircle,
+                Self::OracleRoom, Self::AncientScroll,
+                Self::UndergroundRiver,
+                Self::HermitSage, Self::PrisonerCell, Self::AlchemyLab,
+                Self::FortuneTeller,
+                // New: floor 3+
+                Self::BloodAltar, Self::WeightPuzzle, Self::ToneStaircase,
+                Self::SurvivalPit, Self::ClassTrial, Self::SealedMemory,
+            ]);
+        }
+
+        // Floor 5+: elemental and advanced
+        if floor >= 5 {
+            pool.extend_from_slice(&[
+                Self::ElementalNexus,
+                // New: floor 5+
+                Self::CursedTreasure, Self::SoulForge, Self::RuneGate,
+                Self::MirrorMaze, Self::ElementalLock,
+                Self::CollapsingChamber, Self::InkFlood,
+                Self::RadicalFountain, Self::AncestorTomb,
+            ]);
+        }
+
+        // Floor 10+: transformation rooms
+        if floor >= 10 {
+            pool.extend_from_slice(&[
+                Self::FormShrine, Self::DemonSeal,
+            ]);
+        }
+
+        // Floor 20+: rare endgame rooms
+        if floor >= 20 {
+            pool.push(Self::PhoenixNest);
+        }
+
+        // Floor 25+: endgame content
+        if floor >= 25 {
+            pool.push(Self::DragonGate);
+        }
+
+        let idx = rng.next_u64() as usize % pool.len();
+        pool[idx]
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tile {
     Wall,
@@ -204,6 +527,32 @@ pub enum Tile {
     CursedFloor,
     /// Hidden trap tile (type: 0=poison, 1=teleport, 2=alarm)
     Trap(u8),
+    /// Gold ore vein — mine for gold
+    GoldOre,
+    /// Lava — deals damage when walked on
+    Lava,
+    /// Ice — slippery, sliding movement
+    Ice,
+    /// Dense bamboo — blocks movement and line of sight
+    Bamboo,
+    /// Mushroom — spore cloud causes confusion
+    Mushroom,
+    /// Poison gas — applies poison when walked through
+    PoisonGas,
+    /// Bookshelf — interactable, teaches knowledge
+    Bookshelf,
+    /// Pressure plate — puzzle element
+    PressurePlate,
+    /// Boulder — pushable onto pressure plates
+    Boulder,
+    /// Crystal — reflective wall
+    Crystal,
+    /// Dragon gate portal — end-game content
+    DragonGatePortal,
+    /// Spirit spring — restores HP and spirit
+    SpiritSpringTile,
+    /// Gold pile — pick up for gold
+    GoldPile,
 }
 
 impl Tile {
@@ -239,6 +588,15 @@ impl Tile {
                 | Tile::WordBridge
                 | Tile::CursedFloor
                 | Tile::Trap(_)
+                | Tile::Lava
+                | Tile::Ice
+                | Tile::Mushroom
+                | Tile::PoisonGas
+                | Tile::Bookshelf
+                | Tile::PressurePlate
+                | Tile::DragonGatePortal
+                | Tile::SpiritSpringTile
+                | Tile::GoldPile
         )
     }
 }
@@ -269,6 +627,7 @@ pub struct Room {
     pub w: i32,
     pub h: i32,
     pub modifier: Option<RoomModifier>,
+    pub special: Option<SpecialRoomKind>,
 }
 
 impl Room {
@@ -369,6 +728,7 @@ impl BspNode {
                 w,
                 h,
                 modifier: None,
+                special: None,
             });
         }
     }
@@ -1282,6 +1642,7 @@ impl DungeonLevel {
                     w: 9,
                     h: 9,
                     modifier: None,
+                    special: None,
                 },
                 Room {
                     x: 16,
@@ -1289,6 +1650,7 @@ impl DungeonLevel {
                     w: 9,
                     h: 9,
                     modifier: None,
+                    special: None,
                 },
                 Room {
                     x: 29,
@@ -1296,6 +1658,7 @@ impl DungeonLevel {
                     w: 13,
                     h: 9,
                     modifier: None,
+                    special: None,
                 },
             ],
             visible: vec![false; size],
@@ -1439,6 +1802,7 @@ impl DungeonLevel {
             visible,
             revealed,
         };
+        level.place_special_rooms(&mut rng, floor);
         level.place_stairs();
         level.place_forges(&mut rng);
         level.place_shop(&mut rng);
@@ -1487,6 +1851,3085 @@ impl DungeonLevel {
         }
 
         level
+    }
+
+    /// Assign 2-4 rooms per floor as special rooms with unique layouts.
+    fn place_special_rooms(&mut self, rng: &mut Rng, floor: i32) {
+        let n = self.rooms.len();
+        if n <= 4 {
+            return;
+        }
+        // 2-4 special rooms per floor, scaling with room count
+        let desired = 2 + (rng.next_u64() % 3.min(((n - 2) / 3) as u64)) as usize;
+        let desired = desired.min(n - 2);
+        let mut used = Vec::new();
+        let mut placed = 0;
+        for _ in 0..desired * 8 {
+            if placed >= desired {
+                break;
+            }
+            let room_idx = 1 + (rng.next_u64() as usize % (n - 2));
+            if used.contains(&room_idx) {
+                continue;
+            }
+            // Skip rooms that already have special content
+            let room = &self.rooms[room_idx];
+            if room.special.is_some() {
+                continue;
+            }
+            let kind = SpecialRoomKind::random_for_floor(rng, floor);
+            let room = self.rooms[room_idx].clone();
+            self.generate_special_room(kind, &room, rng);
+            self.rooms[room_idx].special = Some(kind);
+            used.push(room_idx);
+            placed += 1;
+        }
+    }
+
+    /// Generate tile layout for a special room.
+    fn generate_special_room(&mut self, kind: SpecialRoomKind, room: &Room, rng: &mut Rng) {
+        let cx = room.x + room.w / 2;
+        let cy = room.y + room.h / 2;
+        match kind {
+            SpecialRoomKind::TreasureVault => {
+                // Gold piles scattered around the vault
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) && rng.next_u64() % 7 == 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::GoldPile;
+                            }
+                        }
+                    }
+                }
+                // Water moat around center treasure area
+                for &(dx, dy) in &[(-2,-1),(-2,0),(-2,1),(2,-1),(2,0),(2,1),(-1,-2),(0,-2),(1,-2),(-1,2),(0,2),(1,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::GoldPile) {
+                            self.tiles[idx] = Tile::Water;
+                        }
+                    }
+                }
+                // Crate barriers flanking the vault
+                for &(dx, dy) in &[(-3,-1),(-3,0),(-3,1),(3,-1),(3,0),(3,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::GoldPile) {
+                            self.tiles[idx] = Tile::Crate;
+                        }
+                    }
+                }
+                // 3 chests in center
+                for dx in -1..=1 {
+                    let x = cx + dx;
+                    if self.in_bounds(x, cy) {
+                        let idx = self.idx(x, cy);
+                        self.tiles[idx] = Tile::Chest;
+                    }
+                }
+                // Locked door at room edge
+                if self.in_bounds(room.x, cy) {
+                    let idx = self.idx(room.x, cy);
+                    if matches!(self.tiles[idx], Tile::Floor | Tile::Corridor) {
+                        self.tiles[idx] = Tile::LockedDoor;
+                    }
+                }
+            }
+            SpecialRoomKind::GoldMine => {
+                // Dense gold ore on walls (higher coverage)
+                for x in room.x..room.x + room.w {
+                    for y in [room.y, room.y + room.h - 1] {
+                        if self.in_bounds(x, y) && rng.next_u64() % 2 == 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::GoldOre;
+                            }
+                        }
+                    }
+                }
+                for y in room.y..room.y + room.h {
+                    for x in [room.x, room.x + room.w - 1] {
+                        if self.in_bounds(x, y) && rng.next_u64() % 2 == 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::GoldOre;
+                            }
+                        }
+                    }
+                }
+                // Boulder support pillars
+                for &(dx, dy) in &[(-2,-2),(2,-2),(-2,2),(2,2),(0,-2),(0,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Boulder;
+                        }
+                    }
+                }
+                // Gold piles near veins
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) && rng.next_u64() % 8 == 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::GoldPile;
+                            }
+                        }
+                    }
+                }
+                // Crate (mine cart) at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Crate;
+                    }
+                }
+            }
+            SpecialRoomKind::AncestralHall => {
+                // Crystal candles along walls
+                for y in room.y + 1..room.y + room.h - 1 {
+                    if (y - room.y) % 3 == 1 {
+                        for &x in &[room.x + 1, room.x + room.w - 2] {
+                            if self.in_bounds(x, y) {
+                                let idx = self.idx(x, y);
+                                if self.tiles[idx] == Tile::Floor {
+                                    self.tiles[idx] = Tile::Crystal;
+                                }
+                            }
+                        }
+                    }
+                }
+                // Bookshelf pew rows on both sides of center aisle
+                for y in room.y + 1..room.y + room.h - 1 {
+                    if y != cy && (y - room.y) % 2 == 0 {
+                        for &x_off in &[2, 3] {
+                            let x_left = room.x + x_off;
+                            let x_right = room.x + room.w - 1 - x_off;
+                            if self.in_bounds(x_left, y) {
+                                let idx = self.idx(x_left, y);
+                                if self.tiles[idx] == Tile::Floor {
+                                    self.tiles[idx] = Tile::Bookshelf;
+                                }
+                            }
+                            if self.in_bounds(x_right, y) {
+                                let idx = self.idx(x_right, y);
+                                if self.tiles[idx] == Tile::Floor {
+                                    self.tiles[idx] = Tile::Bookshelf;
+                                }
+                            }
+                        }
+                    }
+                }
+                // Water basin behind altar
+                for dx in -1..=1 {
+                    let x = cx + dx;
+                    let y = cy - 2;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Water;
+                        }
+                    }
+                }
+                // Jade altar at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::Altar(AltarKind::Jade);
+                }
+            }
+            SpecialRoomKind::HiddenCache => {
+                // Oil (dust) and mushroom (cobwebs) in neglected corners
+                for &(dx, dy) in &[(1,1),(1,-1),(-1,1),(-1,-1)] {
+                    let x = cx + dx * 2;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Mushroom;
+                        }
+                    }
+                }
+                for &(dx, _dy) in &[(1,0),(-1,0),(2,0),(-2,0)] {
+                    let x = cx + dx;
+                    if self.in_bounds(x, cy) {
+                        let idx = self.idx(x, cy);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Oil;
+                        }
+                    }
+                }
+                // Crate (old supplies)
+                if self.in_bounds(cx + 1, cy - 1) {
+                    let idx = self.idx(cx + 1, cy - 1);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Crate;
+                    }
+                }
+                // Chest at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::Chest;
+                }
+                // Cracked wall entrance
+                let wall_x = room.x;
+                if self.in_bounds(wall_x, cy) {
+                    let idx = self.idx(wall_x, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::CrackedWall;
+                    }
+                }
+                // More cracked walls for atmosphere
+                if self.in_bounds(wall_x, cy - 1) {
+                    let idx = self.idx(wall_x, cy - 1);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::CrackedWall;
+                    }
+                }
+            }
+            SpecialRoomKind::OfferingAltar => {
+                // Water purification basin
+                for dx in -1..=1 {
+                    let x = cx + dx;
+                    let y = cy + 2;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Water;
+                        }
+                    }
+                }
+                // Crystal candles at diagonal positions
+                for &(dx, dy) in &[(-1,-1),(1,-1),(-1,1),(1,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // Mushroom incense at far positions
+                for &(dx, dy) in &[(-2,-1),(2,-1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Mushroom;
+                        }
+                    }
+                }
+                // Gold pile offerings at cardinal positions
+                for &(dx, dy) in &[(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::GoldPile;
+                        }
+                    }
+                }
+                // Central altar
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::Altar(AltarKind::Gold);
+                }
+            }
+            SpecialRoomKind::LotusGarden => {
+                // Bamboo border along room edges
+                for x in room.x + 1..room.x + room.w - 1 {
+                    for &y in &[room.y + 1, room.y + room.h - 2] {
+                        if self.in_bounds(x, y) && x != cx {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Bamboo;
+                            }
+                        }
+                    }
+                }
+                for y in room.y + 2..room.y + room.h - 2 {
+                    for &x in &[room.x + 1, room.x + room.w - 2] {
+                        if self.in_bounds(x, y) && y != cy {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Bamboo;
+                            }
+                        }
+                    }
+                }
+                // Water pond around center (2-tile radius)
+                for dy in -2i32..=2 {
+                    for dx in -2i32..=2 {
+                        if dx == 0 && dy == 0 { continue; }
+                        if dx.abs() + dy.abs() > 3 { continue; }
+                        let x = cx + dx;
+                        let y = cy + dy;
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Water;
+                            }
+                        }
+                    }
+                }
+                // Mushroom (lotus plants) near water
+                for &(dx, dy) in &[(-2,-2),(2,-2),(-2,2),(2,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Mushroom;
+                        }
+                    }
+                }
+                // Spirit spring at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::SpiritSpringTile;
+                }
+            }
+            SpecialRoomKind::DragonHoard => {
+                // Gold ore on walls
+                for x in room.x..room.x + room.w {
+                    for y in [room.y, room.y + room.h - 1] {
+                        if self.in_bounds(x, y) && rng.next_u64() % 2 == 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::GoldOre;
+                            }
+                        }
+                    }
+                }
+                // Dense gold piles throughout
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) && rng.next_u64() % 3 == 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::GoldPile;
+                            }
+                        }
+                    }
+                }
+                // Crystal gems scattered
+                for &(dx, dy) in &[(-2,0),(2,0),(0,-2),(0,2),(-1,-1),(1,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // Crate treasure boxes at corners
+                for &(dx, dy) in &[(-3,-2),(3,-2),(-3,2),(3,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::GoldPile) {
+                            self.tiles[idx] = Tile::Crate;
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::JadeVault => {
+                // Crystal walls along full inner perimeter
+                for x in room.x + 1..room.x + room.w - 1 {
+                    for &y in &[room.y + 1, room.y + room.h - 2] {
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Crystal;
+                            }
+                        }
+                    }
+                }
+                for y in room.y + 2..room.y + room.h - 2 {
+                    for &x in &[room.x + 1, room.x + room.w - 2] {
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Crystal;
+                            }
+                        }
+                    }
+                }
+                // Gold piles near chest
+                for &(dx, dy) in &[(-1,0),(1,0),(0,-1),(0,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::GoldPile;
+                        }
+                    }
+                }
+                // Jade altar behind chest
+                if self.in_bounds(cx, cy - 1) {
+                    let idx = self.idx(cx, cy - 1);
+                    self.tiles[idx] = Tile::Altar(AltarKind::Jade);
+                }
+                // Chest in center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::Chest;
+                }
+                // Locked door at entry
+                if self.in_bounds(room.x, cy) {
+                    let idx = self.idx(room.x, cy);
+                    if matches!(self.tiles[idx], Tile::Floor | Tile::Corridor | Tile::Crystal) {
+                        self.tiles[idx] = Tile::LockedDoor;
+                    }
+                }
+            }
+            SpecialRoomKind::RelicChamber => {
+                // Bookshelves (lore) on walls
+                for y in room.y + 1..room.y + room.h - 1 {
+                    if (y - room.y) % 2 == 1 {
+                        for &x in &[room.x + 1, room.x + room.w - 2] {
+                            if self.in_bounds(x, y) {
+                                let idx = self.idx(x, y);
+                                if self.tiles[idx] == Tile::Floor {
+                                    self.tiles[idx] = Tile::Bookshelf;
+                                }
+                            }
+                        }
+                    }
+                }
+                // Water purification pool at entry
+                for dx in -1..=1 {
+                    let x = cx + dx;
+                    let y = cy + 2;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Water;
+                        }
+                    }
+                }
+                // Crystal lighting flanks
+                for &(dx, dy) in &[(-2, 0), (2, 0)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // Mirror altar backdrop
+                if self.in_bounds(cx, cy - 1) {
+                    let idx = self.idx(cx, cy - 1);
+                    self.tiles[idx] = Tile::Altar(AltarKind::Mirror);
+                }
+                // Chest (relic) at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::Chest;
+                }
+            }
+            SpecialRoomKind::SpiritSpring => {
+                // Bamboo accents at room edges
+                for &(dx, dy) in &[(-3,-2),(-3,2),(3,-2),(3,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Bamboo;
+                        }
+                    }
+                }
+                // Water ring (2-wide)
+                for dy in -2i32..=2 {
+                    for dx in -2i32..=2 {
+                        if dx == 0 && dy == 0 { continue; }
+                        let dist = dx.abs().max(dy.abs());
+                        if dist >= 1 && dist <= 2 {
+                            let x = cx + dx;
+                            let y = cy + dy;
+                            if self.in_bounds(x, y) {
+                                let idx = self.idx(x, y);
+                                if self.tiles[idx] == Tile::Floor {
+                                    self.tiles[idx] = Tile::Water;
+                                }
+                            }
+                        }
+                    }
+                }
+                // Crystal accents at compass points
+                for &(dx, dy) in &[(-3,0),(3,0),(0,-3),(0,3)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // Mushroom herbs near water
+                for &(dx, dy) in &[(-2,-2),(2,-2),(-2,2),(2,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::Water) {
+                            self.tiles[idx] = Tile::Mushroom;
+                        }
+                    }
+                }
+                // Spirit spring at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::SpiritSpringTile;
+                }
+            }
+            SpecialRoomKind::ArenaChallenge => {
+                // Oil (sand/blood) scattered in center area
+                for y in room.y + 2..room.y + room.h - 2 {
+                    for x in room.x + 2..room.x + room.w - 2 {
+                        if self.in_bounds(x, y) && rng.next_u64() % 5 == 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Oil;
+                            }
+                        }
+                    }
+                }
+                // Spikes inner border
+                for x in room.x + 1..room.x + room.w - 1 {
+                    for &y in &[room.y + 1, room.y + room.h - 2] {
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if matches!(self.tiles[idx], Tile::Floor | Tile::Oil) {
+                                self.tiles[idx] = Tile::Spikes;
+                            }
+                        }
+                    }
+                }
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for &x in &[room.x + 1, room.x + room.w - 2] {
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if matches!(self.tiles[idx], Tile::Floor | Tile::Oil) {
+                                self.tiles[idx] = Tile::Spikes;
+                            }
+                        }
+                    }
+                }
+                // Boulder pillars at corners
+                for &(dx, dy) in &[(-2,-2),(2,-2),(-2,2),(2,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::Oil) {
+                            self.tiles[idx] = Tile::Boulder;
+                        }
+                    }
+                }
+                // Pressure plate arena markers
+                for &(dx, dy) in &[(-1,0),(1,0),(0,-1),(0,1)] {
+                    let x = cx + dx * 2;
+                    let y = cy + dy * 2;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::Oil) {
+                            self.tiles[idx] = Tile::PressurePlate;
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::EliteGuardPost => {
+                // Spikes (caltrops) near entrance
+                for dx in [-2, -1, 1, 2] {
+                    let x = cx + dx;
+                    let y = cy - 2;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Spikes;
+                        }
+                    }
+                }
+                // Crate barricades on sides
+                for &(dx, dy) in &[(-2,-1),(-2,1),(2,-1),(2,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crate;
+                        }
+                    }
+                }
+                // Boulder obstacles
+                for &(dx, dy) in &[(-3, 0), (3, 0)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Boulder;
+                        }
+                    }
+                }
+                // Pressure plates alarm strip
+                for x in room.x + 1..room.x + room.w - 1 {
+                    if self.in_bounds(x, cy) && x != cx {
+                        let idx = self.idx(x, cy);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::PressurePlate;
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::TrapGauntlet => {
+                // Oil slicks between spike rows
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) && (x + y) % 3 == 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Oil;
+                            }
+                        }
+                    }
+                }
+                // Dense spike checkerboard
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) && (x + y) % 2 == 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Spikes;
+                            }
+                        }
+                    }
+                }
+                // Boulder safe spots for cover
+                for &(dx, dy) in &[(0,-1),(0,1),(-2,0)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        self.tiles[idx] = Tile::Boulder;
+                    }
+                }
+                // Pressure plate triggers
+                for &(dx, dy) in &[(-1,-2),(1,-2),(-1,2),(1,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        self.tiles[idx] = Tile::PressurePlate;
+                    }
+                }
+                // Chest reward at far end
+                let rx = room.x + room.w - 2;
+                if self.in_bounds(rx, cy) {
+                    let idx = self.idx(rx, cy);
+                    self.tiles[idx] = Tile::Chest;
+                }
+            }
+            SpecialRoomKind::PoisonMaze => {
+                // Gas walls forming corridors (structured pattern)
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) {
+                            let rel_x = x - room.x;
+                            let rel_y = y - room.y;
+                            let is_wall = (rel_x % 3 != 0) && (rel_y % 3 != 0);
+                            if is_wall {
+                                let idx = self.idx(x, y);
+                                if self.tiles[idx] == Tile::Floor {
+                                    self.tiles[idx] = Tile::PoisonGas;
+                                }
+                            }
+                        }
+                    }
+                }
+                // Mushroom patches in gas corridors
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) && rng.next_u64() % 8 == 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::PoisonGas {
+                                self.tiles[idx] = Tile::Mushroom;
+                            }
+                        }
+                    }
+                }
+                // Water safe zones at corners
+                for &(dx, dy) in &[(-2,-2),(2,-2),(-2,2),(2,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::PoisonGas {
+                            self.tiles[idx] = Tile::Water;
+                        }
+                    }
+                }
+                // Chest reward at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::Chest;
+                }
+            }
+            SpecialRoomKind::BoulderPuzzle => {
+                // Pressure plates at puzzle positions
+                let plate_positions = [
+                    (cx - 1, cy - 1), (cx + 1, cy - 1),
+                    (cx - 1, cy + 1), (cx + 1, cy + 1),
+                ];
+                let boulder_positions = [
+                    (cx - 1, cy), (cx + 1, cy),
+                    (cx, cy - 1), (cx, cy + 1),
+                ];
+                for &(px, py) in &plate_positions {
+                    if self.in_bounds(px, py) {
+                        let idx = self.idx(px, py);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::PressurePlate;
+                        }
+                    }
+                }
+                for &(bx, by) in &boulder_positions {
+                    if self.in_bounds(bx, by) {
+                        let idx = self.idx(bx, by);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Boulder;
+                        }
+                    }
+                }
+                // Crystal markers near plates
+                for &(dx, dy) in &[(-2,-2),(2,-2),(-2,2),(2,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // Cracked wall hints
+                for &x in &[room.x + 1, room.x + room.w - 2] {
+                    if self.in_bounds(x, cy) {
+                        let idx = self.idx(x, cy);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::CrackedWall;
+                        }
+                    }
+                }
+                // Oil ground texture
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) && rng.next_u64() % 6 == 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Oil;
+                            }
+                        }
+                    }
+                }
+                // Chest reward at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::Chest;
+                }
+            }
+            SpecialRoomKind::MirrorRoom => {
+                // Ice reflective floor sections
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) && (x + y) % 3 == 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Ice;
+                            }
+                        }
+                    }
+                }
+                // Water accents at edges
+                for &(dx, dy) in &[(-3,0),(3,0),(0,-3),(0,3)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::Ice) {
+                            self.tiles[idx] = Tile::Water;
+                        }
+                    }
+                }
+                // Crystal walls forming diamond pattern
+                for &(dx, dy) in &[(-2,0),(2,0),(0,-2),(0,2),(-1,-1),(1,-1),(-1,1),(1,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        self.tiles[idx] = Tile::Crystal;
+                    }
+                }
+                // Mirror pool at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::MirrorPool;
+                }
+            }
+            SpecialRoomKind::ElementalNexus => {
+                // Elemental tiles around each altar
+                // Water around Gale (west)
+                for &(dx, dy) in &[(-3,-1),(-3,1),(-1,-1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Water;
+                        }
+                    }
+                }
+                // Lava around Iron (east)
+                for &(dx, dy) in &[(3,-1),(3,1),(1,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Lava;
+                        }
+                    }
+                }
+                // Ice around Mirror (north)
+                for &(dx, dy) in &[(-1,-3),(1,-3),(-1,-1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Ice;
+                        }
+                    }
+                }
+                // Crystal around Gold (south)
+                for &(dx, dy) in &[(-1,3),(1,3),(1,-1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // Bamboo around Jade (center)
+                for &(dx, dy) in &[(-1,0),(1,0),(0,-1),(0,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Bamboo;
+                        }
+                    }
+                }
+                // 5 elemental altars in cross pattern
+                let positions = [
+                    (cx, cy, AltarKind::Jade),
+                    (cx - 2, cy, AltarKind::Gale),
+                    (cx + 2, cy, AltarKind::Iron),
+                    (cx, cy - 2, AltarKind::Mirror),
+                    (cx, cy + 2, AltarKind::Gold),
+                ];
+                for &(x, y, kind) in &positions {
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        self.tiles[idx] = Tile::Altar(kind);
+                    }
+                }
+            }
+            SpecialRoomKind::GraveyardRise => {
+                // Grid of spikes (tombstones) in rows
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) && (x - room.x) % 2 == 1 && (y - room.y) % 2 == 1 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Spikes;
+                            }
+                        }
+                    }
+                }
+                // Oil (disturbed earth) between tombstones
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) && rng.next_u64() % 5 == 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Oil;
+                            }
+                        }
+                    }
+                }
+                // Mushroom (dead flowers) near graves
+                for &(dx, dy) in &[(-2,-2),(2,-2),(-2,2),(2,2),(0,0)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Mushroom;
+                        }
+                    }
+                }
+                // CursedFloor path through cemetery
+                for x in room.x + 1..room.x + room.w - 1 {
+                    if self.in_bounds(x, cy) {
+                        let idx = self.idx(x, cy);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::CursedFloor;
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::BanditAmbush => {
+                // Oil (escape routes / slippery floor)
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) && rng.next_u64() % 6 == 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Oil;
+                            }
+                        }
+                    }
+                }
+                // Crate hiding spots forming ambush positions
+                for &(dx, dy) in &[(-2,-2),(2,-2),(-2,2),(2,2),(-3,0),(3,0),(0,-2),(0,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::Oil) {
+                            self.tiles[idx] = Tile::Crate;
+                        }
+                    }
+                }
+                // Hidden traps near gold
+                for &(dx, dy) in &[(-1,0),(1,0),(0,-1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        let trap_type = (rng.next_u64() % 3) as u8;
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::Oil) {
+                            self.tiles[idx] = Tile::Trap(trap_type);
+                        }
+                    }
+                }
+                // Gold bait in center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::GoldPile;
+                }
+            }
+            SpecialRoomKind::DuelCircle => {
+                // Oil (sand pit) inside circle
+                for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        let x = cx + dx;
+                        let y = cy + dy;
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Oil;
+                            }
+                        }
+                    }
+                }
+                // Spikes outer boundary
+                for &(dx, dy) in &[(-3,0),(3,0),(0,-3),(0,3),(-3,-1),(-3,1),(3,-1),(3,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Spikes;
+                        }
+                    }
+                }
+                // Boulder pillars at far corners
+                for &(dx, dy) in &[(-3,-2),(3,-2),(-3,2),(3,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Boulder;
+                        }
+                    }
+                }
+                // Pressure plate ring
+                for &(dx, dy) in &[
+                    (-2,0),(2,0),(0,-2),(0,2),
+                    (-1,-1),(1,-1),(-1,1),(1,1),
+                ] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        self.tiles[idx] = Tile::PressurePlate;
+                    }
+                }
+            }
+            SpecialRoomKind::Library => {
+                // Rows of bookshelves with center aisle
+                for y in room.y + 1..room.y + room.h - 1 {
+                    if (y - room.y) % 2 == 0 {
+                        for x in room.x + 1..room.x + room.w - 1 {
+                            if x != cx && self.in_bounds(x, y) {
+                                let idx = self.idx(x, y);
+                                if self.tiles[idx] == Tile::Floor {
+                                    self.tiles[idx] = Tile::Bookshelf;
+                                }
+                            }
+                        }
+                    }
+                }
+                // Crystal lanterns at end of bookshelf rows
+                for y in room.y + 1..room.y + room.h - 1 {
+                    if (y - room.y) % 2 == 0 {
+                        for &x in &[room.x + 1, room.x + room.w - 2] {
+                            if self.in_bounds(x, y) {
+                                let idx = self.idx(x, y);
+                                if self.tiles[idx] == Tile::Bookshelf {
+                                    self.tiles[idx] = Tile::Crystal;
+                                }
+                            }
+                        }
+                    }
+                }
+                // Crate (reading desks) in aisle
+                for y in room.y + 2..room.y + room.h - 2 {
+                    if (y - room.y) % 4 == 1 && self.in_bounds(cx, y) {
+                        let idx = self.idx(cx, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crate;
+                        }
+                    }
+                }
+                // InkWell at study positions
+                for &(dx, dy) in &[(-1, 1), (1, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::InkWell;
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::CalligraphyHall => {
+                // Crystal lighting overhead
+                for &x in &[room.x + 1, room.x + room.w - 2] {
+                    if self.in_bounds(x, cy) {
+                        let idx = self.idx(x, cy);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // Crate storage at corners
+                for &(dx, dy) in &[(-3,-2),(3,-2),(-3,2),(3,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crate;
+                        }
+                    }
+                }
+                // Writing stations: bookshelf + inkwell pairs
+                for dx in [-2, 0, 2] {
+                    let x = cx + dx;
+                    if self.in_bounds(x, cy) {
+                        let idx = self.idx(x, cy);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Bookshelf;
+                        }
+                    }
+                    if self.in_bounds(x, cy + 1) {
+                        let idx = self.idx(x, cy + 1);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::InkWell;
+                        }
+                    }
+                }
+                // Additional bookshelf rows
+                for dx in [-2, 0, 2] {
+                    let x = cx + dx;
+                    if self.in_bounds(x, cy - 1) {
+                        let idx = self.idx(x, cy - 1);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Bookshelf;
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::ScholarStudy => {
+                // Bookshelves on north and south walls
+                for x in room.x + 1..room.x + room.w - 1 {
+                    for &y in &[room.y + 1, room.y + room.h - 2] {
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Bookshelf;
+                            }
+                        }
+                    }
+                }
+                // Crystal lamp
+                if self.in_bounds(cx + 1, cy) {
+                    let idx = self.idx(cx + 1, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Crystal;
+                    }
+                }
+                // InkWell at desk
+                if self.in_bounds(cx - 1, cy) {
+                    let idx = self.idx(cx - 1, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::InkWell;
+                    }
+                }
+                // Crate (desk)
+                if self.in_bounds(cx, cy + 1) {
+                    let idx = self.idx(cx, cy + 1);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Crate;
+                    }
+                }
+                // Codex shrine at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::CodexShrine;
+                }
+            }
+            SpecialRoomKind::OracleRoom => {
+                // Water border accents
+                for &(dx, dy) in &[(-3,0),(3,0),(0,-3),(0,3)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Water;
+                        }
+                    }
+                }
+                // Bamboo curtains at edges
+                for &(dx, dy) in &[(-3,-2),(-3,2),(3,-2),(3,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Bamboo;
+                        }
+                    }
+                }
+                // Mushroom (incense) at corners
+                for &(dx, dy) in &[(-2,-2),(2,-2),(-2,2),(2,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Mushroom;
+                        }
+                    }
+                }
+                // Crystal ring around mirror pool
+                for &(dx, dy) in &[(-1,-1),(1,-1),(-1,1),(1,1),(-1,0),(1,0),(0,-1),(0,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        self.tiles[idx] = Tile::Crystal;
+                    }
+                }
+                // Mirror pool at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::MirrorPool;
+                }
+            }
+            SpecialRoomKind::InscriptionWall => {
+                // Full bookshelf walls on left and right
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for &x in &[room.x + 1, room.x + room.w - 2] {
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Bookshelf;
+                            }
+                        }
+                    }
+                }
+                // Crystal lighting
+                for &(dx, dy) in &[(-2, -2), (2, -2), (-2, 2), (2, 2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // InkWell for practice
+                if self.in_bounds(cx + 1, cy) {
+                    let idx = self.idx(cx + 1, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::InkWell;
+                    }
+                }
+                // Radical garden at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::RadicalGarden;
+                }
+            }
+            SpecialRoomKind::MasterDojo => {
+                // Oil (training mat) in center area
+                for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        let x = cx + dx;
+                        let y = cy + dy;
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Oil;
+                            }
+                        }
+                    }
+                }
+                // Crate (weapon rack) at side
+                for &(dx, dy) in &[(-3, -1), (-3, 0), (-3, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crate;
+                        }
+                    }
+                }
+                // Boulder (heavy bag) obstacles
+                for &(dx, dy) in &[(3, -1), (3, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Boulder;
+                        }
+                    }
+                }
+                // Pressure plates (training dummies)
+                for &(dx, dy) in &[(-2, -1), (2, -1), (-2, 1), (2, 1), (0, -2), (0, 2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        self.tiles[idx] = Tile::PressurePlate;
+                    }
+                }
+            }
+            SpecialRoomKind::MeditationChamber => {
+                // Bamboo border accents
+                for &(dx, dy) in &[(-3,-2),(-3,2),(3,-2),(3,2),(-3,0),(3,0)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Bamboo;
+                        }
+                    }
+                }
+                // Mushroom (incense) at corners
+                for &(dx, dy) in &[(-2,-2),(2,-2),(-2,2),(2,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Mushroom;
+                        }
+                    }
+                }
+                // Water at cardinal positions
+                for &(dx, dy) in &[(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Water;
+                        }
+                    }
+                }
+                // Crystal candles at diagonal positions
+                for &(dx, dy) in &[(-1,-1),(1,-1),(-1,1),(1,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // Spirit spring at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::SpiritSpringTile;
+                }
+            }
+            SpecialRoomKind::TranslationChallenge => {
+                // Bookshelves (reference texts) behind altars
+                for dx in -2..=2 {
+                    let x = cx + dx;
+                    if self.in_bounds(x, cy - 1) {
+                        let idx = self.idx(x, cy - 1);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Bookshelf;
+                        }
+                    }
+                }
+                // Crystal lighting
+                for &(dx, dy) in &[(-2, 0), (2, 0)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // InkWell at translation stations
+                for dx in -1..=1 {
+                    let x = cx + dx;
+                    if self.in_bounds(x, cy + 1) {
+                        let idx = self.idx(x, cy + 1);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::InkWell;
+                        }
+                    }
+                }
+                // Translation altars in a row
+                for dx in -1..=1 {
+                    let x = cx + dx;
+                    if self.in_bounds(x, cy) {
+                        let idx = self.idx(x, cy);
+                        self.tiles[idx] = Tile::TranslationAltar;
+                    }
+                }
+            }
+            SpecialRoomKind::AncientScroll => {
+                // Mushroom (cobwebs) in corners
+                for &(dx, dy) in &[(-2,-1),(2,-1),(-2,1),(2,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Mushroom;
+                        }
+                    }
+                }
+                // Crystal lighting
+                for &(dx, dy) in &[(-1, 0), (1, 0)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // Cracked wall (age damage)
+                if self.in_bounds(room.x + 1, cy + 1) {
+                    let idx = self.idx(room.x + 1, cy + 1);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::CrackedWall;
+                    }
+                }
+                // Bookshelf alcove (expanded)
+                for dx in -1..=1 {
+                    let x = cx + dx;
+                    for &y in &[cy - 1, cy - 2] {
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Bookshelf;
+                            }
+                        }
+                    }
+                }
+                // Chest (scroll) at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::Chest;
+                }
+            }
+            SpecialRoomKind::WisdomWell => {
+                // Bookshelf (wisdom texts) at walls
+                for &(dx, dy) in &[(-3, -1), (-3, 0), (-3, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Bookshelf;
+                        }
+                    }
+                }
+                // Crystal markers around well
+                for &(dx, dy) in &[(-2,-2),(2,-2),(-2,2),(2,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // Water ring around well
+                for &(dx, dy) in &[(-1, 0), (1, 0), (0, -1), (0, 1),(-1,-1),(1,-1),(-1,1),(1,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Water;
+                        }
+                    }
+                }
+                // Deep water well at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::DeepWater;
+                }
+                // Stone tutor nearby
+                if self.in_bounds(cx + 2, cy) {
+                    let idx = self.idx(cx + 2, cy);
+                    self.tiles[idx] = Tile::StoneTutor;
+                }
+            }
+            SpecialRoomKind::FloodedChamber => {
+                // Most floor tiles become water, some deep water
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = if rng.next_u64() % 5 == 0 {
+                                    Tile::DeepWater
+                                } else {
+                                    Tile::Water
+                                };
+                            }
+                        }
+                    }
+                }
+                // Safe path through center row
+                for x in room.x..room.x + room.w {
+                    if self.in_bounds(x, cy) {
+                        let idx = self.idx(x, cy);
+                        if matches!(self.tiles[idx], Tile::Water | Tile::DeepWater) {
+                            self.tiles[idx] = Tile::Floor;
+                        }
+                    }
+                }
+                // Boulder stepping stones
+                for &(dx, dy) in &[(-2,-2),(0,-2),(2,-2),(-2,2),(0,2),(2,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Water | Tile::DeepWater) {
+                            self.tiles[idx] = Tile::Boulder;
+                        }
+                    }
+                }
+                // Crystal cave formations
+                for &(dx, dy) in &[(-3, 0), (3, 0)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Water | Tile::DeepWater) {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // Mushroom (algae) patches
+                for _ in 0..3 {
+                    let x = rng.range(room.x + 1, room.x + room.w - 1);
+                    let y = rng.range(room.y + 1, room.y + room.h - 1);
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Water {
+                            self.tiles[idx] = Tile::Mushroom;
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::FrozenCavern => {
+                // Ice tiles everywhere
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Ice;
+                            }
+                        }
+                    }
+                }
+                // Crystal pillars
+                for &(dx, dy) in &[(-2, -1), (2, -1), (-2, 1), (2, 1), (0, 0)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Ice {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // Boulder (frozen rocks)
+                for &(dx, dy) in &[(-3, 0), (3, 0)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Ice {
+                            self.tiles[idx] = Tile::Boulder;
+                        }
+                    }
+                }
+                // Water (frozen puddle edges)
+                for &(dx, dy) in &[(-1,-2),(1,-2),(-1,2),(1,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Ice {
+                            self.tiles[idx] = Tile::Water;
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::LavaCrossing => {
+                // Lava floor
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Lava;
+                            }
+                        }
+                    }
+                }
+                // Safe cross-shaped path
+                for x in room.x..room.x + room.w {
+                    if self.in_bounds(x, cy) {
+                        let idx = self.idx(x, cy);
+                        if self.tiles[idx] == Tile::Lava {
+                            self.tiles[idx] = Tile::Floor;
+                        }
+                    }
+                }
+                for y in room.y..room.y + room.h {
+                    if self.in_bounds(cx, y) {
+                        let idx = self.idx(cx, y);
+                        if self.tiles[idx] == Tile::Lava {
+                            self.tiles[idx] = Tile::Floor;
+                        }
+                    }
+                }
+                // Boulder (heat-resistant rocks) on safe paths
+                for &(dx, dy) in &[(-2, 0), (2, 0), (0, -2), (0, 2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Boulder;
+                        }
+                    }
+                }
+                // Gold ore (volcanic deposits) on walls
+                for &(dx, dy) in &[(-3,-2),(3,-2),(-3,2),(3,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Lava {
+                            self.tiles[idx] = Tile::GoldOre;
+                        }
+                    }
+                }
+                // Chest reward at far corner
+                let rx = room.x + room.w - 2;
+                let ry = room.y + 1;
+                if self.in_bounds(rx, ry) {
+                    let idx = self.idx(rx, ry);
+                    self.tiles[idx] = Tile::Chest;
+                }
+            }
+            SpecialRoomKind::BambooForest => {
+                // Dense bamboo with gaps for navigation
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) && rng.next_u64() % 3 != 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Bamboo;
+                            }
+                        }
+                    }
+                }
+                // Ensure center is clear
+                for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        let x = cx + dx;
+                        let y = cy + dy;
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Bamboo {
+                                self.tiles[idx] = Tile::Floor;
+                            }
+                        }
+                    }
+                }
+                // Ensure paths from edges to center
+                for x in room.x..room.x + room.w {
+                    if self.in_bounds(x, cy) {
+                        let idx = self.idx(x, cy);
+                        if self.tiles[idx] == Tile::Bamboo {
+                            self.tiles[idx] = Tile::Floor;
+                        }
+                    }
+                }
+                // Water stream along one axis
+                for y in room.y + 2..room.y + room.h - 2 {
+                    let x = cx - 2;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Bamboo {
+                            self.tiles[idx] = Tile::Water;
+                        }
+                    }
+                }
+                // Mushroom undergrowth
+                for &(dx, dy) in &[(-1,-2),(1,-2),(-1,2),(1,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Bamboo {
+                            self.tiles[idx] = Tile::Mushroom;
+                        }
+                    }
+                }
+                // Crystal (lanterns/fireflies)
+                for &(dx, dy) in &[(0,-2),(0,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::Bamboo) {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::WindTunnel => {
+                // Oil (wind streaks) along center
+                for x in room.x + 1..room.x + room.w - 1 {
+                    if self.in_bounds(x, cy) && x % 2 == 0 {
+                        let idx = self.idx(x, cy);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Oil;
+                        }
+                    }
+                }
+                // Spike barriers on sides
+                for x in room.x + 1..room.x + room.w - 1 {
+                    for &y in &[cy - 1, cy + 1] {
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Spikes;
+                            }
+                        }
+                    }
+                }
+                // Pressure plate wind triggers
+                for &dx in &[-2, 0, 2] {
+                    let x = cx + dx;
+                    if self.in_bounds(x, cy) {
+                        let idx = self.idx(x, cy);
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::Oil) {
+                            self.tiles[idx] = Tile::PressurePlate;
+                        }
+                    }
+                }
+                // Crystal wind chimes at walls
+                for &(dx, dy) in &[(-3,-1),(3,-1),(-3,1),(3,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::Spikes) {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::CrystalCave => {
+                // Water (cave pools) scattered
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) && rng.next_u64() % 8 == 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Water;
+                            }
+                        }
+                    }
+                }
+                // Ice (cold spots)
+                for &(dx, dy) in &[(-2,-2),(2,-2),(-2,2),(2,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Ice;
+                        }
+                    }
+                }
+                // Mushroom (cave growth)
+                for _ in 0..3 {
+                    let x = rng.range(room.x + 1, room.x + room.w - 1);
+                    let y = rng.range(room.y + 1, room.y + room.h - 1);
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Mushroom;
+                        }
+                    }
+                }
+                // Crystal formations (denser, with pattern)
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) && rng.next_u64() % 5 == 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Crystal;
+                            }
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::MushroomGrotto => {
+                // Mushroom clusters scattered
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) && rng.next_u64() % 4 == 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Mushroom;
+                            }
+                        }
+                    }
+                }
+                // Water puddles
+                for _ in 0..4 {
+                    let x = rng.range(room.x + 1, room.x + room.w - 1);
+                    let y = rng.range(room.y + 1, room.y + room.h - 1);
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Water;
+                        }
+                    }
+                }
+                // Poison gas spore clouds near mushroom clusters
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) && rng.next_u64() % 10 == 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::PoisonGas;
+                            }
+                        }
+                    }
+                }
+                // Crystal bioluminescence
+                for &(dx, dy) in &[(-2,0),(2,0),(0,-2),(0,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::Mushroom) {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::UndergroundRiver => {
+                // River of water/deep water running through middle
+                for x in room.x..room.x + room.w {
+                    for dy in -1..=1 {
+                        let y = cy + dy;
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = if dy == 0 {
+                                    Tile::DeepWater
+                                } else {
+                                    Tile::Water
+                                };
+                            }
+                        }
+                    }
+                }
+                // Boulder (river rocks) in shallows
+                for &(dx, dy) in &[(-3, -1), (-1, 1), (2, -1), (3, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Water | Tile::DeepWater) {
+                            self.tiles[idx] = Tile::Boulder;
+                        }
+                    }
+                }
+                // Crystal cave formations on banks
+                for &(dx, dy) in &[(-2, -2), (2, -2), (-2, 2), (2, 2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // Mushroom (riverside growth)
+                for &(dx, dy) in &[(-1, -2), (1, -2), (-1, 2), (1, 2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Mushroom;
+                        }
+                    }
+                }
+                // Bridge crossing at center
+                for dy in -1..=1 {
+                    if self.in_bounds(cx, cy + dy) {
+                        let idx = self.idx(cx, cy + dy);
+                        self.tiles[idx] = Tile::Bridge;
+                    }
+                }
+            }
+            SpecialRoomKind::EchoingCavern => {
+                // Water (sound-amplifying pools)
+                for &(dx, dy) in &[(-2, -1), (2, -1), (-2, 1), (2, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Water;
+                        }
+                    }
+                }
+                // Boulder (echo-generating rock formations)
+                for &(dx, dy) in &[(-1, -2), (1, -2), (-1, 2), (1, 2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Boulder;
+                        }
+                    }
+                }
+                // Ice patches (frozen condensation)
+                for &(dx, dy) in &[(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Ice;
+                        }
+                    }
+                }
+                // Crystal echo points at compass positions
+                for &(dx, dy) in &[(-3, 0), (3, 0), (0, -3), (0, 3)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        self.tiles[idx] = Tile::Crystal;
+                    }
+                }
+            }
+            SpecialRoomKind::ShadowRealm => {
+                // Oil (shadow puddles)
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) && rng.next_u64() % 4 == 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Oil;
+                            }
+                        }
+                    }
+                }
+                // CursedFloor patches
+                for &(dx, dy) in &[(-1,-1),(1,-1),(-1,1),(1,1),(0,0)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::Oil) {
+                            self.tiles[idx] = Tile::CursedFloor;
+                        }
+                    }
+                }
+                // Crystal (dim lights at far edges)
+                for &(dx, dy) in &[(-3,-2),(3,-2),(-3,2),(3,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::Oil) {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // Hidden traps
+                for _ in 0..5 {
+                    let x = rng.range(room.x + 1, room.x + room.w - 1);
+                    let y = rng.range(room.y + 1, room.y + room.h - 1);
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::Oil) {
+                            let trap_type = (rng.next_u64() % 3) as u8;
+                            self.tiles[idx] = Tile::Trap(trap_type);
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::WanderingMerchant => {
+                // Bookshelf (wares display) at walls
+                for &(dx, dy) in &[(-3,-1),(-3,0),(-3,1),(3,-1),(3,0),(3,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Bookshelf;
+                        }
+                    }
+                }
+                // Gold pile (display items)
+                for &(dx, dy) in &[(-1, 1), (1, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::GoldPile;
+                        }
+                    }
+                }
+                // Crate inventory around shop
+                for &(dx, dy) in &[(-1, -1), (1, -1), (-2, 0), (2, 0)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crate;
+                        }
+                    }
+                }
+                // Shop at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::Shop;
+                }
+            }
+            SpecialRoomKind::HermitSage => {
+                // Crystal lantern
+                if self.in_bounds(cx + 2, cy) {
+                    let idx = self.idx(cx + 2, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Crystal;
+                    }
+                }
+                // Mushroom (herb garden)
+                for &(dx, dy) in &[(1, 1), (2, 1), (1, -1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Mushroom;
+                        }
+                    }
+                }
+                // Water (tea/medicine)
+                if self.in_bounds(cx - 1, cy + 1) {
+                    let idx = self.idx(cx - 1, cy + 1);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Water;
+                    }
+                }
+                // Bookshelves (study)
+                for dx in -1..=1 {
+                    let x = cx + dx;
+                    if self.in_bounds(x, cy - 1) {
+                        let idx = self.idx(x, cy - 1);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Bookshelf;
+                        }
+                    }
+                }
+                // Crate (storage)
+                if self.in_bounds(cx - 2, cy) {
+                    let idx = self.idx(cx - 2, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Crate;
+                    }
+                }
+                // Hermit NPC
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::Npc(1);
+                }
+            }
+            SpecialRoomKind::PrisonerCell => {
+                // Spikes (chains on walls)
+                for y in room.y + 1..room.y + room.h - 1 {
+                    if self.in_bounds(room.x + room.w - 2, y) && y != cy {
+                        let idx = self.idx(room.x + room.w - 2, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Spikes;
+                        }
+                    }
+                }
+                // Water puddle
+                if self.in_bounds(cx + 1, cy + 1) {
+                    let idx = self.idx(cx + 1, cy + 1);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Water;
+                    }
+                }
+                // Crate (bed/bench)
+                if self.in_bounds(cx - 1, cy + 1) {
+                    let idx = self.idx(cx - 1, cy + 1);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Crate;
+                    }
+                }
+                // Iron bars (brittle walls)
+                for y in room.y + 1..room.y + room.h - 1 {
+                    if y != cy && self.in_bounds(room.x, y) {
+                        let idx = self.idx(room.x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::BrittleWall;
+                        }
+                    }
+                }
+                // NPC prisoner
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::Npc(3);
+                }
+                // Locked door
+                if self.in_bounds(room.x, cy) {
+                    let idx = self.idx(room.x, cy);
+                    if matches!(self.tiles[idx], Tile::Floor | Tile::Corridor) {
+                        self.tiles[idx] = Tile::LockedDoor;
+                    }
+                }
+            }
+            SpecialRoomKind::SpiritShrine => {
+                // Bamboo sacred grove at edges
+                for &(dx, dy) in &[(-3,-1),(-3,0),(-3,1),(3,-1),(3,0),(3,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Bamboo;
+                        }
+                    }
+                }
+                // Crystal votive candles
+                for &(dx, dy) in &[(-1,-1),(1,-1),(-1,1),(1,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // Water blessing pool
+                for &(dx, dy) in &[(-1,0),(1,0),(0,-1),(0,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Water;
+                        }
+                    }
+                }
+                // Shrine at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::Shrine;
+                }
+            }
+            SpecialRoomKind::TeaHouse => {
+                // Bamboo decoration at corners
+                for &(dx, dy) in &[(-3,-2),(-3,2),(3,-2),(3,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Bamboo;
+                        }
+                    }
+                }
+                // Water ornamental feature
+                for &(dx, dy) in &[(0, 2), (-1, 2), (1, 2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Water;
+                        }
+                    }
+                }
+                // Crate (tea tables)
+                for &(dx, dy) in &[(-2, -1), (2, -1), (-2, 1), (2, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crate;
+                        }
+                    }
+                }
+                // Bookshelves (menu/scrolls) on sides
+                for &dx in &[-2, 2] {
+                    let x = cx + dx;
+                    if self.in_bounds(x, cy) {
+                        let idx = self.idx(x, cy);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Bookshelf;
+                        }
+                    }
+                }
+                // Spirit spring (tea pot warmth)
+                if self.in_bounds(cx, cy - 1) {
+                    let idx = self.idx(cx, cy - 1);
+                    self.tiles[idx] = Tile::SpiritSpringTile;
+                }
+                // Tea house keeper NPC
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::Npc(2);
+                }
+            }
+            SpecialRoomKind::SmithyWorkshop => {
+                // Gold ore (raw materials) at walls
+                for &(dx, dy) in &[(-3,-1),(-3,0),(-3,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::GoldOre;
+                        }
+                    }
+                }
+                // Lava heat source (expanded)
+                for &(dx, dy) in &[(0, 1), (-1, 1), (1, 1), (0, 2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Lava;
+                        }
+                    }
+                }
+                // Crate (tools) on sides
+                for &(dx, dy) in &[(-2, 0), (2, 0), (2, -1), (-2, -1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crate;
+                        }
+                    }
+                }
+                // Boulder (anvil)
+                if self.in_bounds(cx + 1, cy) {
+                    let idx = self.idx(cx + 1, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Boulder;
+                    }
+                }
+                // Forge at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::Forge;
+                }
+            }
+            SpecialRoomKind::AlchemyLab => {
+                // Water (vials/solutions) scattered
+                for &(dx, dy) in &[(0, -1), (1, -1), (-1, -1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Water;
+                        }
+                    }
+                }
+                // Bookshelves (recipe books)
+                for &(dx, dy) in &[(-2, -1), (-2, 0), (-2, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Bookshelf;
+                        }
+                    }
+                }
+                // Mushroom reagents
+                for &(dx, dy) in &[(2, -1), (2, 0), (2, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Mushroom;
+                        }
+                    }
+                }
+                // Crystal (reagent containers)
+                for &(dx, dy) in &[(-1, 1), (1, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // Poison gas (fume hood exhaust)
+                if self.in_bounds(cx, cy + 2) {
+                    let idx = self.idx(cx, cy + 2);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::PoisonGas;
+                    }
+                }
+                // Forge (cauldron) at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::Forge;
+                }
+            }
+            SpecialRoomKind::FortuneTeller => {
+                // Bamboo curtains
+                for &(dx, dy) in &[(-3,-1),(-3,0),(-3,1),(3,-1),(3,0),(3,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Bamboo;
+                        }
+                    }
+                }
+                // Oil (mysterious aura)
+                for &(dx, dy) in &[(-1,-1),(1,-1),(-1,1),(1,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Oil;
+                        }
+                    }
+                }
+                // Mushroom (incense)
+                for &(dx, dy) in &[(-2, 1), (2, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Mushroom;
+                        }
+                    }
+                }
+                // Crystal ball
+                if self.in_bounds(cx, cy + 1) {
+                    let idx = self.idx(cx, cy + 1);
+                    self.tiles[idx] = Tile::Crystal;
+                }
+                // Mirror pool (scrying)
+                if self.in_bounds(cx - 1, cy) {
+                    let idx = self.idx(cx - 1, cy);
+                    self.tiles[idx] = Tile::MirrorPool;
+                }
+                // Fortune teller NPC
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::Npc(0);
+                }
+            }
+            SpecialRoomKind::RefugeeCamp => {
+                // Oil (campfire residue)
+                for &(dx, dy) in &[(-1, 0), (1, 0), (0, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Oil;
+                        }
+                    }
+                }
+                // Water (well/water source)
+                if self.in_bounds(cx + 2, cy + 1) {
+                    let idx = self.idx(cx + 2, cy + 1);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Water;
+                    }
+                }
+                // Crate (supplies, expanded)
+                for &(dx, dy) in &[(-1, 1), (0, -1), (2, -1), (-2, -1), (1, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::Oil) {
+                            self.tiles[idx] = Tile::Crate;
+                        }
+                    }
+                }
+                // Spirit spring (campfire warmth)
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::SpiritSpringTile;
+                }
+                // NPCs (refugees)
+                for &(dx, dy) in &[(-2, 0), (1, -1), (2, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::Oil) {
+                            let npc_type = (rng.next_u64() % 4) as u8;
+                            self.tiles[idx] = Tile::Npc(npc_type);
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::DragonGate => {
+                // Gold pile offerings around approach
+                for &(dx, dy) in &[(-3,0),(3,0),(0,-3),(0,3),(-2,-2),(2,-2),(-2,2),(2,2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::GoldPile;
+                        }
+                    }
+                }
+                // Lava moat
+                for &(dx, dy) in &[(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(1,-1),(-1,1),(1,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::GoldPile) {
+                            self.tiles[idx] = Tile::Lava;
+                        }
+                    }
+                }
+                // Crystal power conduits
+                for &(dx, dy) in &[(-2,-1),(2,-1),(-2,1),(2,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if matches!(self.tiles[idx], Tile::Floor | Tile::GoldPile) {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // Safe approach paths (clear lava for cardinal approaches)
+                for &(dx, dy) in &[(-2, 0), (2, 0), (0, -2), (0, 2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        self.tiles[idx] = Tile::Floor;
+                    }
+                    let lx = cx + dx / 2;
+                    let ly = cy + dy / 2;
+                    if self.in_bounds(lx, ly) {
+                        let idx = self.idx(lx, ly);
+                        if self.tiles[idx] == Tile::Lava {
+                            self.tiles[idx] = Tile::Floor;
+                        }
+                    }
+                }
+                // Dragon gate portal at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::DragonGatePortal;
+                }
+            }
+            SpecialRoomKind::GamblingDen => {
+                // 3 urns (chests) in a row, player picks one
+                for dx in -1..=1 {
+                    let x = cx + dx * 2;
+                    if self.in_bounds(x, cy) {
+                        let idx = self.idx(x, cy);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Chest;
+                        }
+                    }
+                }
+                // Gold decoration around the den
+                for &(dx, dy) in &[(-3, 0), (3, 0), (0, -2), (0, 2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::GoldPile;
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::BloodAltar => {
+                // Central altar with blood pools (lava-styled)
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Altar(AltarKind::Iron);
+                    }
+                }
+                for &(dx, dy) in &[(-1, -1), (1, -1), (-1, 1), (1, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Oil;
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::CursedTreasure => {
+                // Ominous chest surrounded by cursed floor
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Chest;
+                    }
+                }
+                for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        if dx == 0 && dy == 0 { continue; }
+                        let x = cx + dx;
+                        let y = cy + dy;
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::CursedFloor;
+                            }
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::SoulForge => {
+                // Ethereal forge with crystal pillars
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Forge;
+                    }
+                }
+                for &(dx, dy) in &[(-2, -1), (2, -1), (-2, 1), (2, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+                // Spirit spring fuel
+                if self.in_bounds(cx, cy + 1) {
+                    let idx = self.idx(cx, cy + 1);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Lava;
+                    }
+                }
+            }
+            SpecialRoomKind::WishingWell => {
+                // Deep water well with water ring
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::DeepWater;
+                    }
+                }
+                for &(dx, dy) in &[(-1,0),(1,0),(0,-1),(0,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Water;
+                        }
+                    }
+                }
+                // Gold offerings around well
+                for &(dx, dy) in &[(-2, 0), (2, 0), (0, -2), (0, 2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::GoldPile;
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::RuneGate => {
+                // 4 pressure plates in cardinal directions (rune positions)
+                for &(dx, dy) in &[(-2, 0), (2, 0), (0, -2), (0, 2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::PressurePlate;
+                        }
+                    }
+                }
+                // Locked treasure in center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::LockedDoor;
+                    }
+                }
+            }
+            SpecialRoomKind::MirrorMaze => {
+                // Grid of crystals (mirrors) with walkable paths
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) && (x + y) % 3 == 0 && !(x == cx && y == cy) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Crystal;
+                            }
+                        }
+                    }
+                }
+                // Reward in center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Chest;
+                    }
+                }
+            }
+            SpecialRoomKind::WeightPuzzle => {
+                // 3 pressure plates in a triangle, 3 boulders nearby, ice floor
+                let plates = [(cx - 2, cy), (cx + 2, cy), (cx, cy - 2)];
+                let boulders = [(cx - 2, cy + 1), (cx + 2, cy + 1), (cx, cy + 1)];
+                for &(px, py) in &plates {
+                    if self.in_bounds(px, py) {
+                        let idx = self.idx(px, py);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::PressurePlate;
+                        }
+                    }
+                }
+                for &(bx, by) in &boulders {
+                    if self.in_bounds(bx, by) {
+                        let idx = self.idx(bx, by);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Boulder;
+                        }
+                    }
+                }
+                // Ice floor for sliding
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Ice;
+                            }
+                        }
+                    }
+                }
+                // Locked chest reward
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::Chest;
+                }
+            }
+            SpecialRoomKind::ToneStaircase => {
+                // 4 ascending shrines in a line
+                for i in 0..4 {
+                    let x = cx - 1 + i;
+                    if self.in_bounds(x, cy) {
+                        let idx = self.idx(x, cy);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Shrine;
+                        }
+                    }
+                }
+                // Reward chest at the top
+                if self.in_bounds(cx + 3, cy) {
+                    let idx = self.idx(cx + 3, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Chest;
+                    }
+                }
+            }
+            SpecialRoomKind::ElementalLock => {
+                // Locked door with 5 elemental altars
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::LockedDoor;
+                    }
+                }
+                let altars = [
+                    (cx - 2, cy - 1, AltarKind::Jade),
+                    (cx + 2, cy - 1, AltarKind::Gale),
+                    (cx - 2, cy + 1, AltarKind::Iron),
+                    (cx + 2, cy + 1, AltarKind::Gold),
+                    (cx, cy + 2, AltarKind::Mirror),
+                ];
+                for &(ax, ay, akind) in &altars {
+                    if self.in_bounds(ax, ay) {
+                        let idx = self.idx(ax, ay);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Altar(akind);
+                        }
+                    }
+                }
+                // Chest behind the locked door
+                if self.in_bounds(cx, cy - 1) {
+                    let idx = self.idx(cx, cy - 1);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Chest;
+                    }
+                }
+            }
+            SpecialRoomKind::SurvivalPit => {
+                // Open arena with spikes border, central floor
+                for x in room.x + 1..room.x + room.w - 1 {
+                    for &y in &[room.y + 1, room.y + room.h - 2] {
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Spikes;
+                            }
+                        }
+                    }
+                }
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for &x in &[room.x + 1, room.x + room.w - 2] {
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Spikes;
+                            }
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::TreasureRace => {
+                // Open room, gold piles scattered (collected on step)
+                for _ in 0..6 {
+                    let x = rng.range(room.x + 1, room.x + room.w - 1);
+                    let y = rng.range(room.y + 1, room.y + room.h - 1);
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::GoldPile;
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::CollapsingChamber => {
+                // Spikes on the outer ring, treasure chest in center
+                for x in room.x + 1..room.x + room.w - 1 {
+                    for &y in &[room.y + 1, room.y + room.h - 2] {
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Spikes;
+                            }
+                        }
+                    }
+                }
+                for y in room.y + 2..room.y + room.h - 2 {
+                    for &x in &[room.x + 1, room.x + room.w - 2] {
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Spikes;
+                            }
+                        }
+                    }
+                }
+                // Treasure at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Chest;
+                    }
+                }
+            }
+            SpecialRoomKind::InkFlood => {
+                // Ink (oil) flooding most of the room
+                for y in room.y + 1..room.y + room.h - 1 {
+                    for x in room.x + 1..room.x + room.w - 1 {
+                        if self.in_bounds(x, y) && rng.next_u64() % 3 != 0 {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Oil;
+                            }
+                        }
+                    }
+                }
+                // InkWell at center for bonus
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    self.tiles[idx] = Tile::InkWell;
+                }
+                // Chest as reward near edge
+                let rx = room.x + room.w - 2;
+                if self.in_bounds(rx, cy) {
+                    let idx = self.idx(rx, cy);
+                    self.tiles[idx] = Tile::Chest;
+                }
+            }
+            SpecialRoomKind::FormShrine => {
+                // Central shrine with 4 elemental markers
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Shrine;
+                    }
+                }
+                let markers = [
+                    (cx - 2, cy, Tile::Lava),     // Flame
+                    (cx + 2, cy, Tile::Boulder),   // Stone
+                    (cx, cy - 2, Tile::Water),     // Mist
+                    (cx, cy + 2, Tile::PressurePlate), // Tiger
+                ];
+                for &(mx, my, tile) in &markers {
+                    if self.in_bounds(mx, my) {
+                        let idx = self.idx(mx, my);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = tile;
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::ClassTrial => {
+                // Training dummies (pressure plates) with obstacle course
+                for &(dx, dy) in &[(-2, -1), (2, -1), (-2, 1), (2, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::PressurePlate;
+                        }
+                    }
+                }
+                // Reward altar at center
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Altar(AltarKind::Iron);
+                    }
+                }
+            }
+            SpecialRoomKind::RadicalFountain => {
+                // Spirit spring fountain with water and crystals
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::SpiritSpringTile;
+                    }
+                }
+                for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        if dx == 0 && dy == 0 { continue; }
+                        let x = cx + dx;
+                        let y = cy + dy;
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Water;
+                            }
+                        }
+                    }
+                }
+                for &(dx, dy) in &[(-2, -2), (2, -2), (-2, 2), (2, 2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Crystal;
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::AncestorTomb => {
+                // Tomb with bookshelf walls and central chest (weapon)
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Chest;
+                    }
+                }
+                if self.in_bounds(cx, cy - 1) {
+                    let idx = self.idx(cx, cy - 1);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Altar(AltarKind::Jade);
+                    }
+                }
+                for dx in -1..=1 {
+                    for &y in &[room.y + 1, room.y + room.h - 2] {
+                        let x = cx + dx;
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Bookshelf;
+                            }
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::ProphecyRoom => {
+                // Murals (bookshelves) on all walls, crystal ball in center
+                for x in room.x + 1..room.x + room.w - 1 {
+                    for &y in &[room.y + 1, room.y + room.h - 2] {
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Bookshelf;
+                            }
+                        }
+                    }
+                }
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::MirrorPool;
+                    }
+                }
+            }
+            SpecialRoomKind::SealedMemory => {
+                // Meditation space with shrine and water
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Shrine;
+                    }
+                }
+                for &(dx, dy) in &[(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Water;
+                        }
+                    }
+                }
+                // Bookshelves as memory records
+                for dx in -2..=2 {
+                    let x = cx + dx;
+                    if self.in_bounds(x, cy - 2) {
+                        let idx = self.idx(x, cy - 2);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Bookshelf;
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::DemonSeal => {
+                // Sealed demon NPC with lava barrier
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Npc(3);
+                    }
+                }
+                for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        if dx == 0 && dy == 0 { continue; }
+                        let x = cx + dx;
+                        let y = cy + dy;
+                        if self.in_bounds(x, y) {
+                            let idx = self.idx(x, y);
+                            if self.tiles[idx] == Tile::Floor {
+                                self.tiles[idx] = Tile::Lava;
+                            }
+                        }
+                    }
+                }
+                // Safe approach from south
+                if self.in_bounds(cx, cy + 1) {
+                    let idx = self.idx(cx, cy + 1);
+                    self.tiles[idx] = Tile::Floor;
+                }
+                if self.in_bounds(cx, cy + 2) {
+                    let idx = self.idx(cx, cy + 2);
+                    self.tiles[idx] = Tile::Floor;
+                }
+            }
+            SpecialRoomKind::PhoenixNest => {
+                // Central spirit spring with lava nest ring
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::SpiritSpringTile;
+                    }
+                }
+                for &(dx, dy) in &[(-1,0),(1,0),(0,-1),(0,1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::Lava;
+                        }
+                    }
+                }
+                // Chest with phoenix plume
+                if self.in_bounds(cx + 2, cy) {
+                    let idx = self.idx(cx + 2, cy);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Chest;
+                    }
+                }
+                // Safe paths
+                for &(dx, dy) in &[(-2, 0), (2, 0), (0, -2), (0, 2)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] != Tile::Chest {
+                            self.tiles[idx] = Tile::Floor;
+                        }
+                    }
+                }
+            }
+            SpecialRoomKind::CalligraphyContest => {
+                // Writing stations with ink wells
+                for dx in [-2, 0, 2] {
+                    let x = cx + dx;
+                    if self.in_bounds(x, cy) {
+                        let idx = self.idx(x, cy);
+                        if self.tiles[idx] == Tile::Floor {
+                            self.tiles[idx] = Tile::InkWell;
+                        }
+                    }
+                }
+                // NPC judge
+                if self.in_bounds(cx, cy - 1) {
+                    let idx = self.idx(cx, cy - 1);
+                    if self.tiles[idx] == Tile::Floor {
+                        self.tiles[idx] = Tile::Npc(0);
+                    }
+                }
+            }
+        }
     }
 
     /// Assign random modifiers to some rooms (not first or last).
@@ -1944,6 +5387,7 @@ mod tests {
                     w: 5,
                     h: 5,
                     modifier: None,
+                    special: None,
                 },
                 Room {
                     x: 8,
@@ -1951,6 +5395,7 @@ mod tests {
                     w: 5,
                     h: 5,
                     modifier: None,
+                    special: None,
                 },
                 Room {
                     x: 15,
@@ -1958,6 +5403,7 @@ mod tests {
                     w: 5,
                     h: 5,
                     modifier: None,
+                    special: None,
                 },
                 Room {
                     x: 1,
@@ -1965,6 +5411,7 @@ mod tests {
                     w: 5,
                     h: 5,
                     modifier: None,
+                    special: None,
                 },
                 Room {
                     x: 8,
@@ -1972,6 +5419,7 @@ mod tests {
                     w: 5,
                     h: 5,
                     modifier: None,
+                    special: None,
                 },
             ],
             visible: vec![false; (width * height) as usize],
@@ -2002,6 +5450,7 @@ mod tests {
                     w: 8,
                     h: 8,
                     modifier: None,
+                    special: None,
                 },
                 Room {
                     x: 11,
@@ -2009,6 +5458,7 @@ mod tests {
                     w: 8,
                     h: 8,
                     modifier: None,
+                    special: None,
                 },
                 Room {
                     x: 21,
@@ -2016,6 +5466,7 @@ mod tests {
                     w: 8,
                     h: 8,
                     modifier: None,
+                    special: None,
                 },
                 Room {
                     x: 1,
@@ -2023,6 +5474,7 @@ mod tests {
                     w: 8,
                     h: 8,
                     modifier: None,
+                    special: None,
                 },
                 Room {
                     x: 11,
@@ -2030,6 +5482,7 @@ mod tests {
                     w: 8,
                     h: 8,
                     modifier: None,
+                    special: None,
                 },
             ],
             visible: vec![false; (width * height) as usize],

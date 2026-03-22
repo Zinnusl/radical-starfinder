@@ -1,6 +1,6 @@
 use crate::combat::action::deal_damage;
 use crate::combat::terrain::{apply_terrain_interactions, TerrainSource};
-use crate::combat::{ArcingProjectile, Projectile, ProjectileEffect, TacticalBattle};
+use crate::combat::{AudioEvent, ArcingProjectile, Projectile, ProjectileEffect, TacticalBattle};
 use crate::enemy::{PlayerRadicalAbility, RadicalAction};
 use crate::status::{StatusInstance, StatusKind};
 
@@ -9,11 +9,13 @@ pub fn apply_radical_action(
     unit_idx: usize,
     action: RadicalAction,
 ) -> String {
-    match action {
+    let proj_count_before = battle.projectiles.len() + battle.arcing_projectiles.len();
+    let result = match action {
         RadicalAction::SpreadingWildfire => {
             battle.units[0]
                 .statuses
                 .push(StatusInstance::new(StatusKind::Burn { damage: 1 }, 3));
+            battle.audio_events.push(AudioEvent::StatusBurn);
             let ux = battle.units[unit_idx].x;
             let uy = battle.units[unit_idx].y;
             let facing = battle.units[unit_idx].facing;
@@ -33,6 +35,7 @@ pub fn apply_radical_action(
             battle.units[0]
                 .statuses
                 .push(StatusInstance::new(StatusKind::Slow, 3));
+            battle.audio_events.push(AudioEvent::StatusSlow);
             format!("{} — Armor eroded and slowed!", action.name())
         }
         RadicalAction::OverwhelmingForce => {
@@ -127,6 +130,7 @@ pub fn apply_radical_action(
             battle.units[0]
                 .statuses
                 .push(StatusInstance::new(StatusKind::Slow, 2));
+            battle.audio_events.push(AudioEvent::StatusSlow);
             battle.units[unit_idx].radical_armor += 1;
             format!("{} — Grasping roots!", action.name())
         }
@@ -732,7 +736,368 @@ pub fn apply_radical_action(
                 (battle.units[unit_idx].hp + 3).min(battle.units[unit_idx].max_hp);
             format!("{} — Cleansed by light!", action.name())
         }
+        RadicalAction::ScatteringPages => {
+            let ux = battle.units[unit_idx].x;
+            let uy = battle.units[unit_idx].y;
+            let mut hit = 0;
+            for i in 0..battle.units.len() {
+                if battle.units[i].alive {
+                    let dist =
+                        (battle.units[i].x - ux).abs() + (battle.units[i].y - uy).abs();
+                    if dist <= 2 {
+                        battle.units[i]
+                            .statuses
+                            .push(StatusInstance::new(StatusKind::Confused, 1));
+                        hit += 1;
+                    }
+                }
+            }
+            format!("{} — Pages scatter! {} units confused!", action.name(), hit)
+        }
+        RadicalAction::TrueVision => {
+            battle.units[0].radical_armor = 0;
+            battle.units[0].radical_dodge = false;
+            battle.units[0].radical_counter = false;
+            battle.units[0].thorn_armor_turns = 0;
+            battle.units[0].defending = false;
+            battle.units[0].statuses.retain(|s| s.is_negative());
+            format!("{} — All protections dispelled!", action.name())
+        }
+        RadicalAction::QiDisruption => {
+            let drained = battle.focus.min(3);
+            battle.focus -= drained;
+            format!("{} — {} focus disrupted!", action.name(), drained)
+        }
+        RadicalAction::ExpandingDomain => {
+            battle.units[unit_idx].damage += 1;
+            battle.units[unit_idx].radical_armor += 1;
+            let ux = battle.units[unit_idx].x;
+            let uy = battle.units[unit_idx].y;
+            for i in 1..battle.units.len() {
+                if i != unit_idx && battle.units[i].alive {
+                    let dist =
+                        (battle.units[i].x - ux).abs() + (battle.units[i].y - uy).abs();
+                    if dist <= 2 {
+                        battle.units[i].damage += 1;
+                    }
+                }
+            }
+            format!("{} — Domain expands! Power surges!", action.name())
+        }
+        RadicalAction::SinkholeSnare => {
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.arena.set_tile(px, py, crate::combat::BattleTile::CrackedFloor);
+            battle.arcing_projectiles.push(ArcingProjectile {
+                target_x: px,
+                target_y: py,
+                turns_remaining: 1,
+                effect: ProjectileEffect::Damage(1),
+                glyph: "🕳",
+                color: "#664422",
+                owner_is_player: false,
+            });
+            format!(
+                "{} — Ground cracks beneath! Move or fall! (1 turn)",
+                action.name()
+            )
+        }
+        RadicalAction::SonicBurst => {
+            let ux = battle.units[unit_idx].x;
+            let uy = battle.units[unit_idx].y;
+            let mut targets = Vec::new();
+            for i in 0..battle.units.len() {
+                if battle.units[i].alive {
+                    let dist =
+                        (battle.units[i].x - ux).abs() + (battle.units[i].y - uy).abs();
+                    if dist <= 2 {
+                        targets.push(i);
+                    }
+                }
+            }
+            for &i in &targets {
+                if i == unit_idx {
+                    continue;
+                }
+                let tx = battle.units[i].x;
+                let ty = battle.units[i].y;
+                battle.projectiles.push(Projectile {
+                    from_x: ux as f64,
+                    from_y: uy as f64,
+                    to_x: tx,
+                    to_y: ty,
+                    progress: 0.0,
+                    speed: 0.14,
+                    arc_height: 0.1,
+                    effect: ProjectileEffect::Damage(2),
+                    owner_idx: unit_idx,
+                    glyph: "🔊",
+                    color: "#ffcc00",
+                    done: false,
+                });
+                battle.units[i].stunned = true;
+            }
+            // Self-damage from the burst
+            battle.units[unit_idx].hp = (battle.units[unit_idx].hp - 1).max(1);
+            format!("{} — Sonic shockwave!", action.name())
+        }
+        RadicalAction::VenomousLash => {
+            let ex = battle.units[unit_idx].x;
+            let ey = battle.units[unit_idx].y;
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.arcing_projectiles.push(ArcingProjectile {
+                target_x: px,
+                target_y: py,
+                turns_remaining: 1,
+                effect: ProjectileEffect::Damage(1),
+                glyph: "🐍",
+                color: "#44cc44",
+                owner_is_player: false,
+            });
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Poison { damage: 2 }, 2));
+            let _ = (ex, ey); // enemy position used for projectile origin display
+            format!(
+                "{} — Venomous lash! Poison incoming! (1 turn)",
+                action.name()
+            )
+        }
+        RadicalAction::IronBodyStance => {
+            battle.units[unit_idx].radical_armor += 2;
+            battle.units[unit_idx]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Slow, 2));
+            battle.units[unit_idx].fortify_stacks += 1;
+            format!("{} — Iron body! Immovable defense!", action.name())
+        }
+        RadicalAction::GoreCrush => {
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            let mut nx = battle.units[unit_idx].x;
+            let mut ny = battle.units[unit_idx].y;
+            for _ in 0..2 {
+                if nx == px && ny == py {
+                    break;
+                }
+                let dx = (px - nx).signum();
+                let dy = (py - ny).signum();
+                if (px - nx).abs() >= (py - ny).abs() {
+                    nx += dx;
+                } else {
+                    ny += dy;
+                }
+            }
+            battle.units[unit_idx].x = nx.clamp(0, battle.arena.width as i32 - 1);
+            battle.units[unit_idx].y = ny.clamp(0, battle.arena.height as i32 - 1);
+            let ex = battle.units[unit_idx].x;
+            let ey = battle.units[unit_idx].y;
+            battle.projectiles.push(Projectile {
+                from_x: ex as f64,
+                from_y: ey as f64,
+                to_x: px,
+                to_y: py,
+                progress: 0.0,
+                speed: 0.12,
+                arc_height: 0.3,
+                effect: ProjectileEffect::Damage(2),
+                owner_idx: unit_idx,
+                glyph: "🐂",
+                color: "#aa4400",
+                done: false,
+            });
+            // Knockback player 1 tile away from charge direction
+            let kb_dx = (px - ex).signum();
+            let kb_dy = (py - ey).signum();
+            let new_px = (px + kb_dx).clamp(0, battle.arena.width as i32 - 1);
+            let new_py = (py + kb_dy).clamp(0, battle.arena.height as i32 - 1);
+            if battle.arena.tile(new_px, new_py).map(|t| t.is_walkable()).unwrap_or(false)
+                && battle.unit_at(new_px, new_py).is_none()
+            {
+                battle.units[0].x = new_px;
+                battle.units[0].y = new_py;
+            }
+            format!("{} — Charges and gores!", action.name())
+        }
+        RadicalAction::IntoxicatingMist => {
+            let ux = battle.units[unit_idx].x;
+            let uy = battle.units[unit_idx].y;
+            for dx in -2..=2i32 {
+                for dy in -2..=2i32 {
+                    if dx.abs() + dy.abs() <= 2 && (dx != 0 || dy != 0) {
+                        let tx = ux + dx;
+                        let ty = uy + dy;
+                        if tx >= 0
+                            && ty >= 0
+                            && tx < battle.arena.width as i32
+                            && ty < battle.arena.height as i32
+                        {
+                            battle
+                                .arena
+                                .set_tile(tx, ty, crate::combat::BattleTile::Steam);
+                        }
+                    }
+                }
+            }
+            battle.units[0]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Confused, 2));
+            format!("{} — Intoxicating mist fills the air!", action.name())
+        }
+        RadicalAction::SproutingBarrier => {
+            let ux = battle.units[unit_idx].x;
+            let uy = battle.units[unit_idx].y;
+            for dx in -2..=2i32 {
+                for dy in -2..=2i32 {
+                    if dx.abs() + dy.abs() <= 2 && (dx != 0 || dy != 0) {
+                        let tx = ux + dx;
+                        let ty = uy + dy;
+                        if tx >= 0
+                            && ty >= 0
+                            && tx < battle.arena.width as i32
+                            && ty < battle.arena.height as i32
+                        {
+                            if battle.arena.tile(tx, ty) == Some(crate::combat::BattleTile::Open) {
+                                battle
+                                    .arena
+                                    .set_tile(tx, ty, crate::combat::BattleTile::Grass);
+                            }
+                        }
+                    }
+                }
+            }
+            // Count adjacent grass for armor
+            let mut grass_count = 0;
+            for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                if battle.arena.tile(ux + dx, uy + dy)
+                    == Some(crate::combat::BattleTile::Grass)
+                {
+                    grass_count += 1;
+                }
+            }
+            battle.units[unit_idx].radical_armor += grass_count;
+            format!(
+                "{} — Sprouts grow! +{} armor from grass!",
+                action.name(),
+                grass_count
+            )
+        }
+        RadicalAction::TidalSurge => {
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            let on_water =
+                battle.arena.tile(px, py) == Some(crate::combat::BattleTile::Water);
+            battle
+                .arena
+                .set_tile(px, py, crate::combat::BattleTile::Water);
+            if on_water {
+                // Extra damage if already on water
+                let ex = battle.units[unit_idx].x;
+                let ey = battle.units[unit_idx].y;
+                battle.projectiles.push(Projectile {
+                    from_x: ex as f64,
+                    from_y: ey as f64,
+                    to_x: px,
+                    to_y: py,
+                    progress: 0.0,
+                    speed: 0.11,
+                    arc_height: 0.2,
+                    effect: ProjectileEffect::Damage(2),
+                    owner_idx: unit_idx,
+                    glyph: "🌊",
+                    color: "#2288ff",
+                    done: false,
+                });
+            }
+            // Push player 2 tiles away
+            let ux = battle.units[unit_idx].x;
+            let uy = battle.units[unit_idx].y;
+            let push_dx = (px - ux).signum();
+            let push_dy = (py - uy).signum();
+            for _ in 0..2 {
+                let new_px =
+                    (battle.units[0].x + push_dx).clamp(0, battle.arena.width as i32 - 1);
+                let new_py =
+                    (battle.units[0].y + push_dy).clamp(0, battle.arena.height as i32 - 1);
+                if battle
+                    .arena
+                    .tile(new_px, new_py)
+                    .map(|t| t.is_walkable())
+                    .unwrap_or(false)
+                    && battle.unit_at(new_px, new_py).is_none()
+                {
+                    battle.units[0].x = new_px;
+                    battle.units[0].y = new_py;
+                }
+            }
+            if on_water {
+                format!("{} — Tidal surge! Swept away with force!", action.name())
+            } else {
+                format!("{} — Water surges! Pushed back!", action.name())
+            }
+        }
+        RadicalAction::BoneShatter => {
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            battle.units[0].radical_armor = 0;
+            battle.units[0].defending = false;
+            battle.arcing_projectiles.push(ArcingProjectile {
+                target_x: px,
+                target_y: py,
+                turns_remaining: 1,
+                effect: ProjectileEffect::Damage(3),
+                glyph: "🦴",
+                color: "#eeddcc",
+                owner_is_player: false,
+            });
+            format!(
+                "{} — Bone shard incoming! Armor shattered! (1 turn)",
+                action.name()
+            )
+        }
+        RadicalAction::AdaptiveShift => {
+            battle.units[unit_idx].radical_armor += 2;
+            battle.units[unit_idx].fortify_stacks += 1;
+            format!("{} — Adapts and hardens!", action.name())
+        }
+        RadicalAction::BerserkerFury => {
+            battle.units[unit_idx].hp = (battle.units[unit_idx].hp - 2).max(1);
+            battle.units[unit_idx].damage += 3;
+            battle.units[unit_idx]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Haste, 2));
+            format!("{} — BERSERKER FURY! Pain fuels rage!", action.name())
+        }
+        RadicalAction::FlockAssault => {
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            let offsets = [(-1, 0), (1, 0), (0, -1)];
+            for (i, &(ox, oy)) in offsets.iter().enumerate() {
+                let tx = (px + ox).clamp(0, battle.arena.width as i32 - 1);
+                let ty = (py + oy).clamp(0, battle.arena.height as i32 - 1);
+                let delay = if i < 2 { 1 } else { 2 };
+                battle.arcing_projectiles.push(ArcingProjectile {
+                    target_x: tx,
+                    target_y: ty,
+                    turns_remaining: delay,
+                    effect: ProjectileEffect::Damage(1),
+                    glyph: "🐦",
+                    color: "#886644",
+                    owner_is_player: false,
+                });
+            }
+            format!(
+                "{} — A flock descends! 3 strikes incoming!",
+                action.name()
+            )
+        }
+    };
+    let proj_count_after = battle.projectiles.len() + battle.arcing_projectiles.len();
+    if proj_count_after > proj_count_before {
+        battle.audio_events.push(AudioEvent::ProjectileLaunch);
     }
+    result
 }
 
 pub fn apply_player_radical_ability(

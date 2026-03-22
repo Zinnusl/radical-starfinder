@@ -62,6 +62,22 @@ pub enum SpellEffect {
     Cone(i32),
     /// Create a wall of obstacles (length tiles)
     Wall(i32),
+    /// Create a 3×3 area of Oil tiles (flammable, slippery)
+    OilSlick,
+    /// Freeze tiles in a cross pattern into Ice; deal i32 damage + Slow 2
+    FreezeGround(i32),
+    /// Set fire to target tile and adjacent tiles; apply Burn
+    Ignite,
+    /// Create Grass in 3×3; upgrade existing Grass to BambooThicket
+    PlantGrowth,
+    /// Crack tiles in a large cross; Open→CrumblingFloor, CrumblingFloor→Pit; deal i32 damage
+    Earthquake(i32),
+    /// Create HolyGround tiles that heal i32 HP/turn for 3 rounds
+    Sanctify(i32),
+    /// Wave of water: 5×3 line, push units 2 tiles, deal i32 damage, create Water tiles
+    FloodWave(i32),
+    /// Place a Boulder on target empty tile
+    SummonBoulder,
 }
 
 impl SpellEffect {
@@ -87,6 +103,14 @@ impl SpellEffect {
             SpellEffect::Thorns(_) => "🌿 Thorns",
             SpellEffect::Cone(_) => "🔺 Cone",
             SpellEffect::Wall(_) => "🧱 Wall",
+            SpellEffect::OilSlick => "🛢 Oil",
+            SpellEffect::FreezeGround(_) => "🧊 Freeze",
+            SpellEffect::Ignite => "🔥 Ignite",
+            SpellEffect::PlantGrowth => "🌿 Growth",
+            SpellEffect::Earthquake(_) => "💥 Quake",
+            SpellEffect::Sanctify(_) => "✨ Sanctify",
+            SpellEffect::FloodWave(_) => "🌊 Flood",
+            SpellEffect::SummonBoulder => "🪨 Boulder",
         }
     }
 
@@ -154,6 +178,44 @@ impl SpellEffect {
                     "Raise a wall of {} obstacle tiles perpendicular to your aim direction.",
                     len
                 )
+            }
+            SpellEffect::OilSlick => {
+                "Create a 3×3 oil slick. Flammable! Units slide 1 extra tile.".to_string()
+            }
+            SpellEffect::FreezeGround(dmg) => {
+                format!(
+                    "Freeze tiles in a cross pattern. {} damage + Slow 2 to units hit.",
+                    dmg
+                )
+            }
+            SpellEffect::Ignite => {
+                "Set fire to target area. Burns grass and oil. Applies Burn for 3 turns."
+                    .to_string()
+            }
+            SpellEffect::PlantGrowth => {
+                "Grow grass in a 3×3 area. Existing grass becomes bamboo thicket. Heal 1 on grass."
+                    .to_string()
+            }
+            SpellEffect::Earthquake(dmg) => {
+                format!(
+                    "Crack the earth in a large cross. {} damage. Open→Crumbling, Crumbling→Pit.",
+                    dmg
+                )
+            }
+            SpellEffect::Sanctify(heal) => {
+                format!(
+                    "Create holy ground that heals {} HP/turn for 3 rounds. Purifies cursed tiles.",
+                    heal
+                )
+            }
+            SpellEffect::FloodWave(dmg) => {
+                format!(
+                    "Send a 5×3 wave of water. {} damage, pushes units 2 tiles, creates Water tiles.",
+                    dmg
+                )
+            }
+            SpellEffect::SummonBoulder => {
+                "Place a boulder on target tile. Blocks movement and line of sight.".to_string()
             }
         }
     }
@@ -1116,6 +1178,119 @@ pub const RECIPES: &[Recipe] = &[
         output_pinyin: "tíng",
         output_meaning: "thunderbolt",
         effect: SpellEffect::Pierce(6),
+    },
+    // ── Terrain Spells ──────────────────────────────────────────────────────
+    Recipe {
+        inputs: &["水", "土"],
+        output_hanzi: "油",
+        output_pinyin: "yóu",
+        output_meaning: "oil",
+        effect: SpellEffect::OilSlick,
+    },
+    Recipe {
+        inputs: &["水", "石"],
+        output_hanzi: "滑",
+        output_pinyin: "huá",
+        output_meaning: "slippery",
+        effect: SpellEffect::OilSlick,
+    },
+    Recipe {
+        inputs: &["水", "金"],
+        output_hanzi: "冰",
+        output_pinyin: "bīng",
+        output_meaning: "ice",
+        effect: SpellEffect::FreezeGround(3),
+    },
+    Recipe {
+        inputs: &["雨", "金"],
+        output_hanzi: "冻",
+        output_pinyin: "dòng",
+        output_meaning: "to freeze",
+        effect: SpellEffect::FreezeGround(2),
+    },
+    Recipe {
+        inputs: &["火", "气"],
+        output_hanzi: "燃",
+        output_pinyin: "rán",
+        output_meaning: "to ignite",
+        effect: SpellEffect::Ignite,
+    },
+    Recipe {
+        inputs: &["火", "田"],
+        output_hanzi: "燎",
+        output_pinyin: "liáo",
+        output_meaning: "wildfire",
+        effect: SpellEffect::Ignite,
+    },
+    Recipe {
+        inputs: &["木", "土"],
+        output_hanzi: "林",
+        output_pinyin: "lín",
+        output_meaning: "forest",
+        effect: SpellEffect::PlantGrowth,
+    },
+    Recipe {
+        inputs: &["禾", "水"],
+        output_hanzi: "苗",
+        output_pinyin: "miáo",
+        output_meaning: "sprout/seedling",
+        effect: SpellEffect::PlantGrowth,
+    },
+    Recipe {
+        inputs: &["土", "力", "山"],
+        output_hanzi: "震",
+        output_pinyin: "zhèn",
+        output_meaning: "earthquake",
+        effect: SpellEffect::Earthquake(4),
+    },
+    Recipe {
+        inputs: &["山", "力"],
+        output_hanzi: "崩",
+        output_pinyin: "bēng",
+        output_meaning: "to collapse",
+        effect: SpellEffect::Earthquake(3),
+    },
+    Recipe {
+        inputs: &["日", "心"],
+        output_hanzi: "圣",
+        output_pinyin: "shèng",
+        output_meaning: "holy/sacred",
+        effect: SpellEffect::Sanctify(2),
+    },
+    Recipe {
+        inputs: &["白", "日", "心"],
+        output_hanzi: "晖",
+        output_pinyin: "huī",
+        output_meaning: "radiance",
+        effect: SpellEffect::Sanctify(3),
+    },
+    Recipe {
+        inputs: &["水", "大"],
+        output_hanzi: "洪",
+        output_pinyin: "hóng",
+        output_meaning: "flood",
+        effect: SpellEffect::FloodWave(3),
+    },
+    Recipe {
+        inputs: &["雨", "大"],
+        output_hanzi: "涝",
+        output_pinyin: "lào",
+        output_meaning: "waterlogging",
+        effect: SpellEffect::FloodWave(2),
+    },
+    Recipe {
+        inputs: &["石", "大"],
+        output_hanzi: "磊",
+        output_pinyin: "lěi",
+        output_meaning: "pile of rocks",
+        effect: SpellEffect::SummonBoulder,
+    },
+    Recipe {
+        inputs: &["土", "大"],
+        output_hanzi: "墩",
+        output_pinyin: "dūn",
+        output_meaning: "mound/block",
+        effect: SpellEffect::SummonBoulder,
     },
 ];
 

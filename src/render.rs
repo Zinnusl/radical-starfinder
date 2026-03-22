@@ -903,18 +903,24 @@ impl Renderer {
             }
         }
 
-        // ── Message bar (bottom-center) ─────────────────────────────────
+        // ── Message bar (bottom-center) — styled with gradient ─────────
         if !message.is_empty() {
             let message_lift = (anim_t * 7.5).sin().abs() * 2.0;
+            let msg_x = self.canvas_w * 0.15;
+            let msg_y = self.canvas_h - 38.0 - message_lift;
+            let msg_w = self.canvas_w * 0.7;
+            let msg_h = 30.0;
             self.ctx.set_font("14px monospace");
             self.ctx.set_text_align("center");
-            self.ctx.set_fill_style_str("rgba(0,0,0,0.78)");
-            self.ctx.fill_rect(
-                self.canvas_w * 0.15,
-                self.canvas_h - 38.0 - message_lift,
-                self.canvas_w * 0.7,
-                30.0,
-            );
+            // Gradient background
+            self.ctx.set_fill_style_str("rgba(0,0,0,0.85)");
+            self.ctx.fill_rect(msg_x, msg_y, msg_w, msg_h);
+            self.ctx.set_fill_style_str("rgba(40,30,60,0.4)");
+            self.ctx.fill_rect(msg_x, msg_y, msg_w, msg_h * 0.5);
+            // Accent border
+            self.ctx.set_stroke_style_str("rgba(120,100,160,0.3)");
+            self.ctx.set_line_width(1.0);
+            self.ctx.stroke_rect(msg_x, msg_y, msg_w, msg_h);
             self.ctx.set_fill_style_str(hud_message_color(message));
             self.ctx
                 .fill_text(
@@ -3288,7 +3294,8 @@ impl Renderer {
         );
 
         match tile {
-            Tile::Floor | Tile::Corridor | Tile::CursedFloor | Tile::Trap(_) => {
+            Tile::Floor | Tile::Corridor | Tile::CursedFloor | Tile::Trap(_)
+            | Tile::Ice | Tile::PoisonGas | Tile::Mushroom => {
                 self.ctx.set_fill_style_str(if tile == Tile::Corridor {
                     "rgba(215,225,255,0.06)"
                 } else {
@@ -3314,7 +3321,7 @@ impl Renderer {
                     self.ctx.fill_rect(cx, cy, 2.0, 2.0);
                 }
             }
-            Tile::Wall | Tile::CrackedWall | Tile::BrittleWall => {
+            Tile::Wall | Tile::CrackedWall | Tile::BrittleWall | Tile::Bamboo => {
                 self.ctx.set_fill_style_str("rgba(0,0,0,0.14)");
                 self.ctx.fill_rect(
                     screen_x + 3.0,
@@ -3364,7 +3371,7 @@ impl Renderer {
                     self.ctx.stroke();
                 }
             }
-            Tile::Water | Tile::DeepWater => {
+            Tile::Water | Tile::DeepWater | Tile::Lava => {
                 let wave_shift = (anim_t * 3.2 + tx as f64 * 0.7 + ty as f64 * 0.4).sin() * 2.0;
                 self.ctx.set_fill_style_str(if tile == Tile::DeepWater {
                     "rgba(160,200,255,0.14)"
@@ -3468,7 +3475,15 @@ impl Renderer {
             | Tile::LockedDoor
             | Tile::Altar(_)
             | Tile::Seal(_)
-            | Tile::Sign(_) => {
+            | Tile::Sign(_)
+            | Tile::GoldOre
+            | Tile::Bookshelf
+            | Tile::DragonGatePortal
+            | Tile::SpiritSpringTile
+            | Tile::GoldPile
+            | Tile::Crystal
+            | Tile::PressurePlate
+            | Tile::Boulder => {
                 if let Some(plate_fill) = tile_plate_fill(tile) {
                     self.ctx.set_fill_style_str(plate_fill);
                     self.ctx.fill_rect(
@@ -4100,6 +4115,12 @@ impl Renderer {
                     } else {
                         "rgba(60,45,15,0.75)"
                     }
+                } else if unit.is_companion() {
+                    if is_current {
+                        "rgba(30,90,60,0.85)"
+                    } else {
+                        "rgba(25,70,50,0.75)"
+                    }
                 } else if is_current {
                     "rgba(100,25,25,0.85)"
                 } else {
@@ -4113,6 +4134,8 @@ impl Renderer {
                     let glow_pulse = ((anim_t * 4.0).sin() * 0.3 + 0.7).clamp(0.4, 1.0);
                     let glow_color = if unit.is_player() {
                         format!("rgba(255,204,50,{})", glow_pulse)
+                    } else if unit.is_companion() {
+                        format!("rgba(68,204,136,{})", glow_pulse)
                     } else {
                         format!("rgba(255,80,80,{})", glow_pulse)
                     };
@@ -4134,6 +4157,8 @@ impl Renderer {
                 // Unit glyph
                 let glyph = if unit.is_player() {
                     "你"
+                } else if unit.is_companion() {
+                    if unit.hanzi.is_empty() { "友" } else { unit.hanzi }
                 } else if !unit.hanzi.is_empty() {
                     unit.hanzi
                 } else {
@@ -4143,6 +4168,8 @@ impl Renderer {
                     "#555"
                 } else if unit.is_player() {
                     "#ffcc33"
+                } else if unit.is_companion() {
+                    "#44cc88"
                 } else {
                     "#ff6666"
                 };
@@ -4163,7 +4190,7 @@ impl Renderer {
                     let pip_y = tq_y + tq_cell + 1.0;
                     self.ctx.set_fill_style_str("rgba(0,0,0,0.5)");
                     self.ctx.fill_rect(sx + 2.0, pip_y, tq_cell - 4.0, tq_hp_h);
-                    let hp_color = if unit.is_player() {
+                    let hp_color = if unit.is_player() || unit.is_companion() {
                         "#44cc55"
                     } else if hp_frac > 0.5 {
                         "#cc4444"
@@ -4260,6 +4287,8 @@ impl Renderer {
                         ArenaBiome::Infernal => "arena_floor_infernal",
                     },
                     BattleTile::TrapTileRevealed => "arena_thorns",
+                    BattleTile::Oil => "arena_water",
+                    BattleTile::HolyGround => "arena_spirit_well",
                 };
 
                 if !self.draw_sprite_icon(sprite_key, sx, sy, cell) {
@@ -4294,6 +4323,8 @@ impl Renderer {
                         BattleTile::Pit => "#0a0a0a",
                         BattleTile::TrapTile => "#3a3458",
                         BattleTile::TrapTileRevealed => "#4a2a2a",
+                        BattleTile::Oil => "#2a2018",
+                        BattleTile::HolyGround => "#4a4a22",
                     };
                     self.ctx.set_fill_style_str(fill);
                     self.ctx.fill_rect(sx, sy, cell, cell);
@@ -4346,6 +4377,28 @@ impl Renderer {
                             .ok();
                     }
 
+                    if tile == BattleTile::Oil {
+                        let pulse = ((anim_t * 2.0).sin() * 0.15 + 0.5).max(0.3);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(80,60,20,{})", pulse));
+                        self.ctx.set_font("bold 12px monospace");
+                        self.ctx.set_text_align("center");
+                        self.ctx
+                            .fill_text("~", sx + cell / 2.0, sy + cell / 2.0 + 4.0)
+                            .ok();
+                    }
+
+                    if tile == BattleTile::HolyGround {
+                        let pulse = ((anim_t * 2.5).sin() * 0.2 + 0.7).max(0.4);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(255,215,80,{})", pulse));
+                        self.ctx.set_font("bold 14px monospace");
+                        self.ctx.set_text_align("center");
+                        self.ctx
+                            .fill_text("✦", sx + cell / 2.0, sy + cell / 2.0 + 5.0)
+                            .ok();
+                    }
+
                     let flow_arrow = match tile {
                         BattleTile::FlowNorth => Some("↑"),
                         BattleTile::FlowSouth => Some("↓"),
@@ -4363,6 +4416,203 @@ impl Renderer {
                             .fill_text(arrow, sx + cell / 2.0, sy + cell / 2.0 + 6.0)
                             .ok();
                     }
+                }
+
+                // ── Terrain visual effects (animated overlays) ──
+                match tile {
+                    BattleTile::Water
+                    | BattleTile::FlowNorth
+                    | BattleTile::FlowSouth
+                    | BattleTile::FlowEast
+                    | BattleTile::FlowWest => {
+                        let wave = ((anim_t * 2.5 + gx as f64 * 0.7 + gy as f64 * 0.5).sin()
+                            * 0.12
+                            + 0.08)
+                            .max(0.0);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(80,160,255,{:.3})", wave));
+                        self.ctx.fill_rect(sx, sy, cell, cell);
+                        let wave2 = ((anim_t * 1.8 + gx as f64 * 1.1 - gy as f64 * 0.9).sin()
+                            * 0.06
+                            + 0.04)
+                            .max(0.0);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(120,200,255,{:.3})", wave2));
+                        self.ctx.fill_rect(sx, sy + cell * 0.5, cell, cell * 0.5);
+                    }
+                    BattleTile::Lava => {
+                        let glow = ((anim_t * 3.0 + gx as f64 * 0.5 + gy as f64 * 0.3).sin()
+                            * 0.15
+                            + 0.15)
+                            .max(0.0);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(255,120,20,{:.3})", glow));
+                        self.ctx.fill_rect(sx, sy, cell, cell);
+                        let flicker =
+                            ((anim_t * 7.0 + gx as f64 * 2.3).sin() * 0.08 + 0.05).max(0.0);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(255,200,50,{:.3})", flicker));
+                        self.ctx
+                            .fill_rect(sx + 4.0, sy + 4.0, cell - 8.0, cell - 8.0);
+                    }
+                    BattleTile::Ice | BattleTile::FrozenGround => {
+                        let seed = (gx.wrapping_mul(31).wrapping_add(gy.wrapping_mul(17))) as f64;
+                        let sparkle = ((anim_t * 4.0 + seed).sin() * 0.5 + 0.5).max(0.0);
+                        if sparkle > 0.7 {
+                            let dot_x = sx + (seed * 7.3) % cell;
+                            let dot_y = sy + (seed * 13.7) % cell;
+                            self.ctx.set_fill_style_str(&format!(
+                                "rgba(200,230,255,{:.3})",
+                                sparkle * 0.6
+                            ));
+                            self.ctx.fill_rect(dot_x, dot_y, 2.0, 2.0);
+                        }
+                        let sparkle2 = ((anim_t * 3.5 + seed * 1.7).sin() * 0.5 + 0.5).max(0.0);
+                        if sparkle2 > 0.65 {
+                            let dot_x = sx + (seed * 3.1 + 5.0) % cell;
+                            let dot_y = sy + (seed * 11.3 + 8.0) % cell;
+                            self.ctx.set_fill_style_str(&format!(
+                                "rgba(220,240,255,{:.3})",
+                                sparkle2 * 0.5
+                            ));
+                            self.ctx.fill_rect(dot_x, dot_y, 1.5, 1.5);
+                        }
+                    }
+                    BattleTile::Grass | BattleTile::BambooThicket => {
+                        let hash = (gx.wrapping_mul(7).wrapping_add(gy.wrapping_mul(13)) % 4) as f64;
+                        let shade_alpha = 0.06 + hash * 0.03;
+                        let (r, g, b) = if hash > 2.0 {
+                            (60, 120, 40)
+                        } else {
+                            (30, 80, 20)
+                        };
+                        self.ctx.set_fill_style_str(&format!(
+                            "rgba({},{},{},{:.3})",
+                            r, g, b, shade_alpha
+                        ));
+                        self.ctx.fill_rect(sx, sy, cell, cell);
+                        let sway = ((anim_t * 1.5 + gx as f64 * 0.4).sin() * 0.04 + 0.02)
+                            .max(0.0);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(80,160,60,{:.3})", sway));
+                        self.ctx.fill_rect(sx, sy, cell * 0.5, cell);
+                    }
+                    BattleTile::InkPool => {
+                        let swirl = ((anim_t * 2.0
+                            + gx as f64 * 1.3
+                            + gy as f64 * 0.7)
+                            .sin()
+                            * 0.1
+                            + 0.08)
+                            .max(0.0);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(60,40,120,{:.3})", swirl));
+                        self.ctx.fill_rect(sx, sy, cell, cell);
+                        let swirl2 = ((anim_t * 1.5 - gx as f64 * 0.9 + gy as f64 * 1.1).cos()
+                            * 0.06
+                            + 0.04)
+                            .max(0.0);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(30,20,80,{:.3})", swirl2));
+                        self.ctx
+                            .fill_rect(sx + 2.0, sy + 2.0, cell - 4.0, cell - 4.0);
+                    }
+                    BattleTile::Steam => {
+                        let fade = ((anim_t * 2.0 + gx as f64 * 0.6 + gy as f64 * 0.8).sin()
+                            * 0.12
+                            + 0.15)
+                            .max(0.0);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(180,180,200,{:.3})", fade));
+                        self.ctx.fill_rect(sx, sy, cell, cell);
+                        let rise =
+                            ((anim_t * 3.0 + gx as f64).sin() * 0.06 + 0.04).max(0.0);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(220,220,240,{:.3})", rise));
+                        self.ctx
+                            .fill_rect(sx + cell * 0.25, sy, cell * 0.5, cell * 0.6);
+                    }
+                    BattleTile::Oil => {
+                        let sheen = ((anim_t * 2.0 + gx as f64 * 0.8 + gy as f64 * 0.6).sin()
+                            * 0.1
+                            + 0.08)
+                            .max(0.0);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(140,120,40,{:.3})", sheen));
+                        self.ctx.fill_rect(sx, sy, cell, cell);
+                    }
+                    BattleTile::HolyGround => {
+                        let glow = ((anim_t * 2.5 + gx as f64 * 0.3 + gy as f64 * 0.5).sin()
+                            * 0.1
+                            + 0.12)
+                            .max(0.0);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(220,200,100,{:.3})", glow));
+                        self.ctx.fill_rect(sx, sy, cell, cell);
+                    }
+                    _ => {}
+                }
+
+                // ── Interactive tile pulsing glow ──
+                match tile {
+                    BattleTile::SpiritWell => {
+                        let glow = ((anim_t * 3.0 + gx as f64 * 0.4).sin() * 0.12 + 0.15)
+                            .max(0.0);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(60,120,255,{:.3})", glow));
+                        self.ctx.fill_rect(sx, sy, cell, cell);
+                        self.ctx.set_stroke_style_str(&format!(
+                            "rgba(80,160,255,{:.3})",
+                            glow + 0.1
+                        ));
+                        self.ctx.set_line_width(1.0);
+                        self.ctx
+                            .stroke_rect(sx + 1.0, sy + 1.0, cell - 2.0, cell - 2.0);
+                    }
+                    BattleTile::MeditationStone => {
+                        let glow = ((anim_t * 2.5 + gy as f64 * 0.3).sin() * 0.1 + 0.12)
+                            .max(0.0);
+                        self.ctx.set_fill_style_str(&format!(
+                            "rgba(160,140,200,{:.3})",
+                            glow
+                        ));
+                        self.ctx.fill_rect(sx, sy, cell, cell);
+                        self.ctx.set_stroke_style_str(&format!(
+                            "rgba(180,160,220,{:.3})",
+                            glow + 0.08
+                        ));
+                        self.ctx.set_line_width(1.0);
+                        self.ctx
+                            .stroke_rect(sx + 1.0, sy + 1.0, cell - 2.0, cell - 2.0);
+                    }
+                    BattleTile::ExplosiveBarrel => {
+                        let glow = ((anim_t * 4.0).sin() * 0.12 + 0.1).max(0.0);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(255,100,30,{:.3})", glow));
+                        self.ctx.fill_rect(sx, sy, cell, cell);
+                        self.ctx.set_stroke_style_str(&format!(
+                            "rgba(255,140,50,{:.3})",
+                            glow + 0.1
+                        ));
+                        self.ctx.set_line_width(1.0);
+                        self.ctx
+                            .stroke_rect(sx + 1.0, sy + 1.0, cell - 2.0, cell - 2.0);
+                    }
+                    BattleTile::HolyGround => {
+                        let glow = ((anim_t * 2.5 + gx as f64 * 0.3).sin() * 0.1 + 0.12)
+                            .max(0.0);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(255,220,100,{:.3})", glow));
+                        self.ctx.fill_rect(sx, sy, cell, cell);
+                        self.ctx.set_stroke_style_str(&format!(
+                            "rgba(255,230,120,{:.3})",
+                            glow + 0.1
+                        ));
+                        self.ctx.set_line_width(1.0);
+                        self.ctx
+                            .stroke_rect(sx + 1.0, sy + 1.0, cell - 2.0, cell - 2.0);
+                    }
+                    _ => {}
                 }
 
                 self.ctx.set_stroke_style_str("rgba(255,255,255,0.06)");
@@ -4439,6 +4689,7 @@ impl Renderer {
             cursor_x,
             cursor_y,
             ref aoe_preview,
+            ref mode,
             ..
         } = battle.phase
         {
@@ -4448,6 +4699,28 @@ impl Renderer {
                 self.ctx.set_fill_style_str("rgba(100,180,255,0.18)");
                 self.ctx.fill_rect(sx, sy, cell, cell);
             }
+
+            // Determine AoE color based on spell type
+            let (aoe_r, aoe_g, aoe_b) = match mode {
+                TargetMode::Spell { spell_idx } => {
+                    if *spell_idx < battle.available_spells.len() {
+                        match &battle.available_spells[*spell_idx].2 {
+                            radical::SpellEffect::FireAoe(_)
+                            | radical::SpellEffect::Cone(_) => (255, 80, 30),
+                            radical::SpellEffect::Poison(_, _)
+                            | radical::SpellEffect::Drain(_) => (80, 200, 60),
+                            radical::SpellEffect::Slow(_)
+                            | radical::SpellEffect::Stun => (80, 160, 255),
+                            radical::SpellEffect::Heal(_)
+                            | radical::SpellEffect::FocusRestore(_) => (80, 220, 120),
+                            _ => (255, 160, 60),
+                        }
+                    } else {
+                        (255, 100, 50)
+                    }
+                }
+                _ => (255, 100, 50),
+            };
 
             if aoe_preview.len() > 1 {
                 let aoe_pulse = ((anim_t * 5.0).sin() * 0.1 + 0.3).max(0.15);
@@ -4459,11 +4732,21 @@ impl Renderer {
                     {
                         let sx = grid_x + ax as f64 * cell;
                         let sy = grid_y + ay as f64 * cell;
-                        self.ctx
-                            .set_fill_style_str(&format!("rgba(255,100,50,{})", aoe_pulse));
+                        self.ctx.set_fill_style_str(&format!(
+                            "rgba({},{},{},{:.3})",
+                            aoe_r, aoe_g, aoe_b, aoe_pulse
+                        ));
                         self.ctx.fill_rect(sx, sy, cell, cell);
-                        self.ctx
-                            .set_stroke_style_str(&format!("rgba(255,140,60,{})", aoe_pulse + 0.2));
+                        let br = (aoe_r as i32 + 40).min(255) as u8;
+                        let bg = (aoe_g as i32 + 40).min(255) as u8;
+                        let bb = (aoe_b as i32 + 10).min(255) as u8;
+                        self.ctx.set_stroke_style_str(&format!(
+                            "rgba({},{},{},{:.3})",
+                            br,
+                            bg,
+                            bb,
+                            aoe_pulse + 0.2
+                        ));
                         self.ctx.set_line_width(1.5);
                         self.ctx
                             .stroke_rect(sx + 1.0, sy + 1.0, cell - 2.0, cell - 2.0);
@@ -4475,10 +4758,23 @@ impl Renderer {
             let cy = grid_y + cursor_y as f64 * cell;
             let pulse = ((anim_t * 6.0).sin() * 0.15 + 0.55).max(0.3);
             self.ctx
-                .set_stroke_style_str(&format!("rgba(255,204,50,{})", pulse));
+                .set_stroke_style_str(&format!("rgba(255,204,50,{:.3})", pulse));
             self.ctx.set_line_width(2.5);
             self.ctx
                 .stroke_rect(cx + 1.0, cy + 1.0, cell - 2.0, cell - 2.0);
+            // Crosshair on cursor tile
+            let ch_alpha = ((anim_t * 4.0).sin() * 0.15 + 0.45).max(0.2);
+            self.ctx.set_stroke_style_str(&format!(
+                "rgba({},{},{},{:.3})",
+                aoe_r, aoe_g, aoe_b, ch_alpha
+            ));
+            self.ctx.set_line_width(1.0);
+            self.ctx.begin_path();
+            self.ctx.move_to(cx + cell * 0.5, cy + 2.0);
+            self.ctx.line_to(cx + cell * 0.5, cy + cell - 2.0);
+            self.ctx.move_to(cx + 2.0, cy + cell * 0.5);
+            self.ctx.line_to(cx + cell - 2.0, cy + cell * 0.5);
+            self.ctx.stroke();
         }
 
         // Look mode overlay
@@ -4547,6 +4843,21 @@ impl Renderer {
                 self.ctx
                     .fill_text("你", sx + cell / 2.0, sy + cell / 2.0 + 7.0)
                     .ok();
+            } else if unit.is_companion() {
+                self.ctx.set_fill_style_str("rgba(68,204,136,0.18)");
+                self.ctx
+                    .fill_rect(sx + 2.0, sy + 2.0, cell - 4.0, cell - 4.0);
+                self.ctx.set_fill_style_str("#44cc88");
+                self.ctx.set_font("20px 'Noto Serif SC', 'SimSun', serif");
+                self.ctx.set_text_align("center");
+                let glyph = if unit.hanzi.is_empty() {
+                    "友"
+                } else {
+                    unit.hanzi
+                };
+                self.ctx
+                    .fill_text(glyph, sx + cell / 2.0, sy + cell / 2.0 + 7.0)
+                    .ok();
             } else {
                 let is_decoy = unit.is_decoy;
                 let bg_color = if is_decoy {
@@ -4592,18 +4903,12 @@ impl Renderer {
                 .fill_rect(bar_x - 0.5, bar_y - 0.5, bar_w + 1.0, bar_h + 1.0);
             self.ctx.set_fill_style_str(COL_HP_BG);
             self.ctx.fill_rect(bar_x, bar_y, bar_w, bar_h);
-            let hp_color = if unit.is_player() {
-                if hp_frac > 0.6 {
-                    COL_HP_BAR
-                } else if hp_frac > 0.3 {
-                    "#ccaa22"
-                } else {
-                    "#cc4422"
-                }
-            } else if hp_frac > 0.5 {
-                "#cc4444"
+            let hp_color = if hp_frac > 0.6 {
+                "#44cc55"
+            } else if hp_frac > 0.3 {
+                "#ccaa22"
             } else {
-                "#ff6644"
+                "#cc3322"
             };
             self.ctx.set_fill_style_str(hp_color);
             self.ctx.fill_rect(bar_x, bar_y, bar_w * hp_frac, bar_h);
@@ -4649,6 +4954,8 @@ impl Renderer {
             if i == battle.current_unit_idx() {
                 let glow_color = if unit.is_player() {
                     "#ffcc33"
+                } else if unit.is_companion() {
+                    "#44cc88"
                 } else {
                     "#ffffff"
                 };
@@ -4665,8 +4972,12 @@ impl Renderer {
             if let TacticalPhase::EnemyTurn { unit_idx, .. } = battle.phase {
                 if i == unit_idx && !unit.is_player() {
                     let pulse = ((anim_t * 8.0).sin() * 0.3 + 0.7).clamp(0.3, 1.0);
-                    self.ctx
-                        .set_stroke_style_str(&format!("rgba(255,80,80,{})", pulse));
+                    let color = if unit.is_companion() {
+                        format!("rgba(50,200,120,{})", pulse)
+                    } else {
+                        format!("rgba(255,80,80,{})", pulse)
+                    };
+                    self.ctx.set_stroke_style_str(&color);
                     self.ctx.set_line_width(2.5);
                     self.ctx
                         .stroke_rect(sx + 0.5, sy + 0.5, cell - 1.0, cell - 1.0);
@@ -4675,12 +4986,15 @@ impl Renderer {
 
             // Status effect icons (small colored dots/text above HP bar)
             if !unit.statuses.is_empty() {
-                let max_show = 3;
+                let max_show = 5;
                 let icon_size = 7.0;
                 let start_x = sx + 2.0;
                 let icon_y = bar_y - icon_size - 1.0;
                 for (si, status) in unit.statuses.iter().take(max_show).enumerate() {
                     let ix = start_x + si as f64 * (icon_size + 1.0);
+                    let icon_pulse =
+                        ((anim_t * 3.0 + si as f64 * 1.2).sin() * 0.15 + 0.85).clamp(0.6, 1.0);
+                    self.ctx.set_global_alpha(icon_pulse);
                     self.ctx.set_fill_style_str(status.color());
                     self.ctx.begin_path();
                     self.ctx
@@ -4693,6 +5007,7 @@ impl Renderer {
                         )
                         .ok();
                     self.ctx.fill();
+                    self.ctx.set_global_alpha(1.0);
                     self.ctx.set_fill_style_str("rgba(0,0,0,0.7)");
                     self.ctx.set_font("bold 5px monospace");
                     self.ctx.set_text_align("center");
@@ -4711,6 +5026,13 @@ impl Renderer {
                         crate::status::StatusKind::Fear => "!",
                         crate::status::StatusKind::Bleed { .. } => "X",
                         crate::status::StatusKind::Thorns => "T",
+                        crate::status::StatusKind::Fortify { .. } => "A",
+                        crate::status::StatusKind::Invisible => "I",
+                        crate::status::StatusKind::Rooted => "R",
+                        crate::status::StatusKind::Weakened => "w",
+                        crate::status::StatusKind::Cursed => "C",
+                        crate::status::StatusKind::Blessed => "★",
+                        crate::status::StatusKind::Wet => "D",
                     };
                     self.ctx
                         .fill_text(short, ix + icon_size / 2.0, icon_y + icon_size / 2.0 + 2.0)
@@ -5327,55 +5649,371 @@ impl Renderer {
 
         if let TacticalPhase::Look { cursor_x, cursor_y } = battle.phase {
             py += 6.0;
+            // ── LOOK MODE header ──
             self.ctx.set_fill_style_str("#66ccff");
             self.ctx.set_font("bold 11px monospace");
-            self.ctx.fill_text("LOOK MODE", panel_x, py + 10.0).ok();
-            py += 16.0;
+            self.ctx
+                .fill_text("── LOOK MODE ──", panel_x, py + 10.0)
+                .ok();
+            py += 18.0;
 
             if let Some(tile) = battle.arena.tile(cursor_x, cursor_y) {
-                self.ctx.set_fill_style_str("#ddd");
-                self.ctx.set_font("10px monospace");
-                let desc = tile.description();
-                let words: Vec<&str> = desc.split_whitespace().collect();
-                let mut line = String::new();
-                for word in &words {
-                    if line.len() + word.len() + 1 > 22 && !line.is_empty() {
-                        self.ctx.fill_text(&line, panel_x, py + 10.0).ok();
-                        py += 13.0;
-                        line.clear();
-                    }
-                    if !line.is_empty() {
-                        line.push(' ');
-                    }
-                    line.push_str(word);
+                // ── Tile info section ──
+                self.ctx.set_fill_style_str("rgba(40,40,60,0.5)");
+                self.ctx
+                    .fill_rect(panel_x - 4.0, py - 2.0, p_bar_w + 8.0, 14.0);
+
+                self.ctx.set_fill_style_str("#aaddee");
+                self.ctx.set_font("bold 10px monospace");
+                self.ctx
+                    .fill_text(
+                        &format!("Tile: {}", tile.name()),
+                        panel_x,
+                        py + 10.0,
+                    )
+                    .ok();
+                py += 15.0;
+
+                // Movement cost and LOS
+                let move_cost = 1 + tile.extra_move_cost();
+                let walkable = tile.is_walkable();
+                let blocks = tile.blocks_los();
+                self.ctx.set_fill_style_str("#999");
+                self.ctx.set_font("9px monospace");
+                if !walkable {
+                    self.ctx
+                        .fill_text("Impassable", panel_x, py + 10.0)
+                        .ok();
+                } else {
+                    self.ctx
+                        .fill_text(
+                            &format!(
+                                "Move: {}  LOS: {}",
+                                move_cost,
+                                if blocks { "blocked" } else { "clear" }
+                            ),
+                            panel_x,
+                            py + 10.0,
+                        )
+                        .ok();
                 }
-                if !line.is_empty() {
-                    self.ctx.fill_text(&line, panel_x, py + 10.0).ok();
-                    py += 13.0;
+                py += 12.0;
+
+                // Special effects
+                if let Some(fx) = tile.special_effects() {
+                    self.ctx.set_fill_style_str("#ddaa44");
+                    self.ctx.set_font("9px monospace");
+                    self.ctx
+                        .fill_text(&format!("⚡ {}", fx), panel_x, py + 10.0)
+                        .ok();
+                    py += 12.0;
                 }
 
+                // ── Unit info section ──
                 for unit in &battle.units {
                     if unit.alive && unit.x == cursor_x && unit.y == cursor_y {
                         py += 4.0;
+                        // Separator line
+                        self.ctx
+                            .set_stroke_style_str("rgba(100,140,180,0.3)");
+                        self.ctx.set_line_width(1.0);
+                        self.ctx.begin_path();
+                        self.ctx.move_to(panel_x, py);
+                        self.ctx.line_to(panel_x + p_bar_w, py);
+                        self.ctx.stroke();
+                        py += 6.0;
+
                         if unit.is_player() {
                             self.ctx.set_fill_style_str("#ffcc33");
-                            self.ctx.fill_text("You (Player)", panel_x, py + 10.0).ok();
+                            self.ctx.set_font("bold 10px monospace");
+                            self.ctx
+                                .fill_text("You (Player)", panel_x, py + 10.0)
+                                .ok();
+                            py += 14.0;
+                            // Player HP bar
+                            let phf = if unit.max_hp > 0 {
+                                (unit.hp as f64 / unit.max_hp as f64)
+                                    .clamp(0.0, 1.0)
+                            } else {
+                                0.0
+                            };
+                            self.ctx.set_fill_style_str("#333");
+                            self.ctx.fill_rect(panel_x, py, p_bar_w, 6.0);
+                            self.ctx.set_fill_style_str(if phf > 0.5 {
+                                "#44cc44"
+                            } else if phf > 0.25 {
+                                "#ccaa22"
+                            } else {
+                                "#cc4422"
+                            });
+                            self.ctx
+                                .fill_rect(panel_x, py, p_bar_w * phf, 6.0);
+                            py += 8.0;
+                            self.ctx.set_fill_style_str("#ccc");
+                            self.ctx.set_font("9px monospace");
+                            self.ctx
+                                .fill_text(
+                                    &format!("HP: {}/{}", unit.hp, unit.max_hp),
+                                    panel_x,
+                                    py + 10.0,
+                                )
+                                .ok();
+                            py += 14.0;
+                        } else if unit.is_companion() {
+                            let name = if unit.hanzi.is_empty() {
+                                "Companion"
+                            } else {
+                                unit.hanzi
+                            };
+                            self.ctx.set_fill_style_str("#44cc88");
+                            self.ctx
+                                .fill_text(
+                                    &format!(
+                                        "{} HP:{}/{}",
+                                        name, unit.hp, unit.max_hp
+                                    ),
+                                    panel_x,
+                                    py + 10.0,
+                                )
+                                .ok();
+                            py += 14.0;
                         } else {
+                            // ── Enemy header ──
+                            self.ctx.set_fill_style_str("#ff6666");
+                            self.ctx.set_font("bold 10px monospace");
                             let name = if unit.hanzi.is_empty() {
                                 "Enemy"
                             } else {
                                 unit.hanzi
                             };
-                            self.ctx.set_fill_style_str("#ff6666");
+                            let label = if !unit.pinyin.is_empty() {
+                                format!("{} ({})", name, unit.pinyin)
+                            } else {
+                                name.to_string()
+                            };
+                            self.ctx
+                                .fill_text(&label, panel_x, py + 10.0)
+                                .ok();
+                            py += 14.0;
+
+                            // HP bar
+                            let ehf = if unit.max_hp > 0 {
+                                (unit.hp as f64 / unit.max_hp as f64)
+                                    .clamp(0.0, 1.0)
+                            } else {
+                                0.0
+                            };
+                            self.ctx.set_fill_style_str("#333");
+                            self.ctx.fill_rect(panel_x, py, p_bar_w, 6.0);
+                            self.ctx.set_fill_style_str(if ehf > 0.5 {
+                                "#cc4444"
+                            } else if ehf > 0.25 {
+                                "#cc6622"
+                            } else {
+                                "#882222"
+                            });
+                            self.ctx
+                                .fill_rect(panel_x, py, p_bar_w * ehf, 6.0);
+                            py += 8.0;
+                            self.ctx.set_fill_style_str("#ccc");
+                            self.ctx.set_font("9px monospace");
                             self.ctx
                                 .fill_text(
-                                    &format!("{} HP:{}/{}", name, unit.hp, unit.max_hp),
+                                    &format!(
+                                        "HP: {}/{}",
+                                        unit.hp, unit.max_hp
+                                    ),
                                     panel_x,
                                     py + 10.0,
                                 )
                                 .ok();
+                            py += 12.0;
+
+                            // Armor, Speed, Element
+                            let mut stats_line = format!(
+                                "Armor:{}  Spd:{}",
+                                unit.radical_armor, unit.speed
+                            );
+                            if let Some(elem) = unit.wuxing_element {
+                                stats_line.push_str(&format!(
+                                    "  {}",
+                                    elem.label()
+                                ));
+                            }
+                            self.ctx.set_fill_style_str("#aaa");
+                            self.ctx.set_font("9px monospace");
+                            self.ctx
+                                .fill_text(&stats_line, panel_x, py + 10.0)
+                                .ok();
+                            py += 13.0;
+
+                            // ── Status effects ──
+                            if !unit.statuses.is_empty() {
+                                self.ctx.set_font("9px monospace");
+                                let mut sx_off = 0.0;
+                                for st in &unit.statuses {
+                                    let lbl = format!(
+                                        "{} {}t",
+                                        st.label(),
+                                        st.turns_left
+                                    );
+                                    let lbl_w =
+                                        lbl.len() as f64 * 5.5 + 4.0;
+                                    if sx_off + lbl_w > p_bar_w
+                                        && sx_off > 0.0
+                                    {
+                                        py += 12.0;
+                                        sx_off = 0.0;
+                                    }
+                                    self.ctx.set_fill_style_str(st.color());
+                                    self.ctx
+                                        .fill_text(
+                                            &lbl,
+                                            panel_x + sx_off,
+                                            py + 10.0,
+                                        )
+                                        .ok();
+                                    sx_off += lbl_w;
+                                }
+                                py += 13.0;
+                            }
+
+                            // ── Abilities section ──
+                            if !unit.radical_actions.is_empty() {
+                                py += 2.0;
+                                self.ctx.set_stroke_style_str(
+                                    "rgba(100,140,180,0.3)",
+                                );
+                                self.ctx.set_line_width(1.0);
+                                self.ctx.begin_path();
+                                self.ctx.move_to(panel_x, py);
+                                self.ctx.line_to(panel_x + p_bar_w, py);
+                                self.ctx.stroke();
+                                py += 4.0;
+
+                                self.ctx.set_fill_style_str("#88aacc");
+                                self.ctx.set_font("bold 9px monospace");
+                                self.ctx
+                                    .fill_text(
+                                        "── Abilities ──",
+                                        panel_x,
+                                        py + 10.0,
+                                    )
+                                    .ok();
+                                py += 14.0;
+
+                                for skill in &unit.radical_actions {
+                                    // Skill name with radical
+                                    self.ctx.set_fill_style_str(
+                                        skill.type_color(),
+                                    );
+                                    self.ctx.set_font("bold 9px monospace");
+                                    let skill_label = format!(
+                                        "{} {}",
+                                        skill.radical(),
+                                        skill.name()
+                                    );
+                                    let display_label =
+                                        if skill_label.chars().count() > 24 {
+                                            let s: String = skill_label
+                                                .chars()
+                                                .take(21)
+                                                .collect();
+                                            format!("{}...", s)
+                                        } else {
+                                            skill_label
+                                        };
+                                    self.ctx
+                                        .fill_text(
+                                            &display_label,
+                                            panel_x,
+                                            py + 10.0,
+                                        )
+                                        .ok();
+                                    py += 11.0;
+
+                                    // Description (word-wrapped)
+                                    self.ctx.set_fill_style_str("#999");
+                                    self.ctx.set_font("8px monospace");
+                                    let desc = skill.description();
+                                    let words: Vec<&str> =
+                                        desc.split_whitespace().collect();
+                                    let mut line = String::from("  ");
+                                    for word in &words {
+                                        if line.len() + word.len() + 1 > 24
+                                            && line.len() > 2
+                                        {
+                                            self.ctx
+                                                .fill_text(
+                                                    &line, panel_x,
+                                                    py + 10.0,
+                                                )
+                                                .ok();
+                                            py += 10.0;
+                                            line = String::from("  ");
+                                        }
+                                        if line.len() > 2 {
+                                            line.push(' ');
+                                        }
+                                        line.push_str(word);
+                                    }
+                                    if line.len() > 2 {
+                                        self.ctx
+                                            .fill_text(
+                                                &line, panel_x, py + 10.0,
+                                            )
+                                            .ok();
+                                        py += 10.0;
+                                    }
+
+                                    // Range + Damage + Type
+                                    self.ctx.set_fill_style_str("#777");
+                                    self.ctx.set_font("8px monospace");
+                                    let info_line = format!(
+                                        "  {} | {} | {}",
+                                        skill.range_info(),
+                                        skill.damage_info(),
+                                        skill.attack_type()
+                                    );
+                                    let info_display =
+                                        if info_line.chars().count() > 26 {
+                                            let s: String = info_line
+                                                .chars()
+                                                .take(23)
+                                                .collect();
+                                            format!("{}...", s)
+                                        } else {
+                                            info_line
+                                        };
+                                    self.ctx
+                                        .fill_text(
+                                            &info_display,
+                                            panel_x,
+                                            py + 10.0,
+                                        )
+                                        .ok();
+                                    py += 13.0;
+                                }
+                            }
+
+                            // ── Intent ──
+                            if let Some(intent) = &unit.intent {
+                                py += 2.0;
+                                self.ctx.set_fill_style_str("#ddaa44");
+                                self.ctx.set_font("bold 9px monospace");
+                                self.ctx
+                                    .fill_text(
+                                        &format!(
+                                            "Intent: {} →",
+                                            intent.label()
+                                        ),
+                                        panel_x,
+                                        py + 10.0,
+                                    )
+                                    .ok();
+                                py += 14.0;
+                            }
                         }
-                        py += 14.0;
                     }
                 }
             }
@@ -5543,7 +6181,7 @@ impl Renderer {
                 .ok();
         }
 
-        // Battle log (bottom area)
+        // Battle log (bottom area) — styled with gradient background
         let log_x = grid_x;
         let log_y = grid_y + grid_px + 8.0;
         let log_w = grid_px;
@@ -5551,9 +6189,18 @@ impl Renderer {
         let line_h = 14.0;
         let max_lines = ((log_h - 10.0) / line_h).floor() as usize;
 
-        self.ctx.set_fill_style_str("rgba(8,6,16,0.6)");
-        self.ctx.fill_rect(log_x, log_y, log_w, log_h);
-        self.ctx.set_stroke_style_str("rgba(100,80,140,0.35)");
+        // Gradient background: darker at bottom, slightly lighter at top
+        for gi in 0..4 {
+            let gy_off = gi as f64 * (log_h / 4.0);
+            let alpha = 0.45 + gi as f64 * 0.08;
+            self.ctx
+                .set_fill_style_str(&format!("rgba(8,6,16,{:.3})", alpha));
+            self.ctx.fill_rect(log_x, log_y + gy_off, log_w, log_h / 4.0);
+        }
+        // Accent line at top of log
+        self.ctx.set_fill_style_str("rgba(100,80,160,0.3)");
+        self.ctx.fill_rect(log_x, log_y, log_w, 1.0);
+        self.ctx.set_stroke_style_str("rgba(100,80,140,0.25)");
         self.ctx.set_line_width(1.0);
         self.ctx.stroke_rect(log_x, log_y, log_w, log_h);
 
@@ -5840,6 +6487,10 @@ impl Renderer {
                         Tile::Shop => Some(COL_SHOP),
                         Tile::Chest => Some(COL_CHEST),
                         Tile::Altar(_) => Some("#cc88ff"),
+                        Tile::DragonGatePortal => Some("#ff44aa"),
+                        Tile::SpiritSpringTile => Some("#66ffdd"),
+                        Tile::GoldPile => Some("#ffd700"),
+                        Tile::Bookshelf => Some("#c49a6c"),
                         _ => None,
                     };
                     if let Some(c) = poi_color {
@@ -6788,6 +7439,19 @@ fn tile_sprite_key(tile: Tile) -> &'static str {
         Tile::Npc(2) => "npc_merchant",
         Tile::Npc(_) => "npc_guard",
         Tile::Trap(_) => "tile_floor",
+        Tile::GoldOre => "tile_wall",
+        Tile::Lava => "tile_water",
+        Tile::Ice => "tile_floor",
+        Tile::Bamboo => "tile_wall",
+        Tile::Mushroom => "tile_floor",
+        Tile::PoisonGas => "tile_floor",
+        Tile::Bookshelf => "obj_shrine",
+        Tile::PressurePlate => "tile_floor",
+        Tile::Boulder => "tile_crate",
+        Tile::Crystal => "tile_wall",
+        Tile::DragonGatePortal => "obj_shrine",
+        Tile::SpiritSpringTile => "obj_shrine",
+        Tile::GoldPile => "tile_floor",
     }
 }
 
@@ -6824,6 +7488,18 @@ fn item_sprite_key(item: &Item) -> &'static str {
         ItemKind::WardingCharm => "item_warding_charm",
         ItemKind::InkBomb => "item_ink_bomb",
         ItemKind::PhoenixPlume => "item_phoenix_plume",
+        ItemKind::MirrorShard => "item_mirror_shard",
+        ItemKind::FrostVial => "item_frost_vial",
+        ItemKind::ShadowCloak => "item_shadow_cloak",
+        ItemKind::DragonScale => "item_dragon_scale",
+        ItemKind::BambooFlute => "item_bamboo_flute",
+        ItemKind::JadeCompass => "item_jade_compass",
+        ItemKind::SilkRope => "item_silk_rope",
+        ItemKind::LotusElixir => "item_lotus_elixir",
+        ItemKind::ThunderDrum => "item_thunder_drum",
+        ItemKind::CinnabarInk => "item_cinnabar_ink",
+        ItemKind::AncestorToken => "item_ancestor_token",
+        ItemKind::WindFan => "item_wind_fan",
     }
 }
 
@@ -6849,6 +7525,14 @@ fn spell_sprite_key(effect: &radical::SpellEffect) -> &'static str {
         radical::SpellEffect::Thorns(_) => "spell_shield",
         radical::SpellEffect::Cone(_) => "spell_fire",
         radical::SpellEffect::Wall(_) => "spell_shield",
+        radical::SpellEffect::OilSlick => "spell_drain",
+        radical::SpellEffect::FreezeGround(_) => "spell_stun",
+        radical::SpellEffect::Ignite => "spell_fire",
+        radical::SpellEffect::PlantGrowth => "spell_heal",
+        radical::SpellEffect::Earthquake(_) => "spell_strike",
+        radical::SpellEffect::Sanctify(_) => "spell_heal",
+        radical::SpellEffect::FloodWave(_) => "spell_stun",
+        radical::SpellEffect::SummonBoulder => "spell_shield",
     }
 }
 
@@ -6870,6 +7554,12 @@ fn spell_school_color(effect: &radical::SpellEffect) -> &'static str {
         radical::SpellEffect::Drain(_) | radical::SpellEffect::Poison(_, _) => "#aa66dd",
         radical::SpellEffect::Stun | radical::SpellEffect::Slow(_) => "#66ddff",
         radical::SpellEffect::Pacify => "#ffdd66",
+        radical::SpellEffect::OilSlick => "#8a7a4a",
+        radical::SpellEffect::FreezeGround(_) | radical::SpellEffect::FloodWave(_) => "#66ddff",
+        radical::SpellEffect::Ignite => "#ff6633",
+        radical::SpellEffect::PlantGrowth | radical::SpellEffect::Sanctify(_) => "#44dd66",
+        radical::SpellEffect::Earthquake(_) => "#ff9944",
+        radical::SpellEffect::SummonBoulder => "#88aaff",
     }
 }
 
@@ -7188,6 +7878,84 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
                 glyph: None,
                 glyph_color: "#ffffff",
             },
+            Tile::GoldOre => TilePalette {
+                fill: "#5a4a1e",
+                accent: Some("#ffd700"),
+                glyph: Some("矿"),
+                glyph_color: "#ffd700",
+            },
+            Tile::Lava => TilePalette {
+                fill: "#8b2500",
+                accent: Some("#ff4500"),
+                glyph: Some("~"),
+                glyph_color: "#ff6633",
+            },
+            Tile::Ice => TilePalette {
+                fill: "#a8d8ea",
+                accent: Some("#e0f0ff"),
+                glyph: Some("·"),
+                glyph_color: "#e0f0ff",
+            },
+            Tile::Bamboo => TilePalette {
+                fill: "#2d5a27",
+                accent: Some("#6abf4b"),
+                glyph: Some("‖"),
+                glyph_color: "#88dd66",
+            },
+            Tile::Mushroom => TilePalette {
+                fill: "#4a2d5a",
+                accent: Some("#bb77dd"),
+                glyph: Some("♠"),
+                glyph_color: "#cc88ee",
+            },
+            Tile::PoisonGas => TilePalette {
+                fill: "#2a4a2a",
+                accent: Some("#77dd44"),
+                glyph: Some("░"),
+                glyph_color: "#88ee55",
+            },
+            Tile::Bookshelf => TilePalette {
+                fill: "#5a3a1e",
+                accent: Some("#c49a6c"),
+                glyph: Some("书"),
+                glyph_color: "#ddb888",
+            },
+            Tile::PressurePlate => TilePalette {
+                fill: "#555555",
+                accent: Some("#999999"),
+                glyph: Some("◫"),
+                glyph_color: "#bbbbbb",
+            },
+            Tile::Boulder => TilePalette {
+                fill: "#666655",
+                accent: Some("#998877"),
+                glyph: Some("●"),
+                glyph_color: "#bbaa99",
+            },
+            Tile::Crystal => TilePalette {
+                fill: "#3a3a6a",
+                accent: Some("#aaaaff"),
+                glyph: Some("◇"),
+                glyph_color: "#ccccff",
+            },
+            Tile::DragonGatePortal => TilePalette {
+                fill: "#4a1a3a",
+                accent: Some("#ff44aa"),
+                glyph: Some("龙"),
+                glyph_color: "#ff66cc",
+            },
+            Tile::SpiritSpringTile => TilePalette {
+                fill: "#2a5a5a",
+                accent: Some("#66ffdd"),
+                glyph: Some("泉"),
+                glyph_color: "#88ffee",
+            },
+            Tile::GoldPile => TilePalette {
+                fill: "#5a4a1e",
+                accent: Some("#ffd700"),
+                glyph: Some("¥"),
+                glyph_color: "#ffdd44",
+            },
         }
     } else {
         match tile {
@@ -7401,6 +8169,84 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
                 glyph: None,
                 glyph_color: "#ffffff",
             },
+            Tile::GoldOre => TilePalette {
+                fill: "#3a3214",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Lava => TilePalette {
+                fill: "#5a1a00",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Ice => TilePalette {
+                fill: "#6a8a9a",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Bamboo => TilePalette {
+                fill: "#1e3a1b",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Mushroom => TilePalette {
+                fill: "#2d1a3a",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::PoisonGas => TilePalette {
+                fill: "#1a2d1a",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Bookshelf => TilePalette {
+                fill: "#3a2614",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::PressurePlate => TilePalette {
+                fill: "#333333",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Boulder => TilePalette {
+                fill: "#3a3a33",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::Crystal => TilePalette {
+                fill: "#222244",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::DragonGatePortal => TilePalette {
+                fill: "#2d1024",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::SpiritSpringTile => TilePalette {
+                fill: "#1a3a3a",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
+            Tile::GoldPile => TilePalette {
+                fill: "#3a3214",
+                accent: None,
+                glyph: None,
+                glyph_color: "#ffffff",
+            },
         }
     }
 }
@@ -7429,6 +8275,13 @@ fn tile_plate_fill(tile: Tile) -> Option<&'static str> {
         Tile::Altar(kind) => Some(altar_plate_fill(kind)),
         Tile::Seal(kind) => Some(seal_plate_fill(kind)),
         Tile::Sign(_) => Some("rgba(255,236,200,0.10)"),
+        Tile::GoldOre => Some("rgba(255,215,0,0.16)"),
+        Tile::Lava => Some("rgba(255,69,0,0.18)"),
+        Tile::Bookshelf => Some("rgba(196,154,108,0.14)"),
+        Tile::DragonGatePortal => Some("rgba(255,68,170,0.18)"),
+        Tile::SpiritSpringTile => Some("rgba(102,255,221,0.16)"),
+        Tile::GoldPile => Some("rgba(255,215,0,0.16)"),
+        Tile::Crystal => Some("rgba(170,170,255,0.14)"),
         _ => None,
     }
 }
@@ -7522,6 +8375,12 @@ fn tile_glyph_y(tile: Tile, screen_y: f64, anim_t: f64, tx: i32, ty: i32) -> f64
         Tile::Altar(_) => base + (anim_t * 2.8 + ty as f64 * 0.4).sin() * 0.8,
         Tile::Seal(_) => base + (anim_t * 3.1 + tx as f64 * 0.35 + ty as f64 * 0.2).sin() * 0.7,
         Tile::StairsDown => base + (anim_t * 1.8).sin() * 0.4,
+        Tile::Lava => base + (anim_t * 3.0 + tx as f64 * 0.5 + ty as f64 * 0.3).sin() * 1.2,
+        Tile::SpiritSpringTile => base + (anim_t * 2.5 + tx as f64 * 0.3).sin() * 0.9,
+        Tile::DragonGatePortal => base + (anim_t * 3.5 + ty as f64 * 0.4).sin() * 1.1,
+        Tile::GoldPile => base + (anim_t * 1.5).sin() * 0.3,
+        Tile::Mushroom => base + (anim_t * 2.0 + tx as f64 * 0.2).sin() * 0.5,
+        Tile::PoisonGas => base + (anim_t * 2.8 + tx as f64 * 0.4 + ty as f64 * 0.3).sin() * 0.8,
         _ => base,
     }
 }

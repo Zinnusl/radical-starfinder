@@ -4,4 +4,4 @@ mod fov;
 mod generation;
 
 pub use fov::compute_fov;
-pub use generation::{AltarKind, DungeonLevel, RoomModifier, SealKind, Tile};
+pub use generation::{AltarKind, DungeonLevel, RoomModifier, SealKind, SpecialRoomKind, Tile};

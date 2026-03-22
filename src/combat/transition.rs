@@ -7,6 +7,7 @@ use crate::combat::{
 };
 use crate::dungeon::RoomModifier;
 use crate::enemy::{AiBehavior, Enemy};
+use crate::game::Companion;
 use crate::player::Player;
 use crate::srs::SrsTracker;
 use crate::vocab::SentenceEntry;
@@ -18,6 +19,7 @@ pub fn enter_combat(
     floor: i32,
     room_modifier: Option<RoomModifier>,
     srs: &SrsTracker,
+    companion: Option<Companion>,
 ) -> TacticalBattle {
     let has_elite = enemy_indices.iter().any(|&ei| enemies[ei].is_elite);
     let has_boss = enemy_indices.iter().any(|&ei| enemies[ei].is_boss);
@@ -71,7 +73,54 @@ pub fn enter_combat(
         charge_remaining: None,
     });
 
-    // Enemy units spread across top half.
+    // Companion unit adjacent to player (if any).
+    if let Some(companion) = companion {
+        let (c_hp, c_damage, c_movement, c_speed, c_hanzi, c_pinyin) = match companion {
+            Companion::Guard => (8, 2, 2, 3, "卫", "wèi"),
+            Companion::Monk => (6, 1, 2, 3, "僧", "sēng"),
+            Companion::Teacher => (5, 1, 2, 3, "师", "shī"),
+            Companion::Merchant => (5, 1, 2, 3, "商", "shāng"),
+        };
+        let cx = px - 1;
+        let cy = py;
+        let c_hanzi_static: &'static str = Box::leak(c_hanzi.to_string().into_boxed_str());
+        let c_pinyin_static: &'static str = Box::leak(c_pinyin.to_string().into_boxed_str());
+        units.push(BattleUnit {
+            kind: UnitKind::Companion,
+            x: cx,
+            y: cy,
+            facing: Direction::North,
+            hanzi: c_hanzi_static,
+            pinyin: c_pinyin_static,
+            speed: c_speed,
+            movement: c_movement,
+            stored_movement: 0,
+            hp: c_hp,
+            max_hp: c_hp,
+            damage: c_damage,
+            defending: false,
+            alive: true,
+            ai: AiBehavior::Chase,
+            radical_actions: Vec::new(),
+            statuses: Vec::new(),
+            stunned: false,
+            radical_armor: 0,
+            radical_counter: false,
+            marked_extra_damage: 0,
+            thorn_armor_turns: 0,
+            radical_dodge: false,
+            radical_multiply: false,
+            fortify_stacks: 0,
+            boss_kind: None,
+            is_decoy: false,
+            word_group: None,
+            word_group_order: 0,
+            wuxing_element: None,
+            intent: None,
+            mastery_tier: 0,
+            charge_remaining: None,
+        });
+    }
     // Multi-char words are split into one BattleUnit per character.
     let mut word_group_id: usize = 0;
 
@@ -251,6 +300,21 @@ pub fn enter_combat(
         projectiles: Vec::new(),
         arcing_projectiles: Vec::new(),
         god_mode: false,
+        audio_events: Vec::new(),
+        companion_kind: companion,
+        player_equip_effects: {
+            let mut effects = Vec::new();
+            if let Some(w) = player.weapon {
+                effects.push(w.effect);
+            }
+            if let Some(a) = player.armor {
+                effects.push(a.effect);
+            }
+            if let Some(c) = player.charm {
+                effects.push(c.effect);
+            }
+            effects
+        },
     }
 }
 

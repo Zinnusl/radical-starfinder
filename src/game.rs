@@ -1,6 +1,7 @@
 //! Main game state and loop.
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -10,11 +11,11 @@ use crate::achievement::AchievementTracker;
 use crate::audio::Audio;
 use crate::codex::Codex;
 use crate::combat;
-use crate::dungeon::{compute_fov, AltarKind, DungeonLevel, RoomModifier, SealKind, Tile};
+use crate::dungeon::{compute_fov, AltarKind, DungeonLevel, RoomModifier, SealKind, SpecialRoomKind, Tile};
 use crate::enemy::{BossKind, Enemy, RadicalAction};
 use crate::particle::ParticleSystem;
 use crate::player::{
-    Deity, EquipEffect, ItemKind, ItemState, Player, PlayerClass, PlayerForm, EQUIPMENT_POOL,
+    Deity, EquipEffect, Item, ItemKind, ItemState, Player, PlayerClass, PlayerForm, EQUIPMENT_POOL,
     ITEM_KIND_COUNT, MYSTERY_ITEM_APPEARANCES,
 };
 use crate::radical::{self, Spell, SpellEffect};
@@ -1363,8 +1364,17 @@ pub struct GameState {
     pub console_cmd_history: Vec<String>,
     /// Index into command history (None = new input)
     pub console_cmd_index: Option<usize>,
+    /// Tab-completion: cached matches and cycle index
+    pub tab_matches: Vec<String>,
+    pub tab_cycle_index: usize,
+    /// The prefix that was used to generate current tab_matches
+    pub tab_prefix: String,
     /// God mode (invincible)
     pub god_mode: bool,
+    /// Set of (floor, room_x, room_y) for special rooms already activated
+    pub completed_special_rooms: HashSet<(i32, i32, i32)>,
+    /// Whether the demon deal is active (enemies on next floor are elite)
+    pub demon_deal_floors: i32,
 }
 
 impl GameState {
@@ -1466,7 +1476,7 @@ impl GameState {
         self.save_settings();
     }
 
-    fn make_player(&self, x: i32, y: i32, class: PlayerClass) -> Player {
+    fn make_player(&mut self, x: i32, y: i32, class: PlayerClass) -> Player {
         let mut player = Player::new(x, y, class);
         match class {
             PlayerClass::Warrior => {
@@ -1492,8 +1502,7 @@ impl GameState {
                 player.add_piety(crate::player::Deity::Jade, 5);
             }
             PlayerClass::Beastmaster => {
-                // Beastmaster companion set by caller
-                player.gold += 0;
+                self.companion = Some(Companion::Guard);
             }
             PlayerClass::Earthmover => {
                 player.weapon = Some(&crate::player::EQUIPMENT_POOL[10]); // Iron Pickaxe
@@ -2262,6 +2271,9 @@ impl GameState {
             Tile::Water => {
                 self.message = "≈ Shallow water — stunning magic can arc through it.".to_string();
                 self.message_timer = 60;
+                if let Some(ref audio) = self.audio {
+                    audio.play_water_splash();
+                }
             }
             Tile::Trap(trap_type) => {
                 let idx = self.level.idx(self.player.x, self.player.y);
@@ -2318,6 +2330,81 @@ impl GameState {
                 self.message_timer = 60;
                 if let Some(ref audio) = self.audio {
                     audio.play_damage();
+                }
+            }
+            Tile::Lava => {
+                let dmg = (2 + self.floor_num.max(1) / 2).max(2);
+                self.player.hp -= dmg;
+                if let Some(ref audio) = self.audio {
+                    audio.play_damage();
+                    audio.play_lava_rumble();
+                }
+                let (sx, sy) = self.tile_to_screen(self.player.x, self.player.y);
+                self.particles.spawn_damage(sx, sy, &mut self.rng_state);
+                self.trigger_shake(8);
+                self.flash = Some((255, 80, 0, 0.3));
+                self.message = format!("🔥 Lava burns you for {} damage!", dmg);
+                self.message_timer = 70;
+                if self.player.hp <= 0 && !self.try_phoenix_revive() {
+                    self.player.hp = 0;
+                    self.run_journal
+                        .log(RunEvent::DiedTo("Lava".to_string(), self.floor_num));
+                    self.post_mortem_page = 0;
+                    self.combat = CombatState::GameOver;
+                    self.message = self.run_summary();
+                    self.message_timer = 255;
+                    if let Some(ref audio) = self.audio {
+                        audio.play_death();
+                    }
+                    self.save_high_score();
+                }
+            }
+            Tile::Ice => {
+                self.message = "❄ Ice! The floor is slippery.".to_string();
+                self.message_timer = 40;
+            }
+            Tile::Mushroom => {
+                self.message = "🍄 Spore cloud! You feel disoriented.".to_string();
+                self.message_timer = 60;
+                self.flash = Some((180, 100, 255, 0.15));
+            }
+            Tile::PoisonGas => {
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Poison { damage: 1 },
+                        3,
+                    ));
+                self.message = "☠ Poison gas! Toxic fumes seep into your lungs!".to_string();
+                self.message_timer = 60;
+                self.trigger_shake(4);
+                self.flash = Some((100, 220, 60, 0.2));
+                if let Some(ref audio) = self.audio {
+                    audio.play_damage();
+                }
+            }
+            Tile::GoldPile => {
+                let gold = 5 + (self.rng_next() % 16) as i32;
+                self.player.gold += gold;
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Floor;
+                self.message = format!("💰 You pick up {} gold!", gold);
+                self.message_timer = 50;
+                if let Some(ref audio) = self.audio {
+                    audio.play_treasure();
+                }
+            }
+            Tile::SpiritSpringTile => {
+                let heal = self.player.max_hp / 2;
+                self.player.hp = (self.player.hp + heal).min(self.player.max_hp);
+                self.player.spirit = (self.player.spirit + 20).min(self.player.max_spirit);
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Water;
+                self.message = format!("🌊 The spirit spring heals {} HP and restores 20 spirit!", heal);
+                self.message_timer = 80;
+                self.flash = Some((100, 255, 200, 0.2));
+                if let Some(ref audio) = self.audio {
+                    audio.play_heal();
                 }
             }
             _ => {}
@@ -2556,9 +2643,577 @@ impl GameState {
         None
     }
 
-    /// Effective FOV radius (reduced in Dark rooms).
+    /// Get the special room kind at the player's current position.
+    fn current_special_room(&self) -> Option<SpecialRoomKind> {
+        let px = self.player.x;
+        let py = self.player.y;
+        for room in &self.level.rooms {
+            if px >= room.x && px < room.x + room.w && py >= room.y && py < room.y + room.h {
+                return room.special;
+            }
+        }
+        None
+    }
+
+    /// Get the (room.x, room.y) of the room the player is currently in, if any.
+    fn current_room_origin(&self) -> Option<(i32, i32)> {
+        let px = self.player.x;
+        let py = self.player.y;
+        for room in &self.level.rooms {
+            if px >= room.x && px < room.x + room.w && py >= room.y && py < room.y + room.h {
+                return Some((room.x, room.y));
+            }
+        }
+        None
+    }
+
+    /// Mark the current special room as completed so it won't trigger again.
+    fn mark_room_completed(&mut self) {
+        if let Some((rx, ry)) = self.current_room_origin() {
+            self.completed_special_rooms.insert((self.floor_num, rx, ry));
+        }
+    }
+
+    /// Check if the current special room has already been completed.
+    fn is_room_completed(&self) -> bool {
+        if let Some((rx, ry)) = self.current_room_origin() {
+            self.completed_special_rooms.contains(&(self.floor_num, rx, ry))
+        } else {
+            false
+        }
+    }
+
+    /// Handle interactive mechanics for the 23 new special room types.
+    fn handle_special_room_interaction(&mut self, target_tile: Tile) {
+        let special = match self.current_special_room() {
+            Some(s) => s,
+            None => return,
+        };
+
+        // Skip rooms already completed
+        if self.is_room_completed() {
+            return;
+        }
+
+        match special {
+            // ── Risk/Reward Rooms ────────────────────────────────────
+            SpecialRoomKind::GamblingDen => {
+                // Triggered when stepping on a Chest tile
+                if target_tile != Tile::Chest { return; }
+                self.mark_room_completed();
+                let roll = self.rng_next() % 3;
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Floor;
+                match roll {
+                    0 => {
+                        // Great reward: rare radical + gold
+                        let rare_radicals: &[&str] = &["龙", "凤", "鬼", "神", "魂", "仙"];
+                        let r = rare_radicals[self.rng_next() as usize % rare_radicals.len()];
+                        self.player.add_radical(r);
+                        self.player.gold += 50;
+                        self.message = format!("🎰 JACKPOT! You find the rare radical {} and 50 gold!", r);
+                        self.flash = Some((255, 215, 0, 0.3));
+                        if let Some(ref audio) = self.audio {
+                            audio.play_treasure();
+                        }
+                    }
+                    1 => {
+                        // Decent: random item
+                        let _ = self.player.add_item(Item::HealthPotion(8), ItemState::Normal);
+                        self.message = "🎰 You find a Health Potion inside the urn.".to_string();
+                        if let Some(ref audio) = self.audio {
+                            audio.play_treasure();
+                        }
+                    }
+                    _ => {
+                        // Trap: poison + lose gold
+                        self.player.statuses.push(crate::status::StatusInstance::new(
+                            crate::status::StatusKind::Poison { damage: 2 },
+                            5,
+                        ));
+                        let lost = 20.min(self.player.gold);
+                        self.player.gold -= lost;
+                        self.message = format!("🎰 TRAP! Poison gas and you lose {} gold!", lost);
+                        self.trigger_shake(8);
+                        self.flash = Some((120, 255, 80, 0.25));
+                        if let Some(ref audio) = self.audio {
+                            audio.play_damage();
+                        }
+                    }
+                }
+                self.message_timer = 100;
+            }
+
+            SpecialRoomKind::BloodAltar => {
+                if target_tile != Tile::Altar(AltarKind::Iron) { return; }
+                if self.player.hp <= 5 {
+                    self.message = "🩸 You're too weak to sacrifice. You need more than 5 HP.".to_string();
+                    self.message_timer = 80;
+                    return;
+                }
+                self.mark_room_completed();
+                self.player.hp -= 5;
+                self.player.tone_bonus_damage += 1;
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Floor;
+                self.message = "🩸 You sacrifice 5 HP. Permanent +1 damage gained!".to_string();
+                self.message_timer = 100;
+                self.trigger_shake(6);
+                self.flash = Some((180, 0, 0, 0.3));
+                if let Some(ref audio) = self.audio {
+                    audio.play_damage();
+                }
+            }
+
+            SpecialRoomKind::CursedTreasure => {
+                if target_tile != Tile::Chest { return; }
+                self.mark_room_completed();
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Floor;
+                // Great loot: high-tier equipment + gold
+                let equip_idx = 2 + (self.rng_next() as usize % 3); // Dragon Fang Pen or better
+                let equip = &EQUIPMENT_POOL[equip_idx.min(EQUIPMENT_POOL.len() - 1)];
+                self.player.equip(equip, ItemState::Normal);
+                self.player.gold += 75;
+                // Apply Cursed status for 10 turns (representing floors)
+                self.player.statuses.push(crate::status::StatusInstance::new(
+                    crate::status::StatusKind::Cursed,
+                    50, // ~10 floors worth of turns
+                ));
+                self.message = format!("💀 You claim {} and 75 gold, but a curse clings to you!", equip.name);
+                self.message_timer = 120;
+                self.trigger_shake(4);
+                self.flash = Some((100, 0, 150, 0.3));
+                if let Some(ref audio) = self.audio {
+                    audio.play_treasure();
+                }
+            }
+
+            SpecialRoomKind::SoulForge => {
+                if target_tile != Tile::Forge { return; }
+                if self.player.radicals.is_empty() {
+                    self.message = "🔮 The Soul Forge flickers — you have no radicals to offer.".to_string();
+                    self.message_timer = 80;
+                    return;
+                }
+                self.mark_room_completed();
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Floor;
+                // Remove a random radical and give a different one
+                let remove_idx = self.rng_next() as usize % self.player.radicals.len();
+                let old = self.player.radicals.remove(remove_idx);
+                let rare_radicals: &[&str] = &["龙", "凤", "鬼", "神", "魂", "仙", "雷", "冰", "光", "暗"];
+                let new_rad = rare_radicals[self.rng_next() as usize % rare_radicals.len()];
+                self.player.add_radical(new_rad);
+                self.message = format!("🔮 The Soul Forge transforms {} into {}!", old, new_rad);
+                self.message_timer = 100;
+                self.flash = Some((200, 100, 255, 0.25));
+                if let Some(ref audio) = self.audio {
+                    audio.play_treasure();
+                }
+            }
+
+            SpecialRoomKind::WishingWell => {
+                // Triggered when stepping on DeepWater (the well center)
+                if target_tile != Tile::DeepWater { return; }
+                self.mark_room_completed();
+                // Tiered cost: take what the player can afford
+                let (cost, reward_tier) = if self.player.gold >= 50 {
+                    (50, 2)
+                } else if self.player.gold >= 25 {
+                    (25, 1)
+                } else if self.player.gold >= 10 {
+                    (10, 0)
+                } else {
+                    self.message = "🪙 The well needs at least 10 gold...".to_string();
+                    self.message_timer = 60;
+                    return;
+                };
+                self.player.gold -= cost;
+                match reward_tier {
+                    0 => {
+                        let _ = self.player.add_item(Item::HealthPotion(10), ItemState::Normal);
+                        self.message = format!("🪙 You throw {} gold. A potion rises from the depths!", cost);
+                    }
+                    1 => {
+                        let eq_idx = self.rng_next() as usize % EQUIPMENT_POOL.len();
+                        let equip = &EQUIPMENT_POOL[eq_idx];
+                        self.player.equip(equip, ItemState::Normal);
+                        self.message = format!("🪙 You throw {} gold. {} rises from the depths!", cost, equip.name);
+                    }
+                    _ => {
+                        let rare_radicals: &[&str] = &["龙", "凤", "鬼", "神", "魂", "仙"];
+                        let r = rare_radicals[self.rng_next() as usize % rare_radicals.len()];
+                        self.player.add_radical(r);
+                        let eq_idx = self.rng_next() as usize % EQUIPMENT_POOL.len();
+                        let equip = &EQUIPMENT_POOL[eq_idx];
+                        self.player.equip(equip, ItemState::Blessed);
+                        self.message = format!("🪙 You throw {} gold. Radical {} and blessed {} rise!", cost, r, equip.name);
+                    }
+                }
+                self.message_timer = 120;
+                self.flash = Some((100, 180, 255, 0.2));
+                if let Some(ref audio) = self.audio {
+                    audio.play_treasure();
+                }
+            }
+
+            // ── Puzzle Rooms ─────────────────────────────────────────
+            SpecialRoomKind::RuneGate => {
+                // Stepping on pressure plates in the room
+                if target_tile != Tile::PressurePlate { return; }
+                self.mark_room_completed();
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Floor;
+                // Simplified: each plate gives a reward or penalty
+                if self.rng_next() % 2 == 0 {
+                    let radicals: &[&str] = &["水", "火", "金", "木", "土"];
+                    let r = radicals[self.rng_next() as usize % radicals.len()];
+                    self.player.add_radical(r);
+                    self.message = format!("✨ Correct sequence! The rune grants you radical {}!", r);
+                    self.flash = Some((100, 255, 200, 0.2));
+                    if let Some(ref audio) = self.audio {
+                        audio.play_treasure();
+                    }
+                } else {
+                    let dmg = 2 + self.floor_num / 5;
+                    self.player.hp -= dmg;
+                    self.message = format!("⚡ Wrong order! The rune zaps you for {} damage!", dmg);
+                    self.trigger_shake(6);
+                    self.flash = Some((255, 100, 50, 0.25));
+                    if let Some(ref audio) = self.audio {
+                        audio.play_damage();
+                    }
+                }
+                self.message_timer = 80;
+            }
+
+            SpecialRoomKind::MirrorMaze => {
+                // Reward at the center chest
+                if target_tile != Tile::Chest { return; }
+                self.mark_room_completed();
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Floor;
+                self.player.gold += 30 + (self.floor_num * 3) as i32;
+                let _ = self.player.add_item(Item::RevealScroll, ItemState::Normal);
+                self.message = format!("🪞 You navigate the mirrors! {} gold + Reveal Scroll!", 30 + self.floor_num * 3);
+                self.message_timer = 100;
+                self.flash = Some((200, 200, 255, 0.2));
+                if let Some(ref audio) = self.audio {
+                    audio.play_treasure();
+                }
+            }
+
+            SpecialRoomKind::WeightPuzzle => {
+                // Reward chest in center after navigating ice + boulders
+                if target_tile != Tile::Chest { return; }
+                self.mark_room_completed();
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Floor;
+                self.player.gold += 40;
+                let eq_idx = self.rng_next() as usize % EQUIPMENT_POOL.len();
+                let equip = &EQUIPMENT_POOL[eq_idx];
+                self.player.equip(equip, ItemState::Normal);
+                self.message = format!("⚖ Puzzle solved! 40 gold + {}!", equip.name);
+                self.message_timer = 100;
+                self.flash = Some((200, 255, 150, 0.2));
+                if let Some(ref audio) = self.audio {
+                    audio.play_treasure();
+                }
+            }
+
+            SpecialRoomKind::ToneStaircase => {
+                // Stepping on Shrine tiles (the steps)
+                if target_tile != Tile::Shrine { return; }
+                // Don't mark completed — each shrine is a step
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Floor;
+                self.player.spirit = (self.player.spirit + 5).min(self.player.max_spirit);
+                self.message = "🎵 Correct tone! Spirit +5. Ascend the staircase!".to_string();
+                self.message_timer = 60;
+                self.flash = Some((255, 220, 100, 0.15));
+            }
+
+            SpecialRoomKind::ElementalLock => {
+                // Stepping on elemental altars charges the lock
+                if !matches!(target_tile, Tile::Altar(_)) { return; }
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Floor;
+                // Count remaining altars in room
+                let mut remaining = 0;
+                if let Some((rx, ry)) = self.current_room_origin() {
+                    for room in &self.level.rooms {
+                        if room.x == rx && room.y == ry {
+                            for ty in room.y..room.y + room.h {
+                                for tx in room.x..room.x + room.w {
+                                    if self.level.in_bounds(tx, ty) {
+                                        let ti = self.level.idx(tx, ty);
+                                        if matches!(self.level.tiles[ti], Tile::Altar(_)) {
+                                            remaining += 1;
+                                        }
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+                if remaining == 0 {
+                    // All altars activated — unlock the door, give reward
+                    self.mark_room_completed();
+                    // Find and unlock the locked door
+                    if let Some((rx, ry)) = self.current_room_origin() {
+                        for room in &self.level.rooms {
+                            if room.x == rx && room.y == ry {
+                                for ty in room.y..room.y + room.h {
+                                    for tx in room.x..room.x + room.w {
+                                        if self.level.in_bounds(tx, ty) {
+                                            let ti = self.level.idx(tx, ty);
+                                            if self.level.tiles[ti] == Tile::LockedDoor {
+                                                self.level.tiles[ti] = Tile::Chest;
+                                            }
+                                        }
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    self.message = "🔓 All elements channeled! The sealed door opens!".to_string();
+                    self.flash = Some((255, 255, 200, 0.3));
+                } else {
+                    self.message = format!("🔮 Elemental energy absorbed! {} altars remaining.", remaining);
+                }
+                self.message_timer = 80;
+            }
+
+            // ── Timed/Wave Rooms ─────────────────────────────────────
+            SpecialRoomKind::SurvivalPit => {
+                // On first entry, give a big bonus (simulate surviving)
+                if target_tile != Tile::Spikes && target_tile != Tile::Floor { return; }
+                // Only trigger once when entering the arena center area
+                if self.player.x != self.level.rooms.iter()
+                    .find(|r| r.special == Some(SpecialRoomKind::SurvivalPit))
+                    .map(|r| r.x + r.w / 2)
+                    .unwrap_or(-1)
+                { return; }
+                self.mark_room_completed();
+                let reward_gold = 20 + self.player.hp * 2;
+                self.player.gold += reward_gold;
+                self.message = format!("⚔ You survived the pit! {} gold (HP bonus)!", reward_gold);
+                self.message_timer = 100;
+                self.flash = Some((255, 200, 50, 0.25));
+                if let Some(ref audio) = self.audio {
+                    audio.play_treasure();
+                }
+            }
+
+            SpecialRoomKind::TreasureRace => {
+                // Gold piles are already placed; tile effects handle pickup
+                // Just show encouragement on entry
+                if target_tile == Tile::GoldPile {
+                    // Normal GoldPile effect handles this via apply_player_tile_effect
+                    return;
+                }
+            }
+
+            SpecialRoomKind::CollapsingChamber => {
+                // Chest in center is the goal
+                if target_tile != Tile::Chest { return; }
+                self.mark_room_completed();
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Floor;
+                self.player.gold += 60;
+                let _ = self.player.add_item(Item::TeleportScroll, ItemState::Normal);
+                self.message = "💎 You grab the treasure before the floor collapses! 60 gold + Teleport Scroll!".to_string();
+                self.message_timer = 100;
+                self.flash = Some((255, 200, 100, 0.25));
+                if let Some(ref audio) = self.audio {
+                    audio.play_treasure();
+                }
+            }
+
+            SpecialRoomKind::InkFlood => {
+                if target_tile == Tile::InkWell {
+                    self.mark_room_completed();
+                    let idx = self.level.idx(self.player.x, self.player.y);
+                    self.level.tiles[idx] = Tile::Floor;
+                    self.player.spell_power_bonus += 1;
+                    self.player.hp -= 2;
+                    self.message = "🖋 The ink empowers your spells! +1 spell power, but -2 HP from ink exposure.".to_string();
+                    self.message_timer = 100;
+                    self.flash = Some((50, 50, 100, 0.2));
+                }
+            }
+
+            // ── Transformation/Permanent Rooms ───────────────────────
+            SpecialRoomKind::FormShrine => {
+                if target_tile != Tile::Shrine { return; }
+                self.mark_room_completed();
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Floor;
+                // Cycle through forms based on RNG
+                let forms = [PlayerForm::Flame, PlayerForm::Stone, PlayerForm::Mist, PlayerForm::Tiger];
+                let form = forms[self.rng_next() as usize % forms.len()];
+                self.player.form = form;
+                self.player.form_timer = 0; // permanent
+                self.message = format!("🔥 The shrine transforms you into {} form permanently!", form.name());
+                self.message_timer = 120;
+                self.flash = Some((255, 150, 50, 0.3));
+                if let Some(ref audio) = self.audio {
+                    audio.play_treasure();
+                }
+            }
+
+            SpecialRoomKind::ClassTrial => {
+                if !matches!(target_tile, Tile::Altar(_)) { return; }
+                self.mark_room_completed();
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Floor;
+                // Grant class-specific bonus
+                self.player.tone_bonus_damage += 1;
+                self.player.defense_bonus += 1;
+                self.message = "⚔ Trial complete! +1 damage and +1 defense permanently!".to_string();
+                self.message_timer = 100;
+                self.flash = Some((200, 180, 50, 0.25));
+                if let Some(ref audio) = self.audio {
+                    audio.play_treasure();
+                }
+            }
+
+            SpecialRoomKind::RadicalFountain => {
+                if target_tile != Tile::SpiritSpringTile { return; }
+                self.mark_room_completed();
+                // The spirit spring tile effect (heal) is handled by apply_player_tile_effect
+                // Additional: permanent spell power bonus
+                self.player.spell_power_bonus += 1;
+                self.message = "✨ The fountain refines your radicals! All spells gain +1 damage permanently!".to_string();
+                self.message_timer = 120;
+                self.flash = Some((150, 255, 200, 0.3));
+            }
+
+            SpecialRoomKind::AncestorTomb => {
+                if target_tile != Tile::Chest { return; }
+                self.mark_room_completed();
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Floor;
+                // Give a high-tier weapon
+                let high_tier = &EQUIPMENT_POOL[2]; // Dragon Fang Pen (+3 dmg)
+                self.player.equip(high_tier, ItemState::Blessed);
+                self.message = format!("⚔ The ancestor's spirit grants you their blessed {}!", high_tier.name);
+                self.message_timer = 120;
+                self.flash = Some((255, 215, 0, 0.3));
+                if let Some(ref audio) = self.audio {
+                    audio.play_treasure();
+                }
+            }
+
+            // ── Story/Lore Rooms ─────────────────────────────────────
+            SpecialRoomKind::ProphecyRoom => {
+                if target_tile != Tile::MirrorPool { return; }
+                self.mark_room_completed();
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Floor;
+                // Reveal the map + give info
+                for i in 0..self.level.revealed.len() {
+                    self.level.revealed[i] = true;
+                }
+                self.message = "🔮 The prophecy reveals the entire floor! You sense the boss's presence...".to_string();
+                self.message_timer = 120;
+                self.flash = Some((200, 150, 255, 0.2));
+                if let Some(ref audio) = self.audio {
+                    audio.play_treasure();
+                }
+            }
+
+            SpecialRoomKind::SealedMemory => {
+                if target_tile != Tile::Shrine { return; }
+                self.mark_room_completed();
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Floor;
+                // XP/spirit reward for recalling memories
+                self.player.spirit = self.player.max_spirit;
+                self.player.gold += 25;
+                let radicals: &[&str] = &["心", "力", "气", "光"];
+                let r = radicals[self.rng_next() as usize % radicals.len()];
+                self.player.add_radical(r);
+                self.message = format!("🧠 Memories flood back! Spirit restored, +25 gold, radical {}!", r);
+                self.message_timer = 100;
+                self.flash = Some((180, 200, 255, 0.2));
+                if let Some(ref audio) = self.audio {
+                    audio.play_treasure();
+                }
+            }
+
+            SpecialRoomKind::DemonSeal => {
+                if target_tile != Tile::Npc(3) { return; }
+                self.mark_room_completed();
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Floor;
+                // Accept the deal: +3 max HP but next floor enemies are tougher
+                self.player.max_hp += 3;
+                self.player.hp += 3;
+                self.demon_deal_floors = 1;
+                self.message = "👹 Deal accepted! +3 max HP, but next floor's enemies will be elite-tier!".to_string();
+                self.message_timer = 120;
+                self.trigger_shake(6);
+                self.flash = Some((150, 0, 0, 0.3));
+                if let Some(ref audio) = self.audio {
+                    audio.play_damage();
+                }
+            }
+
+            SpecialRoomKind::PhoenixNest => {
+                if target_tile == Tile::SpiritSpringTile {
+                    // Full heal from stepping on spring (handled by tile effect)
+                    // Also grant +2 max HP
+                    if !self.is_room_completed() {
+                        self.mark_room_completed();
+                        self.player.max_hp += 2;
+                        self.player.hp = self.player.max_hp;
+                        self.message = "🔥 The Phoenix blesses you! Full heal + permanent +2 max HP!".to_string();
+                        self.message_timer = 120;
+                        self.flash = Some((255, 150, 50, 0.3));
+                    }
+                } else if target_tile == Tile::Chest {
+                    // PhoenixPlume item
+                    let idx = self.level.idx(self.player.x, self.player.y);
+                    self.level.tiles[idx] = Tile::Floor;
+                    let _ = self.player.add_item(Item::PhoenixPlume(self.player.max_hp / 2), ItemState::Blessed);
+                    self.message = "🔥 You find a blessed Phoenix Plume! Auto-revive on death!".to_string();
+                    self.message_timer = 100;
+                    if let Some(ref audio) = self.audio {
+                        audio.play_treasure();
+                    }
+                }
+            }
+
+            SpecialRoomKind::CalligraphyContest => {
+                if target_tile != Tile::InkWell { return; }
+                self.mark_room_completed();
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::Floor;
+                // Score-based gold reward
+                let score = 20 + (self.rng_next() % 40) as i32;
+                self.player.gold += score;
+                self.message = format!("🖌 Calligraphy contest! Score: {}. You earn {} gold!", score, score);
+                self.message_timer = 100;
+                self.flash = Some((255, 255, 200, 0.2));
+                if let Some(ref audio) = self.audio {
+                    audio.play_treasure();
+                }
+            }
+
+            // All other room types — no special interaction on tile step
+            _ => {}
+        }
+    }
+
+    /// Effective FOV radius (reduced in Dark rooms and Shadow Realm).
     fn effective_fov(&self) -> i32 {
-        let base = if self.current_room_modifier() == Some(RoomModifier::Dark) {
+        let base = if self.current_room_modifier() == Some(RoomModifier::Dark)
+            || self.current_special_room() == Some(SpecialRoomKind::ShadowRealm)
+        {
             2
         } else {
             FOV_RADIUS
@@ -2871,6 +3526,98 @@ impl GameState {
             return;
         }
 
+        // Boulder pushing (similar to crate)
+        if target_tile == Tile::Boulder {
+            let pdx = nx - self.player.x;
+            let pdy = ny - self.player.y;
+            let px = nx + pdx;
+            let py = ny + pdy;
+            if self.level.in_bounds(px, py) {
+                let push_idx = self.level.idx(px, py);
+                let push_tile = self.level.tiles[push_idx];
+                if push_tile == Tile::PressurePlate || push_tile == Tile::Floor {
+                    let boulder_idx = self.level.idx(nx, ny);
+                    self.level.tiles[boulder_idx] = Tile::Floor;
+                    self.level.tiles[push_idx] = Tile::Boulder;
+                    if push_tile == Tile::PressurePlate {
+                        self.message = "🪨 The boulder clicks onto the pressure plate!".to_string();
+                        self.trigger_shake(4);
+                    } else {
+                        self.message = "🪨 You heave the boulder aside.".to_string();
+                    }
+                    self.message_timer = 50;
+                    self.player.x = nx;
+                    self.player.y = ny;
+                    self.move_count += 1;
+                    let skip_enemy =
+                        status::has_haste(&self.player.statuses) && self.move_count % 2 == 0;
+                    if !skip_enemy {
+                        self.enemy_turn();
+                    }
+                    let (px2, py2) = (self.player.x, self.player.y);
+                    let fov = self.effective_fov();
+                    compute_fov(&mut self.level, px2, py2, fov);
+                    return;
+                } else {
+                    self.message = "The boulder won't budge that way.".to_string();
+                    self.message_timer = 30;
+                    return;
+                }
+            } else {
+                self.message = "The boulder is jammed against the wall.".to_string();
+                self.message_timer = 30;
+                return;
+            }
+        }
+
+        // Bookshelf interaction
+        if target_tile == Tile::Bookshelf {
+            self.message = "📚 You study the ancient texts and feel wiser.".to_string();
+            self.message_timer = 60;
+            let idx = self.level.idx(nx, ny);
+            self.level.tiles[idx] = Tile::Floor;
+            return;
+        }
+
+        // GoldOre mining
+        if target_tile == Tile::GoldOre {
+            let gold = 5 + (self.rng_next() % 11) as i32;
+            self.player.gold += gold;
+            let idx = self.level.idx(nx, ny);
+            self.level.tiles[idx] = Tile::Floor;
+            self.message = format!("⛏ You mine {} gold from the ore vein!", gold);
+            self.message_timer = 60;
+            self.trigger_shake(3);
+            return;
+        }
+
+        // Crystal wall — not walkable, just shows message
+        if target_tile == Tile::Crystal {
+            self.message = "💎 The crystal formation is too solid to pass.".to_string();
+            self.message_timer = 40;
+            return;
+        }
+
+        // Bamboo — not walkable without cutting
+        if target_tile == Tile::Bamboo {
+            let can_dig = self
+                .player
+                .weapon
+                .map_or(false, |eq| matches!(eq.effect, EquipEffect::Digging))
+                || self.player.form == PlayerForm::Stone;
+            if can_dig {
+                let idx = self.level.idx(nx, ny);
+                self.level.tiles[idx] = Tile::Floor;
+                self.message = "🎋 You cut through the bamboo thicket!".to_string();
+                self.message_timer = 50;
+                self.trigger_shake(3);
+                return;
+            }
+            self.message = "🎋 Dense bamboo blocks the way. A cutting tool might help.".to_string();
+            self.message_timer = 60;
+            return;
+        }
+
         if !target_tile.is_walkable() {
             return;
         }
@@ -2907,11 +3654,20 @@ impl GameState {
                 self.floor_num,
                 self.current_room_modifier(),
                 &self.srs,
+                self.companion,
             );
             self.combat = CombatState::TacticalBattle(Box::new(battle));
             self.typing.clear();
             self.guard_used_this_fight = false;
             self.guard_blocks_used = 0;
+            if let Some(ref audio) = self.audio {
+                let has_boss = combat_indices.iter().any(|&ei| self.enemies[ei].is_boss);
+                if has_boss {
+                    audio.play_boss_encounter();
+                } else {
+                    audio.play_combat_start();
+                }
+            }
             if self.listening_mode.is_active() && !self.enemies[idx].is_elite {
                 let pinyin = self.enemies[idx].pinyin;
                 let tone_num = pinyin
@@ -3175,6 +3931,24 @@ impl GameState {
             return;
         }
 
+        // Dragon Gate Portal interaction
+        if target_tile == Tile::DragonGatePortal {
+            self.message = "🐉 The Dragon Gate pulses with ancient power! You are not yet ready...".to_string();
+            self.message_timer = 100;
+        }
+
+        // Show special room description on first entry
+        if let Some(special) = self.current_special_room() {
+            let sr_desc = special.description();
+            if !self.message.contains(sr_desc) && self.message_timer < 20 {
+                self.message = format!("📍 {} — {}", special.name(), sr_desc);
+                self.message_timer = 100;
+            }
+        }
+
+        // Handle special room interactions on tile step
+        self.handle_special_room_interaction(target_tile);
+
         self.apply_player_tile_effect(target_tile);
         if matches!(self.combat, CombatState::GameOver) {
             return;
@@ -3326,6 +4100,7 @@ impl GameState {
                         self.floor_num,
                         self.current_room_modifier(),
                         &self.srs,
+                        self.companion,
                     );
                     self.combat = CombatState::TacticalBattle(Box::new(battle));
                     self.typing.clear();
@@ -4376,6 +5151,106 @@ impl GameState {
                 });
                 e.hp = (e.hp + 3).min(e.max_hp);
                 format!("{} — Bathed in cleansing light!", action.name())
+            }
+            RadicalAction::ScatteringPages => {
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Confused,
+                        1,
+                    ));
+                format!("{} — Pages scatter and blind you!", action.name())
+            }
+            RadicalAction::TrueVision => {
+                if self.player.shield {
+                    self.player.shield = false;
+                }
+                self.player.statuses.retain(|s| s.is_negative());
+                format!("{} — All your protections are dispelled!", action.name())
+            }
+            RadicalAction::QiDisruption => {
+                self.player.hp -= 1;
+                format!("{} — Your qi is disrupted! (-1 HP)", action.name())
+            }
+            RadicalAction::ExpandingDomain => {
+                self.enemies[enemy_idx].damage += 1;
+                format!("{} — Domain expands!", action.name())
+            }
+            RadicalAction::SinkholeSnare => {
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Slow,
+                        2,
+                    ));
+                format!("{} — Ground cracks beneath you!", action.name())
+            }
+            RadicalAction::SonicBurst => {
+                self.player.hp -= 2;
+                format!("{} — Sonic shockwave! (-2 HP)", action.name())
+            }
+            RadicalAction::VenomousLash => {
+                self.player.hp -= 1;
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Poison { damage: 2 },
+                        2,
+                    ));
+                format!("{} — Venomous lash! Poisoned! (-1 HP)", action.name())
+            }
+            RadicalAction::IronBodyStance => {
+                self.enemies[enemy_idx].hp =
+                    (self.enemies[enemy_idx].hp + 2).min(self.enemies[enemy_idx].max_hp);
+                format!("{} — Iron body! Enemy hardens!", action.name())
+            }
+            RadicalAction::GoreCrush => {
+                self.player.hp -= 2;
+                format!("{} — Gored! (-2 HP)", action.name())
+            }
+            RadicalAction::IntoxicatingMist => {
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Confused,
+                        2,
+                    ));
+                format!("{} — Intoxicating mist clouds your mind!", action.name())
+            }
+            RadicalAction::SproutingBarrier => {
+                self.enemies[enemy_idx].hp =
+                    (self.enemies[enemy_idx].hp + 1).min(self.enemies[enemy_idx].max_hp);
+                format!("{} — Sprouting barrier!", action.name())
+            }
+            RadicalAction::TidalSurge => {
+                self.player.hp -= 1;
+                self.player
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Slow,
+                        2,
+                    ));
+                format!("{} — Tidal surge pushes you! (-1 HP)", action.name())
+            }
+            RadicalAction::BoneShatter => {
+                self.player.hp -= 3;
+                if self.player.shield {
+                    self.player.shield = false;
+                }
+                format!("{} — Bone shatters your defenses! (-3 HP)", action.name())
+            }
+            RadicalAction::AdaptiveShift => {
+                self.enemies[enemy_idx].damage += 1;
+                format!("{} — Enemy adapts and hardens!", action.name())
+            }
+            RadicalAction::BerserkerFury => {
+                self.enemies[enemy_idx].hp = (self.enemies[enemy_idx].hp - 2).max(1);
+                self.enemies[enemy_idx].damage += 3;
+                format!("{} — Berserker fury! Enemy rages!", action.name())
+            }
+            RadicalAction::FlockAssault => {
+                self.player.hp -= 2;
+                format!("{} — A flock descends! (-2 HP)", action.name())
             }
         }
     }
@@ -5583,6 +6458,14 @@ impl GameState {
                     SpellEffect::Thorns(_) => None,
                     SpellEffect::Cone(_) => Some("Fire"),
                     SpellEffect::Wall(_) => None,
+                    SpellEffect::OilSlick
+                    | SpellEffect::Ignite
+                    | SpellEffect::PlantGrowth
+                    | SpellEffect::Earthquake(_)
+                    | SpellEffect::Sanctify(_)
+                    | SpellEffect::FloodWave(_)
+                    | SpellEffect::SummonBoulder
+                    | SpellEffect::FreezeGround(_) => None,
                 };
                 let elementalist_resisted = enemy_idx < self.enemies.len()
                     && self.enemies[enemy_idx].boss_kind == Some(BossKind::Elementalist)
@@ -6083,6 +6966,130 @@ impl GameState {
                             format!("{}🧱 A wall of stone erupts from the ground!", spell.hanzi);
                         self.message_timer = 60;
                     }
+                    SpellEffect::OilSlick => {
+                        self.flash = Some((80, 60, 20, 0.15));
+                        self.message =
+                            format!("{}🛢 Oil spreads across the ground!", spell.hanzi);
+                        self.message_timer = 60;
+                    }
+                    SpellEffect::FreezeGround(dmg) => {
+                        let dmg = dmg * arcane_mult + spell_power;
+                        if enemy_idx < self.enemies.len() {
+                            if let Some((ex, ey)) = e_screen {
+                                self.particles.spawn_damage(ex, ey, &mut self.rng_state);
+                            }
+                            self.enemies[enemy_idx].hp -= dmg;
+                            let e_hanzi = self.enemies[enemy_idx].hanzi;
+                            if self.enemies[enemy_idx].hp <= 0 {
+                                let available = radical::radicals_for_floor(self.floor_num);
+                                let drop_idx = self.rng_next() as usize % available.len();
+                                self.player.add_radical(available[drop_idx].ch);
+                                self.message = format!(
+                                    "{}🧊 Ice encases {}! {} damage! Defeated! Got [{}]",
+                                    spell.hanzi, e_hanzi, dmg, available[drop_idx].ch
+                                );
+                                self.message_timer = 80;
+                                self.combat = CombatState::Explore;
+                                self.typing.clear();
+                            } else {
+                                self.message = format!(
+                                    "{}🧊 Ground freezes beneath {}! {} damage ({} HP left)",
+                                    spell.hanzi, e_hanzi, dmg, self.enemies[enemy_idx].hp
+                                );
+                                self.message_timer = 60;
+                            }
+                        }
+                    }
+                    SpellEffect::Ignite => {
+                        self.flash = Some((255, 120, 30, 0.2));
+                        self.message =
+                            format!("{}🔥 Flames erupt and spread!", spell.hanzi);
+                        self.message_timer = 60;
+                    }
+                    SpellEffect::PlantGrowth => {
+                        self.flash = Some((60, 180, 60, 0.15));
+                        let healed = 1_i32.min(self.player.max_hp - self.player.hp);
+                        self.player.hp = (self.player.hp + 1).min(self.player.max_hp);
+                        self.message = format!(
+                            "{}🌿 Nature blooms! +{} HP",
+                            spell.hanzi, healed
+                        );
+                        self.message_timer = 60;
+                    }
+                    SpellEffect::Earthquake(dmg) => {
+                        let dmg = dmg * arcane_mult + spell_power;
+                        if enemy_idx < self.enemies.len() {
+                            if let Some((ex, ey)) = e_screen {
+                                self.particles.spawn_damage(ex, ey, &mut self.rng_state);
+                            }
+                            self.enemies[enemy_idx].hp -= dmg;
+                            let e_hanzi = self.enemies[enemy_idx].hanzi;
+                            if self.enemies[enemy_idx].hp <= 0 {
+                                let available = radical::radicals_for_floor(self.floor_num);
+                                let drop_idx = self.rng_next() as usize % available.len();
+                                self.player.add_radical(available[drop_idx].ch);
+                                self.message = format!(
+                                    "{}💥 The earth shakes! {} crushed for {} damage! Defeated! Got [{}]",
+                                    spell.hanzi, e_hanzi, dmg, available[drop_idx].ch
+                                );
+                                self.message_timer = 80;
+                                self.combat = CombatState::Explore;
+                                self.typing.clear();
+                            } else {
+                                self.message = format!(
+                                    "{}💥 Earthquake hits {}! {} damage ({} HP left)",
+                                    spell.hanzi, e_hanzi, dmg, self.enemies[enemy_idx].hp
+                                );
+                                self.message_timer = 60;
+                            }
+                        }
+                    }
+                    SpellEffect::Sanctify(heal) => {
+                        let heal = heal * arcane_mult + spell_power;
+                        self.player.hp = (self.player.hp + heal).min(self.player.max_hp);
+                        self.particles
+                            .spawn_heal(p_screen.0, p_screen.1, &mut self.rng_state);
+                        self.flash = Some((255, 215, 80, 0.2));
+                        self.message = format!(
+                            "{}✨ Holy light purifies! +{} HP",
+                            spell.hanzi, heal
+                        );
+                        self.message_timer = 60;
+                    }
+                    SpellEffect::FloodWave(dmg) => {
+                        let dmg = dmg * arcane_mult + spell_power;
+                        if enemy_idx < self.enemies.len() {
+                            if let Some((ex, ey)) = e_screen {
+                                self.particles.spawn_damage(ex, ey, &mut self.rng_state);
+                            }
+                            self.enemies[enemy_idx].hp -= dmg;
+                            let e_hanzi = self.enemies[enemy_idx].hanzi;
+                            if self.enemies[enemy_idx].hp <= 0 {
+                                let available = radical::radicals_for_floor(self.floor_num);
+                                let drop_idx = self.rng_next() as usize % available.len();
+                                self.player.add_radical(available[drop_idx].ch);
+                                self.message = format!(
+                                    "{}🌊 Flood wave sweeps away {}! {} damage! Defeated! Got [{}]",
+                                    spell.hanzi, e_hanzi, dmg, available[drop_idx].ch
+                                );
+                                self.message_timer = 80;
+                                self.combat = CombatState::Explore;
+                                self.typing.clear();
+                            } else {
+                                self.message = format!(
+                                    "{}🌊 Flood wave hits {}! {} damage ({} HP left)",
+                                    spell.hanzi, e_hanzi, dmg, self.enemies[enemy_idx].hp
+                                );
+                                self.message_timer = 60;
+                            }
+                        }
+                    }
+                    SpellEffect::SummonBoulder => {
+                        self.flash = Some((140, 120, 90, 0.15));
+                        self.message =
+                            format!("{}🪨 A boulder materializes!", spell.hanzi);
+                        self.message_timer = 60;
+                    }
                 }
 
                 if enemy_idx < self.enemies.len()
@@ -6502,6 +7509,9 @@ impl GameState {
         let (sx, sy) = self.tile_to_screen(cx, cy);
         self.particles.spawn_chest(sx, sy, &mut self.rng_state);
         self.achievements.unlock("first_chest");
+        if let Some(ref audio) = self.audio {
+            audio.play_treasure();
+        }
 
         // Remove chest tile
         let idx = self.level.idx(cx, cy);
@@ -6604,6 +7614,7 @@ impl GameState {
                     self.floor_num,
                     self.current_room_modifier(),
                     &self.srs,
+                    self.companion,
                 );
                 self.combat = CombatState::TacticalBattle(Box::new(battle));
                 self.typing.clear();
@@ -6630,7 +7641,7 @@ impl GameState {
     /// Generate a random item appropriate for the current floor.
     fn random_item(&mut self) -> crate::player::Item {
         use crate::player::Item;
-        match self.rng_next() % 20 {
+        match self.rng_next() % 32 {
             0 => Item::HealthPotion(4 + self.floor_num),
             1 => Item::PoisonFlask(2, 3),
             2 => Item::RevealScroll,
@@ -6649,7 +7660,19 @@ impl GameState {
             16 => Item::JadeSalve(2),
             17 => Item::SerpentFang,
             18 => Item::WardingCharm(5),
-            _ => Item::InkBomb,
+            19 => Item::InkBomb,
+            20 => Item::MirrorShard,
+            21 => Item::FrostVial(1),
+            22 => Item::ShadowCloak(2),
+            23 => Item::DragonScale(3),
+            24 => Item::BambooFlute(2),
+            25 => Item::JadeCompass,
+            26 => Item::SilkRope,
+            27 => Item::LotusElixir,
+            28 => Item::ThunderDrum(2),
+            29 => Item::CinnabarInk,
+            30 => Item::AncestorToken(5),
+            _ => Item::WindFan,
         }
     }
 
@@ -7266,6 +8289,367 @@ impl GameState {
                 self.player.items.insert(idx, item);
                 self.player.item_states.insert(idx, item_state);
             }
+            crate::player::Item::MirrorShard => {
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                let thorns_turns = if item_state == ItemState::Blessed { 3 } else { 1 };
+                self.player.statuses.push(status::StatusInstance::new(
+                    status::StatusKind::Thorns,
+                    thorns_turns,
+                ));
+                self.player.shield = true;
+                self.message = format!(
+                    "{}🪞 Mirror Shard activated! Next attack will be reflected!",
+                    prefix
+                );
+                if item_state == ItemState::Cursed {
+                    self.player.hp -= 1;
+                    self.message.push_str(" A shard cuts you for 1 damage!");
+                }
+                self.message_timer = 60;
+            }
+            crate::player::Item::FrostVial(turns) => {
+                let turns = match item_state {
+                    ItemState::Cursed => 1,
+                    ItemState::Blessed => turns + 1,
+                    ItemState::Normal => turns,
+                };
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                let px = self.player.x;
+                let py = self.player.y;
+                let mut count = 0;
+                for e in &mut self.enemies {
+                    if e.is_alive() && (e.x - px).abs() <= 1 && (e.y - py).abs() <= 1 {
+                        e.statuses.push(status::StatusInstance::new(
+                            status::StatusKind::Freeze,
+                            turns,
+                        ));
+                        count += 1;
+                    }
+                }
+                self.message = format!(
+                    "{}❄ Frost Vial freezes {} adjacent enemies for {} turns!",
+                    prefix, count, turns
+                );
+                if item_state == ItemState::Cursed {
+                    self.player.statuses.push(status::StatusInstance::new(
+                        status::StatusKind::Slow,
+                        2,
+                    ));
+                    self.message.push_str(" The cold slows you too!");
+                }
+                self.message_timer = 60;
+            }
+            crate::player::Item::ShadowCloak(turns) => {
+                let turns = match item_state {
+                    ItemState::Cursed => 1,
+                    ItemState::Blessed => turns * 2,
+                    ItemState::Normal => turns,
+                };
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                self.player.statuses.push(status::StatusInstance::new(
+                    status::StatusKind::Invisible,
+                    turns,
+                ));
+                self.message = format!(
+                    "{}👻 Shadow Cloak! Invisible for {} turns!",
+                    prefix, turns
+                );
+                if item_state == ItemState::Cursed {
+                    self.player.statuses.push(status::StatusInstance::new(
+                        status::StatusKind::Confused,
+                        2,
+                    ));
+                    self.message.push_str(" The shadows disorient you!");
+                }
+                self.message_timer = 60;
+            }
+            crate::player::Item::DragonScale(armor) => {
+                let armor = match item_state {
+                    ItemState::Cursed => (armor / 2).max(1),
+                    ItemState::Blessed => armor + 2,
+                    ItemState::Normal => armor,
+                };
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                self.player.statuses.push(status::StatusInstance::new(
+                    status::StatusKind::Fortify { stacks: armor },
+                    99,
+                ));
+                self.player.shield = true;
+                self.message = format!(
+                    "{}🐉 Dragon Scale! Gained +{} armor and a shield!",
+                    prefix, armor
+                );
+                self.message_timer = 60;
+            }
+            crate::player::Item::BambooFlute(turns) => {
+                let turns = match item_state {
+                    ItemState::Cursed => 1,
+                    ItemState::Blessed => turns + 2,
+                    ItemState::Normal => turns,
+                };
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                let mut count = 0;
+                for e in &mut self.enemies {
+                    if e.is_alive() {
+                        let i = self.level.idx(e.x, e.y);
+                        if self.level.visible[i] {
+                            e.statuses.push(status::StatusInstance::new(
+                                status::StatusKind::Confused,
+                                turns,
+                            ));
+                            count += 1;
+                        }
+                    }
+                }
+                self.message = format!(
+                    "{}🎋 Bamboo Flute confuses {} enemies for {} turns!",
+                    prefix, count, turns
+                );
+                if item_state == ItemState::Cursed {
+                    self.player.statuses.push(status::StatusInstance::new(
+                        status::StatusKind::Confused,
+                        1,
+                    ));
+                    self.message.push_str(" The melody confuses you too!");
+                }
+                self.message_timer = 60;
+            }
+            crate::player::Item::JadeCompass => {
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                self.reveal_entire_floor();
+                self.message = format!(
+                    "{}🧭 Jade Compass reveals all traps and hidden areas!",
+                    prefix
+                );
+                if item_state == ItemState::Blessed {
+                    self.player.hp = (self.player.hp + 3).min(self.player.max_hp);
+                    self.message.push_str(" You feel revitalized! (+3 HP)");
+                } else if item_state == ItemState::Cursed {
+                    self.player.statuses.push(status::StatusInstance::new(
+                        status::StatusKind::Confused,
+                        3,
+                    ));
+                    self.message.push_str(" The visions disorient you!");
+                }
+                self.message_timer = 60;
+            }
+            crate::player::Item::SilkRope => {
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                let px = self.player.x;
+                let py = self.player.y;
+                let mut nearest: Option<(usize, i32)> = None;
+                for (i, e) in self.enemies.iter().enumerate() {
+                    if e.is_alive() {
+                        let dist = (e.x - px).abs() + (e.y - py).abs();
+                        if dist > 1 && (nearest.is_none() || dist < nearest.unwrap().1) {
+                            nearest = Some((i, dist));
+                        }
+                    }
+                }
+                if let Some((eidx, _)) = nearest {
+                    let dirs: [(i32, i32); 4] = [(0, 1), (1, 0), (0, -1), (-1, 0)];
+                    let mut placed = false;
+                    for &(dx, dy) in &dirs {
+                        let tx = px + dx;
+                        let ty = py + dy;
+                        let ti = self.level.idx(tx, ty);
+                        if self.level.tiles[ti].is_walkable() && self.enemy_at(tx, ty).is_none() {
+                            self.enemies[eidx].x = tx;
+                            self.enemies[eidx].y = ty;
+                            placed = true;
+                            break;
+                        }
+                    }
+                    if placed {
+                        self.message = format!("{}🪢 Silk Rope pulls an enemy close!", prefix);
+                        if item_state == ItemState::Blessed {
+                            self.enemies[eidx].stunned = true;
+                            self.message.push_str(" The enemy is stunned!");
+                        }
+                    } else {
+                        self.message = format!("{}🪢 No space to pull enemy to!", prefix);
+                    }
+                } else {
+                    self.message = format!("{}🪢 No distant enemies to pull!", prefix);
+                }
+                if item_state == ItemState::Cursed {
+                    self.player.hp -= 1;
+                    self.message.push_str(" The rope snaps back and hurts you!");
+                }
+                self.message_timer = 60;
+            }
+            crate::player::Item::LotusElixir => {
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                if item_state == ItemState::Cursed {
+                    self.player.statuses.push(status::StatusInstance::new(
+                        status::StatusKind::Weakened,
+                        3,
+                    ));
+                    self.message = format!("{}🪷 The tainted elixir weakens you!", prefix);
+                } else {
+                    self.player.statuses.retain(|s| !s.is_negative());
+                    self.message = format!("{}🪷 Lotus Elixir purges all negative effects!", prefix);
+                    if item_state == ItemState::Blessed {
+                        self.player.statuses.push(status::StatusInstance::new(
+                            status::StatusKind::Blessed,
+                            5,
+                        ));
+                        self.message.push_str(" You feel blessed!");
+                    }
+                }
+                self.message_timer = 60;
+            }
+            crate::player::Item::ThunderDrum(damage) => {
+                let damage = match item_state {
+                    ItemState::Cursed => (damage / 2).max(1),
+                    ItemState::Blessed => damage * 2,
+                    ItemState::Normal => damage,
+                };
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                let mut count = 0;
+                for e in &mut self.enemies {
+                    if e.is_alive() {
+                        let i = self.level.idx(e.x, e.y);
+                        if self.level.visible[i] {
+                            e.hp -= damage;
+                            e.statuses.push(status::StatusInstance::new(
+                                status::StatusKind::Slow,
+                                1,
+                            ));
+                            count += 1;
+                        }
+                    }
+                }
+                self.message = format!(
+                    "{}🥁 Thunder Drum hits {} enemies for {} damage + Slow!",
+                    prefix, count, damage
+                );
+                if item_state == ItemState::Cursed {
+                    self.player.statuses.push(status::StatusInstance::new(
+                        status::StatusKind::Slow,
+                        1,
+                    ));
+                    self.message.push_str(" The vibration slows you too!");
+                }
+                self.message_timer = 60;
+            }
+            crate::player::Item::CinnabarInk => {
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                let empower_amount = if item_state == ItemState::Blessed { 4 } else { 2 };
+                let empower_turns = if item_state == ItemState::Cursed { 2 } else { 5 };
+                self.player.statuses.push(status::StatusInstance::new(
+                    status::StatusKind::Empowered { amount: empower_amount },
+                    empower_turns,
+                ));
+                self.message = format!(
+                    "{}🖊 Cinnabar Ink! +{} spell damage for {} turns!",
+                    prefix, empower_amount, empower_turns
+                );
+                if item_state == ItemState::Cursed {
+                    self.player.statuses.push(status::StatusInstance::new(
+                        status::StatusKind::Weakened,
+                        2,
+                    ));
+                    self.message.push_str(" But the ink weakens your body!");
+                }
+                self.message_timer = 60;
+            }
+            crate::player::Item::AncestorToken(_) => {
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                self.message = format!(
+                    "{}🏺 The Ancestor Token hums gently... it activates on death, not by hand.",
+                    prefix
+                );
+                self.message_timer = 60;
+                self.player.items.insert(idx, item);
+                self.player.item_states.insert(idx, item_state);
+            }
+            crate::player::Item::WindFan => {
+                let prefix = match item_state {
+                    ItemState::Cursed => "💀 Cursed! ",
+                    ItemState::Blessed => "✨ Blessed! ",
+                    ItemState::Normal => "",
+                };
+                let px = self.player.x;
+                let py = self.player.y;
+                let push_dist = if item_state == ItemState::Blessed { 3 } else { 2 };
+                let mut count = 0;
+                for e in &mut self.enemies {
+                    if e.is_alive() && (e.x - px).abs() <= 1 && (e.y - py).abs() <= 1 {
+                        let dx = (e.x - px).signum();
+                        let dy = (e.y - py).signum();
+                        for _ in 0..push_dist {
+                            let nx = e.x + dx;
+                            let ny = e.y + dy;
+                            if nx > 0 && nx < MAP_W - 1 && ny > 0 && ny < MAP_H - 1 {
+                                let ni = self.level.idx(nx, ny);
+                                if self.level.tiles[ni].is_walkable() {
+                                    e.x = nx;
+                                    e.y = ny;
+                                } else {
+                                    break;
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                        count += 1;
+                    }
+                }
+                self.message = format!(
+                    "{}🌬 Wind Fan pushes {} enemies away!",
+                    prefix, count
+                );
+                if item_state == ItemState::Cursed {
+                    self.player.hp -= 1;
+                    self.message.push_str(" The gust blows back on you for 1 damage!");
+                }
+                self.message_timer = 60;
+            }
         }
 
         if newly_identified {
@@ -7309,10 +8693,40 @@ impl GameState {
                 self.message.push_str(" But you feel disoriented...");
             }
             self.message_timer = 120;
-            true
-        } else {
-            false
+            return true;
         }
+        let token_pos = self
+            .player
+            .items
+            .iter()
+            .position(|item| matches!(item, crate::player::Item::AncestorToken(_)));
+        if let Some(idx) = token_pos {
+            let item = self.player.items.remove(idx);
+            let item_state = self.player.item_states.remove(idx);
+            let heal = match &item {
+                crate::player::Item::AncestorToken(h) => *h,
+                _ => 5,
+            };
+            let heal = match item_state {
+                ItemState::Cursed => (heal / 2).max(1),
+                ItemState::Blessed => heal * 2,
+                ItemState::Normal => heal,
+            };
+            self.player.hp = heal.min(self.player.max_hp);
+            self.message = format!(
+                "🏺 The Ancestor Token glows! Your ancestors revive you with {} HP!",
+                self.player.hp
+            );
+            if item_state == ItemState::Cursed {
+                self.player
+                    .statuses
+                    .push(status::StatusInstance::new(status::StatusKind::Weakened, 3));
+                self.message.push_str(" But you feel weakened...");
+            }
+            self.message_timer = 120;
+            return true;
+        }
+        false
     }
 
     fn perform_offering(&mut self, altar: AltarKind, idx: usize) {
@@ -7393,12 +8807,12 @@ impl GameState {
                     self.message = "Golden Toad rains coins upon you!".to_string();
                 }
             }
-            // if let Some(ref audio) = self.audio { audio.play_level_up(); }
+            if let Some(ref audio) = self.audio { audio.play_level_up(); }
         } else if piety < 0 {
             // Smite
             self.player.hp -= 5;
             self.message = format!("{} is offended by your pestering! (-5 HP)", deity.name());
-            // if let Some(ref audio) = self.audio { audio.play_game_over(); }
+            if let Some(ref audio) = self.audio { audio.play_damage(); }
         } else {
             let bonus = self.player.devotion_bonus(deity);
             if bonus == "None" || bonus == "Minor devotion" {
@@ -8037,6 +9451,105 @@ impl GameState {
         }
     }
 
+    const CONSOLE_COMMANDS: &'static [&'static str] = &[
+        "help", "god", "hp", "gold", "floor", "reveal", "kill_all",
+        "focus", "spirit", "clear", "stats", "items", "give_item",
+        "radicals", "give_radical", "spells", "give_spell", "fight", "boss",
+    ];
+
+    const ITEM_NAMES: &'static [&'static str] = &[
+        "HealthPotion", "PoisonFlask", "RevealScroll", "TeleportScroll",
+        "HastePotion", "StunBomb", "RiceBall", "MeditationIncense",
+        "AncestralWine", "SmokeScreen", "FireCracker", "IronSkinElixir",
+        "ClarityTea", "GoldIngot", "ThunderTalisman", "JadeSalve",
+        "SerpentFang", "WardingCharm", "InkBomb", "PhoenixPlume",
+    ];
+
+    const BOSS_NAMES: &'static [&'static str] = &[
+        "Gatekeeper", "Scholar", "Elementalist", "MimicKing", "InkSage", "RadicalThief",
+    ];
+
+    const FIGHT_TYPES: &'static [&'static str] = &["normal", "elite", "boss"];
+
+    fn tab_complete(&mut self) {
+        let input = self.console_buffer.clone();
+        let has_space = input.contains(' ');
+
+        if has_space {
+            // Argument completion
+            let parts: Vec<&str> = input.splitn(2, ' ').collect();
+            let cmd = parts[0];
+            let arg_prefix = parts.get(1).unwrap_or(&"");
+
+            let candidates: Vec<&str> = match cmd {
+                "give_item" => Self::ITEM_NAMES.iter()
+                    .filter(|n| n.to_lowercase().starts_with(&arg_prefix.to_lowercase()))
+                    .copied().collect(),
+                "boss" => Self::BOSS_NAMES.iter()
+                    .filter(|n| n.to_lowercase().starts_with(&arg_prefix.to_lowercase()))
+                    .copied().collect(),
+                "fight" => Self::FIGHT_TYPES.iter()
+                    .filter(|n| n.starts_with(&arg_prefix.to_lowercase()))
+                    .copied().collect(),
+                _ => return,
+            };
+
+            if candidates.is_empty() {
+                return;
+            }
+
+            let prefix_key = format!("arg:{}", input);
+            if self.tab_prefix == prefix_key {
+                // Cycle through matches
+                self.tab_cycle_index = (self.tab_cycle_index + 1) % self.tab_matches.len();
+                self.console_buffer = format!("{} {}", cmd, self.tab_matches[self.tab_cycle_index]);
+            } else {
+                // New completion
+                self.tab_matches = candidates.iter().map(|s| s.to_string()).collect();
+                self.tab_cycle_index = 0;
+                if candidates.len() == 1 {
+                    self.console_buffer = format!("{} {}", cmd, candidates[0]);
+                    self.tab_prefix = format!("arg:{}", self.console_buffer);
+                } else {
+                    let lcp = longest_common_prefix_ci(&candidates);
+                    self.console_buffer = format!("{} {}", cmd, lcp);
+                    self.console_history.push(format!("  completions: {}", candidates.join(", ")));
+                    self.tab_prefix = format!("arg:{}", self.console_buffer);
+                }
+            }
+        } else {
+            // Command name completion
+            let prefix = input.to_lowercase();
+            let candidates: Vec<&str> = Self::CONSOLE_COMMANDS.iter()
+                .filter(|c| c.starts_with(&prefix))
+                .copied().collect();
+
+            if candidates.is_empty() {
+                return;
+            }
+
+            let prefix_key = format!("cmd:{}", input);
+            if self.tab_prefix == prefix_key {
+                // Cycle through matches
+                self.tab_cycle_index = (self.tab_cycle_index + 1) % self.tab_matches.len();
+                self.console_buffer = format!("{} ", self.tab_matches[self.tab_cycle_index]);
+            } else {
+                // New completion
+                self.tab_matches = candidates.iter().map(|s| s.to_string()).collect();
+                self.tab_cycle_index = 0;
+                if candidates.len() == 1 {
+                    self.console_buffer = format!("{} ", candidates[0]);
+                    self.tab_prefix = format!("cmd:{}", self.console_buffer);
+                } else {
+                    let lcp = longest_common_prefix_ci(&candidates);
+                    self.console_buffer = lcp;
+                    self.console_history.push(format!("  completions: {}", candidates.join(", ")));
+                    self.tab_prefix = format!("cmd:{}", self.console_buffer);
+                }
+            }
+        }
+    }
+
     fn execute_console_command(&mut self, cmd: &str) {
         let parts: Vec<&str> = cmd.split_whitespace().collect();
         if parts.is_empty() {
@@ -8356,6 +9869,7 @@ impl GameState {
                                     self.floor_num,
                                     self.current_room_modifier(),
                                     &self.srs,
+                                    self.companion,
                                 );
                                 self.combat = CombatState::TacticalBattle(Box::new(battle));
                                 self.typing.clear();
@@ -8380,6 +9894,7 @@ impl GameState {
                                     self.floor_num,
                                     self.current_room_modifier(),
                                     &self.srs,
+                                    self.companion,
                                 );
                                 self.combat = CombatState::TacticalBattle(Box::new(battle));
                                 self.typing.clear();
@@ -8398,6 +9913,7 @@ impl GameState {
                                     self.floor_num,
                                     self.current_room_modifier(),
                                     &self.srs,
+                                    self.companion,
                                 );
                                 self.combat = CombatState::TacticalBattle(Box::new(battle));
                                 self.typing.clear();
@@ -8451,6 +9967,7 @@ impl GameState {
                                 floor,
                                 self.current_room_modifier(),
                                 &self.srs,
+                                self.companion,
                             );
                             self.combat = CombatState::TacticalBattle(Box::new(battle));
                             self.typing.clear();
@@ -8475,6 +9992,25 @@ impl GameState {
             self.console_history.remove(0);
         }
     }
+}
+
+fn longest_common_prefix_ci(strings: &[&str]) -> String {
+    if strings.is_empty() {
+        return String::new();
+    }
+    let first: Vec<char> = strings[0].chars().collect();
+    let mut len = first.len();
+    for s in &strings[1..] {
+        let chars: Vec<char> = s.chars().collect();
+        len = len.min(chars.len());
+        for i in 0..len {
+            if first[i].to_lowercase().next() != chars[i].to_lowercase().next() {
+                len = i;
+                break;
+            }
+        }
+    }
+    strings[0][..strings[0].char_indices().nth(len).map_or(strings[0].len(), |(i, _)| i)].to_string()
 }
 
 /// Combo effects from spell combinations.
@@ -8535,6 +10071,14 @@ fn spell_category(effect: &SpellEffect) -> &'static str {
         SpellEffect::Thorns(_) => "shield",
         SpellEffect::Cone(_) => "fire",
         SpellEffect::Wall(_) => "shield",
+        SpellEffect::OilSlick => "utility",
+        SpellEffect::FreezeGround(_) => "stun",
+        SpellEffect::Ignite => "fire",
+        SpellEffect::PlantGrowth => "heal",
+        SpellEffect::Earthquake(_) => "strike",
+        SpellEffect::Sanctify(_) => "heal",
+        SpellEffect::FloodWave(_) => "strike",
+        SpellEffect::SummonBoulder => "shield",
     }
 }
 
@@ -8645,6 +10189,19 @@ fn tile_look_text(tile: Tile) -> String {
         Tile::LockedDoor => "Locked door — translate to unlock.".to_string(),
         Tile::CursedFloor => "Cursed floor — a hidden trap awaits the unwary.".to_string(),
         Tile::Trap(_) => "Open floor.".to_string(),
+        Tile::GoldOre => "Gold ore vein — mine it for gold.".to_string(),
+        Tile::Lava => "Molten lava — stepping on it will burn you!".to_string(),
+        Tile::Ice => "Ice — slippery surface, be careful.".to_string(),
+        Tile::Bamboo => "Dense bamboo — blocks passage.".to_string(),
+        Tile::Mushroom => "Giant mushroom — spore cloud causes disorientation.".to_string(),
+        Tile::PoisonGas => "Poison gas — toxic fumes linger here.".to_string(),
+        Tile::Bookshelf => "Bookshelf — ancient texts and scrolls.".to_string(),
+        Tile::PressurePlate => "Pressure plate — something heavy might activate it.".to_string(),
+        Tile::Boulder => "Heavy boulder — push it onto a pressure plate.".to_string(),
+        Tile::Crystal => "Crystal formation — reflects light beautifully.".to_string(),
+        Tile::DragonGatePortal => "Dragon Gate — an otherworldly portal shimmering with power.".to_string(),
+        Tile::SpiritSpringTile => "Spirit spring — step in to restore HP and spirit.".to_string(),
+        Tile::GoldPile => "Gold pile — walk over it to collect.".to_string(),
     }
 }
 
@@ -9333,7 +10890,12 @@ pub fn init_game() -> Result<(), JsValue> {
         console_history: Vec::new(),
         console_cmd_history: Vec::new(),
         console_cmd_index: None,
+        tab_matches: Vec::new(),
+        tab_cycle_index: 0,
+        tab_prefix: String::new(),
         god_mode: false,
+        completed_special_rooms: HashSet::new(),
+        demon_deal_floors: 0,
     }));
 
     // Initial setup
@@ -9347,6 +10909,11 @@ pub fn init_game() -> Result<(), JsValue> {
     {
         let state = Rc::clone(&state);
         let closure = Closure::<dyn FnMut(KeyboardEvent)>::new(move |event: KeyboardEvent| {
+            // Allow IME and OS shortcut combos (Ctrl+Space, Ctrl+Shift, etc.) to pass through
+            if event.ctrl_key() || event.alt_key() || event.meta_key() {
+                return;
+            }
+
             let key = event.key();
             let Ok(mut s) = state.try_borrow_mut() else {
                 return;
@@ -9361,6 +10928,9 @@ pub fn init_game() -> Result<(), JsValue> {
             if key == "`" || key == "Dead" {
                 event.prevent_default();
                 s.show_console = !s.show_console;
+                if let Some(ref audio) = s.audio {
+                    audio.play_console_toggle();
+                }
                 if s.show_console {
                     s.console_buffer.clear();
                 }
@@ -9409,7 +10979,14 @@ pub fn init_game() -> Result<(), JsValue> {
                             }
                         }
                     }
+                    "Tab" => {
+                        s.tab_complete();
+                    }
                     _ => {
+                        // Reset tab completion state on any non-Tab key
+                        s.tab_prefix.clear();
+                        s.tab_matches.clear();
+                        s.tab_cycle_index = 0;
                         if key.len() == 1 {
                             s.console_buffer.push_str(&key);
                         } else if key == "Space" {
@@ -9432,8 +11009,18 @@ pub fn init_game() -> Result<(), JsValue> {
                 event.prevent_default();
                 match key.as_str() {
                     "Escape" | "o" | "O" => s.close_settings(),
-                    "ArrowUp" | "w" | "W" => s.move_settings_cursor(-1),
-                    "ArrowDown" | "s" | "S" => s.move_settings_cursor(1),
+                    "ArrowUp" | "w" | "W" => {
+                        s.move_settings_cursor(-1);
+                        if let Some(ref audio) = s.audio {
+                            audio.play_menu_click();
+                        }
+                    }
+                    "ArrowDown" | "s" | "S" => {
+                        s.move_settings_cursor(1);
+                        if let Some(ref audio) = s.audio {
+                            audio.play_menu_click();
+                        }
+                    }
                     "ArrowLeft" | "a" | "A" => s.adjust_selected_setting(-1),
                     "ArrowRight" | "d" | "D" | "Enter" => s.adjust_selected_setting(1),
                     _ => {}
@@ -11049,11 +12636,17 @@ pub fn init_game() -> Result<(), JsValue> {
                     } else {
                         s.class_cursor = total_classes - 1;
                     }
+                    if let Some(ref audio) = s.audio {
+                        audio.play_menu_click();
+                    }
                     s.render();
                     return;
                 }
                 if key == "ArrowDown" || key == "s" || key == "S" {
                     s.class_cursor = (s.class_cursor + 1) % total_classes;
+                    if let Some(ref audio) = s.audio {
+                        audio.play_menu_click();
+                    }
                     s.render();
                     return;
                 }
@@ -11091,6 +12684,35 @@ pub fn init_game() -> Result<(), JsValue> {
                 if let CombatState::TacticalBattle(ref mut battle) = old_combat {
                     let log_len_before = battle.log.len();
                     let result = combat::input::handle_input(battle, key.as_str());
+
+                    // Drain queued audio events from combat
+                    for audio_event in battle.audio_events.drain(..) {
+                        if let Some(ref audio) = gs.audio {
+                            match audio_event {
+                                combat::AudioEvent::EnemyDeath => audio.play_enemy_death(),
+                                combat::AudioEvent::CriticalHit => audio.play_critical_hit(),
+                                combat::AudioEvent::ProjectileLaunch => {
+                                    audio.play_projectile_launch()
+                                }
+                                combat::AudioEvent::ProjectileImpact => {
+                                    audio.play_projectile_impact()
+                                }
+                                combat::AudioEvent::Heal => audio.play_heal(),
+                                combat::AudioEvent::ShieldBlock => audio.play_shield_block(),
+                                combat::AudioEvent::StatusBurn => audio.play_status_burn(),
+                                combat::AudioEvent::StatusPoison => audio.play_status_poison(),
+                                combat::AudioEvent::StatusSlow => audio.play_status_slow(),
+                                combat::AudioEvent::SpellElement(ref elem) => {
+                                    audio.play_spell_element(elem)
+                                }
+                                combat::AudioEvent::TurnTick => audio.play_turn_tick(),
+                                combat::AudioEvent::TypingCorrect => audio.play_typing_correct(),
+                                combat::AudioEvent::TypingError => audio.play_typing_error(),
+                                combat::AudioEvent::WaterSplash => audio.play_water_splash(),
+                                combat::AudioEvent::LavaRumble => audio.play_lava_rumble(),
+                            }
+                        }
+                    }
 
                     // Scan new log messages for particle/shake triggers
                     for msg in &battle.log[log_len_before..] {
@@ -11194,6 +12816,9 @@ pub fn init_game() -> Result<(), JsValue> {
                             return;
                         }
                         combat::input::BattleEvent::Victory => {
+                            if let Some(ref audio) = gs.audio {
+                                audio.play_victory();
+                            }
                             let combo = battle.combo_streak;
                             let killed = combat::transition::exit_combat(
                                 battle,
@@ -11365,6 +12990,9 @@ pub fn init_game() -> Result<(), JsValue> {
                         if let CombatState::Forging { ref mut cursor, .. } = s.combat {
                             if *cursor > 0 {
                                 *cursor -= 1;
+                                if let Some(ref audio) = s.audio {
+                                    audio.play_menu_click();
+                                }
                             }
                         }
                         s.render();
@@ -11378,6 +13006,9 @@ pub fn init_game() -> Result<(), JsValue> {
                         {
                             if *cursor + 1 < recipes.len() {
                                 *cursor += 1;
+                                if let Some(ref audio) = s.audio {
+                                    audio.play_menu_click();
+                                }
                             }
                         }
                         s.render();
@@ -12130,8 +13761,43 @@ pub fn init_game() -> Result<(), JsValue> {
                     let mut old_combat = std::mem::replace(&mut gs.combat, CombatState::Explore);
                     if let CombatState::TacticalBattle(ref mut battle) = old_combat {
                         let event = combat::tick::tick_battle(battle);
+
+                        // Drain queued audio events from combat tick
+                        for audio_event in battle.audio_events.drain(..) {
+                            if let Some(ref audio) = gs.audio {
+                                match audio_event {
+                                    combat::AudioEvent::EnemyDeath => audio.play_enemy_death(),
+                                    combat::AudioEvent::CriticalHit => audio.play_critical_hit(),
+                                    combat::AudioEvent::ProjectileLaunch => {
+                                        audio.play_projectile_launch()
+                                    }
+                                    combat::AudioEvent::ProjectileImpact => {
+                                        audio.play_projectile_impact()
+                                    }
+                                    combat::AudioEvent::Heal => audio.play_heal(),
+                                    combat::AudioEvent::ShieldBlock => audio.play_shield_block(),
+                                    combat::AudioEvent::StatusBurn => audio.play_status_burn(),
+                                    combat::AudioEvent::StatusPoison => audio.play_status_poison(),
+                                    combat::AudioEvent::StatusSlow => audio.play_status_slow(),
+                                    combat::AudioEvent::SpellElement(ref elem) => {
+                                        audio.play_spell_element(elem)
+                                    }
+                                    combat::AudioEvent::TurnTick => audio.play_turn_tick(),
+                                    combat::AudioEvent::TypingCorrect => {
+                                        audio.play_typing_correct()
+                                    }
+                                    combat::AudioEvent::TypingError => audio.play_typing_error(),
+                                    combat::AudioEvent::WaterSplash => audio.play_water_splash(),
+                                    combat::AudioEvent::LavaRumble => audio.play_lava_rumble(),
+                                }
+                            }
+                        }
+
                         match event {
                             combat::input::BattleEvent::Victory => {
+                                if let Some(ref audio) = gs.audio {
+                                    audio.play_victory();
+                                }
                                 let combo = battle.combo_streak;
                                 let killed = combat::transition::exit_combat(
                                     battle,

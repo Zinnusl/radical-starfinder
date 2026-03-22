@@ -1,4 +1,4 @@
-use crate::combat::{BattleTile, Direction, TacticalBattle, WuxingElement};
+use crate::combat::{AudioEvent, BattleTile, Direction, TacticalBattle, WuxingElement};
 
 pub fn move_unit(
     battle: &mut TacticalBattle,
@@ -32,6 +32,23 @@ pub fn move_unit(
         };
         messages.push(format!("{} is pierced by thorns! (-{} HP)", name, actual));
     }
+    // Water tile: apply Wet status for 3 turns
+    if battle.arena.tile(dest_x, dest_y) == Some(BattleTile::Water) {
+        use crate::status::{has_wet, StatusInstance, StatusKind};
+        if !has_wet(&battle.units[unit_idx].statuses) {
+            battle.units[unit_idx]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Wet, 3));
+            let name = if battle.units[unit_idx].is_player() {
+                "You get".to_string()
+            } else {
+                format!("{} gets", battle.units[unit_idx].hanzi)
+            };
+            messages.push(format!("💧 {} soaked!", name));
+        }
+        let mut combo_msgs = check_status_combos(battle, unit_idx);
+        messages.append(&mut combo_msgs);
+    }
     // SpiritWell: one-time spirit restore, convert to Open
     if battle.arena.tile(dest_x, dest_y) == Some(BattleTile::SpiritWell)
         && battle.units[unit_idx].is_player()
@@ -52,6 +69,16 @@ pub fn move_unit(
         let mut crumble_msgs =
             crate::combat::terrain::step_on_crumbling(battle, dest_x, dest_y);
         messages.append(&mut crumble_msgs);
+    }
+    // Terrain audio cues (only for the player to avoid spam)
+    if battle.units[unit_idx].is_player() {
+        let dest = battle.arena.tile(dest_x, dest_y);
+        if dest == Some(BattleTile::Water) {
+            battle.audio_events.push(AudioEvent::WaterSplash);
+        }
+        if dest == Some(BattleTile::Lava) {
+            battle.audio_events.push(AudioEvent::LavaRumble);
+        }
     }
     messages
 }
@@ -84,16 +111,63 @@ pub fn wait(battle: &mut TacticalBattle, unit_idx: usize) {
 }
 
 /// Deal damage to a unit, accounting for defending status and armor.
+/// Guard companion intercept: if Guard is adjacent to player, absorbs some damage.
 /// Returns actual damage dealt.
 pub fn deal_damage(battle: &mut TacticalBattle, target_idx: usize, raw_damage: i32) -> i32 {
     if target_idx == 0 && battle.god_mode {
         return 0;
     }
+
+    // Guard passive: intercept attacks aimed at player if Guard is adjacent
+    if target_idx == 0 {
+        if let Some(crate::game::Companion::Guard) = battle.companion_kind {
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            let guard_adj = battle.units.iter().position(|u| {
+                u.is_companion()
+                    && u.alive
+                    && (u.x - px).abs() + (u.y - py).abs() <= 1
+            });
+            if let Some(gidx) = guard_adj {
+                // Guard intercepts half the damage (min 1)
+                let intercepted = (raw_damage / 2).max(1);
+                let remaining = (raw_damage - intercepted).max(1);
+                battle.units[gidx].hp -= intercepted;
+                if battle.units[gidx].hp <= 0 {
+                    battle.units[gidx].hp = 0;
+                    battle.units[gidx].alive = false;
+                }
+                battle.log_message(format!(
+                    "🛡 Guard intercepts {} damage!",
+                    intercepted
+                ));
+                // Continue with reduced damage for the player
+                let unit = &mut battle.units[target_idx];
+                let mut damage = remaining;
+                if unit.defending {
+                    damage = damage / 2;
+                    battle.audio_events.push(AudioEvent::ShieldBlock);
+                }
+                damage -= unit.radical_armor;
+                unit.radical_armor = 0;
+                damage = damage.max(1);
+                let unit = &mut battle.units[target_idx];
+                unit.hp -= damage;
+                if unit.hp <= 0 {
+                    unit.hp = 0;
+                    unit.alive = false;
+                }
+                return damage;
+            }
+        }
+    }
+
     let unit = &mut battle.units[target_idx];
     let mut damage = raw_damage;
 
     if unit.defending {
         damage = damage / 2;
+        battle.audio_events.push(AudioEvent::ShieldBlock);
     }
     damage -= unit.radical_armor;
     unit.radical_armor = 0;
@@ -113,6 +187,9 @@ pub fn deal_damage(battle: &mut TacticalBattle, target_idx: usize, raw_damage: i
     if unit.hp <= 0 {
         unit.hp = 0;
         unit.alive = false;
+        if !battle.units[target_idx].is_player() {
+            battle.audio_events.push(AudioEvent::EnemyDeath);
+        }
         if reading_bonus > 0 {
             battle.log_message(format!("Reading order bonus! +{} damage", reading_bonus));
         }
@@ -175,8 +252,17 @@ pub fn deal_damage_from(
     let mut retaliation_msg = None;
 
     if target.thorn_armor_turns > 0 {
-        attacker_damage += 1;
-        retaliation_msg = Some("Thorn armor retaliates for 1 damage!".to_string());
+        // ThornsAura + Fortify synergy: thorns damage boosted by fortify stacks
+        let fortify_boost = target.fortify_stacks;
+        attacker_damage += 1 + fortify_boost;
+        if fortify_boost > 0 {
+            retaliation_msg = Some(format!(
+                "🌿⚔ Fortified thorn armor retaliates for {} damage!",
+                1 + fortify_boost
+            ));
+        } else {
+            retaliation_msg = Some("Thorn armor retaliates for 1 damage!".to_string());
+        }
     }
     if target
         .statuses
@@ -241,4 +327,256 @@ pub fn flank_bonus(battle: &TacticalBattle, attacker_idx: usize, target_idx: usi
     } else {
         0.0
     }
+}
+
+// ── Status Effect Combos ─────────────────────────────────────────────────────
+
+/// Check for status effect combinations on a unit and trigger emergent interactions.
+/// Called after any status is applied.
+pub fn check_status_combos(battle: &mut TacticalBattle, unit_idx: usize) -> Vec<String> {
+    let mut messages = Vec::new();
+
+    // Gather status flags before mutating
+    let has_wet = battle.units[unit_idx]
+        .statuses
+        .iter()
+        .any(|s| matches!(s.kind, crate::status::StatusKind::Wet));
+    let has_burn = battle.units[unit_idx]
+        .statuses
+        .iter()
+        .any(|s| matches!(s.kind, crate::status::StatusKind::Burn { .. }));
+    let has_freeze = battle.units[unit_idx]
+        .statuses
+        .iter()
+        .any(|s| matches!(s.kind, crate::status::StatusKind::Freeze));
+    let has_poison = battle.units[unit_idx]
+        .statuses
+        .iter()
+        .any(|s| matches!(s.kind, crate::status::StatusKind::Poison { .. }));
+    let has_slow = battle.units[unit_idx]
+        .statuses
+        .iter()
+        .any(|s| matches!(s.kind, crate::status::StatusKind::Slow));
+    let has_haste = battle.units[unit_idx]
+        .statuses
+        .iter()
+        .any(|s| matches!(s.kind, crate::status::StatusKind::Haste));
+    let has_fortify = battle.units[unit_idx]
+        .statuses
+        .iter()
+        .any(|s| matches!(s.kind, crate::status::StatusKind::Fortify { .. }));
+    let has_weakened = battle.units[unit_idx]
+        .statuses
+        .iter()
+        .any(|s| matches!(s.kind, crate::status::StatusKind::Weakened));
+    let has_blessed = battle.units[unit_idx]
+        .statuses
+        .iter()
+        .any(|s| matches!(s.kind, crate::status::StatusKind::Blessed));
+    let has_cursed = battle.units[unit_idx]
+        .statuses
+        .iter()
+        .any(|s| matches!(s.kind, crate::status::StatusKind::Cursed));
+    let on_oil = battle
+        .arena
+        .tile(battle.units[unit_idx].x, battle.units[unit_idx].y)
+        == Some(BattleTile::Oil);
+
+    let name = if battle.units[unit_idx].is_player() {
+        "You".to_string()
+    } else {
+        battle.units[unit_idx].hanzi.to_string()
+    };
+
+    // Wet + Burn → Steam (clears both, Steam tile, 1 damage)
+    if has_wet && has_burn {
+        use crate::status::StatusKind;
+        battle.units[unit_idx]
+            .statuses
+            .retain(|s| !matches!(s.kind, StatusKind::Wet | StatusKind::Burn { .. }));
+        let ux = battle.units[unit_idx].x;
+        let uy = battle.units[unit_idx].y;
+        battle.arena.set_steam(ux, uy, 2);
+        let actual = deal_damage(battle, unit_idx, 1);
+        messages.push(format!(
+            "💨 Wet + Burn = Steam! {} takes {} damage!",
+            name, actual
+        ));
+        battle.audio_events.push(AudioEvent::WaterSplash);
+    }
+
+    // Wet + Freeze → Instant Frozen (skip 2 turns, +3 armor)
+    if has_wet && has_freeze {
+        use crate::status::{StatusInstance, StatusKind};
+        battle.units[unit_idx]
+            .statuses
+            .retain(|s| !matches!(s.kind, StatusKind::Wet | StatusKind::Freeze));
+        // Deep freeze: 2-turn freeze
+        battle.units[unit_idx]
+            .statuses
+            .push(StatusInstance::new(StatusKind::Freeze, 2));
+        battle.units[unit_idx].radical_armor += 3;
+        messages.push(format!(
+            "❄💧 Wet + Freeze = Deep Freeze! {} is frozen solid for 2 turns (+3 armor)!",
+            name
+        ));
+    }
+
+    // Oil tile + Burn → Explosion (3 damage to unit and adjacent, Scorched tiles)
+    if on_oil && has_burn {
+        use crate::status::StatusKind;
+        battle.units[unit_idx]
+            .statuses
+            .retain(|s| !matches!(s.kind, StatusKind::Burn { .. }));
+        let ux = battle.units[unit_idx].x;
+        let uy = battle.units[unit_idx].y;
+        battle.arena.set_tile(ux, uy, BattleTile::Scorched);
+        let actual = deal_damage(battle, unit_idx, 3);
+        messages.push(format!(
+            "💥 Oil + Burn = Explosion! {} takes {} damage!",
+            name, actual
+        ));
+        let deltas: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+        for &(dx, dy) in &deltas {
+            let ax = ux + dx;
+            let ay = uy + dy;
+            if let Some(adj_tile) = battle.arena.tile(ax, ay) {
+                if adj_tile == BattleTile::Oil {
+                    battle.arena.set_tile(ax, ay, BattleTile::Scorched);
+                }
+            }
+            if let Some(aidx) = battle.unit_at(ax, ay) {
+                let adj_actual = deal_damage(battle, aidx, 3);
+                let adj_name = if battle.units[aidx].is_player() {
+                    "You".to_string()
+                } else {
+                    battle.units[aidx].hanzi.to_string()
+                };
+                messages.push(format!(
+                    "{} caught in oil explosion! (-{} HP)",
+                    adj_name, adj_actual
+                ));
+            }
+        }
+    }
+
+    // Poison + Burn → Toxic Fumes (2 damage AoE in 2-tile radius, Confused 1 turn)
+    if has_poison && has_burn {
+        use crate::status::{StatusInstance, StatusKind};
+        battle.units[unit_idx]
+            .statuses
+            .retain(|s| !matches!(s.kind, StatusKind::Poison { .. } | StatusKind::Burn { .. }));
+        let ux = battle.units[unit_idx].x;
+        let uy = battle.units[unit_idx].y;
+        messages.push(format!(
+            "☠🔥 Poison + Burn = Toxic Fumes! Noxious gas erupts around {}!",
+            name
+        ));
+        for i in 0..battle.units.len() {
+            if !battle.units[i].alive || i == unit_idx {
+                continue;
+            }
+            let dist = (battle.units[i].x - ux).abs() + (battle.units[i].y - uy).abs();
+            if dist <= 2 {
+                let actual = deal_damage(battle, i, 2);
+                battle.units[i]
+                    .statuses
+                    .push(StatusInstance::new(StatusKind::Confused, 1));
+                let aname = if battle.units[i].is_player() {
+                    "You".to_string()
+                } else {
+                    battle.units[i].hanzi.to_string()
+                };
+                messages.push(format!(
+                    "{} chokes on toxic fumes! (-{} HP, Confused!)",
+                    aname, actual
+                ));
+            }
+        }
+    }
+
+    // Slow + Haste → Cancel each other out
+    if has_slow && has_haste {
+        use crate::status::StatusKind;
+        battle.units[unit_idx]
+            .statuses
+            .retain(|s| !matches!(s.kind, StatusKind::Slow | StatusKind::Haste));
+        messages.push(format!(
+            "⚡🐌 Slow and Haste cancel out on {}!",
+            name
+        ));
+    }
+
+    // Fortify + Weakened → Cancel each other out
+    if has_fortify && has_weakened {
+        use crate::status::StatusKind;
+        battle.units[unit_idx]
+            .statuses
+            .retain(|s| !matches!(s.kind, StatusKind::Fortify { .. } | StatusKind::Weakened));
+        messages.push(format!(
+            "💪⬇ Fortify and Weakened cancel out on {}!",
+            name
+        ));
+    }
+
+    // Blessed + Cursed → Cancel each other out
+    if has_blessed && has_cursed {
+        use crate::status::StatusKind;
+        battle.units[unit_idx]
+            .statuses
+            .retain(|s| !matches!(s.kind, StatusKind::Blessed | StatusKind::Cursed));
+        messages.push(format!(
+            "✨💀 Blessed and Cursed cancel out on {}!",
+            name
+        ));
+    }
+
+    messages
+}
+
+// ── Equipment Synergies ──────────────────────────────────────────────────────
+
+/// Check if player has a specific equipment effect.
+#[allow(dead_code)]
+pub fn player_has_equip(battle: &TacticalBattle, check: fn(&crate::player::EquipEffect) -> bool) -> bool {
+    battle.player_equip_effects.iter().any(|e| check(e))
+}
+
+/// LifeSteal + Poison synergy: drain extra 1 HP from poisoned enemies.
+#[allow(dead_code)]
+pub fn lifesteal_poison_bonus(battle: &mut TacticalBattle, target_idx: usize, base_heal: i32) -> i32 {
+    let has_lifesteal = battle.player_equip_effects.iter().any(|e| {
+        matches!(e, crate::player::EquipEffect::LifeSteal(_))
+    });
+    let target_poisoned = battle.units[target_idx]
+        .statuses
+        .iter()
+        .any(|s| matches!(s.kind, crate::status::StatusKind::Poison { .. }));
+    if has_lifesteal && target_poisoned {
+        battle.log_message("🧛 LifeSteal drains extra from poisoned foe! (+1 HP)");
+        base_heal + 1
+    } else {
+        base_heal
+    }
+}
+
+/// CriticalStrike + Backstab synergy: 100% crit chance from behind.
+pub fn critical_backstab_check(battle: &TacticalBattle, target_idx: usize) -> bool {
+    let has_crit = battle.player_equip_effects.iter().any(|e| {
+        matches!(e, crate::player::EquipEffect::CriticalStrike(_))
+    });
+    if !has_crit {
+        return false;
+    }
+    let flank = flank_bonus(battle, 0, target_idx);
+    // Backstab (from behind) guarantees crit
+    flank >= 0.50
+}
+
+/// SpellPowerBoost terrain synergy: terrain spells affect 1 extra tile.
+#[allow(dead_code)]
+pub fn spell_power_extra_tiles(battle: &TacticalBattle) -> bool {
+    battle.player_equip_effects.iter().any(|e| {
+        matches!(e, crate::player::EquipEffect::SpellPowerBoost(_))
+    })
 }

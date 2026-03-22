@@ -3,7 +3,9 @@ use crate::combat::ai::calculate_all_intents;
 use crate::combat::input::{execute_enemy_turn_action, BattleEvent};
 use crate::combat::terrain::{apply_scorched_damage, decay_cracked_floors};
 use crate::combat::turn::advance_turn;
-use crate::combat::{BattleTile, ProjectileEffect, TacticalBattle, TacticalPhase, Weather};
+use crate::combat::{
+    AudioEvent, BattleTile, ProjectileEffect, TacticalBattle, TacticalPhase, Weather,
+};
 use crate::status::tick_statuses;
 
 const _RESOLVE_FRAMES: u8 = 30; // ~500ms at 60fps
@@ -118,6 +120,10 @@ fn tick_projectiles(battle: &mut TacticalBattle) {
 
     battle.projectiles.retain(|p| !p.done);
 
+    if !finished.is_empty() {
+        battle.audio_events.push(AudioEvent::ProjectileImpact);
+    }
+
     for (fx, fy, tx, ty, effect, _owner) in &finished {
         if battle.arena.tile(*tx, *ty) == Some(BattleTile::Boulder) {
             let raw_dx = *tx as f64 - fx;
@@ -221,6 +227,15 @@ fn apply_projectile_spell(
                     battle.units[idx].stunned = true;
                 }
             }
+            // Lightning conducts through water, stunning units on connected water tiles
+            let terrain_msgs = crate::combat::terrain::apply_terrain_interactions(
+                battle,
+                crate::combat::terrain::TerrainSource::LightningSpell,
+                &[(tx, ty)],
+            );
+            for msg in &terrain_msgs {
+                battle.log_message(msg);
+            }
         }
         SpellEffect::Poison(dmg, turns) => {
             if let Some(idx) = battle.unit_at(tx, ty) {
@@ -231,6 +246,7 @@ fn apply_projectile_spell(
                             crate::status::StatusKind::Poison { damage: *dmg },
                             *turns,
                         ));
+                    battle.audio_events.push(AudioEvent::StatusPoison);
                 }
             }
         }
@@ -243,6 +259,7 @@ fn apply_projectile_spell(
                             crate::status::StatusKind::Slow,
                             *turns,
                         ));
+                    battle.audio_events.push(AudioEvent::StatusSlow);
                 }
             }
         }
@@ -285,7 +302,9 @@ fn advance_and_set_phase(battle: &mut TacticalBattle) -> BattleEvent {
     let wrapped = advance_turn(battle);
 
     if wrapped {
+        battle.audio_events.push(AudioEvent::TurnTick);
         battle.arena.tick_steam();
+        battle.arena.tick_holy();
         tick_arcing_projectiles(battle);
         apply_exhaustion(battle);
         let scorched_msgs = apply_scorched_damage(battle);
@@ -305,6 +324,50 @@ fn advance_and_set_phase(battle: &mut TacticalBattle) -> BattleEvent {
 
         if battle.weather == Weather::Rain {
             spread_rain_water(&mut battle.arena);
+        }
+
+        // ── Weather + Terrain Synergies ──────────────────────────────────
+        let weather_terrain_msgs = apply_weather_terrain_synergies(battle);
+        for msg in &weather_terrain_msgs {
+            battle.log_message(msg);
+        }
+
+        // ── Rain: apply Wet to all units ─────────────────────────────────
+        if battle.weather == Weather::Rain {
+            for i in 0..battle.units.len() {
+                if !battle.units[i].alive {
+                    continue;
+                }
+                let already_wet = battle.units[i]
+                    .statuses
+                    .iter()
+                    .any(|s| matches!(s.kind, crate::status::StatusKind::Wet));
+                if !already_wet {
+                    battle.units[i]
+                        .statuses
+                        .push(crate::status::StatusInstance::new(
+                            crate::status::StatusKind::Wet,
+                            3,
+                        ));
+                }
+            }
+            battle.log_message("🌧 Rain soaks everyone!");
+            // Check status combos after applying wet
+            for i in 0..battle.units.len() {
+                if !battle.units[i].alive {
+                    continue;
+                }
+                let combo_msgs = crate::combat::action::check_status_combos(battle, i);
+                for msg in &combo_msgs {
+                    battle.log_message(msg);
+                }
+            }
+        }
+
+        // ── Companion Passive Abilities ──────────────────────────────────
+        let companion_msgs = apply_companion_passives(battle);
+        for msg in &companion_msgs {
+            battle.log_message(msg);
         }
 
         let focus_regen = match battle.weather {
@@ -585,6 +648,201 @@ pub fn push_boulder(
         messages.push("The boulder slides!".to_string());
     } else {
         messages.push("The boulder thuds against the wall.".to_string());
+    }
+
+    messages
+}
+
+// ── Weather + Terrain Synergies ──────────────────────────────────────────────
+
+fn apply_weather_terrain_synergies(battle: &mut TacticalBattle) -> Vec<String> {
+    let mut messages = Vec::new();
+    let w = battle.arena.width as i32;
+    let h = battle.arena.height as i32;
+
+    match battle.weather {
+        Weather::Rain => {
+            // Rain + Fire tiles → Fire extinguishes after 1 turn → Steam
+            let mut fire_to_steam = Vec::new();
+            for y in 0..h {
+                for x in 0..w {
+                    if battle.arena.tile(x, y) == Some(BattleTile::Scorched) {
+                        fire_to_steam.push((x, y));
+                    }
+                }
+            }
+            for (x, y) in fire_to_steam {
+                battle.arena.set_steam(x, y, 2);
+                messages.push(format!("🌧🔥 Rain extinguishes fire at ({},{}) → Steam!", x, y));
+            }
+
+            // Rain + Ice tiles → Ice becomes Water
+            let mut ice_to_water = Vec::new();
+            for y in 0..h {
+                for x in 0..w {
+                    if battle.arena.tile(x, y) == Some(BattleTile::Ice) {
+                        ice_to_water.push((x, y));
+                    }
+                }
+            }
+            for (x, y) in ice_to_water {
+                battle.arena.set_tile(x, y, BattleTile::Water);
+                messages.push(format!("🌧❄ Rain melts ice at ({},{}) → Water!", x, y));
+            }
+        }
+        Weather::Sandstorm => {
+            // Sandstorm + Oil tiles → Oil covered (neutralized) by sand
+            let mut oil_to_sand = Vec::new();
+            for y in 0..h {
+                for x in 0..w {
+                    if battle.arena.tile(x, y) == Some(BattleTile::Oil) {
+                        oil_to_sand.push((x, y));
+                    }
+                }
+            }
+            if !oil_to_sand.is_empty() {
+                for (x, y) in oil_to_sand {
+                    battle.arena.set_tile(x, y, BattleTile::Sand);
+                }
+                messages.push("🏜 Sandstorm covers oil tiles with sand!".to_string());
+            }
+        }
+        Weather::Fog => {
+            // Fog + Steam → Combined thick fog (extend steam timer for thicker coverage)
+            for y in 0..h {
+                for x in 0..w {
+                    if let Some(i) = battle.arena.idx(x, y) {
+                        if battle.arena.tiles[i] == BattleTile::Steam {
+                            if battle.arena.steam_timers[i] < 4 {
+                                battle.arena.steam_timers[i] = 4;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Weather::SpiritualInk => {
+            // SpiritualInk + InkPool → +2 spell power (handled in tile_spell_bonus in input.rs)
+        }
+        Weather::Clear => {}
+    }
+
+    messages
+}
+
+// ── Companion Passive Abilities ──────────────────────────────────────────────
+
+fn apply_companion_passives(battle: &mut TacticalBattle) -> Vec<String> {
+    let mut messages = Vec::new();
+    let companion_kind = match battle.companion_kind {
+        Some(c) => c,
+        None => return messages,
+    };
+
+    // Find companion unit index
+    let companion_idx = battle
+        .units
+        .iter()
+        .position(|u| u.is_companion() && u.alive);
+    let companion_idx = match companion_idx {
+        Some(i) => i,
+        None => return messages,
+    };
+
+    use crate::game::Companion;
+    match companion_kind {
+        Companion::Monk => {
+            // Passive: Heal player 1 HP at start of each round
+            let player = &battle.units[0];
+            if player.alive && player.hp < player.max_hp {
+                battle.units[0].hp = (battle.units[0].hp + 1).min(battle.units[0].max_hp);
+                messages.push("🧘 Monk's healing aura restores 1 HP!".to_string());
+                battle.audio_events.push(AudioEvent::Heal);
+            }
+            // Active: Purify — remove 1 negative status from player when player HP < 50%
+            let player = &battle.units[0];
+            if player.alive && player.hp * 2 < player.max_hp {
+                let neg_idx = battle.units[0]
+                    .statuses
+                    .iter()
+                    .position(|s| s.is_negative());
+                if let Some(idx) = neg_idx {
+                    let removed_label = battle.units[0].statuses[idx].label().to_string();
+                    battle.units[0].statuses.remove(idx);
+                    messages.push(format!(
+                        "🧘✨ Monk purifies {}! Status removed!",
+                        removed_label
+                    ));
+                }
+            }
+        }
+        Companion::Guard => {
+            // Active: Taunt — force nearest enemy to target Guard when player HP < 30%
+            let player = &battle.units[0];
+            if player.alive && player.hp * 10 < player.max_hp * 3 {
+                let cx = battle.units[companion_idx].x;
+                let cy = battle.units[companion_idx].y;
+                let mut nearest_enemy: Option<usize> = None;
+                let mut best_dist = i32::MAX;
+                for (i, u) in battle.units.iter().enumerate() {
+                    if u.alive && u.is_enemy() {
+                        let d = (u.x - cx).abs() + (u.y - cy).abs();
+                        if d < best_dist {
+                            best_dist = d;
+                            nearest_enemy = Some(i);
+                        }
+                    }
+                }
+                if let Some(eidx) = nearest_enemy {
+                    let gdx = cx - battle.units[eidx].x;
+                    let gdy = cy - battle.units[eidx].y;
+                    if let Some(dir) = crate::combat::Direction::from_delta(gdx, gdy) {
+                        battle.units[eidx].facing = dir;
+                    }
+                    messages.push(format!(
+                        "🛡 Guard taunts {}! \"Over here!\"",
+                        battle.units[eidx].hanzi
+                    ));
+                }
+            }
+        }
+        Companion::Teacher => {
+            // Passive: +1 to combo multiplier buildup (checked in combo_multiplier)
+            if battle.turn_number <= 2 {
+                messages.push("📚 Teacher's guidance boosts combo buildup!".to_string());
+            }
+        }
+        Companion::Merchant => {
+            // Active: Bribe — 50% chance to make an enemy skip turn when player HP < 40%
+            let player = &battle.units[0];
+            if player.alive && player.hp * 10 < player.max_hp * 4 {
+                let px = battle.units[0].x;
+                let py = battle.units[0].y;
+                let mut nearest_enemy: Option<usize> = None;
+                let mut best_dist = i32::MAX;
+                for (i, u) in battle.units.iter().enumerate() {
+                    if u.alive && u.is_enemy() && !u.stunned {
+                        let d = (u.x - px).abs() + (u.y - py).abs();
+                        if d < best_dist {
+                            best_dist = d;
+                            nearest_enemy = Some(i);
+                        }
+                    }
+                }
+                if let Some(eidx) = nearest_enemy {
+                    let roll = (battle.turn_number as u64 * 37 + eidx as u64 * 13) % 100;
+                    if roll < 50 {
+                        battle.units[eidx].stunned = true;
+                        messages.push(format!(
+                            "💰 Merchant bribes {}! Enemy skips their turn!",
+                            battle.units[eidx].hanzi
+                        ));
+                    } else {
+                        messages.push("💰 Merchant's bribe attempt fails!".to_string());
+                    }
+                }
+            }
+        }
     }
 
     messages

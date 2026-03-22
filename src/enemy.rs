@@ -142,6 +142,38 @@ pub enum RadicalAction {
     ArtisanTrap,
     /// 白 white — Remove debuffs from self, heal 3
     CleansingLight,
+    /// 页 page — Confuse all units in 2-tile radius for 1 turn
+    ScatteringPages,
+    /// 见 see — Remove all buffs from target (dispel)
+    TrueVision,
+    /// 气 air/energy — Drain focus/spirit from player
+    QiDisruption,
+    /// 广 wide — Create zone where enemy gets +1 damage
+    ExpandingDomain,
+    /// 穴 cave — Create CrackedFloor under player (delayed pit)
+    SinkholeSnare,
+    /// 耳 ear — 2 damage AoE in 2-tile radius + stun
+    SonicBurst,
+    /// 舌 tongue — Ranged 1 dmg + Poison for 2 turns
+    VenomousLash,
+    /// 身 body — Gain 2 armor + root self (can't move) 2 turns
+    IronBodyStance,
+    /// 角 horn — Charge toward player + 2 dmg + knockback
+    GoreCrush,
+    /// 酉 wine vessel — Steam tiles in radius, Confused 2 turns
+    IntoxicatingMist,
+    /// 豆 bean — Create Grass tiles, gain armor per adjacent Grass
+    SproutingBarrier,
+    /// 鱼 fish — Water tile under player + push 2, extra dmg on Water
+    TidalSurge,
+    /// 骨 bone — ArcingProjectile: 3 dmg + armor break
+    BoneShatter,
+    /// 革 leather — Gain +2 armor and +1 fortify (adaptive defense)
+    AdaptiveShift,
+    /// 鬥 fight — Self-damage 2 + gain +3 damage for 2 turns
+    BerserkerFury,
+    /// 隹 short-tailed bird — 3 ArcingProjectiles at random tiles near player
+    FlockAssault,
 }
 
 impl RadicalAction {
@@ -191,6 +223,22 @@ impl RadicalAction {
             Self::NeedleStrike => "小",
             Self::ArtisanTrap => "工",
             Self::CleansingLight => "白",
+            Self::ScatteringPages => "页",
+            Self::TrueVision => "见",
+            Self::QiDisruption => "气",
+            Self::ExpandingDomain => "广",
+            Self::SinkholeSnare => "穴",
+            Self::SonicBurst => "耳",
+            Self::VenomousLash => "舌",
+            Self::IronBodyStance => "身",
+            Self::GoreCrush => "角",
+            Self::IntoxicatingMist => "酉",
+            Self::SproutingBarrier => "豆",
+            Self::TidalSurge => "鱼",
+            Self::BoneShatter => "骨",
+            Self::AdaptiveShift => "革",
+            Self::BerserkerFury => "鬥",
+            Self::FlockAssault => "隹",
         }
     }
 
@@ -240,6 +288,22 @@ impl RadicalAction {
             "小" => Some(Self::NeedleStrike),
             "工" => Some(Self::ArtisanTrap),
             "白" => Some(Self::CleansingLight),
+            "页" => Some(Self::ScatteringPages),
+            "见" => Some(Self::TrueVision),
+            "气" => Some(Self::QiDisruption),
+            "广" => Some(Self::ExpandingDomain),
+            "穴" => Some(Self::SinkholeSnare),
+            "耳" => Some(Self::SonicBurst),
+            "舌" => Some(Self::VenomousLash),
+            "身" => Some(Self::IronBodyStance),
+            "角" => Some(Self::GoreCrush),
+            "酉" => Some(Self::IntoxicatingMist),
+            "豆" => Some(Self::SproutingBarrier),
+            "鱼" => Some(Self::TidalSurge),
+            "骨" => Some(Self::BoneShatter),
+            "革" => Some(Self::AdaptiveShift),
+            "鬥" => Some(Self::BerserkerFury),
+            "隹" => Some(Self::FlockAssault),
             _ => None,
         }
     }
@@ -290,6 +354,22 @@ impl RadicalAction {
             Self::NeedleStrike => "\u{1F53B} Needle Strike",
             Self::ArtisanTrap => "\u{2699} Artisan's Trap",
             Self::CleansingLight => "\u{2728} Cleansing Light",
+            Self::ScatteringPages => "\u{1F4C4} Scattering Pages",
+            Self::TrueVision => "\u{1F440} True Vision",
+            Self::QiDisruption => "\u{1F32C} Qi Disruption",
+            Self::ExpandingDomain => "\u{1F310} Expanding Domain",
+            Self::SinkholeSnare => "\u{1F573} Sinkhole Snare",
+            Self::SonicBurst => "\u{1F442} Sonic Burst",
+            Self::VenomousLash => "\u{1F40D} Venomous Lash",
+            Self::IronBodyStance => "\u{1F9CD} Iron Body Stance",
+            Self::GoreCrush => "\u{1F402} Gore Crush",
+            Self::IntoxicatingMist => "\u{1F37A} Intoxicating Mist",
+            Self::SproutingBarrier => "\u{1F331} Sprouting Barrier",
+            Self::TidalSurge => "\u{1F41F} Tidal Surge",
+            Self::BoneShatter => "\u{1F9B4} Bone Shatter",
+            Self::AdaptiveShift => "\u{1F6E1} Adaptive Shift",
+            Self::BerserkerFury => "\u{1F4A2} Berserker Fury",
+            Self::FlockAssault => "\u{1F426} Flock Assault",
         }
     }
 
@@ -340,6 +420,254 @@ impl RadicalAction {
             Self::NeedleStrike => "Deals 2 damage ignoring all armor",
             Self::ArtisanTrap => "Burns for 2 damage over 2 turns",
             Self::CleansingLight => "Removes all debuffs, heals 3 HP",
+            Self::ScatteringPages => "Confuses all units in 2-tile radius for 1 turn",
+            Self::TrueVision => "Removes all buffs from target (dispel)",
+            Self::QiDisruption => "Drains 3 spirit from the player",
+            Self::ExpandingDomain => "Gains +1 damage in a 3x3 zone, +1 armor",
+            Self::SinkholeSnare => "Creates cracked floor under player (1 turn to escape)",
+            Self::SonicBurst => "2 damage to all in 2-tile radius + stun",
+            Self::VenomousLash => "Ranged: 1 damage + Poison 2 for 2 turns",
+            Self::IronBodyStance => "Gains +2 armor, roots self for 2 turns",
+            Self::GoreCrush => "Charges 2 tiles + 2 damage + knockback 1",
+            Self::IntoxicatingMist => "Creates Steam tiles, Confuses 2 turns",
+            Self::SproutingBarrier => "Creates Grass tiles, +1 armor per adjacent Grass",
+            Self::TidalSurge => "Water under player + push 2, bonus damage on Water",
+            Self::BoneShatter => "Arcing 3 damage + removes armor (lands in 1 turn)",
+            Self::AdaptiveShift => "Gains +2 armor and +1 fortify",
+            Self::BerserkerFury => "Self-damage 2, gains +3 damage for 2 turns",
+            Self::FlockAssault => "3 arcing projectiles at random tiles near player",
+        }
+    }
+
+    pub fn range_info(self) -> &'static str {
+        match self {
+            // Self-targeted
+            Self::RevealingDawn
+            | Self::MortalResilience
+            | Self::MaternalShield
+            | Self::RigidStance
+            | Self::ThresholdSeal
+            | Self::SoaringEscape
+            | Self::ImmovablePeak
+            | Self::CloakingGuise
+            | Self::FlexibleCounter
+            | Self::CleansingLight
+            | Self::IronBodyStance
+            | Self::SproutingBarrier
+            | Self::AdaptiveShift
+            | Self::BerserkerFury
+            | Self::MercenaryPact
+            | Self::ImperialCommand
+            | Self::MagnifyingAura
+            | Self::ExpandingDomain => "Self",
+
+            // Melee (adjacent)
+            Self::DevouringMaw
+            | Self::SleightReversal
+            | Self::HarvestReaping
+            | Self::PreciseExecution
+            | Self::CleavingCut
+            | Self::SavageMaul
+            | Self::ConsumingBite
+            | Self::EchoStrike => "Melee (1)",
+
+            // Short range (2 tiles)
+            Self::PotentialBurst
+            | Self::ParasiticSwarm
+            | Self::NeedleStrike
+            | Self::GoreCrush => "Short (2)",
+
+            // Medium range (3-4 tiles)
+            Self::SpreadingWildfire
+            | Self::ErosiveFlow
+            | Self::OverwhelmingForce
+            | Self::DoubtSeed
+            | Self::WitnessMark
+            | Self::RootingGrasp
+            | Self::ChasingChaff
+            | Self::CrossroadsGambit
+            | Self::GroundingWeight
+            | Self::WaningCurse
+            | Self::BindingOath
+            | Self::EntanglingWeb
+            | Self::PetrifyingGaze
+            | Self::CrushingWheels
+            | Self::TrueVision
+            | Self::QiDisruption
+            | Self::VenomousLash
+            | Self::ArtisanTrap => "Medium (3)",
+
+            // Long range (5+ tiles)
+            Self::PursuingSteps
+            | Self::CavalryCharge
+            | Self::BlitzAssault
+            | Self::SinkholeSnare
+            | Self::TidalSurge
+            | Self::DownpourBarrage
+            | Self::ArcingShot
+            | Self::BoneShatter
+            | Self::FlockAssault => "Long (5+)",
+
+            // AoE (radius-based)
+            Self::ScatteringPages
+            | Self::SonicBurst
+            | Self::IntoxicatingMist => "AoE (2)",
+        }
+    }
+
+    pub fn damage_info(self) -> &'static str {
+        match self {
+            Self::SpreadingWildfire => "DoT 1/turn ×3",
+            Self::ErosiveFlow => "No damage",
+            Self::OverwhelmingForce => "1-4 (scales HP)",
+            Self::DoubtSeed => "No damage",
+            Self::DevouringMaw => "1 dmg",
+            Self::WitnessMark => "No damage",
+            Self::SleightReversal => "No damage",
+            Self::RootingGrasp => "No damage",
+            Self::HarvestReaping => "1 or execute",
+            Self::RevealingDawn => "No damage",
+            Self::WaningCurse => "DoT 2/turn ×3",
+            Self::MortalResilience => "No damage",
+            Self::MaternalShield => "No damage",
+            Self::PotentialBurst => "1 + mark +2",
+            Self::ChasingChaff => "No damage",
+            Self::CrossroadsGambit => "0 or 4 dmg",
+            Self::RigidStance => "No damage",
+            Self::GroundingWeight => "1 dmg",
+            Self::EchoStrike => "2× base dmg",
+            Self::PreciseExecution => "1 or execute",
+            Self::CleavingCut => "2 dmg",
+            Self::BindingOath => "No damage",
+            Self::PursuingSteps => "1 dmg",
+            Self::EntanglingWeb => "No damage",
+            Self::ThresholdSeal => "No damage",
+            Self::CavalryCharge => "1-4 (scales dist)",
+            Self::SoaringEscape => "No damage",
+            Self::DownpourBarrage => "1 + bleed",
+            Self::PetrifyingGaze => "No damage",
+            Self::ParasiticSwarm => "1 + heal self",
+            Self::MercenaryPact => "Self -2 HP",
+            Self::ImmovablePeak => "No damage",
+            Self::SavageMaul => "3 dmg",
+            Self::ArcingShot => "1-3 (by dist)",
+            Self::ConsumingBite => "2 + heal self",
+            Self::CloakingGuise => "No damage",
+            Self::FlexibleCounter => "No damage",
+            Self::BlitzAssault => "1 dmg/tile",
+            Self::CrushingWheels => "2 + push 3",
+            Self::ImperialCommand => "No damage",
+            Self::MagnifyingAura => "No damage",
+            Self::NeedleStrike => "2 (pierce armor)",
+            Self::ArtisanTrap => "Burn 2/turn ×2",
+            Self::CleansingLight => "Heal 3",
+            Self::ScatteringPages => "No damage",
+            Self::TrueVision => "No damage",
+            Self::QiDisruption => "Drain 3 spirit",
+            Self::ExpandingDomain => "No damage",
+            Self::SinkholeSnare => "No damage",
+            Self::SonicBurst => "2 AoE + stun",
+            Self::VenomousLash => "1 + poison",
+            Self::IronBodyStance => "No damage",
+            Self::GoreCrush => "2 + knockback",
+            Self::IntoxicatingMist => "No damage",
+            Self::SproutingBarrier => "No damage",
+            Self::TidalSurge => "1-2 + push",
+            Self::BoneShatter => "3 + armor break",
+            Self::AdaptiveShift => "No damage",
+            Self::BerserkerFury => "Self -2 HP",
+            Self::FlockAssault => "1 dmg ×3",
+        }
+    }
+
+    pub fn attack_type(self) -> &'static str {
+        match self {
+            // Self-buffs (defensive)
+            Self::RevealingDawn
+            | Self::MortalResilience
+            | Self::MaternalShield
+            | Self::RigidStance
+            | Self::ThresholdSeal
+            | Self::SoaringEscape
+            | Self::ImmovablePeak
+            | Self::CloakingGuise
+            | Self::FlexibleCounter
+            | Self::CleansingLight
+            | Self::IronBodyStance
+            | Self::SproutingBarrier
+            | Self::AdaptiveShift
+            | Self::ExpandingDomain
+            | Self::BerserkerFury => "Self-buff",
+
+            // Support (ally-affecting)
+            Self::ImperialCommand
+            | Self::MagnifyingAura
+            | Self::MercenaryPact => "Support",
+
+            // Melee attacks
+            Self::DevouringMaw
+            | Self::SleightReversal
+            | Self::HarvestReaping
+            | Self::PreciseExecution
+            | Self::CleavingCut
+            | Self::SavageMaul
+            | Self::ConsumingBite
+            | Self::EchoStrike
+            | Self::PursuingSteps
+            | Self::CavalryCharge
+            | Self::BlitzAssault
+            | Self::GoreCrush => "Melee",
+
+            // Projectile attacks
+            Self::OverwhelmingForce
+            | Self::PotentialBurst
+            | Self::CrossroadsGambit
+            | Self::GroundingWeight
+            | Self::CrushingWheels
+            | Self::NeedleStrike
+            | Self::ParasiticSwarm
+            | Self::TidalSurge
+            | Self::VenomousLash
+            | Self::WaningCurse => "Projectile",
+
+            // Debuffs
+            Self::ErosiveFlow
+            | Self::DoubtSeed
+            | Self::WitnessMark
+            | Self::RootingGrasp
+            | Self::ChasingChaff
+            | Self::BindingOath
+            | Self::EntanglingWeb
+            | Self::PetrifyingGaze
+            | Self::TrueVision
+            | Self::QiDisruption
+            | Self::ArtisanTrap
+            | Self::SinkholeSnare => "Debuff",
+
+            // Arcing projectiles
+            Self::DownpourBarrage
+            | Self::ArcingShot
+            | Self::FlockAssault => "Arcing (2 turns)",
+
+            Self::BoneShatter => "Arcing (1 turn)",
+
+            // AoE
+            Self::SpreadingWildfire
+            | Self::ScatteringPages
+            | Self::SonicBurst
+            | Self::IntoxicatingMist => "AoE",
+        }
+    }
+
+    /// Color for the attack type category in the UI.
+    pub fn type_color(self) -> &'static str {
+        match self.attack_type() {
+            "Melee" | "Projectile" | "AoE" => "#ff6666",
+            "Arcing (1 turn)" | "Arcing (2 turns)" => "#ff9944",
+            "Self-buff" => "#6688ff",
+            "Debuff" => "#ffcc44",
+            "Support" => "#66cc66",
+            _ => "#cccccc",
         }
     }
 }
@@ -440,6 +768,7 @@ pub enum PlayerRadicalAbility {
 }
 
 impl PlayerRadicalAbility {
+    #[allow(dead_code)]
     pub fn radical(self) -> &'static str {
         match self {
             Self::FireStrike => "火",

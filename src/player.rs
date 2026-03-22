@@ -34,6 +34,22 @@ pub enum EquipEffect {
     Digging,
     /// Halves spirit drain rate (drain 1 per 2 moves instead of every move)
     SpiritSustain,
+    /// +1 to all spell damage
+    SpellPowerBoost(i32),
+    /// Heal HP per kill (weapon variant)
+    LifeSteal(i32),
+    /// Percentage chance to avoid attacks entirely
+    DodgeChance(i32),
+    /// Restore focus per turn
+    FocusRegen(i32),
+    /// Basic attacks push enemies 1 tile
+    KnockbackStrike,
+    /// Attackers take damage when hitting you
+    ThornsAura(i32),
+    /// Always see enemy intent
+    EnemyIntentReveal,
+    /// Percentage chance for double damage
+    CriticalStrike(i32),
 }
 
 impl EquipEffect {
@@ -60,6 +76,30 @@ impl EquipEffect {
                 "Halves spirit drain rate — lose 1 spirit every 2 moves instead of every move."
                     .to_string()
             }
+            EquipEffect::SpellPowerBoost(n) => {
+                format!("Adds +{} bonus damage to all spells.", n)
+            }
+            EquipEffect::LifeSteal(n) => {
+                format!("Heals {} HP whenever you defeat an enemy.", n)
+            }
+            EquipEffect::DodgeChance(n) => {
+                format!("{}% chance to completely avoid incoming attacks.", n)
+            }
+            EquipEffect::FocusRegen(n) => {
+                format!("Restores {} focus each turn.", n)
+            }
+            EquipEffect::KnockbackStrike => {
+                "Basic attacks push enemies back 1 tile.".to_string()
+            }
+            EquipEffect::ThornsAura(n) => {
+                format!("Attackers take {} damage when they hit you.", n)
+            }
+            EquipEffect::EnemyIntentReveal => {
+                "Always reveals what enemies intend to do next.".to_string()
+            }
+            EquipEffect::CriticalStrike(n) => {
+                format!("{}% chance to deal double damage on attacks.", n)
+            }
         }
     }
 }
@@ -77,7 +117,7 @@ impl Equipment {
 
 #[allow(dead_code)]
 pub const MAX_ITEMS: usize = 5;
-pub const ITEM_KIND_COUNT: usize = 20;
+pub const ITEM_KIND_COUNT: usize = 32;
 pub const MYSTERY_ITEM_APPEARANCES: [&str; ITEM_KIND_COUNT] = [
     "Vermilion Seal 朱符",
     "Jade Seal 玉符",
@@ -99,6 +139,18 @@ pub const MYSTERY_ITEM_APPEARANCES: [&str; ITEM_KIND_COUNT] = [
     "Iron Seal 铁符",
     "Sun Seal 日符",
     "Wind Seal 风符",
+    "Frost Seal 霜符",
+    "Shadow Seal 影符",
+    "Pearl Seal 珠符",
+    "Crane Seal 鹤符",
+    "Thunder Seal 雷符",
+    "Silk Seal 丝符",
+    "Orchid Seal 兰符",
+    "Willow Seal 柳符",
+    "Amber Seal 琥符",
+    "Coral Seal 珊符",
+    "Spirit Seal 灵符",
+    "Dawn Seal 曦符",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -123,6 +175,18 @@ pub enum ItemKind {
     WardingCharm,
     InkBomb,
     PhoenixPlume,
+    MirrorShard,
+    FrostVial,
+    ShadowCloak,
+    DragonScale,
+    BambooFlute,
+    JadeCompass,
+    SilkRope,
+    LotusElixir,
+    ThunderDrum,
+    CinnabarInk,
+    AncestorToken,
+    WindFan,
 }
 
 impl ItemKind {
@@ -148,6 +212,18 @@ impl ItemKind {
             ItemKind::WardingCharm => 17,
             ItemKind::InkBomb => 18,
             ItemKind::PhoenixPlume => 19,
+            ItemKind::MirrorShard => 20,
+            ItemKind::FrostVial => 21,
+            ItemKind::ShadowCloak => 22,
+            ItemKind::DragonScale => 23,
+            ItemKind::BambooFlute => 24,
+            ItemKind::JadeCompass => 25,
+            ItemKind::SilkRope => 26,
+            ItemKind::LotusElixir => 27,
+            ItemKind::ThunderDrum => 28,
+            ItemKind::CinnabarInk => 29,
+            ItemKind::AncestorToken => 30,
+            ItemKind::WindFan => 31,
         }
     }
 }
@@ -195,6 +271,30 @@ pub enum Item {
     InkBomb,
     /// Auto-revive on death, restoring N HP (passive, consumed on death)
     PhoenixPlume(i32),
+    /// Reflect next attack back at attacker (1 use)
+    MirrorShard,
+    /// Freeze all adjacent enemies for N turns
+    FrostVial(i32),
+    /// Become invisible for N turns
+    ShadowCloak(i32),
+    /// Gain +N armor for the rest of combat
+    DragonScale(i32),
+    /// Confuse all enemies for N turns
+    BambooFlute(i32),
+    /// Reveal all traps and hidden tiles on the floor
+    JadeCompass,
+    /// Pull a distant enemy to adjacent tile
+    SilkRope,
+    /// Cure all negative status effects
+    LotusElixir,
+    /// Deal N damage to all enemies + Slow 1
+    ThunderDrum(i32),
+    /// Next spell deals double damage
+    CinnabarInk,
+    /// Revive with N HP on death (passive, consumed on use)
+    AncestorToken(i32),
+    /// Push all adjacent enemies 2 tiles away
+    WindFan,
 }
 
 impl Item {
@@ -220,6 +320,18 @@ impl Item {
             Item::WardingCharm(_) => ItemKind::WardingCharm,
             Item::InkBomb => ItemKind::InkBomb,
             Item::PhoenixPlume(_) => ItemKind::PhoenixPlume,
+            Item::MirrorShard => ItemKind::MirrorShard,
+            Item::FrostVial(_) => ItemKind::FrostVial,
+            Item::ShadowCloak(_) => ItemKind::ShadowCloak,
+            Item::DragonScale(_) => ItemKind::DragonScale,
+            Item::BambooFlute(_) => ItemKind::BambooFlute,
+            Item::JadeCompass => ItemKind::JadeCompass,
+            Item::SilkRope => ItemKind::SilkRope,
+            Item::LotusElixir => ItemKind::LotusElixir,
+            Item::ThunderDrum(_) => ItemKind::ThunderDrum,
+            Item::CinnabarInk => ItemKind::CinnabarInk,
+            Item::AncestorToken(_) => ItemKind::AncestorToken,
+            Item::WindFan => ItemKind::WindFan,
         }
     }
 
@@ -245,6 +357,18 @@ impl Item {
             Item::WardingCharm(_) => "🔮 Warding Charm",
             Item::InkBomb => "🖤 Ink Bomb",
             Item::PhoenixPlume(_) => "🔥 Phoenix Plume",
+            Item::MirrorShard => "🪞 Mirror Shard",
+            Item::FrostVial(_) => "❄ Frost Vial",
+            Item::ShadowCloak(_) => "👻 Shadow Cloak",
+            Item::DragonScale(_) => "🐉 Dragon Scale",
+            Item::BambooFlute(_) => "🎋 Bamboo Flute",
+            Item::JadeCompass => "🧭 Jade Compass",
+            Item::SilkRope => "🪢 Silk Rope",
+            Item::LotusElixir => "🪷 Lotus Elixir",
+            Item::ThunderDrum(_) => "🥁 Thunder Drum",
+            Item::CinnabarInk => "🖊 Cinnabar Ink",
+            Item::AncestorToken(_) => "🏺 Ancestor Token",
+            Item::WindFan => "🌬 Wind Fan",
         }
     }
 
@@ -271,6 +395,18 @@ impl Item {
             Item::WardingCharm(_) => "Ward",
             Item::InkBomb => "InkBomb",
             Item::PhoenixPlume(_) => "Phoenix",
+            Item::MirrorShard => "Mirror",
+            Item::FrostVial(_) => "Frost",
+            Item::ShadowCloak(_) => "Shadow",
+            Item::DragonScale(_) => "Scale",
+            Item::BambooFlute(_) => "Flute",
+            Item::JadeCompass => "Compass",
+            Item::SilkRope => "Rope",
+            Item::LotusElixir => "Lotus",
+            Item::ThunderDrum(_) => "Drum",
+            Item::CinnabarInk => "Cinnabar",
+            Item::AncestorToken(_) => "Ancestor",
+            Item::WindFan => "Fan",
         }
     }
 
@@ -304,6 +440,18 @@ impl Item {
             Item::WardingCharm(_) => "Erects a protective ward that shields both body and spirit from harm.",
             Item::InkBomb => "Splatters blinding ink on all visible enemies, stunning them in place.",
             Item::PhoenixPlume(_) => "A mystical feather that burns on death, reviving you from the brink of destruction.",
+            Item::MirrorShard => "A shard of enchanted mirror that reflects the next attack back at the attacker.",
+            Item::FrostVial(_) => "Shatters on impact, freezing all adjacent enemies solid for a short time.",
+            Item::ShadowCloak(_) => "Wraps you in shadow, making you invisible to enemies for several turns.",
+            Item::DragonScale(_) => "A hardened dragon scale that grants bonus armor for the rest of combat.",
+            Item::BambooFlute(_) => "Plays a haunting melody that confuses all enemies for several turns.",
+            Item::JadeCompass => "An ancient compass that reveals all traps and hidden tiles on the floor.",
+            Item::SilkRope => "A magically weighted rope that pulls a distant enemy to an adjacent tile.",
+            Item::LotusElixir => "A pure lotus extract that cures all negative status effects instantly.",
+            Item::ThunderDrum(_) => "A war drum that sends shockwaves dealing damage to all enemies and slowing them.",
+            Item::CinnabarInk => "Mystical red ink that empowers your next spell to deal double damage.",
+            Item::AncestorToken(_) => "A sacred ancestral token that revives you with HP upon death. Consumed on use.",
+            Item::WindFan => "A powerful fan that blasts all adjacent enemies away with a gust of wind.",
         }
     }
 }
@@ -368,6 +516,46 @@ pub const EQUIPMENT_POOL: &[Equipment] = &[
         name: "Spirit Talisman",
         slot: EquipSlot::Charm,
         effect: EquipEffect::SpiritSustain,
+    },
+    Equipment {
+        name: "Jade Bracelet",
+        slot: EquipSlot::Charm,
+        effect: EquipEffect::SpellPowerBoost(1),
+    },
+    Equipment {
+        name: "Dragon Fang Sword",
+        slot: EquipSlot::Weapon,
+        effect: EquipEffect::LifeSteal(1),
+    },
+    Equipment {
+        name: "Silk Armor",
+        slot: EquipSlot::Armor,
+        effect: EquipEffect::DodgeChance(15),
+    },
+    Equipment {
+        name: "Inkstone Pendant",
+        slot: EquipSlot::Charm,
+        effect: EquipEffect::FocusRegen(1),
+    },
+    Equipment {
+        name: "Iron Gauntlets",
+        slot: EquipSlot::Weapon,
+        effect: EquipEffect::KnockbackStrike,
+    },
+    Equipment {
+        name: "Bamboo Shield",
+        slot: EquipSlot::Armor,
+        effect: EquipEffect::ThornsAura(1),
+    },
+    Equipment {
+        name: "Oracle Bone",
+        slot: EquipSlot::Charm,
+        effect: EquipEffect::EnemyIntentReveal,
+    },
+    Equipment {
+        name: "Tiger Claw",
+        slot: EquipSlot::Weapon,
+        effect: EquipEffect::CriticalStrike(20),
     },
 ];
 

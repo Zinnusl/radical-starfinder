@@ -53,7 +53,13 @@ fn get_radical_role(action: &RadicalAction) -> TacticalRole {
         | RadicalAction::BlitzAssault
         | RadicalAction::CrushingWheels
         | RadicalAction::NeedleStrike
-        | RadicalAction::ArtisanTrap => TacticalRole::Offensive,
+        | RadicalAction::ArtisanTrap
+        | RadicalAction::SonicBurst
+        | RadicalAction::GoreCrush
+        | RadicalAction::BoneShatter
+        | RadicalAction::BerserkerFury
+        | RadicalAction::FlockAssault
+        | RadicalAction::VenomousLash => TacticalRole::Offensive,
 
         RadicalAction::MortalResilience
         | RadicalAction::MaternalShield
@@ -62,7 +68,9 @@ fn get_radical_role(action: &RadicalAction) -> TacticalRole {
         | RadicalAction::SoaringEscape
         | RadicalAction::ImmovablePeak
         | RadicalAction::CloakingGuise
-        | RadicalAction::FlexibleCounter => TacticalRole::Defensive,
+        | RadicalAction::FlexibleCounter
+        | RadicalAction::IronBodyStance
+        | RadicalAction::AdaptiveShift => TacticalRole::Defensive,
 
         RadicalAction::ErosiveFlow
         | RadicalAction::DoubtSeed
@@ -74,13 +82,21 @@ fn get_radical_role(action: &RadicalAction) -> TacticalRole {
         | RadicalAction::BindingOath
         | RadicalAction::EntanglingWeb
         | RadicalAction::PetrifyingGaze
-        | RadicalAction::ImperialCommand => TacticalRole::Debuff,
+        | RadicalAction::ImperialCommand
+        | RadicalAction::ScatteringPages
+        | RadicalAction::TrueVision
+        | RadicalAction::QiDisruption
+        | RadicalAction::SinkholeSnare
+        | RadicalAction::IntoxicatingMist
+        | RadicalAction::TidalSurge => TacticalRole::Debuff,
 
         RadicalAction::SleightReversal
         | RadicalAction::RevealingDawn
         | RadicalAction::MercenaryPact
         | RadicalAction::MagnifyingAura
-        | RadicalAction::CleansingLight => TacticalRole::Support,
+        | RadicalAction::CleansingLight
+        | RadicalAction::ExpandingDomain
+        | RadicalAction::SproutingBarrier => TacticalRole::Support,
     }
 }
 
@@ -94,7 +110,10 @@ fn get_radical_intent(action: &RadicalAction) -> EnemyIntent {
             | RadicalAction::CavalryCharge
             | RadicalAction::CrushingWheels
             | RadicalAction::DownpourBarrage
-            | RadicalAction::ArtisanTrap => EnemyIntent::RangedAttack,
+            | RadicalAction::ArtisanTrap
+            | RadicalAction::VenomousLash
+            | RadicalAction::BoneShatter
+            | RadicalAction::FlockAssault => EnemyIntent::RangedAttack,
             _ => EnemyIntent::Attack,
         },
         TacticalRole::Debuff => EnemyIntent::RangedAttack,
@@ -111,6 +130,12 @@ pub fn calculate_all_intents(battle: &mut TacticalBattle) {
 
     for i in 1..battle.units.len() {
         if !battle.units[i].alive {
+            battle.units[i].intent = None;
+            continue;
+        }
+
+        // Companions don't show enemy intents.
+        if battle.units[i].is_companion() {
             battle.units[i].intent = None;
             continue;
         }
@@ -201,10 +226,17 @@ pub fn calculate_all_intents(battle: &mut TacticalBattle) {
 
 fn count_allies_near(battle: &TacticalBattle, unit_idx: usize, radius: i32) -> usize {
     let unit = &battle.units[unit_idx];
+    let is_enemy_unit = unit.is_enemy();
     let mut count = 0;
     for (i, other) in battle.units.iter().enumerate() {
-        if i != 0 && i != unit_idx && other.alive {
-            if manhattan(unit.x, unit.y, other.x, other.y) <= radius {
+        if i != unit_idx && other.alive {
+            // Only count same-faction units as allies.
+            let same_faction = if is_enemy_unit {
+                other.is_enemy()
+            } else {
+                !other.is_enemy()
+            };
+            if same_faction && manhattan(unit.x, unit.y, other.x, other.y) <= radius {
                 count += 1;
             }
         }
@@ -860,4 +892,49 @@ pub fn step_away(
         }
     }
     best
+}
+
+/// Choose an action for a companion unit — targets the nearest alive enemy.
+pub fn choose_companion_action(battle: &TacticalBattle, unit_idx: usize) -> AiAction {
+    let unit = &battle.units[unit_idx];
+    if unit.stunned {
+        return AiAction::Wait;
+    }
+
+    // Find nearest alive enemy.
+    let mut best_target: Option<usize> = None;
+    let mut best_dist = i32::MAX;
+    for (i, other) in battle.units.iter().enumerate() {
+        if other.alive && other.is_enemy() {
+            let d = manhattan(unit.x, unit.y, other.x, other.y);
+            if d < best_dist {
+                best_dist = d;
+                best_target = Some(i);
+            }
+        }
+    }
+
+    let target_idx = match best_target {
+        Some(t) => t,
+        None => return AiAction::Wait,
+    };
+    let target = &battle.units[target_idx];
+
+    if best_dist <= 1 {
+        AiAction::MeleeAttack {
+            target_unit: target_idx,
+        }
+    } else if let Some(path) = path_toward(battle, unit_idx, target.x, target.y, true) {
+        let last = path.last().copied().unwrap_or((unit.x, unit.y));
+        if manhattan(last.0, last.1, target.x, target.y) <= 1 {
+            AiAction::MoveAndAttack {
+                path,
+                target_unit: target_idx,
+            }
+        } else {
+            AiAction::MoveToTile { path }
+        }
+    } else {
+        AiAction::Wait
+    }
 }

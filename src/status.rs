@@ -43,6 +43,24 @@ pub enum StatusKind {
         damage: i32,
     },
     Thorns,
+    /// Each stack adds +1 damage to next attack, consumed on hit
+    Fortify {
+        stacks: i32,
+    },
+    /// Can't be targeted by enemies; breaks on attack or spell cast
+    Invisible,
+    /// Cannot move but gain +2 armor
+    #[allow(dead_code)]
+    Rooted,
+    /// Deal 50% less damage
+    Weakened,
+    /// Take 1 extra damage from all sources
+    #[allow(dead_code)]
+    Cursed,
+    /// Deal +1 damage and take -1 damage from all sources
+    Blessed,
+    /// Wet: harmless alone, but enables combos (Wet+Burn=Steam, Wet+Freeze=deep freeze)
+    Wet,
 }
 
 /// An active status effect with remaining duration.
@@ -50,6 +68,9 @@ pub enum StatusKind {
 pub struct StatusInstance {
     pub kind: StatusKind,
     pub turns_left: i32,
+    /// When true, the first tick skips damage/heal so statuses don't deal
+    /// instant damage on the same turn they are applied.
+    pub fresh: bool,
 }
 
 impl StatusInstance {
@@ -57,6 +78,7 @@ impl StatusInstance {
         Self {
             kind,
             turns_left: turns,
+            fresh: true,
         }
     }
 
@@ -76,6 +98,13 @@ impl StatusInstance {
             StatusKind::Fear => "😨Fer",
             StatusKind::Bleed { .. } => "🩸Bld",
             StatusKind::Thorns => "🌿Thn",
+            StatusKind::Fortify { .. } => "💪Frt",
+            StatusKind::Invisible => "👻Inv",
+            StatusKind::Rooted => "🌳Rte",
+            StatusKind::Weakened => "⬇Wkn",
+            StatusKind::Cursed => "💀Crs",
+            StatusKind::Blessed => "✨Bls",
+            StatusKind::Wet => "💧Wet",
         }
     }
 
@@ -95,6 +124,13 @@ impl StatusInstance {
             StatusKind::Fear => "#660066",
             StatusKind::Bleed { .. } => "#aa0000",
             StatusKind::Thorns => "#44cc44",
+            StatusKind::Fortify { .. } => "#ffaa00",
+            StatusKind::Invisible => "#aaccff",
+            StatusKind::Rooted => "#886633",
+            StatusKind::Weakened => "#888888",
+            StatusKind::Cursed => "#660044",
+            StatusKind::Blessed => "#ffffaa",
+            StatusKind::Wet => "#4488ff",
         }
     }
 
@@ -108,22 +144,32 @@ impl StatusInstance {
                 | StatusKind::Slow
                 | StatusKind::Fear
                 | StatusKind::Bleed { .. }
+                | StatusKind::Rooted
+                | StatusKind::Weakened
+                | StatusKind::Cursed
         )
     }
 }
 
 /// Tick all statuses on a list, applying effects. Returns (total_damage, total_heal).
-/// Removes expired effects.
+/// Removes expired effects.  Fresh statuses skip their damage/heal on the
+/// first tick so that newly-applied effects don't deal instant damage.
 pub fn tick_statuses(statuses: &mut Vec<StatusInstance>) -> (i32, i32) {
     let mut damage = 0;
     let mut heal = 0;
     for s in statuses.iter_mut() {
-        match s.kind {
-            StatusKind::Poison { damage: d } => damage += d,
-            StatusKind::Burn { damage: d } => damage += d,
-            StatusKind::Bleed { damage: d } => damage += d,
-            StatusKind::Regen { heal: h } => heal += h,
-            _ => {}
+        if s.fresh {
+            // Skip damage/heal on the turn the status was applied.
+            s.fresh = false;
+        } else {
+            match s.kind {
+                StatusKind::Poison { damage: d } => damage += d,
+                StatusKind::Burn { damage: d } => damage += d,
+                StatusKind::Bleed { damage: d } => damage += d,
+                StatusKind::Regen { heal: h } => heal += h,
+                StatusKind::Cursed => damage += 1,
+                _ => {}
+            }
         }
         s.turns_left -= 1;
     }
@@ -177,16 +223,110 @@ pub fn empowered_amount(statuses: &[StatusInstance]) -> i32 {
         .sum()
 }
 
+#[allow(dead_code)]
+pub fn has_invisible(statuses: &[StatusInstance]) -> bool {
+    statuses
+        .iter()
+        .any(|s| matches!(s.kind, StatusKind::Invisible))
+}
+
+#[allow(dead_code)]
+pub fn has_rooted(statuses: &[StatusInstance]) -> bool {
+    statuses
+        .iter()
+        .any(|s| matches!(s.kind, StatusKind::Rooted))
+}
+
+#[allow(dead_code)]
+pub fn has_weakened(statuses: &[StatusInstance]) -> bool {
+    statuses
+        .iter()
+        .any(|s| matches!(s.kind, StatusKind::Weakened))
+}
+
+#[allow(dead_code)]
+pub fn has_cursed(statuses: &[StatusInstance]) -> bool {
+    statuses
+        .iter()
+        .any(|s| matches!(s.kind, StatusKind::Cursed))
+}
+
+#[allow(dead_code)]
+pub fn has_blessed(statuses: &[StatusInstance]) -> bool {
+    statuses
+        .iter()
+        .any(|s| matches!(s.kind, StatusKind::Blessed))
+}
+
+#[allow(dead_code)]
+pub fn has_wet(statuses: &[StatusInstance]) -> bool {
+    statuses
+        .iter()
+        .any(|s| matches!(s.kind, StatusKind::Wet))
+}
+
+#[allow(dead_code)]
+pub fn has_burn(statuses: &[StatusInstance]) -> bool {
+    statuses
+        .iter()
+        .any(|s| matches!(s.kind, StatusKind::Burn { .. }))
+}
+
+#[allow(dead_code)]
+pub fn has_freeze(statuses: &[StatusInstance]) -> bool {
+    statuses
+        .iter()
+        .any(|s| matches!(s.kind, StatusKind::Freeze))
+}
+
+#[allow(dead_code)]
+pub fn has_poison(statuses: &[StatusInstance]) -> bool {
+    statuses
+        .iter()
+        .any(|s| matches!(s.kind, StatusKind::Poison { .. }))
+}
+
+#[allow(dead_code)]
+pub fn has_slow(statuses: &[StatusInstance]) -> bool {
+    statuses
+        .iter()
+        .any(|s| matches!(s.kind, StatusKind::Slow))
+}
+
+#[allow(dead_code)]
+pub fn has_fortify(statuses: &[StatusInstance]) -> bool {
+    statuses
+        .iter()
+        .any(|s| matches!(s.kind, StatusKind::Fortify { .. }))
+}
+
+#[allow(dead_code)]
+pub fn fortify_stacks(statuses: &[StatusInstance]) -> i32 {
+    statuses
+        .iter()
+        .filter_map(|s| match s.kind {
+            StatusKind::Fortify { stacks } => Some(stacks),
+            _ => None,
+        })
+        .sum()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{has_revealed, tick_statuses, StatusInstance, StatusKind};
 
     #[test]
-    fn regen_status_restores_health_each_tick() {
-        let mut statuses = vec![StatusInstance::new(StatusKind::Regen { heal: 2 }, 2)];
+    fn fresh_status_skips_first_tick() {
+        let mut statuses = vec![StatusInstance::new(StatusKind::Regen { heal: 2 }, 3)];
 
+        // First tick: fresh → skip heal
         let (damage, heal) = tick_statuses(&mut statuses);
+        assert_eq!(damage, 0);
+        assert_eq!(heal, 0);
+        assert_eq!(statuses.len(), 1);
 
+        // Second tick: heal applies
+        let (damage, heal) = tick_statuses(&mut statuses);
         assert_eq!(damage, 0);
         assert_eq!(heal, 2);
     }
@@ -205,5 +345,19 @@ mod tests {
         let statuses = vec![StatusInstance::new(StatusKind::Revealed, 4)];
 
         assert!(has_revealed(&statuses));
+    }
+
+    #[test]
+    fn burn_does_not_deal_instant_damage() {
+        let mut statuses = vec![StatusInstance::new(StatusKind::Burn { damage: 1 }, 2)];
+
+        // First tick: fresh → no damage
+        let (damage, _) = tick_statuses(&mut statuses);
+        assert_eq!(damage, 0);
+
+        // Second tick: damage applies
+        let (damage, _) = tick_statuses(&mut statuses);
+        assert_eq!(damage, 1);
+        assert!(statuses.is_empty());
     }
 }

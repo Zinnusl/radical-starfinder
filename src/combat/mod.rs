@@ -13,6 +13,26 @@ use crate::enemy::{AiBehavior, RadicalAction};
 use crate::radical::SpellEffect;
 use crate::status::StatusInstance;
 
+/// Audio events queued during combat, drained by `game.rs` each frame.
+#[derive(Clone, Debug)]
+pub enum AudioEvent {
+    EnemyDeath,
+    CriticalHit,
+    ProjectileLaunch,
+    ProjectileImpact,
+    Heal,
+    ShieldBlock,
+    StatusBurn,
+    StatusPoison,
+    StatusSlow,
+    SpellElement(String),
+    TurnTick,
+    TypingCorrect,
+    TypingError,
+    WaterSplash,
+    LavaRumble,
+}
+
 // ── Wuxing (五行) Elemental Cycle ────────────────────────────────────────────
 
 /// The five Chinese elements. Cycle: Water > Fire > Metal > Wood > Earth > Water.
@@ -56,6 +76,17 @@ impl WuxingElement {
             (Some(a), Some(d)) if a.beats(d) => 1.5,
             (Some(a), Some(d)) if d.beats(a) => 0.75,
             _ => 1.0,
+        }
+    }
+
+    /// Short label with Chinese character for display.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Water => "水 Water",
+            Self::Fire => "火 Fire",
+            Self::Metal => "金 Metal",
+            Self::Wood => "木 Wood",
+            Self::Earth => "土 Earth",
         }
     }
 }
@@ -295,6 +326,10 @@ pub enum BattleTile {
     TrapTile,
     /// Revealed spike trap. Permanent hazard: 2 damage + Slow on entry.
     TrapTileRevealed,
+    /// Slippery oil. Flammable: fire turns it into Scorched + AoE damage.
+    Oil,
+    /// Holy ground. Heals units at start of turn. Timed (uses steam_timers).
+    HolyGround,
 }
 
 impl BattleTile {
@@ -360,6 +395,70 @@ impl BattleTile {
             BattleTile::Pit => "Pit. Impassable.",
             BattleTile::TrapTile => "Open ground. No special effects.",
             BattleTile::TrapTileRevealed => "Spike Trap. 2 damage + Slow on entry.",
+            BattleTile::Oil => "Oil. Slippery (slide 1 extra tile). Flammable!",
+            BattleTile::HolyGround => "Holy Ground. Heals units at start of turn.",
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            BattleTile::Open | BattleTile::TrapTile => "Open Ground",
+            BattleTile::Obstacle => "Obstacle",
+            BattleTile::Grass => "Grass",
+            BattleTile::Water => "Water",
+            BattleTile::Ice => "Ice",
+            BattleTile::Scorched => "Scorched",
+            BattleTile::InkPool => "Ink Pool",
+            BattleTile::BrokenGround => "Broken Ground",
+            BattleTile::Steam => "Steam",
+            BattleTile::Lava => "Lava",
+            BattleTile::Thorns => "Thorns",
+            BattleTile::ArcaneGlyph => "Arcane Glyph",
+            BattleTile::Sand => "Sand",
+            BattleTile::BambooThicket => "Bamboo Thicket",
+            BattleTile::FrozenGround => "Frozen Ground",
+            BattleTile::SpiritWell => "Spirit Well",
+            BattleTile::SpiritDrain => "Spirit Drain",
+            BattleTile::MeditationStone => "Meditation Stone",
+            BattleTile::SoulTrap => "Soul Trap",
+            BattleTile::Boulder => "Boulder",
+            BattleTile::FlowNorth => "Flow ↑",
+            BattleTile::FlowSouth => "Flow ↓",
+            BattleTile::FlowEast => "Flow →",
+            BattleTile::FlowWest => "Flow ←",
+            BattleTile::ExplosiveBarrel => "Explosive Barrel",
+            BattleTile::CrumblingFloor => "Crumbling Floor",
+            BattleTile::CrackedFloor => "Cracked Floor",
+            BattleTile::Pit => "Pit",
+            BattleTile::TrapTileRevealed => "Spike Trap",
+            BattleTile::Oil => "Oil",
+            BattleTile::HolyGround => "Holy Ground",
+        }
+    }
+
+    pub fn special_effects(self) -> Option<&'static str> {
+        match self {
+            BattleTile::Scorched => Some("1 damage/turn"),
+            BattleTile::Lava => Some("2 damage/turn"),
+            BattleTile::Thorns => Some("1 damage on entry"),
+            BattleTile::InkPool => Some("Spells +1 damage"),
+            BattleTile::ArcaneGlyph => Some("Spells +2 damage"),
+            BattleTile::Ice => Some("Slippery surface"),
+            BattleTile::Steam => Some("Blocks LOS"),
+            BattleTile::BambooThicket => Some("Blocks LOS"),
+            BattleTile::SpiritWell => Some("+15 spirit (one-time)"),
+            BattleTile::SpiritDrain => Some("-3 spirit/turn"),
+            BattleTile::MeditationStone => Some("Wait to restore 10 spr"),
+            BattleTile::SoulTrap => Some("Kill here: +10 spirit"),
+            BattleTile::Boulder => Some("Pushable, damages on hit"),
+            BattleTile::FlowNorth | BattleTile::FlowSouth | BattleTile::FlowEast | BattleTile::FlowWest => Some("Pushes units each round"),
+            BattleTile::ExplosiveBarrel => Some("Explodes: 3 dmg AoE"),
+            BattleTile::CrumblingFloor => Some("Cracks when stepped on"),
+            BattleTile::CrackedFloor => Some("Collapses into pit!"),
+            BattleTile::TrapTileRevealed => Some("2 dmg + Slow on entry"),
+            BattleTile::Oil => Some("Slippery + Flammable"),
+            BattleTile::HolyGround => Some("Heals at start of turn"),
+            _ => None,
         }
     }
 }
@@ -371,6 +470,8 @@ pub struct TacticalArena {
     pub tiles: Vec<BattleTile>,
     /// Per-tile turn countdown for Steam decay (0 = no timer).
     pub steam_timers: Vec<u8>,
+    /// Per-tile turn countdown for HolyGround decay (0 = no timer).
+    pub holy_timers: Vec<u8>,
     pub biome: ArenaBiome,
 }
 
@@ -382,6 +483,7 @@ impl TacticalArena {
             height,
             tiles: vec![BattleTile::Open; count],
             steam_timers: vec![0; count],
+            holy_timers: vec![0; count],
             biome,
         }
     }
@@ -425,6 +527,24 @@ impl TacticalArena {
         }
     }
 
+    pub fn set_holy(&mut self, x: i32, y: i32, turns: u8) {
+        if let Some(i) = self.idx(x, y) {
+            self.tiles[i] = BattleTile::HolyGround;
+            self.holy_timers[i] = turns;
+        }
+    }
+
+    pub fn tick_holy(&mut self) {
+        for i in 0..self.tiles.len() {
+            if self.tiles[i] == BattleTile::HolyGround && self.holy_timers[i] > 0 {
+                self.holy_timers[i] -= 1;
+                if self.holy_timers[i] == 0 {
+                    self.tiles[i] = BattleTile::Open;
+                }
+            }
+        }
+    }
+
     /// Whether (x, y) is in-bounds.
     pub fn in_bounds(&self, x: i32, y: i32) -> bool {
         x >= 0 && y >= 0 && (x as usize) < self.width && (y as usize) < self.height
@@ -433,12 +553,14 @@ impl TacticalArena {
 
 // ── Units ────────────────────────────────────────────────────────────────────
 
-/// Identifies whether a unit is the player or an enemy.
+/// Identifies whether a unit is the player, an enemy, or a companion.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UnitKind {
     Player,
     /// Index into `GameState.enemies`.
     Enemy(usize),
+    /// Allied companion unit.
+    Companion,
 }
 
 /// A unit on the tactical battle grid.
@@ -512,6 +634,10 @@ impl BattleUnit {
 
     pub fn is_enemy(&self) -> bool {
         matches!(self.kind, UnitKind::Enemy(_))
+    }
+
+    pub fn is_companion(&self) -> bool {
+        matches!(self.kind, UnitKind::Companion)
     }
 
     /// Effective movement points this turn (base + stored).
@@ -775,6 +901,12 @@ pub struct TacticalBattle {
     pub projectiles: Vec<Projectile>,
     pub arcing_projectiles: Vec<ArcingProjectile>,
     pub god_mode: bool,
+    /// Audio events queued during combat logic, drained by `game.rs`.
+    pub audio_events: Vec<AudioEvent>,
+    /// Companion type for passive/active ability checks.
+    pub companion_kind: Option<crate::game::Companion>,
+    /// Player equipment effects copied at combat start for synergy checks.
+    pub player_equip_effects: Vec<crate::player::EquipEffect>,
 }
 
 impl TacticalBattle {
@@ -829,8 +961,14 @@ impl TacticalBattle {
     /// Get combo damage multiplier based on current streak.
     /// Same 6 tiers as existing system: 0=1.0, 1-2=1.1, 3-4=1.2,
     /// 5-7=1.3, 8-11=1.5, 12+=1.75.
+    /// Teacher companion: +1 effective streak for combo tier calculation.
     pub fn combo_multiplier(&self) -> f64 {
-        match self.combo_streak {
+        let effective_streak = if self.companion_kind == Some(crate::game::Companion::Teacher) {
+            self.combo_streak + 1
+        } else {
+            self.combo_streak
+        };
+        match effective_streak {
             0 => 1.0,
             1..=2 => 1.1,
             3..=4 => 1.2,
