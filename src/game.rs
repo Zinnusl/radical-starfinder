@@ -11189,7 +11189,7 @@ pub fn init_game() -> Result<(), JsValue> {
                             if !connections.is_empty() && s.sector_map.is_some() {
                                 let target = connections[s.starmap_cursor % connections.len()];
                                 // Collect jump data
-                                let (fuel_cost, target_name, event_id) = {
+                                let (fuel_cost, target_name, event_id, hazard_dmg, hazard_msg) = {
                                     let map = s.sector_map.as_ref().unwrap();
                                     let sector = &map.sectors[map.current_sector];
                                     if target < sector.systems.len() && current < sector.systems.len() {
@@ -11198,14 +11198,23 @@ pub fn init_game() -> Result<(), JsValue> {
                                         let cost = jump_cost(from, to);
                                         let name = to.name;
                                         let evt = to.event_id;
-                                        (cost, name, evt)
+                                        let (h_dmg, h_fuel, h_msg) = if let Some(ref hazard) = to.hazard {
+                                            (hazard.hull_damage(), hazard.fuel_modifier(), 
+                                             format!(" ⚠ {}! {}", hazard.name(), hazard.description()))
+                                        } else {
+                                            (0, 0, String::new())
+                                        };
+                                        (cost + h_fuel, name, evt, h_dmg, h_msg)
                                     } else {
-                                        (0, "Unknown", None)
+                                        (0, "Unknown", None, 0, String::new())
                                     }
                                 };
                                 
                                 if s.ship.fuel >= fuel_cost {
                                     s.ship.fuel -= fuel_cost;
+                                    if hazard_dmg > 0 {
+                                        s.ship.hull = (s.ship.hull - hazard_dmg).max(0);
+                                    }
                                     if let Some(ref mut map) = s.sector_map {
                                         map.current_system = target;
                                         if target < map.sectors[map.current_sector].systems.len() {
@@ -11213,7 +11222,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                         }
                                     }
                                     s.starmap_cursor = 0;
-                                    s.message = format!("Jumped to {}! (-{} fuel)", target_name, fuel_cost);
+                                    s.message = format!("Jumped to {}! (-{} fuel){}", target_name, fuel_cost, hazard_msg);
                                     s.message_timer = 90;
                                     // Check for events at the new system
                                     if let Some(event_id) = event_id {
