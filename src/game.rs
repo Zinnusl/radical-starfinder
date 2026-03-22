@@ -9515,6 +9515,7 @@ impl GameState {
         Some(map)
     }
 
+    #[allow(dead_code)]
     pub fn has_save() -> bool {
         window()
             .and_then(|w| w.local_storage().ok().flatten())

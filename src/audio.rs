@@ -709,6 +709,7 @@ impl Audio {
     // ── Additional SFX ──────────────────────────────────────────────
 
     /// Footstep — short quiet click.
+    #[allow(dead_code)]
     pub fn sfx_step(&self) {
         if self.sfx_volume < 0.01 { return; }
         let now = self.now();
@@ -726,6 +727,7 @@ impl Audio {
     }
 
     /// Attack hit — punchy noise burst.
+    #[allow(dead_code)]
     pub fn sfx_hit(&self) {
         if self.sfx_volume < 0.01 { return; }
         let now = self.now();
@@ -744,6 +746,7 @@ impl Audio {
     }
 
     /// Enemy death — descending sweep.
+    #[allow(dead_code)]
     pub fn sfx_enemy_death(&self) {
         if self.sfx_volume < 0.01 { return; }
         let now = self.now();
@@ -762,6 +765,7 @@ impl Audio {
     }
 
     /// Item pickup — quick ascending arpeggio.
+    #[allow(dead_code)]
     pub fn sfx_pickup(&self) {
         if self.sfx_volume < 0.01 { return; }
         let now = self.now();
@@ -783,6 +787,7 @@ impl Audio {
     }
 
     /// Level up / floor transition — triumphant chord.
+    #[allow(dead_code)]
     pub fn sfx_level_up(&self) {
         if self.sfx_volume < 0.01 { return; }
         let now = self.now();
@@ -803,6 +808,7 @@ impl Audio {
     }
 
     /// Boss appear — ominous low drone.
+    #[allow(dead_code)]
     pub fn sfx_boss(&self) {
         if self.sfx_volume < 0.01 { return; }
         let now = self.now();
