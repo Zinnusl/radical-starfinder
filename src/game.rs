@@ -70,10 +70,16 @@ fn apply_event_outcome(s: &mut GameState, outcome: &EventOutcome) -> String {
         }
         EventOutcome::HealCrew(n) => {
             s.player.hp = (s.player.hp + n).min(s.player.max_hp);
+            for crew in s.crew.iter_mut() {
+                crew.morale = (crew.morale + 3).min(100);
+            }
             format!("Crew healed +{}", n)
         }
         EventOutcome::DamageCrew(n) => {
             s.player.hp = (s.player.hp - n).max(1);
+            for crew in s.crew.iter_mut() {
+                crew.morale = (crew.morale - 5).max(0);
+            }
             format!("Crew took {} damage", n)
         }
         EventOutcome::GainScrap(n) => {
@@ -115,16 +121,37 @@ fn apply_event_outcome(s: &mut GameState, outcome: &EventOutcome) -> String {
                 "Crew member narrowly survived.".to_string()
             }
         }
-        EventOutcome::StartCombat(_difficulty) => {
-            "Combat encounter!".to_string()
+        EventOutcome::StartCombat(difficulty) => {
+            s.game_mode = GameMode::LocationExploration;
+            s.combat = CombatState::Explore;
+            for _ in 0..*difficulty {
+                s.spawn_enemies();
+            }
+            "Hostile contact! Entering combat!".to_string()
         }
         EventOutcome::CombatReward(_difficulty, credits) => {
             s.player.gold += credits;
             format!("Combat resolved! +{} credits", credits)
         }
-        EventOutcome::GainItem(_item_name) => {
-            s.player.items.push(Item::MedHypo(15));
-            "Found a useful item!".to_string()
+        EventOutcome::GainItem(item_name) => {
+            let item = match *item_name {
+                "nano_shield" => Item::NanoShield(3),
+                "toxin_grenade" => Item::ToxinGrenade(12, 3),
+                "biogel_patch" => Item::BiogelPatch(5),
+                "stim_pack" => Item::StimPack(3),
+                "scanner_pulse" => Item::ScannerPulse,
+                "emp_grenade" => Item::EMPGrenade,
+                "credit_chip" => Item::CreditChip(20),
+                "neural_boost" => Item::NeuralBoost,
+                _ => Item::MedHypo(15),
+            };
+            let added = s.player.add_item(item, ItemState::Normal);
+            if added {
+                s.ship.cargo_used = (s.ship.cargo_used + 1).min(s.ship.cargo_capacity);
+                format!("Found: {}!", item_name)
+            } else {
+                "Found an item but inventory is full!".to_string()
+            }
         }
         EventOutcome::Nothing => {
             "Nothing happened.".to_string()
@@ -1465,9 +1492,7 @@ pub struct GameState {
     pub quests: Vec<Quest>,
     /// Daily challenge mode (fixed seed)
     pub daily_mode: bool,
-    /// Endless mode (continue past floor 20)
-    #[allow(dead_code)]
-    pub endless_mode: bool,
+
     /// Active scripted tutorial state for first-time players
     tutorial: Option<TutorialState>,
     rng_state: u64,
@@ -1588,7 +1613,13 @@ impl GameState {
         self.crew
             .iter()
             .filter(|c| c.role == role && c.hp > 0)
-            .map(|c| c.skill)
+            .map(|c| {
+                let morale_mult = if c.morale >= 80 { 120 }
+                    else if c.morale >= 50 { 100 }
+                    else if c.morale >= 20 { 70 }
+                    else { 40 };
+                (c.skill * morale_mult) / 100
+            })
             .sum()
     }
 
@@ -2039,6 +2070,15 @@ impl GameState {
                 e.hp = (e.hp * 3) / 2;
                 e.max_hp = (e.max_hp * 3) / 2;
                 e.gold_value = (e.gold_value * 3) / 2;
+            }
+            // 20% chance to apply Cursed when entering a DerelictShip
+            if self.rng_next() % 5 == 0 {
+                self.player.statuses.push(crate::status::StatusInstance::new(
+                    crate::status::StatusKind::Cursed,
+                    30,
+                ));
+                self.message = "💀 A malware payload infects your systems! You feel cursed.".to_string();
+                self.message_timer = 100;
             }
         }
     }
@@ -2553,7 +2593,7 @@ impl GameState {
                         self.trigger_shake(4);
                         self.flash = Some((100, 140, 255, 0.25));
                     }
-                    _ => {
+                    2 => {
                         // Alarm trap — alert all enemies
                         for e in &mut self.enemies {
                             if e.is_alive() {
@@ -2563,6 +2603,19 @@ impl GameState {
                         self.message = "🔔 Alarm trap! All monsters are alerted!".to_string();
                         self.trigger_shake(4);
                         self.flash = Some((255, 200, 50, 0.2));
+                    }
+                    _ => {
+                        // Rooted trap — anchored in place
+                        self.player
+                            .statuses
+                            .push(crate::status::StatusInstance::new(
+                                crate::status::StatusKind::Rooted,
+                                5,
+                            ));
+                        self.message =
+                            "⚓ Gravity snare! You're anchored for 5 turns!".to_string();
+                        self.trigger_shake(5);
+                        self.flash = Some((120, 130, 170, 0.2));
                     }
                 }
                 self.message_timer = 60;
@@ -2636,9 +2689,13 @@ impl GameState {
                 let heal = self.player.max_hp / 2;
                 self.player.hp = (self.player.hp + heal).min(self.player.max_hp);
                 self.player.spirit = (self.player.spirit + 20).min(self.player.max_spirit);
+                self.player.statuses.push(crate::status::StatusInstance::new(
+                    crate::status::StatusKind::Regen { heal: 3 },
+                    10,
+                ));
                 let idx = self.level.idx(self.player.x, self.player.y);
                 self.level.tiles[idx] = Tile::CoolantPool;
-                self.message = format!("🌊 The spirit spring heals {} HP and restores 20 spirit!", heal);
+                self.message = format!("🌊 The spirit spring heals {} HP, restores 20 spirit, and grants auto-repair!", heal);
                 self.message_timer = 80;
                 self.flash = Some((100, 255, 200, 0.2));
                 if let Some(ref audio) = self.audio {
@@ -2859,7 +2916,8 @@ impl GameState {
             self.message_timer = 90;
         }
 
-        // Check floor-based quests
+        // Generate new quests for this floor and check floor-based quests
+        self.generate_quests();
         self.check_floor_quests();
     }
 
@@ -3619,6 +3677,13 @@ impl GameState {
             self.reveal_entire_floor();
         }
 
+        // Rooted: block movement
+        if status::has_rooted(&self.player.statuses) {
+            self.message = "⚓ You're anchored and cannot move!".to_string();
+            self.message_timer = 40;
+            return;
+        }
+
         let (nx, ny) = self.player.intended_move(dx, dy);
         let target_tile = self.level.tile(nx, ny);
         if target_tile == Tile::CargoCrate {
@@ -4227,6 +4292,10 @@ impl GameState {
                 self.enemies[i].stunned = false;
                 continue;
             }
+            // Confused enemies have a 50% chance to skip their turn
+            if status::has_confused(&self.enemies[i].statuses) && self.rng_next() % 2 == 0 {
+                continue;
+            }
             // Alert if within FOV radius
             let dist_sq = (self.enemies[i].x - px).pow(2) + (self.enemies[i].y - py).pow(2);
             if dist_sq <= (FOV_RADIUS * FOV_RADIUS) {
@@ -4559,6 +4628,18 @@ impl GameState {
                 }
                 let multiplier = combo_tier(self.answer_streak).multiplier();
                 let hit_dmg = ((hit_dmg as f64) * multiplier).round() as i32;
+                // Cursed status: reduce damage dealt by 25%
+                let hit_dmg = if status::has_cursed(&self.player.statuses) {
+                    (hit_dmg * 3 / 4).max(1)
+                } else {
+                    hit_dmg
+                };
+                // Revealed enemies take +25% damage
+                let hit_dmg = if status::has_revealed(&self.enemies[enemy_idx].statuses) {
+                    (hit_dmg * 5 / 4).max(hit_dmg + 1)
+                } else {
+                    hit_dmg
+                };
                 let hit_dmg = hit_dmg.max(1);
 
                 if self.answer_streak == 5 || self.answer_streak == 10 {
@@ -4585,6 +4666,16 @@ impl GameState {
                             status::StatusKind::Burn { damage: 1 },
                             3,
                         ));
+                }
+                // Attacking from Invisible breaks cloak and applies Revealed
+                if status::has_invisible(&self.player.statuses) {
+                    self.player
+                        .statuses
+                        .retain(|s| !matches!(s.kind, status::StatusKind::Invisible));
+                    self.player.statuses.push(status::StatusInstance::new(
+                        status::StatusKind::Revealed,
+                        3,
+                    ));
                 }
 
                 let mut dealt_dmg = hit_dmg;
@@ -5701,6 +5792,60 @@ impl GameState {
         self.collect_quest_rewards();
     }
 
+    /// Generate 1-3 quests based on current floor and seed.
+    fn generate_quests(&mut self) {
+        self.quests.retain(|q| !q.completed);
+        if self.quests.len() >= 5 {
+            return;
+        }
+        let seed = self.seed.wrapping_mul(1664525).wrapping_add(1013904223);
+        let num_quests = 1 + (seed % 3) as usize;
+
+        for i in 0..num_quests {
+            if self.quests.len() >= 5 {
+                break;
+            }
+            let qseed = seed.wrapping_add(i as u64 * 7919);
+            let quest = match qseed % 4 {
+                0 => Quest {
+                    description: format!("Eliminate {} hostiles", 3 + (qseed % 5) as i32),
+                    goal: QuestGoal::KillEnemies(0, 3 + (qseed % 5) as i32),
+                    gold_reward: 30 + (qseed % 40) as i32,
+                    completed: false,
+                    chain_step: 0,
+                    chain_id: 0,
+                },
+                1 => Quest {
+                    description: format!("Reach deck {}", self.floor_num + 2 + (qseed % 3) as i32),
+                    goal: QuestGoal::ReachFloor(self.floor_num + 2 + (qseed % 3) as i32),
+                    gold_reward: 50 + (qseed % 50) as i32,
+                    completed: false,
+                    chain_step: 0,
+                    chain_id: 0,
+                },
+                2 => Quest {
+                    description: format!("Collect {} radicals", 2 + (qseed % 4) as i32),
+                    goal: QuestGoal::CollectRadicals(0, 2 + (qseed % 4) as i32),
+                    gold_reward: 40 + (qseed % 30) as i32,
+                    completed: false,
+                    chain_step: 0,
+                    chain_id: 0,
+                },
+                _ => Quest {
+                    description: "Clear the deck of enemies".to_string(),
+                    goal: QuestGoal::KillEnemies(0, 5 + (qseed % 3) as i32),
+                    gold_reward: 60 + (qseed % 40) as i32,
+                    completed: false,
+                    chain_step: 0,
+                    chain_id: 0,
+                },
+            };
+            if !self.quests.iter().any(|q| q.description == quest.description) {
+                self.quests.push(quest);
+            }
+        }
+    }
+
     /// Collect rewards from completed quests.
     fn collect_quest_rewards(&mut self) {
         let mut chain_follow_ups: Vec<(u8, u32)> = Vec::new();
@@ -6530,6 +6675,7 @@ impl GameState {
             self.player.gold += price;
             self.player.items.remove(idx);
             self.player.item_states.remove(idx);
+            self.ship.cargo_used = (self.ship.cargo_used - 1).max(0);
             if let Some(ref audio) = self.audio {
                 audio.play_buy();
             }
@@ -7837,6 +7983,7 @@ impl GameState {
                         ItemState::Normal => "",
                     };
                     if self.player.add_item(item, state) {
+                        self.ship.cargo_used = (self.ship.cargo_used + 1).min(self.ship.cargo_capacity);
                         self.message = format!("◆ Found {}{}!", prefix, name);
                         self.achievements.check_items(self.player.items.len());
                     } else {
@@ -7870,7 +8017,7 @@ impl GameState {
             self.message_timer = 60;
         } else if roll < 90 {
             // 20% — trap
-            let trap_type = self.rng_next() % 2;
+            let trap_type = self.rng_next() % 3;
             if trap_type == 0 {
                 // Poison trap
                 self.player.statuses.push(status::StatusInstance::new(
@@ -7878,6 +8025,13 @@ impl GameState {
                     5,
                 ));
                 self.message = "◆ Trapped! Poisoned for 5 turns!".to_string();
+            } else if trap_type == 1 {
+                // Rooted trap
+                self.player.statuses.push(status::StatusInstance::new(
+                    status::StatusKind::Rooted,
+                    4,
+                ));
+                self.message = "◆ Trapped! Gravity snare anchors you for 4 turns!".to_string();
             } else {
                 // Damage trap
                 let dmg = 2 + self.floor_num / 2;
@@ -8025,6 +8179,14 @@ impl GameState {
                             3,
                         ));
                     self.message.push_str(" But the curse poisons you!");
+                } else {
+                    self.player
+                        .statuses
+                        .push(crate::status::StatusInstance::new(
+                            crate::status::StatusKind::Regen { heal: 2 },
+                            3,
+                        ));
+                    self.message.push_str(" Auto-repair engaged for 3 turns!");
                 }
                 self.message_timer = 60;
             }
@@ -8110,6 +8272,26 @@ impl GameState {
                     if spawned {
                         self.message.push_str(" An enemy was summoned!");
                     }
+                }
+                // Apply Revealed to all visible enemies (they take +25% damage)
+                let mut revealed_count = 0;
+                for e in &mut self.enemies {
+                    if e.is_alive() {
+                        let i = self.level.idx(e.x, e.y);
+                        if self.level.visible[i] {
+                            e.statuses.push(status::StatusInstance::new(
+                                status::StatusKind::Revealed,
+                                5,
+                            ));
+                            revealed_count += 1;
+                        }
+                    }
+                }
+                if revealed_count > 0 {
+                    self.message.push_str(&format!(
+                        " {} enemies revealed — they take bonus damage!",
+                        revealed_count
+                    ));
                 }
                 self.message_timer = 60;
             }
@@ -9359,6 +9541,7 @@ impl GameState {
                 let state = self.roll_item_state();
                 let name = drop_item.name().to_string();
                 if self.player.add_item(drop_item, state) {
+                    self.ship.cargo_used = (self.ship.cargo_used + 1).min(self.ship.cargo_capacity);
                     let prefix = match state {
                         ItemState::Cursed => "💀 ",
                         ItemState::Blessed => "✨ ",
@@ -9427,6 +9610,7 @@ impl GameState {
                     crew.level += 1;
                     crew.skill += 1;
                 }
+                crew.morale = (crew.morale + 2).min(100);
             }
         }
 
@@ -11356,7 +11540,7 @@ pub fn init_game() -> Result<(), JsValue> {
         merchant_reroll_used: false,
         quests: Vec::new(),
         daily_mode: false,
-        endless_mode: false,
+
         tutorial: None,
         rng_state: seed,
         run_kills: 0,
@@ -11740,6 +11924,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                     if s.ship.upgrades.contains(&crate::world::ship::ShipUpgrade::MedicalBay) {
                                         for crew in s.crew.iter_mut() {
                                             crew.hp = (crew.hp + 2).min(crew.max_hp);
+                                            crew.morale = (crew.morale + 3).min(100);
                                         }
                                     }
                                     // Check for events at the new system
@@ -11835,6 +12020,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                 }
                             }
                             s.message_timer = 90;
+                            s.generate_quests();
                         }
                         "s" | "S" => {
                             s.game_mode = GameMode::ShipInterior;

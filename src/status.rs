@@ -8,17 +8,14 @@ pub enum StatusKind {
         damage: i32,
     },
     /// Auto-repair per turn for N turns
-    #[allow(dead_code)]
     Regen {
         heal: i32,
     },
     /// Overdrive: extra actions (enemy turn skipped on even ticks)
     Haste,
     /// Scrambled: movement is randomized
-    #[allow(dead_code)]
     Confused,
     /// Entire sector map revealed
-    #[allow(dead_code)]
     Revealed,
     /// Weapon contaminated: attacks apply Radiation
     Envenomed,
@@ -51,12 +48,10 @@ pub enum StatusKind {
     /// Cloaked: can't be targeted by hostiles; breaks on attack or ability use
     Invisible,
     /// Anchored: cannot move but gain +2 armor
-    #[allow(dead_code)]
     Rooted,
     /// Disrupted: deal 50% less damage
     Weakened,
     /// Malware: take 1 extra damage from all sources
-    #[allow(dead_code)]
     Cursed,
     /// Optimized: deal +1 damage and take -1 damage from all sources
     Blessed,
@@ -188,14 +183,12 @@ pub fn has_haste(statuses: &[StatusInstance]) -> bool {
     statuses.iter().any(|s| matches!(s.kind, StatusKind::Haste))
 }
 
-#[allow(dead_code)]
 pub fn has_confused(statuses: &[StatusInstance]) -> bool {
     statuses
         .iter()
         .any(|s| matches!(s.kind, StatusKind::Confused))
 }
 
-#[allow(dead_code)]
 pub fn has_revealed(statuses: &[StatusInstance]) -> bool {
     statuses
         .iter()
@@ -224,14 +217,12 @@ pub fn empowered_amount(statuses: &[StatusInstance]) -> i32 {
         .sum()
 }
 
-#[allow(dead_code)]
 pub fn has_invisible(statuses: &[StatusInstance]) -> bool {
     statuses
         .iter()
         .any(|s| matches!(s.kind, StatusKind::Invisible))
 }
 
-#[allow(dead_code)]
 pub fn has_rooted(statuses: &[StatusInstance]) -> bool {
     statuses
         .iter()
@@ -245,7 +236,6 @@ pub fn has_weakened(statuses: &[StatusInstance]) -> bool {
         .any(|s| matches!(s.kind, StatusKind::Weakened))
 }
 
-#[allow(dead_code)]
 pub fn has_cursed(statuses: &[StatusInstance]) -> bool {
     statuses
         .iter()

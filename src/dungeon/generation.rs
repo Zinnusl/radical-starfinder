@@ -1231,7 +1231,7 @@ impl DungeonLevel {
                 let y = (rng.next_u64() % height as u64) as i32;
                 let idx = (y * width + x) as usize;
                 if idx < level.tiles.len() && level.tiles[idx] == Tile::MetalFloor {
-                    let trap_type = (rng.next_u64() % 3) as u8;
+                    let trap_type = (rng.next_u64() % 4) as u8;
                     level.tiles[idx] = Tile::Trap(trap_type);
                     placed += 1;
                     if placed >= trap_count {
