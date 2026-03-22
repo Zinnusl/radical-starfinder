@@ -339,7 +339,7 @@ impl Renderer {
             } else if enemy.is_elite {
                 "enemy_elite"
             } else {
-                "enemy_generic"
+                enemy_sprite_for_location(location_label, i)
             };
             if self.sprites.is_loaded(enemy_sprite_key) {
                 if let Some(img) = self.sprites.get(enemy_sprite_key) {
@@ -7861,6 +7861,20 @@ fn boss_sprite_key(kind: BossKind) -> &'static str {
         BossKind::VoidEntity => "boss_void_entity",
         BossKind::AncientGuardian => "boss_ancient_guardian",
         BossKind::DriftLeviathan => "boss_drift_leviathan",
+    }
+}
+
+fn enemy_sprite_for_location(location_label: &str, enemy_index: usize) -> &'static str {
+    match location_label {
+        "Space Station" => if enemy_index % 2 == 0 { "enemy_station_guard" } else { "enemy_maintenance_drone" },
+        "Asteroid Base" => if enemy_index % 2 == 0 { "enemy_rock_crawler" } else { "enemy_asteroid_miner" },
+        "Derelict Ship" => if enemy_index % 2 == 0 { "enemy_zombie_crew" } else { "enemy_hull_parasite" },
+        "Alien Ruins" => if enemy_index % 2 == 0 { "enemy_ruin_sentinel" } else { "enemy_glyph_phantom" },
+        "Trading Post" => if enemy_index % 2 == 0 { "enemy_smuggler" } else { "enemy_market_thug" },
+        "Orbital Platform" => if enemy_index % 2 == 0 { "enemy_platform_turret" } else { "enemy_void_drifter" },
+        "Mining Colony" => if enemy_index % 2 == 0 { "enemy_tunnel_worm" } else { "enemy_gas_specter" },
+        "Research Lab" => if enemy_index % 2 == 0 { "enemy_lab_mutant" } else { "enemy_security_bot" },
+        _ => "enemy_space_pirate",
     }
 }
 

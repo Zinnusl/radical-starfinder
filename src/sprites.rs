@@ -579,6 +579,24 @@ impl SpriteCache {
         register(&mut sprites, "enemy_rogue_ai", "assets/sprites/enemies/rogue_ai.png");
         register(&mut sprites, "enemy_alien_warrior", "assets/sprites/enemies/alien_warrior.png");
 
+        // ── Location-specific enemy sprites ─────────────────────────────
+        register(&mut sprites, "enemy_station_guard", "assets/sprites/enemies/station_guard.png");
+        register(&mut sprites, "enemy_maintenance_drone", "assets/sprites/enemies/maintenance_drone.png");
+        register(&mut sprites, "enemy_rock_crawler", "assets/sprites/enemies/rock_crawler.png");
+        register(&mut sprites, "enemy_asteroid_miner", "assets/sprites/enemies/asteroid_miner.png");
+        register(&mut sprites, "enemy_zombie_crew", "assets/sprites/enemies/zombie_crew.png");
+        register(&mut sprites, "enemy_hull_parasite", "assets/sprites/enemies/hull_parasite.png");
+        register(&mut sprites, "enemy_ruin_sentinel", "assets/sprites/enemies/ruin_sentinel.png");
+        register(&mut sprites, "enemy_glyph_phantom", "assets/sprites/enemies/glyph_phantom.png");
+        register(&mut sprites, "enemy_smuggler", "assets/sprites/enemies/smuggler.png");
+        register(&mut sprites, "enemy_market_thug", "assets/sprites/enemies/market_thug.png");
+        register(&mut sprites, "enemy_platform_turret", "assets/sprites/enemies/platform_turret.png");
+        register(&mut sprites, "enemy_void_drifter", "assets/sprites/enemies/void_drifter.png");
+        register(&mut sprites, "enemy_tunnel_worm", "assets/sprites/enemies/tunnel_worm.png");
+        register(&mut sprites, "enemy_gas_specter", "assets/sprites/enemies/gas_specter.png");
+        register(&mut sprites, "enemy_lab_mutant", "assets/sprites/enemies/lab_mutant.png");
+        register(&mut sprites, "enemy_security_bot", "assets/sprites/enemies/security_bot.png");
+
         // ── Space boss sprites ───────────────────────────────────────────
         register(&mut sprites, "boss_pirate_captain", "assets/sprites/bosses/pirate_captain.png");
         register(&mut sprites, "boss_hive_queen", "assets/sprites/bosses/hive_queen.png");
