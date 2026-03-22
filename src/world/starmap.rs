@@ -3,6 +3,7 @@
 //! Provides FTL-like star map navigation with branching paths through
 //! sectors of increasing HSK difficulty. Each star system is named with
 //! Chinese characters matching the sector's HSK level.
+#![allow(dead_code)]
 
 use super::LocationType;
 

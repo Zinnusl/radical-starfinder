@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// FTL-like random space events for the Starfinder RPG.
 ///
 /// Events trigger at star systems or during FTL jumps and present the player

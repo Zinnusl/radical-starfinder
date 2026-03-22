@@ -8,7 +8,7 @@ use crate::status::has_haste;
 /// Slow (Ironclad, Earthmover): 3
 pub fn player_base_speed(class: PlayerClass) -> i32 {
     match class {
-        PlayerClass::Operative | PlayerClass::Operative | PlayerClass::Solarian => 5,
+        PlayerClass::Operative | PlayerClass::Solarian => 5,
         PlayerClass::Soldier | PlayerClass::Mechanic => 3,
         _ => 4,
     }

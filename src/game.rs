@@ -11,10 +11,9 @@ use crate::achievement::AchievementTracker;
 use crate::audio::Audio;
 use crate::codex::Codex;
 use crate::combat;
-use crate::world::{compute_fov, TerminalKind, AltarKind, DungeonLevel, RoomModifier, SecuritySeal, SealKind, SpecialRoomKind, Tile, LocationType};
+use crate::world::{compute_fov, TerminalKind, AltarKind, DungeonLevel, RoomModifier, SecuritySeal, SealKind, SpecialRoomKind, Tile};
 use crate::world::starmap::{SectorMap, generate_sector};
-use crate::world::ship::{ShipLayout, ShipRoom, ShipTile, generate_ship_layout, get_console_room, get_room_at, tile_at as ship_tile_at, is_walkable as ship_is_walkable};
-use crate::world::events::{SpaceEvent, EventOutcome, select_event};
+use crate::world::ship::{ShipLayout, generate_ship_layout};
 use crate::enemy::{BossKind, Enemy, RadicalAction};
 use crate::particle::ParticleSystem;
 use crate::player::{
@@ -203,6 +202,7 @@ impl Companion {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[allow(dead_code)]
 pub enum GameMode {
     Starmap,
     ShipInterior,
@@ -1395,23 +1395,33 @@ pub struct GameState {
     /// Cursor position while selecting items for crafting
     pub crafting_cursor: usize,
     /// Current game mode (Starmap/ShipInterior/etc.)
+    #[allow(dead_code)]
     pub game_mode: GameMode,
     /// Sector map for space exploration
+    #[allow(dead_code)]
     pub sector_map: Option<SectorMap>,
     /// Ship interior layout
+    #[allow(dead_code)]
     pub ship_layout: ShipLayout,
     /// Ship stats (hull, fuel, shields)
+    #[allow(dead_code)]
     pub ship: Ship,
     /// Crew members aboard the ship
+    #[allow(dead_code)]
     pub crew: Vec<CrewMember>,
     /// Current event index (if in Event mode)
+    #[allow(dead_code)]
     pub current_event: Option<usize>,
     /// Cursor for event choice selection
+    #[allow(dead_code)]
     pub event_choice_cursor: usize,
     /// Player position inside ship
+    #[allow(dead_code)]
     pub ship_player_x: i32,
+    #[allow(dead_code)]
     pub ship_player_y: i32,
     /// Cursor for starmap system selection
+    #[allow(dead_code)]
     pub starmap_cursor: usize,
 }
 
@@ -1566,43 +1576,14 @@ impl GameState {
             PlayerClass::Operative => {
                 player.gold += 20;
             }
-            PlayerClass::Soldier => {
-                player.weapon = Some(&crate::player::EQUIPMENT_POOL[1]); // Scholar's Quill
-            }
             PlayerClass::Envoy => {
                 player.gold += 15;
                 player.shop_discount_pct = 20;
-            }
-            PlayerClass::Envoy => {
-                player.add_piety(crate::player::Faction::Consortium, 5);
-            }
-            PlayerClass::Operative => {
-                self.companion = Some(Companion::SecurityChief);
-            }
-            PlayerClass::Soldier => {
-                player.weapon = Some(&crate::player::EQUIPMENT_POOL[10]); // Iron Pickaxe
-            }
-            PlayerClass::Soldier => {
-                player.armor = Some(&crate::player::EQUIPMENT_POOL[3]); // Jade Vest
             }
             PlayerClass::Technomancer => {
                 player.radicals.push("木");
                 player.radicals.push("水");
                 player.radicals.push("火");
-            }
-            PlayerClass::Mystic => {
-                player.spells.push(crate::radical::Spell {
-                    hanzi: "炎",
-                    pinyin: "yán",
-                    meaning: "flame",
-                    effect: crate::radical::SpellEffect::FireAoe(3),
-                });
-                player.spells.push(crate::radical::Spell {
-                    hanzi: "林",
-                    pinyin: "lín",
-                    meaning: "woods",
-                    effect: crate::radical::SpellEffect::Heal(4),
-                });
             }
             _ => {}
         }
@@ -10244,9 +10225,6 @@ fn tile_look_text(tile: Tile) -> String {
         Tile::CircuitShrine => "Tone shrine — complete a tone challenge for bonus damage.".to_string(),
         Tile::CompoundShrine => "Stroke shrine — arrange character components in order.".to_string(),
         Tile::FrequencyWall => "Tone wall — identify tones to defend against attacks.".to_string(),
-        Tile::CompoundShrine => {
-            "Compound shrine — combine characters into compound words.".to_string()
-        }
         Tile::ClassifierNode => {
             "Classifier shrine — match nouns with correct classifiers.".to_string()
         }
@@ -10281,7 +10259,6 @@ fn tile_look_text(tile: Tile) -> String {
         Tile::NavBeacon => "Nav beacon — activate for map.".to_string(),
         Tile::SpecialRoom(_) => "Special room.".to_string(),
         Tile::PressureSensor => "Pressure plate — something heavy might activate it.".to_string(),
-        Tile::CargoCrate => "Heavy boulder — push it onto a pressure plate.".to_string(),
         Tile::CrystalPanel => "Crystal formation — reflects light beautifully.".to_string(),
         Tile::WarpGatePortal => "Dragon Gate — an otherworldly portal shimmering with power.".to_string(),
         Tile::MedBayTile => "Spirit spring — step in to restore HP and spirit.".to_string(),

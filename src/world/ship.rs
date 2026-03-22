@@ -3,6 +3,7 @@
 //! The ship is a fixed layout (not procedural) that the player explores
 //! between missions. Rooms contain interactive consoles, crew stations,
 //! and decorative tiles that make the ship feel lived-in.
+#![allow(dead_code)]
 
 // ── Ship room types ─────────────────────────────────────────────────────────
 

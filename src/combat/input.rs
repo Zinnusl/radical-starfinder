@@ -250,7 +250,7 @@ fn handle_command(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
             if let Some(class) = battle.player_class {
                 if matches!(
                     class,
-                    crate::player::PlayerClass::Operative | crate::player::PlayerClass::Operative
+                    crate::player::PlayerClass::Operative
                 ) {
                     chance += 20;
                 }

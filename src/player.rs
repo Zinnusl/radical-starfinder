@@ -662,6 +662,7 @@ pub enum Faction {
 }
 
 // Type alias for backward compatibility with other modules
+#[allow(dead_code)]
 pub type Deity = Faction;
 
 impl Faction {
@@ -871,6 +872,7 @@ pub struct Player {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub enum CrewRole {
     ScienceOfficer,
     Medic,
@@ -880,6 +882,7 @@ pub enum CrewRole {
     Engineer,
 }
 
+#[allow(dead_code)]
 impl CrewRole {
     pub fn name(&self) -> &'static str {
         match self {
@@ -905,6 +908,7 @@ impl CrewRole {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct Ship {
     pub hull: i32,
     pub max_hull: i32,
@@ -919,6 +923,7 @@ pub struct Ship {
     pub cargo_used: i32,
 }
 
+#[allow(dead_code)]
 impl Ship {
     pub fn new() -> Self {
         Self {
@@ -938,6 +943,7 @@ impl Ship {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct CrewMember {
     pub name: String,
     pub role: CrewRole,

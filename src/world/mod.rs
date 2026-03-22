@@ -1,4 +1,5 @@
 //! World module — space station generation, tile types, fog of war.
+#![allow(dead_code)]
 
 pub mod fov;
 pub mod location_gen;

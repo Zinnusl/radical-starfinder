@@ -10,7 +10,7 @@ use crate::combat::{
     ArenaBiome, BattleTile, Direction, EnemyIntent, TacticalBattle, TacticalPhase, TargetMode,
     TypingAction, Weather, WuxingElement,
 };
-use crate::world::{compute_fov, TerminalKind, DungeonLevel, RoomModifier, SecuritySeal, SealKind, SpecialRoomKind, Tile, LocationType};
+use crate::world::{TerminalKind, DungeonLevel, SealKind, Tile, LocationType};
 use crate::enemy::{BossKind, Enemy};
 use crate::game::{combo_tier, CombatState, ComboTier, GameSettings, ListenMode, ShopItemKind};
 use crate::particle::ParticleSystem;
@@ -3413,20 +3413,6 @@ impl Renderer {
                 self.ctx
                     .fill_rect(screen_x + 6.0, screen_y + 6.0, TILE_SIZE - 14.0, 1.5);
             }
-            Tile::SalvageCrate => {
-                self.ctx.set_fill_style_str("rgba(255,225,180,0.08)");
-                self.ctx.fill_rect(
-                    screen_x + 4.0,
-                    screen_y + 4.0,
-                    TILE_SIZE - 8.0,
-                    TILE_SIZE - 8.0,
-                );
-                self.ctx.set_fill_style_str("rgba(62,33,14,0.45)");
-                self.ctx
-                    .fill_rect(screen_x + 8.0, screen_y + 4.0, 1.5, TILE_SIZE - 8.0);
-                self.ctx
-                    .fill_rect(screen_x + 14.5, screen_y + 4.0, 1.5, TILE_SIZE - 8.0);
-            }
             Tile::LaserGrid => {
                 self.ctx.set_fill_style_str("rgba(255,220,220,0.08)");
                 self.ctx.fill_rect(
@@ -3435,29 +3421,6 @@ impl Renderer {
                     TILE_SIZE - 8.0,
                     2.0,
                 );
-            }
-            Tile::Catwalk => {
-                // Planks
-                self.ctx.set_fill_style_str("rgba(160,110,60,0.4)");
-                self.ctx
-                    .fill_rect(screen_x + 2.0, screen_y + 4.0, TILE_SIZE - 4.0, 4.0);
-                self.ctx
-                    .fill_rect(screen_x + 2.0, screen_y + 11.0, TILE_SIZE - 4.0, 4.0);
-                self.ctx
-                    .fill_rect(screen_x + 2.0, screen_y + 18.0, TILE_SIZE - 4.0, 4.0);
-                // Nails
-                self.ctx.set_fill_style_str("rgba(100,100,100,0.5)");
-                self.ctx.fill_rect(screen_x + 4.0, screen_y + 5.0, 1.0, 1.0);
-                self.ctx
-                    .fill_rect(screen_x + TILE_SIZE - 5.0, screen_y + 5.0, 1.0, 1.0);
-                self.ctx
-                    .fill_rect(screen_x + 4.0, screen_y + 12.0, 1.0, 1.0);
-                self.ctx
-                    .fill_rect(screen_x + TILE_SIZE - 5.0, screen_y + 12.0, 1.0, 1.0);
-                self.ctx
-                    .fill_rect(screen_x + 4.0, screen_y + 19.0, 1.0, 1.0);
-                self.ctx
-                    .fill_rect(screen_x + TILE_SIZE - 5.0, screen_y + 19.0, 1.0, 1.0);
             }
             Tile::Airlock
             | Tile::QuantumForge
@@ -3472,7 +3435,6 @@ impl Renderer {
             | Tile::DataWell
             | Tile::MemorialNode
             | Tile::TranslationTerminal
-            | Tile::RadicalLab
             | Tile::HoloPool
             | Tile::DroidTutor
             | Tile::CodexTerminal
@@ -7765,7 +7727,6 @@ fn tile_sprite_key(tile: Tile) -> &'static str {
         Tile::QuantumForge => "tile_forge",
         Tile::TradeTerminal => "tile_shop",
         Tile::SupplyCrate => "tile_chest",
-        Tile::SalvageCrate => "tile_crate",
         Tile::LaserGrid => "tile_spikes",
         Tile::Coolant => "tile_oil",
         Tile::CoolantPool => "tile_water",
@@ -7779,7 +7740,6 @@ fn tile_sprite_key(tile: Tile) -> &'static str {
         Tile::DataWell => "obj_shrine",
         Tile::MemorialNode => "obj_shrine",
         Tile::TranslationTerminal => "obj_shrine",
-        Tile::RadicalLab => "obj_shrine",
         Tile::HoloPool => "obj_shrine",
         Tile::DroidTutor => "obj_shrine",
         Tile::CodexTerminal => "obj_shrine",
@@ -8072,12 +8032,6 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
                 glyph: Some("◆"),
                 glyph_color: "#fff7dc",
             },
-            Tile::SalvageCrate => TilePalette {
-                fill: "#6a4527",
-                accent: Some("#a77b52"),
-                glyph: Some("▣"),
-                glyph_color: "#fff0d8",
-            },
             Tile::LaserGrid => TilePalette {
                 fill: "#7e434a",
                 accent: Some("#d9a0a0"),
@@ -8319,12 +8273,6 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
                 glyph: Some("¥"),
                 glyph_color: "#ffdd44",
             },
-            Tile::NavBeacon | Tile::SpecialRoom(_) | Tile::SalvageCrate => TilePalette {
-                fill: "#222",
-                accent: None,
-                glyph: None,
-                glyph_color: "#555",
-            },
         }
     } else {
         match tile {
@@ -8384,12 +8332,6 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
             },
             Tile::SupplyCrate => TilePalette {
                 fill: "#5a441b",
-                accent: None,
-                glyph: None,
-                glyph_color: "#ffffff",
-            },
-            Tile::SalvageCrate => TilePalette {
-                fill: "#3f2c1c",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
@@ -8468,12 +8410,6 @@ fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
             },
             Tile::TranslationTerminal => TilePalette {
                 fill: "#111818",
-                accent: None,
-                glyph: None,
-                glyph_color: "#ffffff",
-            },
-            Tile::RadicalLab => TilePalette {
-                fill: "#111811",
                 accent: None,
                 glyph: None,
                 glyph_color: "#ffffff",
@@ -8641,7 +8577,6 @@ fn tile_plate_fill(tile: Tile) -> Option<&'static str> {
         Tile::DataWell => Some("rgba(153,153,238,0.16)"),
         Tile::MemorialNode => Some("rgba(238,153,102,0.16)"),
         Tile::TranslationTerminal => Some("rgba(102,204,204,0.16)"),
-        Tile::RadicalLab => Some("rgba(136,238,102,0.16)"),
         Tile::HoloPool => Some("rgba(170,170,255,0.16)"),
         Tile::DroidTutor => Some("rgba(204,204,102,0.16)"),
         Tile::CodexTerminal => Some("rgba(221,153,255,0.16)"),
@@ -8741,7 +8676,6 @@ fn tile_glyph_y(tile: Tile, screen_y: f64, anim_t: f64, tx: i32, ty: i32) -> f64
         Tile::DataWell => base + (anim_t * 2.3 + tx as f64 * 0.25).sin() * 0.7,
         Tile::MemorialNode => base + (anim_t * 2.9 + ty as f64 * 0.35).sin() * 0.8,
         Tile::TranslationTerminal => base + (anim_t * 2.5 + tx as f64 * 0.3).sin() * 0.75,
-        Tile::RadicalLab => base + (anim_t * 2.2 + tx as f64 * 0.2).sin() * 0.9,
         Tile::HoloPool => base + (anim_t * 3.2 + ty as f64 * 0.4).sin() * 1.0,
         Tile::DroidTutor => base + (anim_t * 2.0 + tx as f64 * 0.15).sin() * 0.6,
         Tile::CodexTerminal => base + (anim_t * 2.4 + tx as f64 * 0.2).sin() * 0.8,
@@ -8845,11 +8779,12 @@ mod tests {
 
 
 impl Renderer {
+    #[allow(dead_code)]
     pub fn draw_starmap(
         &self,
         sector_map: &SectorMap,
         anim_t: f64,
-        settings: &GameSettings,
+        _settings: &GameSettings,
     ) {
         // Clear background
         self.ctx.set_fill_style_str("#000000");
@@ -8923,12 +8858,13 @@ impl Renderer {
         }
     }
 
+    #[allow(dead_code)]
     pub fn draw_ship_interior(
         &self,
         layout: &ShipLayout,
         player: &Player, // Assuming player has ship_x/y or we use standard x/y
-        crew: &[crate::player::CrewMember],
-        anim_t: f64,
+        _crew: &[crate::player::CrewMember],
+        _anim_t: f64,
     ) {
         // Clear
         self.ctx.set_fill_style_str("#111111");
@@ -8973,12 +8909,13 @@ impl Renderer {
         self.ctx.fill();
     }
 
+    #[allow(dead_code)]
     pub fn draw_space_combat(
         &self,
         player_ship: &Ship,
         // enemy_ship: &Ship, // Assuming enemy ship struct is same or similar
         // For now just draw HUD
-        anim_t: f64,
+        _anim_t: f64,
     ) {
         self.ctx.set_fill_style_str("#000000");
         self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
@@ -8998,6 +8935,7 @@ impl Renderer {
         self.ctx.fill_text(&format!("Shields: {}/{}", player_ship.shields, player_ship.max_shields), 20.0, 70.0).ok();
     }
 
+    #[allow(dead_code)]
     pub fn draw_event(
         &self,
         event: &SpaceEvent,
