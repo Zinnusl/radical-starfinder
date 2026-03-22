@@ -930,6 +930,8 @@ pub struct ArcingProjectile {
     pub glyph: &'static str,
     pub color: &'static str,
     pub owner_is_player: bool,
+    /// Skip the first tick so projectiles don't resolve on the round they're spawned
+    pub fresh: bool,
 }
 
 /// Collapsed tactical phases per Oracle review (~5 core states).

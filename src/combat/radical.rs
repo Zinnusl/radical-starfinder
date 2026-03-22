@@ -148,6 +148,7 @@ pub fn apply_radical_action(
                 glyph: "🌾",
                 color: "#ddaa00",
                 owner_is_player: false,
+                fresh: true,
             });
             format!(
                 "{} — Reaping incoming! (lands next turn)",
@@ -210,6 +211,7 @@ pub fn apply_radical_action(
                 glyph: "💥",
                 color: "#ff8800",
                 owner_is_player: false,
+                fresh: true,
             });
             format!(
                 "{} — Potential bursts! (lands next turn)",
@@ -239,6 +241,7 @@ pub fn apply_radical_action(
                     glyph: "🎲",
                     color: "#ffff00",
                     owner_is_player: false,
+                    fresh: true,
                 });
                 format!(
                     "{} — The gambit succeeds! (lands next turn)",
@@ -268,6 +271,7 @@ pub fn apply_radical_action(
                 glyph: "⛰",
                 color: "#886644",
                 owner_is_player: false,
+                fresh: true,
             });
             format!(
                 "{} — A crushing weight incoming! (lands next turn)",
@@ -310,6 +314,7 @@ pub fn apply_radical_action(
                 glyph: "🎯",
                 color: "#ff2222",
                 owner_is_player: false,
+                fresh: true,
             });
             format!(
                 "{} — Precise execution incoming! (lands next turn)",
@@ -457,6 +462,7 @@ pub fn apply_radical_action(
                         glyph: "🌧",
                         color: "#4488ff",
                         owner_is_player: false,
+                        fresh: true,
                     });
                 }
             }
@@ -553,6 +559,7 @@ pub fn apply_radical_action(
                 glyph: "🏹",
                 color: "#ff8844",
                 owner_is_player: false,
+                fresh: true,
             });
             format!(
                 "{} — Launches an arcing shot! (lands in 2 turns)",
@@ -718,6 +725,7 @@ pub fn apply_radical_action(
                 glyph: "📌",
                 color: "#aaaaaa",
                 owner_is_player: false,
+                fresh: true,
             });
             format!(
                 "{} — Needle strike incoming! (lands next turn)",
@@ -796,6 +804,7 @@ pub fn apply_radical_action(
                 glyph: "🕳",
                 color: "#664422",
                 owner_is_player: false,
+                fresh: true,
             });
             format!(
                 "{} — Ground cracks beneath! Move or fall! (1 turn)",
@@ -854,6 +863,7 @@ pub fn apply_radical_action(
                 glyph: "🐍",
                 color: "#44cc44",
                 owner_is_player: false,
+                fresh: true,
             });
             battle.units[0]
                 .statuses
@@ -1050,6 +1060,7 @@ pub fn apply_radical_action(
                 glyph: "🦴",
                 color: "#eeddcc",
                 owner_is_player: false,
+                fresh: true,
             });
             format!(
                 "{} — Bone shard incoming! Armor shattered! (1 turn)",
@@ -1085,6 +1096,7 @@ pub fn apply_radical_action(
                     glyph: "🐦",
                     color: "#886644",
                     owner_is_player: false,
+                    fresh: true,
                 });
             }
             format!(

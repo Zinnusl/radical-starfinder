@@ -517,6 +517,10 @@ fn spread_rain_water(arena: &mut TacticalArena) {
 fn tick_arcing_projectiles(battle: &mut TacticalBattle) {
     let mut landed = Vec::new();
     for proj in battle.arcing_projectiles.iter_mut() {
+        if proj.fresh {
+            proj.fresh = false;
+            continue;
+        }
         proj.turns_remaining -= 1;
         if proj.turns_remaining <= 0 {
             landed.push((
