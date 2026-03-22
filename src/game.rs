@@ -10882,14 +10882,16 @@ pub fn init_game() -> Result<(), JsValue> {
     let win = window().ok_or("no window")?;
     let doc = win.document().ok_or("no document")?;
 
-    // Create canvas
+    // Create canvas — fill the browser window
     let canvas: HtmlCanvasElement = doc.create_element("canvas")?.dyn_into()?;
     canvas.set_id("game-canvas");
-    canvas.set_width(800);
-    canvas.set_height(600);
+    let inner_w = win.inner_width().ok().and_then(|v| v.as_f64()).unwrap_or(800.0) as u32;
+    let inner_h = win.inner_height().ok().and_then(|v| v.as_f64()).unwrap_or(600.0) as u32;
+    canvas.set_width(inner_w);
+    canvas.set_height(inner_h);
     canvas.set_attribute(
         "style",
-        "display:block; margin:0 auto; background:#0d0b14; image-rendering:pixelated;",
+        "display:block; width:100vw; height:100vh; background:#0d0b14; image-rendering:pixelated; position:fixed; top:0; left:0;",
     )?;
     doc.body().unwrap().append_child(&canvas)?;
 
@@ -14076,6 +14078,24 @@ pub fn init_game() -> Result<(), JsValue> {
             s.render();
         });
         doc.add_event_listener_with_callback("keydown", closure.as_ref().unchecked_ref())?;
+        closure.forget();
+    }
+
+    // Window resize handler — keep canvas filling the viewport
+    {
+        let state = Rc::clone(&state);
+        let closure = Closure::<dyn FnMut()>::new(move || {
+            let Ok(mut s) = state.try_borrow_mut() else { return; };
+            if let Some(win) = window() {
+                let w = win.inner_width().ok().and_then(|v| v.as_f64()).unwrap_or(800.0) as u32;
+                let h = win.inner_height().ok().and_then(|v| v.as_f64()).unwrap_or(600.0) as u32;
+                s.renderer.canvas.set_width(w);
+                s.renderer.canvas.set_height(h);
+                s.renderer.sync_size();
+                s.render();
+            }
+        });
+        win.add_event_listener_with_callback("resize", closure.as_ref().unchecked_ref())?;
         closure.forget();
     }
 

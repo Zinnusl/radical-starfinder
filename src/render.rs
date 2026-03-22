@@ -68,6 +68,12 @@ impl Renderer {
         })
     }
 
+    /// Update cached dimensions after canvas resize.
+    pub fn sync_size(&mut self) {
+        self.canvas_w = self.canvas.width() as f64;
+        self.canvas_h = self.canvas.height() as f64;
+    }
+
     fn draw_sprite_icon(&self, key: &str, x: f64, y: f64, size: f64) -> bool {
         if self.sprites.is_loaded(key) {
             if let Some(img) = self.sprites.get(key) {
