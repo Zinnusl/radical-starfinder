@@ -9631,6 +9631,9 @@ impl GameState {
                     // Draw HUD overlay with fuel, hull, current system info
                     self.renderer.draw_starmap_hud(map, &self.ship, self.starmap_cursor);
                 }
+                if self.show_class_select {
+                    self.renderer.draw_class_select(self.class_cursor);
+                }
                 return;
             }
             GameMode::ShipInterior => {
@@ -11402,6 +11405,39 @@ pub fn init_game() -> Result<(), JsValue> {
             match s.game_mode {
                 GameMode::Starmap => {
                     event.prevent_default();
+
+                    // Class selection overlay intercepts all input
+                    if s.show_class_select {
+                        match key.as_str() {
+                            "ArrowUp" | "w" | "W" => {
+                                let total = crate::player::PlayerClass::all().len();
+                                if s.class_cursor == 0 {
+                                    s.class_cursor = total - 1;
+                                } else {
+                                    s.class_cursor -= 1;
+                                }
+                            }
+                            "ArrowDown" | "s" | "S" => {
+                                let total = crate::player::PlayerClass::all().len();
+                                s.class_cursor = (s.class_cursor + 1) % total;
+                            }
+                            "Enter" | " " => {
+                                let all = crate::player::PlayerClass::all();
+                                let class = all[s.class_cursor];
+                                let (px, py) = (s.player.x, s.player.y);
+                                s.player = Player::new(px, py, class);
+                                s.show_class_select = false;
+                                s.class_selected = true;
+                                let data = class.data();
+                                s.message = format!("Class selected: {}!", data.name_en);
+                                s.message_timer = 90;
+                            }
+                            _ => {}
+                        }
+                        s.render();
+                        return;
+                    }
+
                     // Collect data first to avoid borrow conflicts
                     let (connections, current, current_name, current_loc_type) = if let Some(ref map) = s.sector_map {
                         let sector = &map.sectors[map.current_sector];

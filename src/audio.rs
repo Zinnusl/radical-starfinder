@@ -705,4 +705,190 @@ impl Audio {
             let _ = osc.stop_with_when(now + dur);
         }
     }
+
+    // ── Additional SFX ──────────────────────────────────────────────
+
+    /// Footstep — short quiet click.
+    pub fn sfx_step(&self) {
+        if self.sfx_volume < 0.01 { return; }
+        let now = self.now();
+        let osc = match self.osc() { Some(o) => o, None => return };
+        let g = match self.gain() { Some(g) => g, None => return };
+        osc.set_type(OscillatorType::Square);
+        osc.frequency().set_value(200.0);
+        g.gain().set_value(0.0);
+        let _ = g.gain().linear_ramp_to_value_at_time(0.05 * self.sfx_volume, now + 0.005);
+        let _ = g.gain().linear_ramp_to_value_at_time(0.0, now + 0.04);
+        let _ = osc.connect_with_audio_node(&g);
+        let _ = g.connect_with_audio_node(&self.dest());
+        let _ = osc.start();
+        let _ = osc.stop_with_when(now + 0.05);
+    }
+
+    /// Attack hit — punchy noise burst.
+    pub fn sfx_hit(&self) {
+        if self.sfx_volume < 0.01 { return; }
+        let now = self.now();
+        let osc = match self.osc() { Some(o) => o, None => return };
+        let g = match self.gain() { Some(g) => g, None => return };
+        osc.set_type(OscillatorType::Sawtooth);
+        osc.frequency().set_value(150.0);
+        let _ = osc.frequency().exponential_ramp_to_value_at_time(50.0, now + 0.15);
+        g.gain().set_value(0.0);
+        let _ = g.gain().linear_ramp_to_value_at_time(0.3 * self.sfx_volume, now + 0.01);
+        let _ = g.gain().linear_ramp_to_value_at_time(0.0, now + 0.15);
+        let _ = osc.connect_with_audio_node(&g);
+        let _ = g.connect_with_audio_node(&self.dest());
+        let _ = osc.start();
+        let _ = osc.stop_with_when(now + 0.2);
+    }
+
+    /// Enemy death — descending sweep.
+    pub fn sfx_enemy_death(&self) {
+        if self.sfx_volume < 0.01 { return; }
+        let now = self.now();
+        let osc = match self.osc() { Some(o) => o, None => return };
+        let g = match self.gain() { Some(g) => g, None => return };
+        osc.set_type(OscillatorType::Square);
+        osc.frequency().set_value(400.0);
+        let _ = osc.frequency().exponential_ramp_to_value_at_time(80.0, now + 0.3);
+        g.gain().set_value(0.0);
+        let _ = g.gain().linear_ramp_to_value_at_time(0.2 * self.sfx_volume, now + 0.02);
+        let _ = g.gain().linear_ramp_to_value_at_time(0.0, now + 0.3);
+        let _ = osc.connect_with_audio_node(&g);
+        let _ = g.connect_with_audio_node(&self.dest());
+        let _ = osc.start();
+        let _ = osc.stop_with_when(now + 0.35);
+    }
+
+    /// Item pickup — quick ascending arpeggio.
+    pub fn sfx_pickup(&self) {
+        if self.sfx_volume < 0.01 { return; }
+        let now = self.now();
+        let dest = self.dest();
+        for (i, &freq) in [523.0_f32, 659.0, 784.0].iter().enumerate() {
+            let osc = match self.osc() { Some(o) => o, None => return };
+            let g = match self.gain() { Some(g) => g, None => return };
+            let t = now + i as f64 * 0.06;
+            osc.set_type(OscillatorType::Sine);
+            osc.frequency().set_value(freq);
+            g.gain().set_value(0.0);
+            let _ = g.gain().linear_ramp_to_value_at_time(0.15 * self.sfx_volume, t + 0.01);
+            let _ = g.gain().linear_ramp_to_value_at_time(0.0, t + 0.1);
+            let _ = osc.connect_with_audio_node(&g);
+            let _ = g.connect_with_audio_node(&dest);
+            let _ = osc.start_with_when(t);
+            let _ = osc.stop_with_when(t + 0.12);
+        }
+    }
+
+    /// Level up / floor transition — triumphant chord.
+    pub fn sfx_level_up(&self) {
+        if self.sfx_volume < 0.01 { return; }
+        let now = self.now();
+        let dest = self.dest();
+        for &freq in &[262.0_f32, 330.0, 392.0, 523.0] {
+            let osc = match self.osc() { Some(o) => o, None => return };
+            let g = match self.gain() { Some(g) => g, None => return };
+            osc.set_type(OscillatorType::Sine);
+            osc.frequency().set_value(freq);
+            g.gain().set_value(0.0);
+            let _ = g.gain().linear_ramp_to_value_at_time(0.12 * self.sfx_volume, now + 0.05);
+            let _ = g.gain().linear_ramp_to_value_at_time(0.0, now + 0.6);
+            let _ = osc.connect_with_audio_node(&g);
+            let _ = g.connect_with_audio_node(&dest);
+            let _ = osc.start();
+            let _ = osc.stop_with_when(now + 0.7);
+        }
+    }
+
+    /// Boss appear — ominous low drone.
+    pub fn sfx_boss(&self) {
+        if self.sfx_volume < 0.01 { return; }
+        let now = self.now();
+        let osc = match self.osc() { Some(o) => o, None => return };
+        let g = match self.gain() { Some(g) => g, None => return };
+        osc.set_type(OscillatorType::Sawtooth);
+        osc.frequency().set_value(55.0);
+        let _ = osc.frequency().linear_ramp_to_value_at_time(80.0, now + 0.5);
+        g.gain().set_value(0.0);
+        let _ = g.gain().linear_ramp_to_value_at_time(0.25 * self.sfx_volume, now + 0.1);
+        let _ = g.gain().linear_ramp_to_value_at_time(0.15 * self.sfx_volume, now + 0.8);
+        let _ = g.gain().linear_ramp_to_value_at_time(0.0, now + 1.2);
+        let _ = osc.connect_with_audio_node(&g);
+        let _ = g.connect_with_audio_node(&self.dest());
+        let _ = osc.start();
+        let _ = osc.stop_with_when(now + 1.3);
+    }
+
+    /// Space jump — whoosh sweep up then down.
+    pub fn sfx_jump(&self) {
+        if self.sfx_volume < 0.01 { return; }
+        let now = self.now();
+        let osc = match self.osc() { Some(o) => o, None => return };
+        let g = match self.gain() { Some(g) => g, None => return };
+        osc.set_type(OscillatorType::Sine);
+        osc.frequency().set_value(100.0);
+        let _ = osc.frequency().exponential_ramp_to_value_at_time(2000.0, now + 0.15);
+        let _ = osc.frequency().exponential_ramp_to_value_at_time(200.0, now + 0.4);
+        g.gain().set_value(0.0);
+        let _ = g.gain().linear_ramp_to_value_at_time(0.2 * self.sfx_volume, now + 0.05);
+        let _ = g.gain().linear_ramp_to_value_at_time(0.0, now + 0.4);
+        let _ = osc.connect_with_audio_node(&g);
+        let _ = g.connect_with_audio_node(&self.dest());
+        let _ = osc.start();
+        let _ = osc.stop_with_when(now + 0.45);
+    }
+
+    /// Door open — short mechanical click-swoosh.
+    pub fn sfx_door(&self) {
+        if self.sfx_volume < 0.01 { return; }
+        let now = self.now();
+        let osc = match self.osc() { Some(o) => o, None => return };
+        let g = match self.gain() { Some(g) => g, None => return };
+        osc.set_type(OscillatorType::Square);
+        osc.frequency().set_value(800.0);
+        let _ = osc.frequency().exponential_ramp_to_value_at_time(200.0, now + 0.08);
+        g.gain().set_value(0.0);
+        let _ = g.gain().linear_ramp_to_value_at_time(0.1 * self.sfx_volume, now + 0.005);
+        let _ = g.gain().linear_ramp_to_value_at_time(0.0, now + 0.1);
+        let _ = osc.connect_with_audio_node(&g);
+        let _ = g.connect_with_audio_node(&self.dest());
+        let _ = osc.start();
+        let _ = osc.stop_with_when(now + 0.12);
+    }
+
+    /// Correct answer — pleasant ding.
+    pub fn sfx_correct(&self) {
+        if self.sfx_volume < 0.01 { return; }
+        let now = self.now();
+        let osc = match self.osc() { Some(o) => o, None => return };
+        let g = match self.gain() { Some(g) => g, None => return };
+        osc.set_type(OscillatorType::Sine);
+        osc.frequency().set_value(880.0);
+        g.gain().set_value(0.0);
+        let _ = g.gain().linear_ramp_to_value_at_time(0.15 * self.sfx_volume, now + 0.01);
+        let _ = g.gain().linear_ramp_to_value_at_time(0.0, now + 0.25);
+        let _ = osc.connect_with_audio_node(&g);
+        let _ = g.connect_with_audio_node(&self.dest());
+        let _ = osc.start();
+        let _ = osc.stop_with_when(now + 0.3);
+    }
+
+    /// Wrong answer — low buzz.
+    pub fn sfx_wrong(&self) {
+        if self.sfx_volume < 0.01 { return; }
+        let now = self.now();
+        let osc = match self.osc() { Some(o) => o, None => return };
+        let g = match self.gain() { Some(g) => g, None => return };
+        osc.set_type(OscillatorType::Sawtooth);
+        osc.frequency().set_value(100.0);
+        g.gain().set_value(0.0);
+        let _ = g.gain().linear_ramp_to_value_at_time(0.2 * self.sfx_volume, now + 0.01);
+        let _ = g.gain().linear_ramp_to_value_at_time(0.0, now + 0.2);
+        let _ = osc.connect_with_audio_node(&g);
+        let _ = g.connect_with_audio_node(&self.dest());
+        let _ = osc.start();
+        let _ = osc.stop_with_when(now + 0.25);
+    }
 }
