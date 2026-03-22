@@ -1,6 +1,7 @@
 //! Main game state and loop.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
@@ -13,8 +14,8 @@ use crate::codex::Codex;
 use crate::combat;
 use crate::world::{compute_fov, TerminalKind, AltarKind, DungeonLevel, RoomModifier, SecuritySeal, SealKind, SpecialRoomKind, Tile};
 use crate::world::starmap::{SectorMap, generate_sector, jump_cost};
-use crate::world::ship::{ShipLayout, ShipTile, generate_ship_layout};
-use crate::world::events::ALL_EVENTS;
+use crate::world::ship::{ShipLayout, ShipRoom, ShipTile, generate_ship_layout};
+use crate::world::events::{ALL_EVENTS, EventOutcome};
 use crate::enemy::{BossKind, Enemy, RadicalAction};
 use crate::particle::ParticleSystem;
 use crate::player::{
@@ -32,6 +33,104 @@ const MAP_H: i32 = 48;
 const FOV_RADIUS: i32 = 8;
 const ENEMIES_PER_ROOM: i32 = 1;
 const LOOK_RANGE: i32 = 3;
+
+fn apply_event_outcome(s: &mut GameState, outcome: &EventOutcome) -> String {
+    match outcome {
+        EventOutcome::GainFuel(n) => {
+            s.ship.fuel = (s.ship.fuel + n).min(s.ship.max_fuel);
+            format!("+{} fuel", n)
+        }
+        EventOutcome::LoseFuel(n) => {
+            s.ship.fuel = (s.ship.fuel - n).max(0);
+            format!("-{} fuel", n)
+        }
+        EventOutcome::GainCredits(n) => {
+            s.player.gold += n;
+            format!("+{} credits", n)
+        }
+        EventOutcome::LoseCredits(n) => {
+            s.player.gold = (s.player.gold - n).max(0);
+            format!("-{} credits", n)
+        }
+        EventOutcome::GainHull(n) => {
+            s.ship.hull = (s.ship.hull + n).min(s.ship.max_hull);
+            format!("+{} hull", n)
+        }
+        EventOutcome::LoseHull(n) => {
+            s.ship.hull = (s.ship.hull - n).max(1);
+            format!("-{} hull", n)
+        }
+        EventOutcome::RepairShip(n) => {
+            s.ship.hull = (s.ship.hull + n).min(s.ship.max_hull);
+            format!("Ship repaired +{}", n)
+        }
+        EventOutcome::ShieldDamage(n) => {
+            s.ship.shields = (s.ship.shields - n).max(0);
+            format!("-{} shields", n)
+        }
+        EventOutcome::HealCrew(n) => {
+            s.player.hp = (s.player.hp + n).min(s.player.max_hp);
+            format!("Crew healed +{}", n)
+        }
+        EventOutcome::DamageCrew(n) => {
+            s.player.hp = (s.player.hp - n).max(1);
+            format!("Crew took {} damage", n)
+        }
+        EventOutcome::GainScrap(n) => {
+            s.player.gold += n;
+            format!("+{} scrap", n)
+        }
+        EventOutcome::FuelAndCredits(f, c) => {
+            s.ship.fuel = (s.ship.fuel + f).min(s.ship.max_fuel);
+            s.player.gold += c;
+            format!("+{} fuel, +{} credits", f, c)
+        }
+        EventOutcome::HullAndFuel(h, f) => {
+            s.ship.hull = (s.ship.hull + h).min(s.ship.max_hull);
+            s.ship.fuel = (s.ship.fuel + f).min(s.ship.max_fuel);
+            format!("+{} hull, +{} fuel", h, f)
+        }
+        EventOutcome::GainRadical(r) => {
+            if !s.player.radicals.contains(r) {
+                s.player.radicals.push(r);
+            }
+            format!("Learned radical: {}", r)
+        }
+        EventOutcome::GainCrewMember => {
+            let new_crew = CrewMember {
+                name: "New Recruit".to_string(),
+                role: CrewRole::Engineer,
+                hp: 10, max_hp: 10,
+                level: 1, xp: 0,
+                morale: 50, skill: 1,
+            };
+            s.crew.push(new_crew);
+            "New crew member joined!".to_string()
+        }
+        EventOutcome::LoseCrewMember => {
+            if s.crew.len() > 1 {
+                s.crew.pop();
+                "Lost a crew member...".to_string()
+            } else {
+                "Crew member narrowly survived.".to_string()
+            }
+        }
+        EventOutcome::StartCombat(_difficulty) => {
+            "Combat encounter!".to_string()
+        }
+        EventOutcome::CombatReward(_difficulty, credits) => {
+            s.player.gold += credits;
+            format!("Combat resolved! +{} credits", credits)
+        }
+        EventOutcome::GainItem(_item_name) => {
+            s.player.items.push(Item::MedHypo(15));
+            "Found a useful item!".to_string()
+        }
+        EventOutcome::Nothing => {
+            "Nothing happened.".to_string()
+        }
+    }
+}
 
 /// Combat phase when the player is adjacent to / engages an enemy.
 /// Companion NPC that follows the player.
@@ -1319,6 +1418,7 @@ pub struct GameState {
     pub inventory_inspect: Option<usize>,
     pub show_spellbook: bool,
     pub show_help: bool,
+    pub show_minimap: bool,
     item_appearance_order: [usize; ITEM_KIND_COUNT],
     identified_items: [bool; ITEM_KIND_COUNT],
     pub settings: GameSettings,
@@ -1416,6 +1516,10 @@ pub struct GameState {
     pub starmap_cursor: usize,
     /// Which LocationType the player is currently exploring (set when entering from starmap)
     pub current_location_type: Option<crate::world::LocationType>,
+    /// Whether the class selection overlay is shown on the starmap
+    pub show_class_select: bool,
+    /// Whether the player has already selected a class
+    pub class_selected: bool,
 }
 
 impl GameState {
@@ -2604,6 +2708,7 @@ impl GameState {
         let (px, py) = (self.player.x, self.player.y);
         compute_fov(&mut self.level, px, py, FOV_RADIUS);
         self.achievements.check_floor(self.floor_num);
+        self.save_game();
 
         if self.companion == Some(Companion::Medic) {
             let lvl = self.companion_level();
@@ -3571,6 +3676,7 @@ impl GameState {
         }
 
         if target_tile == Tile::SealedHatch {
+            if let Some(ref audio) = self.audio { audio.sfx_door(); }
             self.start_locked_door(nx, ny);
             return;
         }
@@ -3630,7 +3736,11 @@ impl GameState {
 
         // GoldOre mining
         if target_tile == Tile::OreVein {
-            let gold = 5 + (self.rng_next() % 11) as i32;
+            let mut gold = 5 + (self.rng_next() % 11) as i32;
+            // AsteroidBase: double ore/gold from mining
+            if self.current_location_type == Some(crate::world::LocationType::AsteroidBase) {
+                gold *= 2;
+            }
             self.player.gold += gold;
             let idx = self.level.idx(nx, ny);
             self.level.tiles[idx] = Tile::MetalFloor;
@@ -4300,6 +4410,11 @@ impl GameState {
                 self.srs.record(e_hanzi, true);
                 self.codex.record(e_hanzi, e_pinyin, e_meaning, true);
                 self.run_correct_answers += 1;
+                // ResearchLab: double vocab XP
+                if self.current_location_type == Some(crate::world::LocationType::ResearchLab) {
+                    self.srs.record(e_hanzi, true);
+                    self.run_correct_answers += 1;
+                }
                 // Hit with bonus damage from equipment + room modifiers
                 let cursed_bonus = if self.current_room_modifier() == Some(RoomModifier::Irradiated) {
                     1
@@ -4513,6 +4628,12 @@ impl GameState {
                     if extra_chance > 0 && (self.rng_next() % 100) < extra_chance as u64 {
                         let drop2 = self.rng_next() as usize % available.len();
                         self.player.add_radical(available[drop2].ch);
+                    }
+
+                    // AlienRuins: bonus radical on kill
+                    if self.current_location_type == Some(crate::world::LocationType::AlienRuins) {
+                        let bonus_idx = self.rng_next() as usize % available.len();
+                        self.player.add_radical(available[bonus_idx].ch);
                     }
 
                     // Heal on kill from charm
@@ -9046,6 +9167,12 @@ impl GameState {
                 self.player.add_radical(available[drop2].ch);
             }
 
+            // AlienRuins: bonus radical on kill
+            if self.current_location_type == Some(crate::world::LocationType::AlienRuins) {
+                let bonus_idx = self.rng_next() as usize % available.len();
+                self.player.add_radical(available[bonus_idx].ch);
+            }
+
             let mut heal = self.player.heal_on_kill();
             if self.player.get_piety(Faction::Consortium) >= 10 {
                 heal += 1;
@@ -9304,6 +9431,78 @@ impl GameState {
             .unwrap_or(0)
     }
 
+    pub fn save_game(&self) {
+        let win = match window() {
+            Some(w) => w,
+            None => return,
+        };
+        let storage = match win.local_storage().ok().flatten() {
+            Some(s) => s,
+            None => return,
+        };
+
+        let mut save = String::new();
+
+        // Player stats
+        save.push_str(&format!("hp={}\n", self.player.hp));
+        save.push_str(&format!("max_hp={}\n", self.player.max_hp));
+        save.push_str(&format!("gold={}\n", self.player.gold));
+        save.push_str(&format!("class={}\n", self.player.class as u8));
+        save.push_str(&format!("floor={}\n", self.floor_num));
+        save.push_str(&format!("best={}\n", self.best_floor));
+        save.push_str(&format!("spirit={}\n", self.player.spirit));
+        save.push_str(&format!("max_spirit={}\n", self.player.max_spirit));
+
+        // Ship stats
+        save.push_str(&format!("ship_hull={}\n", self.ship.hull));
+        save.push_str(&format!("ship_max_hull={}\n", self.ship.max_hull));
+        save.push_str(&format!("ship_fuel={}\n", self.ship.fuel));
+        save.push_str(&format!("ship_max_fuel={}\n", self.ship.max_fuel));
+        save.push_str(&format!("ship_shields={}\n", self.ship.shields));
+        save.push_str(&format!("ship_max_shields={}\n", self.ship.max_shields));
+        save.push_str(&format!("ship_weapon={}\n", self.ship.weapon_power));
+        save.push_str(&format!("ship_engine={}\n", self.ship.engine_power));
+        save.push_str(&format!("ship_sensor={}\n", self.ship.sensor_range));
+        save.push_str(&format!("ship_cargo_cap={}\n", self.ship.cargo_capacity));
+        save.push_str(&format!("ship_cargo_used={}\n", self.ship.cargo_used));
+
+        // Sector map position
+        if let Some(ref map) = self.sector_map {
+            save.push_str(&format!("sector={}\n", map.current_sector));
+            save.push_str(&format!("system={}\n", map.current_system));
+        }
+
+        // Stats
+        save.push_str(&format!("kills={}\n", self.total_kills));
+        save.push_str(&format!("runs={}\n", self.total_runs));
+        save.push_str(&format!("seed={}\n", self.seed));
+
+        // Number of crew
+        save.push_str(&format!("crew_count={}\n", self.crew.len()));
+
+        storage.set_item("radical_starfinder_save", &save).ok();
+    }
+
+    pub fn load_game_data() -> Option<HashMap<String, String>> {
+        let win = window()?;
+        let storage = win.local_storage().ok()??;
+        let data = storage.get_item("radical_starfinder_save").ok()??;
+        let mut map = HashMap::new();
+        for line in data.lines() {
+            if let Some((key, val)) = line.split_once('=') {
+                map.insert(key.to_string(), val.to_string());
+            }
+        }
+        Some(map)
+    }
+
+    pub fn has_save() -> bool {
+        window()
+            .and_then(|w| w.local_storage().ok().flatten())
+            .and_then(|s| s.get_item("radical_starfinder_save").ok().flatten())
+            .is_some()
+    }
+
     fn load_recipes() -> Vec<usize> {
         let storage: Option<web_sys::Storage> =
             window().and_then(|w: web_sys::Window| w.local_storage().ok().flatten());
@@ -9435,7 +9634,7 @@ impl GameState {
                 return;
             }
             GameMode::ShipInterior => {
-                self.renderer.draw_ship_interior(&self.ship_layout, self.ship_player_x, self.ship_player_y, &self.crew, js_sys::Date::now() / 1000.0);
+                self.renderer.draw_ship_interior(&self.ship_layout, self.ship_player_x, self.ship_player_y, &self.crew, &self.ship, &self.message);
                 return;
             }
             GameMode::SpaceCombat => {
@@ -9519,6 +9718,8 @@ impl GameState {
             self.post_mortem_page,
             self.class_cursor,
             self.current_location_type.map(|lt| lt.label()).unwrap_or(""),
+            self.current_location_type.map(|lt| lt.bonus_description()).unwrap_or(""),
+            self.show_minimap,
         );
         if self.show_inventory {
             self.renderer.draw_inventory(
@@ -10878,6 +11079,18 @@ mod tests {
     }
 }
 
+fn parse_i32(map: &HashMap<String, String>, key: &str, default: i32) -> i32 {
+    map.get(key).and_then(|v| v.parse().ok()).unwrap_or(default)
+}
+
+fn parse_u32(map: &HashMap<String, String>, key: &str, default: u32) -> u32 {
+    map.get(key).and_then(|v| v.parse().ok()).unwrap_or(default)
+}
+
+fn parse_u64(map: &HashMap<String, String>, key: &str, default: u64) -> u64 {
+    map.get(key).and_then(|v| v.parse().ok()).unwrap_or(default)
+}
+
 pub fn init_game() -> Result<(), JsValue> {
     let win = window().ok_or("no window")?;
     let doc = win.document().ok_or("no document")?;
@@ -10950,6 +11163,7 @@ pub fn init_game() -> Result<(), JsValue> {
         inventory_inspect: None,
         show_spellbook: false,
         show_help: false,
+        show_minimap: true,
         item_appearance_order,
         identified_items: [false; ITEM_KIND_COUNT],
         settings,
@@ -11050,7 +11264,39 @@ pub fn init_game() -> Result<(), JsValue> {
         ship_player_y: 5,
         starmap_cursor: 0,
         current_location_type: None,
+        show_class_select: true,
+        class_selected: false,
     }));
+
+    // Load saved game if exists
+    if let Some(save_data) = GameState::load_game_data() {
+        let mut s = state.borrow_mut();
+        s.player.hp = parse_i32(&save_data, "hp", s.player.hp);
+        s.player.max_hp = parse_i32(&save_data, "max_hp", s.player.max_hp);
+        s.player.gold = parse_i32(&save_data, "gold", s.player.gold);
+        s.floor_num = parse_i32(&save_data, "floor", s.floor_num);
+        s.best_floor = parse_i32(&save_data, "best", s.best_floor);
+        s.player.spirit = parse_i32(&save_data, "spirit", s.player.spirit);
+        s.player.max_spirit = parse_i32(&save_data, "max_spirit", s.player.max_spirit);
+        // Ship
+        s.ship.hull = parse_i32(&save_data, "ship_hull", s.ship.hull);
+        s.ship.max_hull = parse_i32(&save_data, "ship_max_hull", s.ship.max_hull);
+        s.ship.fuel = parse_i32(&save_data, "ship_fuel", s.ship.fuel);
+        s.ship.max_fuel = parse_i32(&save_data, "ship_max_fuel", s.ship.max_fuel);
+        s.ship.shields = parse_i32(&save_data, "ship_shields", s.ship.shields);
+        s.ship.max_shields = parse_i32(&save_data, "ship_max_shields", s.ship.max_shields);
+        s.ship.weapon_power = parse_i32(&save_data, "ship_weapon", s.ship.weapon_power);
+        s.ship.engine_power = parse_i32(&save_data, "ship_engine", s.ship.engine_power);
+        s.ship.sensor_range = parse_i32(&save_data, "ship_sensor", s.ship.sensor_range);
+        s.ship.cargo_capacity = parse_i32(&save_data, "ship_cargo_cap", s.ship.cargo_capacity);
+        s.ship.cargo_used = parse_i32(&save_data, "ship_cargo_used", s.ship.cargo_used);
+        // Stats
+        s.total_kills = parse_u32(&save_data, "kills", s.total_kills);
+        s.total_runs = parse_u32(&save_data, "runs", s.total_runs);
+        s.seed = parse_u64(&save_data, "seed", s.seed);
+        s.message = "📂 Save data loaded!".to_string();
+        s.message_timer = 90;
+    }
 
     // Initial setup
     {
@@ -11224,6 +11470,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                 
                                 if s.ship.fuel >= fuel_cost {
                                     s.ship.fuel -= fuel_cost;
+                                    if let Some(ref audio) = s.audio { audio.sfx_jump(); }
                                     if hazard_dmg > 0 {
                                         s.ship.hull = (s.ship.hull - hazard_dmg).max(0);
                                     }
@@ -11242,6 +11489,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                         s.event_choice_cursor = 0;
                                         s.game_mode = GameMode::Event;
                                     }
+                                    s.save_game();
                                 } else {
                                     s.message = format!("Not enough fuel! Need {} fuel.", fuel_cost);
                                     s.message_timer = 90;
@@ -11262,6 +11510,11 @@ pub fn init_game() -> Result<(), JsValue> {
                             compute_fov(&mut s.level, px, py, FOV_RADIUS);
                             s.message = format!("Entering {} ({})...", current_name, current_loc_type.label());
                             s.message_timer = 90;
+                        }
+                        "s" | "S" => {
+                            s.game_mode = GameMode::ShipInterior;
+                            s.message = "Entering ship...".to_string();
+                            s.message_timer = 60;
                         }
                         "Escape" => {
                             // Could open menu or do nothing
@@ -11334,6 +11587,77 @@ pub fn init_game() -> Result<(), JsValue> {
                                 }
                             }
                         }
+                        "e" | "E" => {
+                            let px = s.ship_player_x;
+                            let py = s.ship_player_y;
+                            for (dx, dy) in [(0i32,1i32),(0,-1),(1,0),(-1,0)] {
+                                let nx = px + dx;
+                                let ny = py + dy;
+                                if nx >= 0 && ny >= 0 && nx < s.ship_layout.width && ny < s.ship_layout.height {
+                                    let idx = (ny * s.ship_layout.width + nx) as usize;
+                                    if idx < s.ship_layout.tiles.len() {
+                                        match &s.ship_layout.tiles[idx] {
+                                            ShipTile::Console(room) => {
+                                                match room {
+                                                    ShipRoom::Bridge => {
+                                                        s.game_mode = GameMode::Starmap;
+                                                        s.message = "Accessing navigation...".to_string();
+                                                        s.message_timer = 60;
+                                                    }
+                                                    ShipRoom::Medbay => {
+                                                        let heal = 10;
+                                                        s.player.hp = (s.player.hp + heal).min(s.player.max_hp);
+                                                        s.message = format!("Medbay: Healed {} HP", heal);
+                                                        s.message_timer = 60;
+                                                    }
+                                                    ShipRoom::EngineRoom => {
+                                                        let repair = 5;
+                                                        s.ship.hull = (s.ship.hull + repair).min(s.ship.max_hull);
+                                                        s.message = format!("Engineering: Repaired {} hull", repair);
+                                                        s.message_timer = 60;
+                                                    }
+                                                    ShipRoom::QuantumForge => {
+                                                        s.message = "Quantum Forge: Use during exploration to craft spells.".to_string();
+                                                        s.message_timer = 90;
+                                                    }
+                                                    ShipRoom::WeaponsBay => {
+                                                        s.ship.weapon_power += 1;
+                                                        s.message = format!("Weapons calibrated! Power: {}", s.ship.weapon_power);
+                                                        s.message_timer = 60;
+                                                    }
+                                                    ShipRoom::CargoBay => {
+                                                        s.message = format!("Cargo: {}/{} used", s.ship.cargo_used, s.ship.cargo_capacity);
+                                                        s.message_timer = 60;
+                                                    }
+                                                    _ => {
+                                                        s.message = "Nothing to interact with here.".to_string();
+                                                        s.message_timer = 60;
+                                                    }
+                                                }
+                                                break;
+                                            }
+                                            ShipTile::CrewStation(crew_idx) => {
+                                                if *crew_idx < s.crew.len() {
+                                                    let crew = &s.crew[*crew_idx];
+                                                    let dialogue = match crew.role {
+                                                        CrewRole::Pilot => "Course is set, Captain. Ready to jump.",
+                                                        CrewRole::Engineer => "Engines are holding steady. Hull integrity nominal.",
+                                                        CrewRole::ScienceOfficer => "Sensors detecting interesting signals nearby.",
+                                                        CrewRole::Medic => "Medical bay is stocked and ready.",
+                                                        CrewRole::Quartermaster => "Supplies are accounted for, Captain.",
+                                                        CrewRole::SecurityChief => "All secure. No threats detected.",
+                                                    };
+                                                    s.message = format!("{} ({}): \"{}\"", crew.name, crew.role.name(), dialogue);
+                                                    s.message_timer = 120;
+                                                }
+                                                break;
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         "m" | "M" => {
                             s.game_mode = GameMode::Starmap;
                             s.starmap_cursor = 0;
@@ -11365,9 +11689,10 @@ pub fn init_game() -> Result<(), JsValue> {
                                     }
                                 }
                                 "Enter" | " " => {
-                                    // Apply choice outcome (simplified for now)
                                     let choice = &ev.choices[s.event_choice_cursor];
-                                    s.message = format!("You chose: {}", choice.text);
+                                    let outcome = choice.outcome.clone();
+                                    let result = apply_event_outcome(&mut *s, &outcome);
+                                    s.message = result;
                                     s.message_timer = 120;
                                     s.current_event = None;
                                     s.event_choice_cursor = 0;
@@ -12618,6 +12943,7 @@ pub fn init_game() -> Result<(), JsValue> {
                             let (sx, sy) = s.tile_to_screen(door_x, door_y);
                             let gs = &mut *s;
                             gs.particles.spawn_dig(sx, sy, &mut gs.rng_state);
+                            if let Some(ref audio) = s.audio { audio.sfx_correct(); }
                             s.message = format!(
                                 "✓ Correct! {} = {}. The door unlocks!",
                                 hanzi, correct_meaning
@@ -12627,6 +12953,7 @@ pub fn init_game() -> Result<(), JsValue> {
                             let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
                             let gs = &mut *s;
                             gs.particles.spawn_damage(sx, sy, &mut gs.rng_state);
+                            if let Some(ref audio) = s.audio { audio.sfx_wrong(); }
                             s.message = format!(
                                 "✗ Wrong! {} = {}. The door shocks you! (-1 HP)",
                                 hanzi, correct_meaning
@@ -12685,6 +13012,7 @@ pub fn init_game() -> Result<(), JsValue> {
                             let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
                             let gs = &mut *s;
                             gs.particles.spawn_chest(sx, sy, &mut gs.rng_state);
+                            if let Some(ref audio) = s.audio { audio.sfx_correct(); }
                             s.message = format!(
                                 "✓ Curse averted! {} is tone {}. (+1 gold)",
                                 hanzi, correct_tone
@@ -12694,6 +13022,7 @@ pub fn init_game() -> Result<(), JsValue> {
                             let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
                             let gs = &mut *s;
                             gs.particles.spawn_drain(sx, sy, &mut gs.rng_state);
+                            if let Some(ref audio) = s.audio { audio.sfx_wrong(); }
                             s.message = format!(
                                 "✗ Cursed! {} is tone {}, not {}. (-2 gold)",
                                 hanzi, correct_tone, guess
@@ -13196,6 +13525,11 @@ pub fn init_game() -> Result<(), JsValue> {
                         if correct {
                             gs.run_correct_answers += 1;
                             gs.answer_streak += 1;
+                            // ResearchLab: double vocab XP
+                            if gs.current_location_type == Some(crate::world::LocationType::ResearchLab) {
+                                gs.srs.record(hanzi, true);
+                                gs.run_correct_answers += 1;
+                            }
                         } else {
                             gs.run_wrong_answers += 1;
                             gs.answer_streak = 0;
@@ -13977,6 +14311,12 @@ pub fn init_game() -> Result<(), JsValue> {
                 s.starmap_cursor = 0;
                 s.message = "Opening star map...".to_string();
                 s.message_timer = 60;
+                s.render();
+                return;
+            }
+            // Toggle minimap with 'n'
+            if key == "n" || key == "N" {
+                s.show_minimap = !s.show_minimap;
                 s.render();
                 return;
             }
