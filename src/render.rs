@@ -8977,7 +8977,6 @@ impl Renderer {
                         LocationType::OrbitalPlatform => ("#4488ff", None),
                         LocationType::MiningColony => ("#cc8844", None),
                         LocationType::ResearchLab => ("#ff88cc", None),
-                        _ => ("#aaaaaa", None),
                     }
                 };
                 
@@ -9079,12 +9078,6 @@ impl Renderer {
                         }
                         self.ctx.fill();
                     }
-                    _ => {
-                        // Default: simple circle
-                        self.ctx.begin_path();
-                        self.ctx.arc(sx, sy, 6.0, 0.0, std::f64::consts::TAU).ok();
-                        self.ctx.fill();
-                    }
                 }
                 
                 // Selection highlight
@@ -9121,7 +9114,6 @@ impl Renderer {
                         LocationType::OrbitalPlatform => "Platform",
                         LocationType::MiningColony => "Mining",
                         LocationType::ResearchLab => "Lab",
-                        _ => "Unknown",
                     };
                     self.ctx.set_font("9px monospace");
                     self.ctx.set_fill_style_str("#888888");

@@ -203,6 +203,7 @@ impl Companion {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[allow(dead_code)]
 pub enum GameMode {
     Starmap,
     ShipInterior,
