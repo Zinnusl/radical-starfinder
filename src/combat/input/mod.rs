@@ -1295,6 +1295,18 @@ pub fn execute_enemy_turn_action(battle: &mut TacticalBattle, unit_idx: usize) -
                 battle.log_message(msg);
             }
         }
+        AiAction::PushCrate {
+            crate_x,
+            crate_y,
+            dx,
+            dy,
+        } => {
+            battle.log_message(format!("{} shoves a cargo crate!", name));
+            let msgs = crate::combat::tick::push_boulder(battle, crate_x, crate_y, dx, dy);
+            for m in &msgs {
+                battle.log_message(m);
+            }
+        }
     }
 
     BattleEvent::None

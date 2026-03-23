@@ -22,6 +22,12 @@ pub enum AiAction {
         path: Vec<(i32, i32)>,
         action_idx: usize,
     },
+    PushCrate {
+        crate_x: i32,
+        crate_y: i32,
+        dx: i32,
+        dy: i32,
+    },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -478,6 +484,16 @@ pub fn choose_action(battle: &TacticalBattle, unit_idx: usize) -> AiAction {
     let hp_ratio = unit.hp as f32 / unit.max_hp as f32;
     let allies_near = count_allies_near(battle, unit_idx, 3);
 
+    // Tactical crate push — high priority if we can hit the player
+    if let Some((cx, cy, dx, dy)) = consider_crate_push(battle, unit_idx) {
+        return AiAction::PushCrate {
+            crate_x: cx,
+            crate_y: cy,
+            dx,
+            dy,
+        };
+    }
+
     let best_radical = score_and_pick_radical(battle, unit_idx, dist, hp_ratio, allies_near);
 
     match unit.ai {
@@ -670,6 +686,65 @@ pub fn path_toward(
             }
         }
 
+        // Avoid hazardous tiles
+        if let Some(tile) = battle.arena.tile(rx, ry) {
+            if tile == crate::combat::BattleTile::BlastMark {
+                score -= 25;
+            }
+            if tile == crate::combat::BattleTile::PlasmaPool {
+                score -= 60;
+            }
+            if tile == crate::combat::BattleTile::SteamVentActive {
+                score -= 35;
+            }
+            if tile == crate::combat::BattleTile::SteamVentInactive {
+                score -= 10;
+            }
+            if tile == crate::combat::BattleTile::ElectrifiedWire {
+                score -= 20;
+            }
+            if tile == crate::combat::BattleTile::WeakenedPlating {
+                score -= 15;
+            }
+            if tile == crate::combat::BattleTile::DamagedFloor {
+                score -= 40;
+            }
+            if tile == crate::combat::BattleTile::PowerDrain {
+                score -= 10;
+            }
+
+            // Prefer advantageous tiles
+            if tile == crate::combat::BattleTile::OilSlick {
+                score += 5;
+            }
+            if tile == crate::combat::BattleTile::HoloTrap {
+                score += 8;
+            }
+            if tile == crate::combat::BattleTile::ElevatedPlatform {
+                score += 12;
+            }
+            if tile == crate::combat::BattleTile::ChargingPad {
+                score += 3;
+            }
+        }
+
+        // Avoid being adjacent to GravityWell (pulls units closer each round)
+        for &(dx, dy) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+            let nx = rx + dx;
+            let ny = ry + dy;
+            if let Some(adj) = battle.arena.tile(nx, ny) {
+                if adj == crate::combat::BattleTile::GravityWell {
+                    let player = &battle.units[0];
+                    let player_dist_to_gw = (player.x - nx).abs() + (player.y - ny).abs();
+                    if player_dist_to_gw <= 2 {
+                        score += 15;
+                    } else {
+                        score -= 35;
+                    }
+                }
+            }
+        }
+
         if !close_in {
             let mut dist_to_allies = 0;
             for (i, other) in battle.units.iter().enumerate() {
@@ -736,6 +811,44 @@ pub fn path_away(
                 }
             }
         }
+
+        // Avoid hazardous tiles when retreating
+        if let Some(tile) = battle.arena.tile(rx, ry) {
+            if tile == crate::combat::BattleTile::BlastMark {
+                adj_d -= 3;
+            }
+            if tile == crate::combat::BattleTile::PlasmaPool {
+                adj_d -= 6;
+            }
+            if tile == crate::combat::BattleTile::SteamVentActive {
+                adj_d -= 4;
+            }
+            if tile == crate::combat::BattleTile::SteamVentInactive {
+                adj_d -= 1;
+            }
+            if tile == crate::combat::BattleTile::ElectrifiedWire {
+                adj_d -= 2;
+            }
+            if tile == crate::combat::BattleTile::DamagedFloor {
+                adj_d -= 4;
+            }
+            // Prefer elevated positions for defense
+            if tile == crate::combat::BattleTile::ElevatedPlatform {
+                adj_d += 2;
+            }
+        }
+
+        // Avoid being adjacent to GravityWell when retreating
+        for &(dx, dy) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+            let nx = rx + dx;
+            let ny = ry + dy;
+            if let Some(adj) = battle.arena.tile(nx, ny) {
+                if adj == crate::combat::BattleTile::GravityWell {
+                    adj_d -= 4;
+                }
+            }
+        }
+
         if adj_d > best_dist || (adj_d == best_dist && (rx, ry) < best_tile) {
             best_dist = adj_d;
             best_tile = (rx, ry);
@@ -747,6 +860,57 @@ pub fn path_away(
     }
 
     build_path(battle, unit.x, unit.y, best_tile.0, best_tile.1, movement)
+}
+
+/// Check if the enemy can push a crate toward the player for 3 damage.
+/// Returns Some((crate_x, crate_y, push_dx, push_dy)) if a viable push exists.
+pub fn consider_crate_push(
+    battle: &TacticalBattle,
+    unit_idx: usize,
+) -> Option<(i32, i32, i32, i32)> {
+    let unit = &battle.units[unit_idx];
+    let player = &battle.units[0];
+
+    let deltas: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+
+    for &(dx, dy) in &deltas {
+        let crate_x = unit.x + dx;
+        let crate_y = unit.y + dy;
+
+        // Is there a crate adjacent to us?
+        if battle.arena.tile(crate_x, crate_y) != Some(crate::combat::BattleTile::CargoCrate) {
+            continue;
+        }
+
+        // Would pushing it go toward the player?
+        let push_dest_x = crate_x + dx;
+        let push_dest_y = crate_y + dy;
+
+        // Ensure push destination is in bounds
+        if battle.arena.tile(push_dest_x, push_dest_y).is_none() {
+            continue;
+        }
+
+        // Direct hit: push the crate right onto the player
+        let dist_to_player =
+            (push_dest_x - player.x).abs() + (push_dest_y - player.y).abs();
+        if dist_to_player == 0 {
+            return Some((crate_x, crate_y, dx, dy));
+        }
+
+        // Check if push lands on a FuelCanister (explosion near player)
+        if battle.arena.tile(push_dest_x, push_dest_y)
+            == Some(crate::combat::BattleTile::FuelCanister)
+        {
+            let player_dist_to_explosion =
+                (push_dest_x - player.x).abs() + (push_dest_y - player.y).abs();
+            if player_dist_to_explosion <= 2 {
+                return Some((crate_x, crate_y, dx, dy));
+            }
+        }
+    }
+
+    None
 }
 
 /// Pack AI: move toward the nearest ally to group up before attacking.
