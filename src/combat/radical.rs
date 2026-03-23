@@ -364,10 +364,17 @@ pub fn apply_radical_action(
                 let py = battle.units[0].y;
                 let dx = (px - nx).signum();
                 let dy = (py - ny).signum();
+                let prev_nx = nx;
+                let prev_ny = ny;
                 if (px - nx).abs() > (py - ny).abs() {
                     nx += dx;
                 } else {
                     ny += dy;
+                }
+                if nx == px && ny == py {
+                    nx = prev_nx;
+                    ny = prev_ny;
+                    break;
                 }
             }
             battle.units[unit_idx].x = nx.clamp(0, battle.arena.width as i32 - 1);
@@ -413,10 +420,26 @@ pub fn apply_radical_action(
                 + (battle.units[unit_idx].y - battle.units[0].y).abs();
             let dmg = dist.min(3);
             let facing = battle.units[unit_idx].facing;
-            battle.units[0].x =
-                (battle.units[0].x + facing.dx() * 2).clamp(0, battle.arena.width as i32 - 1);
-            battle.units[0].y =
-                (battle.units[0].y + facing.dy() * 2).clamp(0, battle.arena.height as i32 - 1);
+            let fdx = facing.dx();
+            let fdy = facing.dy();
+            for _ in 0..2 {
+                let new_x = battle.units[0].x + fdx;
+                let new_y = battle.units[0].y + fdy;
+                if new_x < 0 || new_y < 0
+                    || new_x >= battle.arena.width as i32
+                    || new_y >= battle.arena.height as i32
+                {
+                    break;
+                }
+                if !battle.arena.tile(new_x, new_y).map(|t| t.is_walkable()).unwrap_or(false) {
+                    break;
+                }
+                if battle.unit_at(new_x, new_y).is_some() {
+                    break;
+                }
+                battle.units[0].x = new_x;
+                battle.units[0].y = new_y;
+            }
             let ex = battle.units[unit_idx].x;
             let ey = battle.units[unit_idx].y;
             let px = battle.units[0].x;
@@ -608,15 +631,19 @@ pub fn apply_radical_action(
             for _ in 0..3 {
                 let px = battle.units[0].x;
                 let py = battle.units[0].y;
-                if nx == px && ny == py {
-                    break;
-                }
                 let dx = (px - nx).signum();
                 let dy = (py - ny).signum();
+                let prev_nx = nx;
+                let prev_ny = ny;
                 if (px - nx).abs() > (py - ny).abs() {
                     nx += dx;
                 } else {
                     ny += dy;
+                }
+                if nx == px && ny == py {
+                    nx = prev_nx;
+                    ny = prev_ny;
+                    break;
                 }
                 moved += 1;
             }
@@ -645,10 +672,26 @@ pub fn apply_radical_action(
         }
         RadicalAction::CrushingWheels => {
             let facing = battle.units[unit_idx].facing;
-            battle.units[0].x =
-                (battle.units[0].x + facing.dx() * 3).clamp(0, battle.arena.width as i32 - 1);
-            battle.units[0].y =
-                (battle.units[0].y + facing.dy() * 3).clamp(0, battle.arena.height as i32 - 1);
+            let fdx = facing.dx();
+            let fdy = facing.dy();
+            for _ in 0..3 {
+                let new_x = battle.units[0].x + fdx;
+                let new_y = battle.units[0].y + fdy;
+                if new_x < 0 || new_y < 0
+                    || new_x >= battle.arena.width as i32
+                    || new_y >= battle.arena.height as i32
+                {
+                    break;
+                }
+                if !battle.arena.tile(new_x, new_y).map(|t| t.is_walkable()).unwrap_or(false) {
+                    break;
+                }
+                if battle.unit_at(new_x, new_y).is_some() {
+                    break;
+                }
+                battle.units[0].x = new_x;
+                battle.units[0].y = new_y;
+            }
             let ex = battle.units[unit_idx].x;
             let ey = battle.units[unit_idx].y;
             let px = battle.units[0].x;
@@ -691,10 +734,14 @@ pub fn apply_radical_action(
                 let ay = battle.units[ally_idx].y;
                 let dx = (px - ax).signum();
                 let dy = (py - ay).signum();
-                if (px - ax).abs() > (py - ay).abs() {
-                    battle.units[ally_idx].x = (ax + dx).clamp(0, battle.arena.width as i32 - 1);
+                let (new_x, new_y) = if (px - ax).abs() > (py - ay).abs() {
+                    ((ax + dx).clamp(0, battle.arena.width as i32 - 1), ay)
                 } else {
-                    battle.units[ally_idx].y = (ay + dy).clamp(0, battle.arena.height as i32 - 1);
+                    (ax, (ay + dy).clamp(0, battle.arena.height as i32 - 1))
+                };
+                if new_x != px || new_y != py {
+                    battle.units[ally_idx].x = new_x;
+                    battle.units[ally_idx].y = new_y;
                 }
                 format!("{} — Issues an imperial command!", action.name())
             } else {
@@ -888,15 +935,19 @@ pub fn apply_radical_action(
             let mut nx = battle.units[unit_idx].x;
             let mut ny = battle.units[unit_idx].y;
             for _ in 0..2 {
-                if nx == px && ny == py {
-                    break;
-                }
                 let dx = (px - nx).signum();
                 let dy = (py - ny).signum();
+                let prev_nx = nx;
+                let prev_ny = ny;
                 if (px - nx).abs() >= (py - ny).abs() {
                     nx += dx;
                 } else {
                     ny += dy;
+                }
+                if nx == px && ny == py {
+                    nx = prev_nx;
+                    ny = prev_ny;
+                    break;
                 }
             }
             battle.units[unit_idx].x = nx.clamp(0, battle.arena.width as i32 - 1);
