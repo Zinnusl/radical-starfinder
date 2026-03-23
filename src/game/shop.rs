@@ -1,7 +1,7 @@
 //! Shop and crafting logic.
 
 use super::*;
-use crate::player::{Item, ItemState, EQUIPMENT_POOL};
+use crate::player::{ItemState, EQUIPMENT_POOL};
 use crate::radical;
 
 #[derive(Clone, Debug)]

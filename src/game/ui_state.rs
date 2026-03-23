@@ -1,7 +1,6 @@
 //! UI state management — menus, overlays, settings.
 
 use super::*;
-use crate::player::{self, ItemState};
 
 impl super::GameState {
     pub(crate) fn trigger_shake(&mut self, frames: u8) {

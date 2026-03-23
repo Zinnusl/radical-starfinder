@@ -1,7 +1,6 @@
 //! Main game state and loop.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::collections::HashSet;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
@@ -15,7 +14,7 @@ use crate::combat;
 use crate::world::{compute_fov, TerminalKind, AltarKind, DungeonLevel, RoomModifier, SecuritySeal, SealKind, SpecialRoomKind, Tile};
 use crate::world::starmap::{SectorMap, generate_sector, jump_cost};
 use crate::world::ship::{ShipLayout, ShipRoom, ShipTile, generate_ship_layout};
-use crate::world::events::{ALL_EVENTS, EventOutcome};
+use crate::world::events::ALL_EVENTS;
 use crate::enemy::{BossKind, Enemy, RadicalAction};
 use crate::particle::ParticleSystem;
 use crate::player::{
@@ -41,7 +40,7 @@ mod shop;
 mod space_combat;
 mod ui_state;
 
-pub use events::*;
+pub(crate) use events::*;
 pub use shop::*;
 pub use space_combat::*;
 use serialization::{parse_i32, parse_u32, parse_u64};

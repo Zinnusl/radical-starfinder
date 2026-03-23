@@ -648,14 +648,14 @@ pub(super) fn tile_sprite_key(tile: Tile, location_label: &str) -> &'static str 
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct TilePalette {
-    pub(super) fill: &'static str,
-    pub(super) accent: Option<&'static str>,
-    pub(super) glyph: Option<&'static str>,
-    pub(super) glyph_color: &'static str,
+pub(crate) struct TilePalette {
+    pub(crate) fill: &'static str,
+    pub(crate) accent: Option<&'static str>,
+    pub(crate) glyph: Option<&'static str>,
+    pub(crate) glyph_color: &'static str,
 }
 
-pub(super) fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
+pub(crate) fn tile_palette(tile: Tile, visible: bool) -> TilePalette {
     if visible {
         match tile {
             Tile::NavBeacon | Tile::SpecialRoom(_) | Tile::SalvageCrate => TilePalette {
