@@ -298,6 +298,66 @@ impl SpriteCache {
             "item_phoenix_plume",
             "assets/sprites/items/phoenix_plume.png",
         );
+        register(
+            &mut sprites,
+            "item_mirror_shard",
+            "assets/sprites/items/mirror_shard.png",
+        );
+        register(
+            &mut sprites,
+            "item_frost_vial",
+            "assets/sprites/items/frost_vial.png",
+        );
+        register(
+            &mut sprites,
+            "item_shadow_cloak",
+            "assets/sprites/items/shadow_cloak.png",
+        );
+        register(
+            &mut sprites,
+            "item_dragon_scale",
+            "assets/sprites/items/dragon_scale.png",
+        );
+        register(
+            &mut sprites,
+            "item_bamboo_flute",
+            "assets/sprites/items/bamboo_flute.png",
+        );
+        register(
+            &mut sprites,
+            "item_jade_compass",
+            "assets/sprites/items/jade_compass.png",
+        );
+        register(
+            &mut sprites,
+            "item_silk_rope",
+            "assets/sprites/items/silk_rope.png",
+        );
+        register(
+            &mut sprites,
+            "item_lotus_elixir",
+            "assets/sprites/items/lotus_elixir.png",
+        );
+        register(
+            &mut sprites,
+            "item_thunder_drum",
+            "assets/sprites/items/thunder_drum.png",
+        );
+        register(
+            &mut sprites,
+            "item_cinnabar_ink",
+            "assets/sprites/items/cinnabar_ink.png",
+        );
+        register(
+            &mut sprites,
+            "item_ancestor_token",
+            "assets/sprites/items/ancestor_token.png",
+        );
+        register(
+            &mut sprites,
+            "item_wind_fan",
+            "assets/sprites/items/wind_fan.png",
+        );
 
         register(
             &mut sprites,

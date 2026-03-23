@@ -86,6 +86,115 @@ impl Renderer {
         false
     }
 
+    /// Draw a sprite as a seamless tiling texture for arena-style grids,
+    /// using grid coordinates to offset into the texture.
+    fn draw_tiling_sprite_key(
+        &self,
+        key: &str,
+        gx: usize,
+        gy: usize,
+        dest_x: f64,
+        dest_y: f64,
+        cell_size: f64,
+    ) -> bool {
+        if self.sprites.is_loaded(key) {
+            if let Some(img) = self.sprites.get(key) {
+                self.draw_tiling_sprite_sized(img, gx as i32, gy as i32, dest_x, dest_y, cell_size);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Draw a sprite as a seamless tiling texture, offset by the tile's grid
+    /// position so adjacent tiles show adjacent portions of the texture.
+    fn draw_tiling_sprite(
+        &self,
+        img: &web_sys::HtmlImageElement,
+        tx: i32,
+        ty: i32,
+        dest_x: f64,
+        dest_y: f64,
+    ) {
+        self.draw_tiling_sprite_sized(img, tx, ty, dest_x, dest_y, TILE_SIZE);
+    }
+
+    /// Draw a sprite as a seamless tiling texture with configurable cell size.
+    fn draw_tiling_sprite_sized(
+        &self,
+        img: &web_sys::HtmlImageElement,
+        tx: i32,
+        ty: i32,
+        dest_x: f64,
+        dest_y: f64,
+        cell_size: f64,
+    ) {
+        let iw = img.natural_width() as f64;
+        let ih = img.natural_height() as f64;
+        if iw <= 0.0 || ih <= 0.0 {
+            return;
+        }
+        let src_x = ((tx as f64 * cell_size) % iw + iw) % iw;
+        let src_y = ((ty as f64 * cell_size) % ih + ih) % ih;
+        let fit_w = (iw - src_x).min(cell_size);
+        let fit_h = (ih - src_y).min(cell_size);
+
+        let _ = self
+            .ctx
+            .draw_image_with_html_image_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+                img, src_x, src_y, fit_w, fit_h, dest_x, dest_y, fit_w, fit_h,
+            );
+        if fit_w < cell_size {
+            let rem = cell_size - fit_w;
+            let _ = self
+                .ctx
+                .draw_image_with_html_image_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+                    img,
+                    0.0,
+                    src_y,
+                    rem,
+                    fit_h,
+                    dest_x + fit_w,
+                    dest_y,
+                    rem,
+                    fit_h,
+                );
+        }
+        if fit_h < cell_size {
+            let rem = cell_size - fit_h;
+            let _ = self
+                .ctx
+                .draw_image_with_html_image_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+                    img,
+                    src_x,
+                    0.0,
+                    fit_w,
+                    rem,
+                    dest_x,
+                    dest_y + fit_h,
+                    fit_w,
+                    rem,
+                );
+        }
+        if fit_w < cell_size && fit_h < cell_size {
+            let rem_w = cell_size - fit_w;
+            let rem_h = cell_size - fit_h;
+            let _ = self
+                .ctx
+                .draw_image_with_html_image_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+                    img,
+                    0.0,
+                    0.0,
+                    rem_w,
+                    rem_h,
+                    dest_x + fit_w,
+                    dest_y + fit_h,
+                    rem_w,
+                    rem_h,
+                );
+        }
+    }
+
     /// Render the full game frame.
     pub fn draw(
         &self,
@@ -181,11 +290,15 @@ impl Renderer {
                         if !visible {
                             self.ctx.set_global_alpha(0.4);
                         }
-                        self.ctx
-                            .draw_image_with_html_image_element_and_dw_and_dh(
-                                img, screen_x, screen_y, TILE_SIZE, TILE_SIZE,
-                            )
-                            .ok();
+                        if should_tile_sprite(tile) {
+                            self.draw_tiling_sprite(img, tx, ty, screen_x, screen_y);
+                        } else {
+                            self.ctx
+                                .draw_image_with_html_image_element_and_dw_and_dh(
+                                    img, screen_x, screen_y, TILE_SIZE, TILE_SIZE,
+                                )
+                                .ok();
+                        }
                         if !visible {
                             self.ctx.set_global_alpha(1.0);
                         }
@@ -194,8 +307,31 @@ impl Renderer {
                 }
 
                 if visible && !tile_sprite_drawn {
-                    self.draw_tile_surface(tile, palette, tx, ty, screen_x, screen_y, anim_t);
+                    self.draw_tile_surface(level, tile, palette, tx, ty, screen_x, screen_y, anim_t);
                 }
+            }
+        }
+
+        // (Seam blending pass removed — tiling sprites now flow continuously)
+
+        // Autotile border pass
+        for ty in start_ty..end_ty {
+            for tx in start_tx..end_tx {
+                let idx = level.idx(tx, ty);
+                if !level.visible[idx] && !level.revealed[idx] {
+                    continue;
+                }
+                let tile = level.tiles[idx];
+                let screen_x = tx as f64 * TILE_SIZE - cam_x;
+                let screen_y = ty as f64 * TILE_SIZE - cam_y;
+                let alpha = if level.visible[idx] { 1.0 } else { 0.4 };
+                self.ctx.set_global_alpha(alpha);
+                if is_wall_tile(tile) {
+                    self.draw_wall_borders(level, tx, ty, screen_x, screen_y);
+                } else if tile.is_walkable() {
+                    self.draw_floor_borders(level, tx, ty, screen_x, screen_y);
+                }
+                self.ctx.set_global_alpha(1.0);
             }
         }
 
@@ -3341,6 +3477,7 @@ impl Renderer {
 
     fn draw_tile_surface(
         &self,
+        level: &DungeonLevel,
         tile: Tile,
         palette: TilePalette,
         tx: i32,
@@ -3357,24 +3494,46 @@ impl Renderer {
                 ("rgba(255,255,255,0.06)", "rgba(0,0,0,0.24)")
             };
 
-        self.ctx.set_fill_style_str(highlight);
-        self.ctx
-            .fill_rect(screen_x + 0.5, screen_y + 0.5, TILE_SIZE - 1.0, 1.0);
-        self.ctx
-            .fill_rect(screen_x + 0.5, screen_y + 1.5, 1.0, TILE_SIZE - 2.0);
-        self.ctx.set_fill_style_str(shadow);
-        self.ctx.fill_rect(
-            screen_x + TILE_SIZE - 1.5,
-            screen_y + 1.5,
-            1.0,
-            TILE_SIZE - 2.0,
-        );
-        self.ctx.fill_rect(
-            screen_x + 1.5,
-            screen_y + TILE_SIZE - 1.5,
-            TILE_SIZE - 2.0,
-            1.0,
-        );
+        // Only draw bevel edges toward tiles that don't visually connect
+        let n_top = !level.in_bounds(tx, ty - 1)
+            || !tiles_connect(tile, level.tiles[level.idx(tx, ty - 1)]);
+        let n_right = !level.in_bounds(tx + 1, ty)
+            || !tiles_connect(tile, level.tiles[level.idx(tx + 1, ty)]);
+        let n_bottom = !level.in_bounds(tx, ty + 1)
+            || !tiles_connect(tile, level.tiles[level.idx(tx, ty + 1)]);
+        let n_left = !level.in_bounds(tx - 1, ty)
+            || !tiles_connect(tile, level.tiles[level.idx(tx - 1, ty)]);
+
+        if n_top || n_left {
+            self.ctx.set_fill_style_str(highlight);
+            if n_top {
+                self.ctx
+                    .fill_rect(screen_x + 0.5, screen_y + 0.5, TILE_SIZE - 1.0, 1.0);
+            }
+            if n_left {
+                self.ctx
+                    .fill_rect(screen_x + 0.5, screen_y + 1.5, 1.0, TILE_SIZE - 2.0);
+            }
+        }
+        if n_right || n_bottom {
+            self.ctx.set_fill_style_str(shadow);
+            if n_right {
+                self.ctx.fill_rect(
+                    screen_x + TILE_SIZE - 1.5,
+                    screen_y + 1.5,
+                    1.0,
+                    TILE_SIZE - 2.0,
+                );
+            }
+            if n_bottom {
+                self.ctx.fill_rect(
+                    screen_x + 1.5,
+                    screen_y + TILE_SIZE - 1.5,
+                    TILE_SIZE - 2.0,
+                    1.0,
+                );
+            }
+        }
 
         match tile {
             Tile::NavBeacon | Tile::SpecialRoom(_) | Tile::SalvageCrate
@@ -4339,7 +4498,7 @@ impl Renderer {
                     BattleTile::ElevatedPlatform => "arena_broken_ground",
                 };
 
-                if !self.draw_sprite_icon(sprite_key, sx, sy, cell) {
+                if !self.draw_tiling_sprite_key(sprite_key, gx, gy, sx, sy, cell) {
                     let fill = match tile {
                         BattleTile::MetalFloor => "#3a3458",
                         BattleTile::CoverBarrier => "#1a1428",
@@ -7791,6 +7950,159 @@ impl Renderer {
             }
         }
     }
+
+    fn draw_wall_borders(&self, level: &DungeonLevel, tx: i32, ty: i32, sx: f64, sy: f64) {
+        let t = TILE_SIZE;
+        let neighbors = [
+            (tx, ty - 1), // north
+            (tx + 1, ty), // east
+            (tx, ty + 1), // south
+            (tx - 1, ty), // west
+        ];
+
+        for (i, &(nx, ny)) in neighbors.iter().enumerate() {
+            let is_wall_neighbor = if level.in_bounds(nx, ny) {
+                is_wall_tile(level.tiles[level.idx(nx, ny)])
+            } else {
+                true
+            };
+
+            if !is_wall_neighbor {
+                // Wall edge facing open space — subtle highlight line
+                self.ctx.set_stroke_style_str("rgba(60,75,100,0.3)");
+                self.ctx.set_line_width(1.0);
+                self.ctx.begin_path();
+                match i {
+                    0 => { self.ctx.move_to(sx, sy + 0.5); self.ctx.line_to(sx + t, sy + 0.5); }
+                    1 => { self.ctx.move_to(sx + t - 0.5, sy); self.ctx.line_to(sx + t - 0.5, sy + t); }
+                    2 => { self.ctx.move_to(sx, sy + t - 0.5); self.ctx.line_to(sx + t, sy + t - 0.5); }
+                    3 => { self.ctx.move_to(sx + 0.5, sy); self.ctx.line_to(sx + 0.5, sy + t); }
+                    _ => {}
+                }
+                self.ctx.stroke();
+
+                // Shadow cast onto the floor side
+                self.ctx.set_fill_style_str("rgba(0,0,0,0.18)");
+                match i {
+                    0 => self.ctx.fill_rect(sx, sy - 2.0, t, 2.0),
+                    1 => self.ctx.fill_rect(sx + t, sy, 2.0, t),
+                    2 => self.ctx.fill_rect(sx, sy + t, t, 2.0),
+                    3 => self.ctx.fill_rect(sx - 2.0, sy, 2.0, t),
+                    _ => {}
+                }
+            }
+            // Wall-to-wall: no seam line — adjacent walls form a continuous surface
+        }
+
+        // Diagonal corners — inner corner bevels
+        let diagonals: [(i32, i32, usize, usize); 4] = [
+            (tx - 1, ty - 1, 3, 0), // NW
+            (tx + 1, ty - 1, 1, 0), // NE
+            (tx + 1, ty + 1, 1, 2), // SE
+            (tx - 1, ty + 1, 3, 2), // SW
+        ];
+
+        for &(dx, dy, side_a, side_b) in &diagonals {
+            let a_wall = if level.in_bounds(neighbors[side_a].0, neighbors[side_a].1) {
+                is_wall_tile(level.tiles[level.idx(neighbors[side_a].0, neighbors[side_a].1)])
+            } else {
+                true
+            };
+
+            let b_wall = if level.in_bounds(neighbors[side_b].0, neighbors[side_b].1) {
+                is_wall_tile(level.tiles[level.idx(neighbors[side_b].0, neighbors[side_b].1)])
+            } else {
+                true
+            };
+
+            let diag_floor = if level.in_bounds(dx, dy) {
+                !is_wall_tile(level.tiles[level.idx(dx, dy)])
+            } else {
+                false
+            };
+
+            if a_wall && b_wall && diag_floor {
+                self.ctx.set_fill_style_str("rgba(0,0,0,0.25)");
+                let cs = 3.0;
+                match (side_a, side_b) {
+                    (3, 0) => self.ctx.fill_rect(sx, sy, cs, cs),
+                    (1, 0) => self.ctx.fill_rect(sx + t - cs, sy, cs, cs),
+                    (1, 2) => self.ctx.fill_rect(sx + t - cs, sy + t - cs, cs, cs),
+                    (3, 2) => self.ctx.fill_rect(sx, sy + t - cs, cs, cs),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    fn draw_floor_borders(&self, level: &DungeonLevel, tx: i32, ty: i32, sx: f64, sy: f64) {
+        let t = TILE_SIZE;
+        let neighbors = [(tx, ty - 1), (tx + 1, ty), (tx, ty + 1), (tx - 1, ty)];
+
+        for (i, &(nx, ny)) in neighbors.iter().enumerate() {
+            let neighbor_is_wall = if level.in_bounds(nx, ny) {
+                is_wall_tile(level.tiles[level.idx(nx, ny)])
+            } else {
+                true
+            };
+
+            if neighbor_is_wall {
+                let shadow_depth = 2.0;
+                self.ctx.set_fill_style_str("rgba(0,0,0,0.12)");
+                match i {
+                    0 => self.ctx.fill_rect(sx, sy, t, shadow_depth),
+                    1 => self.ctx.fill_rect(sx + t - shadow_depth, sy, shadow_depth, t),
+                    2 => self.ctx.fill_rect(sx, sy + t - shadow_depth, t, shadow_depth),
+                    3 => self.ctx.fill_rect(sx, sy, shadow_depth, t),
+                    _ => {}
+                }
+            }
+            // Floor-to-floor: no edge lines — adjacent floors form a continuous surface
+        }
+    }
+}
+
+fn is_wall_tile(tile: Tile) -> bool {
+    matches!(
+        tile,
+        Tile::Bulkhead
+            | Tile::DamagedBulkhead
+            | Tile::WeakBulkhead
+            | Tile::CargoPipes
+            | Tile::CrystalPanel
+            | Tile::FrequencyWall
+    )
+}
+
+/// Visual grouping for tiles — tiles in the same group should blend seamlessly.
+fn tile_visual_group(tile: Tile) -> u8 {
+    match tile {
+        // Wall group
+        Tile::Bulkhead | Tile::DamagedBulkhead | Tile::WeakBulkhead
+        | Tile::CargoPipes | Tile::CrystalPanel | Tile::FrequencyWall => 0,
+        // Basic floor group
+        Tile::MetalFloor | Tile::Hallway | Tile::CorruptedFloor
+        | Tile::FrozenDeck | Tile::Catwalk | Tile::PressureSensor => 1,
+        // Water/coolant group
+        Tile::CoolantPool | Tile::VacuumBreach => 2,
+        // Coolant/oil group
+        Tile::Coolant => 3,
+        // Everything else gets a unique group (won't connect)
+        _ => 255,
+    }
+}
+
+/// Returns true if two tiles should visually connect (no seam between them).
+fn tiles_connect(a: Tile, b: Tile) -> bool {
+    let ga = tile_visual_group(a);
+    let gb = tile_visual_group(b);
+    ga == gb && ga != 255
+}
+
+/// Returns true if this tile type should use tiling (offset) sprite rendering
+/// instead of the default "draw full sprite scaled to tile size" approach.
+fn should_tile_sprite(tile: Tile) -> bool {
+    tile_visual_group(tile) != 255
 }
 
 fn tile_sprite_key(tile: Tile, location_label: &str) -> &'static str {
