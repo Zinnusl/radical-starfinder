@@ -512,6 +512,12 @@ pub enum BattleTile {
     ShieldZone,
     /// Elevated platform. +1 damage attacking downhill, -1 damage received from below.
     ElevatedPlatform,
+    /// Gravity well. Pulls nearby units 1 tile closer each round.
+    GravityWell,
+    /// Active steam vent. Blocks sight, deals 1 damage/turn. Walkable.
+    SteamVentActive,
+    /// Inactive steam vent. Will activate soon.
+    SteamVentInactive,
 }
 
 impl BattleTile {
@@ -523,13 +529,14 @@ impl BattleTile {
                 | BattleTile::CargoCrate
                 | BattleTile::FuelCanister
                 | BattleTile::BreachedFloor
+                | BattleTile::GravityWell
         )
     }
 
     pub fn blocks_los(self) -> bool {
         matches!(
             self,
-            BattleTile::CoverBarrier | BattleTile::VentSteam | BattleTile::PipeTangle
+            BattleTile::CoverBarrier | BattleTile::VentSteam | BattleTile::PipeTangle | BattleTile::SteamVentActive
         )
     }
 
@@ -580,6 +587,9 @@ impl BattleTile {
             BattleTile::Lubricant => "Lubricant. Slippery (slide 1 extra tile). Flammable!",
             BattleTile::ShieldZone => "Shield zone. Heals units at start of turn.",
             BattleTile::ElevatedPlatform => "Elevated platform. +1 damage attacking down, -1 damage from below.",
+            BattleTile::GravityWell => "Gravity well. Pulls nearby units 1 tile closer each round.",
+            BattleTile::SteamVentActive => "Active steam vent. Blocks sight, 1 damage/turn.",
+            BattleTile::SteamVentInactive => "Inactive steam vent. Will activate soon.",
         }
     }
 
@@ -617,6 +627,8 @@ impl BattleTile {
             BattleTile::Lubricant => "Lubricant",
             BattleTile::ShieldZone => "Shield Zone",
             BattleTile::ElevatedPlatform => "Elevated Platform",
+            BattleTile::GravityWell => "Gravity Well",
+            BattleTile::SteamVentActive | BattleTile::SteamVentInactive => "Steam Vent",
         }
     }
 
@@ -643,6 +655,9 @@ impl BattleTile {
             BattleTile::Lubricant => Some("Slippery + Flammable"),
             BattleTile::ShieldZone => Some("Heals at start of turn"),
             BattleTile::ElevatedPlatform => Some("+1 dmg down, -1 dmg up"),
+            BattleTile::GravityWell => Some("Pulls units within 2 tiles each round"),
+            BattleTile::SteamVentActive => Some("1 dmg/turn, blocks LOS"),
+            BattleTile::SteamVentInactive => Some("Toggles every 2 rounds"),
             _ => None,
         }
     }

@@ -472,6 +472,18 @@ pub fn apply_scorched_damage(battle: &mut TacticalBattle) -> Vec<String> {
             };
             messages.push(format!("{} sears in plasma! (-{} HP)", name, actual));
         }
+        if tile == Some(BattleTile::SteamVentActive) {
+            let actual = deal_damage(battle, i, 1);
+            let name = if battle.units[i].is_player() {
+                "You".to_string()
+            } else {
+                battle.units[i].hanzi.to_string()
+            };
+            messages.push(format!(
+                "♨ {} scalded by steam vent! (-{} HP)",
+                name, actual
+            ));
+        }
         // SpiritDrain: drains spirit from player standing on it
         if tile == Some(BattleTile::PowerDrain) && battle.units[i].is_player() {
             battle.pending_spirit_delta -= 3;
@@ -678,6 +690,38 @@ pub fn tick_terrain(battle: &mut TacticalBattle) {
         for (x, y) in ignitions {
             battle.arena.set_tile(x, y, BattleTile::BlastMark);
             battle.log_message(format!("🔥 Fire spreads to ({},{})!", x, y));
+            if let Some(uid) = battle.unit_at(x, y) {
+                battle.units[uid]
+                    .statuses
+                    .push(StatusInstance::new(StatusKind::Burn { damage: 1 }, 2));
+            }
+        }
+    }
+
+    // ── 1b. OilSlick Ignition ──────────────────────────────────────────────
+    {
+        let mut oil_ignitions = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                if battle.arena.tile(x, y) == Some(BattleTile::OilSlick) {
+                    for &(dx, dy) in &DELTAS {
+                        let nx = x + dx;
+                        let ny = y + dy;
+                        if battle.arena.tile(nx, ny) == Some(BattleTile::BlastMark) {
+                            if let Some(idx) = battle.arena.idx(x, y) {
+                                if terrain_roll(tick, idx, 30) {
+                                    oil_ignitions.push((x, y));
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        for (x, y) in oil_ignitions {
+            battle.arena.set_tile(x, y, BattleTile::BlastMark);
+            battle.log_message(format!("🔥🛢 Oil slick ignites at ({},{})!", x, y));
             if let Some(uid) = battle.unit_at(x, y) {
                 battle.units[uid]
                     .statuses
@@ -946,6 +990,31 @@ pub fn tick_terrain(battle: &mut TacticalBattle) {
         for (x, y) in filled {
             battle.arena.set_tile(x, y, BattleTile::CoolantPool);
             battle.log_message(format!("💧 Coolant fills the breach at ({},{})!", x, y));
+        }
+    }
+
+    // ── 13. Steam Vent Toggling ───────────────────────────────────────────
+    if tick % 2 == 0 {
+        let mut toggled_active = false;
+        let mut toggled_inactive = false;
+        for i in 0..battle.arena.tiles.len() {
+            match battle.arena.tiles[i] {
+                BattleTile::SteamVentActive => {
+                    battle.arena.tiles[i] = BattleTile::SteamVentInactive;
+                    toggled_inactive = true;
+                }
+                BattleTile::SteamVentInactive => {
+                    battle.arena.tiles[i] = BattleTile::SteamVentActive;
+                    toggled_active = true;
+                }
+                _ => {}
+            }
+        }
+        if toggled_active {
+            battle.log_message("♨ Steam vents activate!");
+        }
+        if toggled_inactive {
+            battle.log_message("♨ Steam vents deactivate!");
         }
     }
 

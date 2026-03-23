@@ -343,6 +343,16 @@ fn advance_and_set_phase(battle: &mut TacticalBattle) -> BattleEvent {
             battle.log_message(msg);
         }
 
+        let conv_crate_msgs = apply_conveyor_crates(battle);
+        for msg in &conv_crate_msgs {
+            battle.log_message(msg);
+        }
+
+        let grav_msgs = apply_gravity_wells(battle);
+        for msg in &grav_msgs {
+            battle.log_message(msg);
+        }
+
         if battle.weather == Weather::CoolantLeak {
             spread_rain_water(&mut battle.arena);
         }
@@ -646,6 +656,44 @@ fn apply_flow_water(battle: &mut TacticalBattle) -> Vec<String> {
     messages
 }
 
+fn apply_conveyor_crates(battle: &mut TacticalBattle) -> Vec<String> {
+    let mut messages = Vec::new();
+    let w = battle.arena.width as i32;
+    let h = battle.arena.height as i32;
+
+    // Find CargoCrates adjacent to conveyors that push into them
+    let mut crate_pushes: Vec<(i32, i32, i32, i32)> = Vec::new();
+    for y in 0..h {
+        for x in 0..w {
+            let (dx, dy) = match battle.arena.tile(x, y) {
+                Some(BattleTile::ConveyorN) => (0, -1),
+                Some(BattleTile::ConveyorS) => (0, 1),
+                Some(BattleTile::ConveyorE) => (1, 0),
+                Some(BattleTile::ConveyorW) => (-1, 0),
+                _ => continue,
+            };
+            let target_x = x + dx;
+            let target_y = y + dy;
+            if battle.arena.tile(target_x, target_y) == Some(BattleTile::CargoCrate) {
+                if !crate_pushes.iter().any(|&(cx, cy, _, _)| cx == target_x && cy == target_y) {
+                    crate_pushes.push((target_x, target_y, dx, dy));
+                }
+            }
+        }
+    }
+
+    for (cx, cy, dx, dy) in crate_pushes {
+        if battle.arena.tile(cx, cy) != Some(BattleTile::CargoCrate) {
+            continue;
+        }
+        messages.push("⚙ Conveyor pushes a cargo crate!".to_string());
+        let push_msgs = push_boulder(battle, cx, cy, dx, dy);
+        messages.extend(push_msgs);
+    }
+
+    messages
+}
+
 pub fn push_boulder(
     battle: &mut TacticalBattle,
     bx: i32,
@@ -653,7 +701,22 @@ pub fn push_boulder(
     dx: i32,
     dy: i32,
 ) -> Vec<String> {
+    push_boulder_recursive(battle, bx, by, dx, dy, 0)
+}
+
+fn push_boulder_recursive(
+    battle: &mut TacticalBattle,
+    bx: i32,
+    by: i32,
+    dx: i32,
+    dy: i32,
+    depth: u32,
+) -> Vec<String> {
     let mut messages = Vec::new();
+    if depth > 3 {
+        messages.push("The chain of crates is too long to push!".to_string());
+        return messages;
+    }
     let src_idx = match battle.arena.idx(bx, by) {
         Some(i) => i,
         None => return messages,
@@ -669,6 +732,35 @@ pub fn push_boulder(
         None => return messages,
     };
 
+    // FuelCanister interaction: crate pushed into canister triggers explosion
+    if battle.arena.tiles[dest_idx] == BattleTile::FuelCanister {
+        battle.arena.tiles[src_idx] = BattleTile::MetalFloor;
+        messages.push("📦💥 Cargo crate slams into a fuel canister!".to_string());
+        let explosion_msgs = crate::combat::terrain::explode_barrel(battle, dest_x, dest_y);
+        messages.extend(explosion_msgs);
+        return messages;
+    }
+
+    // Chain-push: crate pushed into another crate pushes that crate first
+    if battle.arena.tiles[dest_idx] == BattleTile::CargoCrate {
+        let chain_msgs = push_boulder_recursive(battle, dest_x, dest_y, dx, dy, depth + 1);
+        messages.extend(chain_msgs);
+        // If the destination crate didn't move, we can't push either
+        if battle.arena.tiles[dest_idx] == BattleTile::CargoCrate {
+            messages.push("The cargo crates are jammed!".to_string());
+            return messages;
+        }
+        // The destination is now clear, move our crate
+        battle.arena.tiles[src_idx] = BattleTile::MetalFloor;
+        battle.arena.tiles[dest_idx] = BattleTile::CargoCrate;
+        if depth > 0 {
+            messages.push("📦📦 Chain push! Another crate slides!".to_string());
+        } else {
+            messages.push("📦📦 The cargo crate chain-pushes another!".to_string());
+        }
+        return messages;
+    }
+
     if let Some(unit_idx) = battle.unit_at(dest_x, dest_y) {
         let actual = deal_damage(battle, unit_idx, 3);
         let name = if battle.units[unit_idx].is_player() {
@@ -682,9 +774,98 @@ pub fn push_boulder(
     } else if battle.arena.tiles[dest_idx].is_walkable() {
         battle.arena.tiles[src_idx] = BattleTile::MetalFloor;
         battle.arena.tiles[dest_idx] = BattleTile::CargoCrate;
-        messages.push("The cargo crate slides!".to_string());
+        if depth > 0 {
+            messages.push("📦 A chained crate slides!".to_string());
+        } else {
+            messages.push("The cargo crate slides!".to_string());
+        }
     } else {
         messages.push("The cargo crate thuds against the wall.".to_string());
+    }
+
+    messages
+}
+
+fn apply_gravity_wells(battle: &mut TacticalBattle) -> Vec<String> {
+    let mut messages = Vec::new();
+    let w = battle.arena.width as i32;
+    let h = battle.arena.height as i32;
+
+    // Collect gravity well positions
+    let mut wells: Vec<(i32, i32)> = Vec::new();
+    for y in 0..h {
+        for x in 0..w {
+            if battle.arena.tile(x, y) == Some(BattleTile::GravityWell) {
+                wells.push((x, y));
+            }
+        }
+    }
+
+    // For each well, pull units and deal damage
+    let mut pulls: Vec<(usize, i32, i32)> = Vec::new();
+    for &(wx, wy) in &wells {
+        for idx in 0..battle.units.len() {
+            if !battle.units[idx].alive {
+                continue;
+            }
+            let ux = battle.units[idx].x;
+            let uy = battle.units[idx].y;
+            let dist = (ux - wx).abs() + (uy - wy).abs();
+            if dist < 1 || dist > 2 {
+                continue;
+            }
+            // Deal 1 damage to adjacent units (distance 1)
+            if dist == 1 {
+                let actual = deal_damage(battle, idx, 1);
+                let name = if battle.units[idx].is_player() {
+                    "You".to_string()
+                } else {
+                    battle.units[idx].hanzi.to_string()
+                };
+                messages.push(format!("⚫ {} takes damage near gravity well! (-{} HP)", name, actual));
+                continue; // Already adjacent, no pull needed
+            }
+            // Pull 1 step closer (distance 2 → distance 1)
+            let dx = (wx - ux).signum();
+            let dy = (wy - uy).signum();
+            // Try moving along the axis with larger distance first
+            let (step_x, step_y) = if (ux - wx).abs() >= (uy - wy).abs() {
+                (dx, 0)
+            } else {
+                (0, dy)
+            };
+            let dest_x = ux + step_x;
+            let dest_y = uy + step_y;
+            if dest_x < 0 || dest_y < 0 || dest_x >= w || dest_y >= h {
+                continue;
+            }
+            if let Some(dest_tile) = battle.arena.tile(dest_x, dest_y) {
+                if !dest_tile.is_walkable() {
+                    continue;
+                }
+            }
+            if battle.unit_at(dest_x, dest_y).is_some() {
+                continue;
+            }
+            // Don't pull the same unit twice
+            if pulls.iter().any(|&(i, _, _)| i == idx) {
+                continue;
+            }
+            pulls.push((idx, dest_x, dest_y));
+            let name = if battle.units[idx].is_player() {
+                "You are".to_string()
+            } else {
+                format!("{} is", battle.units[idx].hanzi)
+            };
+            messages.push(format!("⬇ Gravity well pulls {} closer!", name));
+        }
+    }
+
+    for (idx, dest_x, dest_y) in pulls {
+        if battle.units[idx].alive {
+            battle.units[idx].x = dest_x;
+            battle.units[idx].y = dest_y;
+        }
     }
 
     messages

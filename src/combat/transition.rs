@@ -586,6 +586,50 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
         }
     }
 
+    // Gravity Wells: 1-2 per arena in AlienRuins/ReactorRoom biomes, floor >= 5
+    if floor >= 5 && matches!(biome, ArenaBiome::AlienRuins | ArenaBiome::ReactorRoom) {
+        let gw_seed = seed.wrapping_mul(17389).wrapping_add(77);
+        let gw_count = 1 + ((gw_seed >> 4) % 2) as usize;
+        for i in 0..gw_count {
+            let hash = gw_seed
+                .wrapping_mul(8831)
+                .wrapping_add(i as u64)
+                .wrapping_mul(21013);
+            let x = ((hash >> 16) % size as u64) as i32;
+            let y = (2 + (hash >> 8) % (size as u64 - 4)) as i32;
+            let mid = size as i32 / 2;
+            if y >= (size as i32 - 2) && (x - mid).abs() <= 1 {
+                continue;
+            }
+            if arena.tile(x, y) != Some(BattleTile::MetalFloor) {
+                continue;
+            }
+            arena.set_tile(x, y, BattleTile::GravityWell);
+        }
+    }
+
+    // Steam Vents: 2-3 per arena in Hydroponics/CryoBay biomes, floor >= 4
+    if floor >= 4 && matches!(biome, ArenaBiome::Hydroponics | ArenaBiome::CryoBay) {
+        let sv_seed = seed.wrapping_mul(19403).wrapping_add(99);
+        let sv_count = 2 + ((sv_seed >> 4) % 2) as usize;
+        for i in 0..sv_count {
+            let hash = sv_seed
+                .wrapping_mul(9173)
+                .wrapping_add(i as u64)
+                .wrapping_mul(23017);
+            let x = ((hash >> 16) % size as u64) as i32;
+            let y = (2 + (hash >> 8) % (size as u64 - 4)) as i32;
+            let mid = size as i32 / 2;
+            if y >= (size as i32 - 2) && (x - mid).abs() <= 1 {
+                continue;
+            }
+            if arena.tile(x, y) != Some(BattleTile::MetalFloor) {
+                continue;
+            }
+            arena.set_tile(x, y, BattleTile::SteamVentInactive);
+        }
+    }
+
     arena
 }
 

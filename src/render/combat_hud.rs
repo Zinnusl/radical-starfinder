@@ -274,6 +274,17 @@ impl super::Renderer {
                     BattleTile::Lubricant => "arena_water",
                     BattleTile::ShieldZone => "arena_spirit_well",
                     BattleTile::ElevatedPlatform => "arena_broken_ground",
+                    BattleTile::GravityWell => "arena_soul_trap",
+                    BattleTile::SteamVentActive => "arena_steam",
+                    BattleTile::SteamVentInactive => match biome {
+                        ArenaBiome::StationInterior => "arena_floor_stone",
+                        ArenaBiome::DerelictShip => "arena_floor_dark",
+                        ArenaBiome::AlienRuins => "arena_floor_arcane",
+                        ArenaBiome::IrradiatedZone => "arena_floor_cursed",
+                        ArenaBiome::Hydroponics => "arena_floor_garden",
+                        ArenaBiome::CryoBay => "arena_floor_frozen",
+                        ArenaBiome::ReactorRoom => "arena_floor_infernal",
+                    },
                 };
 
                 if !self.draw_tiling_sprite_key(sprite_key, gx, gy, sx, sy, cell) {
@@ -311,6 +322,9 @@ impl super::Renderer {
                         BattleTile::Lubricant => "#2a2018",
                         BattleTile::ShieldZone => "#4a4a22",
                         BattleTile::ElevatedPlatform => "#5a4a30",
+                        BattleTile::GravityWell => "#2a0a3a",
+                        BattleTile::SteamVentActive => "#5a5a6a",
+                        BattleTile::SteamVentInactive => "#3a3a40",
                     };
                     self.ctx.set_fill_style_str(fill);
                     self.ctx.fill_rect(sx, sy, cell, cell);
@@ -391,6 +405,37 @@ impl super::Renderer {
                         self.ctx.set_text_align("center");
                         self.ctx
                             .fill_text("▲", sx + cell / 2.0, sy + cell / 2.0 + 5.0)
+                            .ok();
+                    }
+
+                    if tile == BattleTile::GravityWell {
+                        let pulse = ((anim_t * 2.0).sin() * 0.2 + 0.7).max(0.4);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(120,40,180,{})", pulse));
+                        self.ctx.set_font("bold 14px monospace");
+                        self.ctx.set_text_align("center");
+                        self.ctx
+                            .fill_text("◉", sx + cell / 2.0, sy + cell / 2.0 + 5.0)
+                            .ok();
+                    }
+
+                    if tile == BattleTile::SteamVentActive {
+                        let pulse = ((anim_t * 3.0).sin() * 0.2 + 0.7).max(0.4);
+                        self.ctx
+                            .set_fill_style_str(&format!("rgba(180,180,200,{})", pulse));
+                        self.ctx.set_font("bold 14px monospace");
+                        self.ctx.set_text_align("center");
+                        self.ctx
+                            .fill_text("♨", sx + cell / 2.0, sy + cell / 2.0 + 5.0)
+                            .ok();
+                    }
+
+                    if tile == BattleTile::SteamVentInactive {
+                        self.ctx.set_fill_style_str("rgba(100,100,110,0.4)");
+                        self.ctx.set_font("bold 14px monospace");
+                        self.ctx.set_text_align("center");
+                        self.ctx
+                            .fill_text("♨", sx + cell / 2.0, sy + cell / 2.0 + 5.0)
                             .ok();
                     }
 
