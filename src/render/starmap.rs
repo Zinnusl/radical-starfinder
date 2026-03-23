@@ -6,7 +6,7 @@ use crate::game::{EnemyShip, GameSettings, SpaceCombatPhase};
 use crate::player::{Player, PlayerClass, Ship};
 use crate::world::LocationType;
 use crate::world::starmap::SectorMap;
-use crate::world::ship::{ShipLayout, ShipTile};
+use crate::world::ship::{ShipLayout, ShipRoom, ShipTile, get_room_at};
 use crate::world::events::SpaceEvent;
 
 use super::COL_PLAYER;
@@ -826,18 +826,26 @@ impl super::Renderer {
         layout: &ShipLayout,
         ship_x: i32,
         ship_y: i32,
-        _crew: &[crate::player::CrewMember],
-        _ship: &Ship,
-        _message: &str,
+        crew: &[crate::player::CrewMember],
+        ship: &Ship,
+        message: &str,
+        player_hp: i32,
+        player_max_hp: i32,
+        player_gold: i32,
+        show_help: bool,
     ) {
         // Clear
-        self.ctx.set_fill_style_str("#111111");
+        self.ctx.set_fill_style_str("#0a0a14");
         self.ctx.fill_rect(0.0, 0.0, self.canvas_w, self.canvas_h);
 
-        let tx_size = 32.0;
+        let tx_size = 28.0;
+        let hud_top = 60.0;
+        let hud_bottom = 80.0;
+        let map_area_h = self.canvas_h - hud_top - hud_bottom;
         let offset_x = (self.canvas_w - layout.width as f64 * tx_size) / 2.0;
-        let offset_y = (self.canvas_h - layout.height as f64 * tx_size) / 2.0;
+        let offset_y = hud_top + (map_area_h - layout.height as f64 * tx_size) / 2.0;
 
+        // ── Tile map ────────────────────────────────────────────────────
         for (i, tile) in layout.tiles.iter().enumerate() {
             let x = (i as i32 % layout.width) as f64;
             let y = (i as i32 / layout.width) as f64;
@@ -845,31 +853,253 @@ impl super::Renderer {
             let screen_y = offset_y + y * tx_size;
 
             let color = match tile {
-                ShipTile::Floor => "#222233",
-                ShipTile::Wall => "#444455",
-                ShipTile::Door => "#666677",
-                ShipTile::Console(_) => "#0088aa",
-                ShipTile::CrewStation(_) => "#00aa88",
-                ShipTile::Decoration(_) => "#333344",
+                ShipTile::Floor => "#1a1a2e",
+                ShipTile::Wall => "#2a2a3e",
+                ShipTile::Door => "#3a3a55",
+                ShipTile::Console(_) => "#0a2a3a",
+                ShipTile::CrewStation(_) => "#0a2a2a",
+                ShipTile::Decoration(_) => "#1e1e30",
                 ShipTile::Empty => continue,
             };
 
             self.ctx.set_fill_style_str(color);
             self.ctx.fill_rect(screen_x, screen_y, tx_size, tx_size);
-            
+
             // Grid lines
-            self.ctx.set_stroke_style_str("#333344");
+            self.ctx.set_stroke_style_str("#1a1a2a");
             self.ctx.stroke_rect(screen_x, screen_y, tx_size, tx_size);
+
+            // Console icons
+            if let ShipTile::Console(room) = tile {
+                let icon = match room {
+                    ShipRoom::Bridge => "\u{2316}",       // ⌖ (position indicator)
+                    ShipRoom::EngineRoom => "\u{2699}",   // ⚙
+                    ShipRoom::QuantumForge => "\u{2692}",  // ⚒
+                    ShipRoom::CrewQuarters => "\u{263A}",  // ☺
+                    ShipRoom::CargoBay => "\u{25A3}",     // ▣
+                    ShipRoom::Medbay => "+",
+                    ShipRoom::WeaponsBay => "\u{2694}",   // ⚔
+                    ShipRoom::Airlock => "\u{25CE}",      // ◎
+                    ShipRoom::Corridor => " ",
+                };
+                self.ctx.set_font(&format!("{}px monospace", (tx_size * 0.6) as i32));
+                self.ctx.set_fill_style_str("#00ccdd");
+                self.ctx.set_text_align("center");
+                self.ctx.set_text_baseline("middle");
+                self.ctx.fill_text(icon, screen_x + tx_size / 2.0, screen_y + tx_size / 2.0).ok();
+                // Glow border
+                self.ctx.set_stroke_style_str("rgba(0, 200, 220, 0.4)");
+                self.ctx.set_line_width(1.5);
+                self.ctx.stroke_rect(screen_x + 1.0, screen_y + 1.0, tx_size - 2.0, tx_size - 2.0);
+                self.ctx.set_line_width(1.0);
+            }
+
+            // Crew station indicators
+            if let ShipTile::CrewStation(idx) = tile {
+                let label = if (*idx) < crew.len() {
+                    crew[*idx].role.icon()
+                } else {
+                    "\u{25CB}" // ○ empty station
+                };
+                self.ctx.set_font(&format!("{}px monospace", (tx_size * 0.55) as i32));
+                self.ctx.set_fill_style_str("#00aa88");
+                self.ctx.set_text_align("center");
+                self.ctx.set_text_baseline("middle");
+                self.ctx.fill_text(label, screen_x + tx_size / 2.0, screen_y + tx_size / 2.0).ok();
+            }
+
+            // Door markers
+            if *tile == ShipTile::Door {
+                self.ctx.set_stroke_style_str("#556677");
+                self.ctx.set_line_width(2.0);
+                self.ctx.stroke_rect(screen_x + 2.0, screen_y + 2.0, tx_size - 4.0, tx_size - 4.0);
+                self.ctx.set_line_width(1.0);
+            }
         }
 
-        // Draw Player
+        // ── Room labels ─────────────────────────────────────────────────
+        self.ctx.set_font("11px monospace");
+        self.ctx.set_text_align("center");
+        self.ctx.set_text_baseline("top");
+        for (lx, ly, room) in &layout.room_labels {
+            if *room == ShipRoom::Corridor { continue; }
+            let sx = offset_x + *lx as f64 * tx_size + tx_size / 2.0;
+            let sy = offset_y + *ly as f64 * tx_size + 2.0;
+            // Shadow
+            self.ctx.set_fill_style_str("rgba(0,0,0,0.7)");
+            self.ctx.fill_text(room.name(), sx + 1.0, sy + 1.0).ok();
+            // Text
+            self.ctx.set_fill_style_str("#8888aa");
+            self.ctx.fill_text(room.name(), sx, sy).ok();
+        }
+
+        // ── Player ──────────────────────────────────────────────────────
         let px = offset_x + ship_x as f64 * tx_size;
         let py = offset_y + ship_y as f64 * tx_size;
-        
+
+        // Glow
+        self.ctx.set_fill_style_str("rgba(0, 200, 220, 0.15)");
+        self.ctx.begin_path();
+        self.ctx.arc(px + tx_size / 2.0, py + tx_size / 2.0, tx_size * 0.7, 0.0, std::f64::consts::TAU).ok();
+        self.ctx.fill();
+
+        // Player dot
         self.ctx.set_fill_style_str(COL_PLAYER);
         self.ctx.begin_path();
-        self.ctx.arc(px + tx_size/2.0, py + tx_size/2.0, tx_size/3.0, 0.0, std::f64::consts::TAU).ok();
+        self.ctx.arc(px + tx_size / 2.0, py + tx_size / 2.0, tx_size / 3.0, 0.0, std::f64::consts::TAU).ok();
         self.ctx.fill();
+
+        // ── Top HUD ─────────────────────────────────────────────────────
+        self.ctx.set_fill_style_str("rgba(10, 10, 20, 0.9)");
+        self.ctx.fill_rect(0.0, 0.0, self.canvas_w, hud_top);
+        self.ctx.set_stroke_style_str("#333355");
+        let _ = self.ctx.begin_path();
+        self.ctx.move_to(0.0, hud_top);
+        self.ctx.line_to(self.canvas_w, hud_top);
+        self.ctx.stroke();
+
+        // Current room name + description
+        let current_room = get_room_at(layout, ship_x, ship_y);
+        self.ctx.set_font("16px monospace");
+        self.ctx.set_fill_style_str("#00eeff");
+        self.ctx.set_text_align("left");
+        self.ctx.set_text_baseline("top");
+        self.ctx.fill_text(&format!("\u{25C6} {}", current_room.name()), 12.0, 8.0).ok();
+
+        self.ctx.set_font("12px monospace");
+        self.ctx.set_fill_style_str("#6666aa");
+        self.ctx.fill_text(current_room.description(), 12.0, 28.0).ok();
+
+        // Ship stats (right side)
+        self.ctx.set_text_align("right");
+        self.ctx.set_font("12px monospace");
+        let rx = self.canvas_w - 12.0;
+
+        self.ctx.set_fill_style_str("#cc4444");
+        self.ctx.fill_text(&format!("HP {}/{}", player_hp, player_max_hp), rx, 6.0).ok();
+
+        self.ctx.set_fill_style_str("#4488cc");
+        self.ctx.fill_text(&format!("Hull {}/{}", ship.hull, ship.max_hull), rx, 20.0).ok();
+
+        self.ctx.set_fill_style_str("#44cc88");
+        self.ctx.fill_text(&format!("Shields {}/{}", ship.shields, ship.max_shields), rx, 34.0).ok();
+
+        self.ctx.set_fill_style_str("#ccaa44");
+        self.ctx.fill_text(&format!("{}g", player_gold), rx, 48.0).ok();
+
+        // ── Bottom bar ──────────────────────────────────────────────────
+        let bar_y = self.canvas_h - hud_bottom;
+        self.ctx.set_fill_style_str("rgba(10, 10, 20, 0.9)");
+        self.ctx.fill_rect(0.0, bar_y, self.canvas_w, hud_bottom);
+        self.ctx.set_stroke_style_str("#333355");
+        let _ = self.ctx.begin_path();
+        self.ctx.move_to(0.0, bar_y);
+        self.ctx.line_to(self.canvas_w, bar_y);
+        self.ctx.stroke();
+
+        // Message
+        if !message.is_empty() {
+            self.ctx.set_font("14px monospace");
+            self.ctx.set_fill_style_str("#ddddff");
+            self.ctx.set_text_align("left");
+            self.ctx.fill_text(message, 12.0, bar_y + 14.0).ok();
+        }
+
+        // Controls hint
+        self.ctx.set_font("11px monospace");
+        self.ctx.set_fill_style_str("#555577");
+        self.ctx.set_text_align("center");
+        self.ctx.fill_text(
+            "[E] Interact  [M] Star Map  [?] Help  [Esc] Exit",
+            self.canvas_w / 2.0,
+            bar_y + hud_bottom - 16.0,
+        ).ok();
+
+        // Crew count
+        if !crew.is_empty() {
+            self.ctx.set_text_align("right");
+            self.ctx.set_fill_style_str("#00aa88");
+            self.ctx.fill_text(
+                &format!("Crew: {}", crew.len()),
+                self.canvas_w - 12.0,
+                bar_y + 14.0,
+            ).ok();
+        }
+
+        // Reset text baseline
+        self.ctx.set_text_align("left");
+        self.ctx.set_text_baseline("alphabetic");
+
+        // ── Help overlay ────────────────────────────────────────────────
+        if show_help {
+            self.draw_ship_help();
+        }
+    }
+
+    fn draw_ship_help(&self) {
+        let panel_w = 420.0_f64;
+        let panel_h = 340.0_f64;
+        let px = (self.canvas_w - panel_w) / 2.0;
+        let py = (self.canvas_h - panel_h) / 2.0;
+
+        // Overlay
+        self.ctx.set_fill_style_str("rgba(0, 0, 0, 0.92)");
+        self.ctx.fill_rect(px, py, panel_w, panel_h);
+        self.ctx.set_stroke_style_str("#00ccdd");
+        self.ctx.set_line_width(2.0);
+        self.ctx.stroke_rect(px, py, panel_w, panel_h);
+        self.ctx.set_line_width(1.0);
+
+        // Title
+        self.ctx.set_font("18px monospace");
+        self.ctx.set_fill_style_str("#00eeff");
+        self.ctx.set_text_align("center");
+        self.ctx.fill_text("Ship Controls", px + panel_w / 2.0, py + 28.0).ok();
+
+        // Controls list
+        let controls = [
+            ("Arrows / WASD", "Move around the ship"),
+            ("E", "Interact with adjacent console or crew"),
+            ("M", "Open star map"),
+            ("Esc", "Return to star map"),
+            ("?", "Toggle this help"),
+            ("", ""),
+            ("", "--- Consoles ---"),
+            ("Bridge", "Access navigation / star map"),
+            ("Medbay", "Heal 10 HP"),
+            ("Engine Room", "Repair 5 hull points"),
+            ("Weapons Bay", "Calibrate weapons (+1 power)"),
+            ("Cargo Bay", "Browse ship upgrades"),
+            ("Crew Quarters", "Rest and recover full HP"),
+            ("Quantum Forge", "Crafting info"),
+            ("Airlock", "Exit ship to explore location"),
+        ];
+
+        self.ctx.set_text_align("left");
+        self.ctx.set_font("13px monospace");
+        let mut row_y = py + 54.0;
+        for (key, desc) in &controls {
+            if key.is_empty() && desc.starts_with("---") {
+                // Section divider
+                self.ctx.set_fill_style_str("#555577");
+                self.ctx.fill_text(desc, px + panel_w / 2.0 - 50.0, row_y).ok();
+            } else if key.is_empty() {
+                // Spacer
+            } else {
+                self.ctx.set_fill_style_str("#00ccdd");
+                self.ctx.fill_text(key, px + 24.0, row_y).ok();
+                self.ctx.set_fill_style_str("#aaaacc");
+                self.ctx.fill_text(desc, px + 180.0, row_y).ok();
+            }
+            row_y += 18.0;
+        }
+
+        // Footer
+        self.ctx.set_font("11px monospace");
+        self.ctx.set_fill_style_str("#555577");
+        self.ctx.set_text_align("center");
+        self.ctx.fill_text("Press ? or Esc to close", px + panel_w / 2.0, py + panel_h - 14.0).ok();
+        self.ctx.set_text_align("left");
     }
 
     pub fn draw_ship_upgrades(

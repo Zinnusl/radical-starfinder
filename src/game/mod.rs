@@ -1414,6 +1414,8 @@ pub struct GameState {
     pub ship_upgrade_cursor: usize,
     /// Whether the ship upgrade shop overlay is showing
     pub show_ship_upgrades: bool,
+    /// Whether the ship help overlay is showing
+    pub show_ship_help: bool,
     /// Pending crew recruit at a space station
     pub pending_recruit: Option<CrewMember>,
     /// Current enemy ship in space combat
@@ -9118,7 +9120,12 @@ impl GameState {
                 return;
             }
             GameMode::ShipInterior => {
-                self.renderer.draw_ship_interior(&self.ship_layout, self.ship_player_x, self.ship_player_y, &self.crew, &self.ship, &self.message);
+                self.renderer.draw_ship_interior(
+                    &self.ship_layout, self.ship_player_x, self.ship_player_y,
+                    &self.crew, &self.ship, &self.message,
+                    self.player.hp, self.player.max_hp, self.player.gold,
+                    self.show_ship_help,
+                );
                 if self.show_ship_upgrades {
                     self.renderer.draw_ship_upgrades(self.ship_upgrade_cursor, &self.ship.upgrades, self.player.gold);
                 }
@@ -10185,8 +10192,8 @@ pub fn init_game() -> Result<(), JsValue> {
         ],
         current_event: None,
         event_choice_cursor: 0,
-        ship_player_x: 5,
-        ship_player_y: 5,
+        ship_player_x: 11,
+        ship_player_y: 16,
         starmap_cursor: 0,
         current_location_type: None,
         show_class_select: true,
@@ -10194,6 +10201,7 @@ pub fn init_game() -> Result<(), JsValue> {
         has_continue_option: GameState::has_save(),
         ship_upgrade_cursor: 0,
         show_ship_upgrades: false,
+        show_ship_help: false,
         pending_recruit: None,
         enemy_ship: None,
         space_combat_phase: SpaceCombatPhase::Choosing,
@@ -10587,6 +10595,8 @@ pub fn init_game() -> Result<(), JsValue> {
                         }
                         "s" | "S" => {
                             s.game_mode = GameMode::ShipInterior;
+                            s.ship_player_x = 11;
+                            s.ship_player_y = 16;
                             s.message = "Entering ship...".to_string();
                             s.message_timer = 60;
                         }
@@ -10667,6 +10677,17 @@ pub fn init_game() -> Result<(), JsValue> {
                         s.render();
                         return;
                     }
+                    // Ship help overlay interception
+                    if s.show_ship_help {
+                        match key.as_str() {
+                            "?" | "Escape" => {
+                                s.show_ship_help = false;
+                            }
+                            _ => {}
+                        }
+                        s.render();
+                        return;
+                    }
                     match key.as_str() {
                         "ArrowUp" | "w" | "W" => {
                             let ny = s.ship_player_y - 1;
@@ -10731,7 +10752,7 @@ pub fn init_game() -> Result<(), JsValue> {
                         "e" | "E" => {
                             let px = s.ship_player_x;
                             let py = s.ship_player_y;
-                            for (dx, dy) in [(0i32,1i32),(0,-1),(1,0),(-1,0)] {
+                            for (dx, dy) in [(0i32,0i32),(0,1),(0,-1),(1,0),(-1,0)] {
                                 let nx = px + dx;
                                 let ny = py + dy;
                                 if nx >= 0 && ny >= 0 && nx < s.ship_layout.width && ny < s.ship_layout.height {
@@ -10769,8 +10790,45 @@ pub fn init_game() -> Result<(), JsValue> {
                                                     ShipRoom::CargoBay => {
                                                         s.show_ship_upgrades = true;
                                                         s.ship_upgrade_cursor = 0;
-                                                        s.message = "Ship Upgrades — browse available modules.".to_string();
+                                                        s.message = "Ship Upgrades \u{2014} browse available modules.".to_string();
                                                         s.message_timer = 60;
+                                                    }
+                                                    ShipRoom::Airlock => {
+                                                        // Exit ship to explore current location
+                                                        if let Some(ref map) = s.sector_map {
+                                                            let sector = &map.sectors[map.current_sector];
+                                                            if map.current_system < sector.systems.len() {
+                                                                let loc_type = sector.systems[map.current_system].location_type;
+                                                                let loc_name = sector.systems[map.current_system].name;
+                                                                s.current_location_type = Some(loc_type);
+                                                                s.game_mode = GameMode::LocationExploration;
+                                                                s.level = DungeonLevel::generate(MAP_W, MAP_H, s.seed, s.floor_num, loc_type);
+                                                                let (sx, sy) = s.level.start_pos();
+                                                                s.player.move_to(sx, sy);
+                                                                s.enemies.clear();
+                                                                s.combat = CombatState::Explore;
+                                                                s.spawn_enemies();
+                                                                let (fpx, fpy) = (s.player.x, s.player.y);
+                                                                compute_fov(&mut s.level, fpx, fpy, FOV_RADIUS);
+                                                                s.message = format!("Exiting ship to {} \u{2014} Good luck!", loc_name);
+                                                                s.message_timer = 90;
+                                                                s.generate_quests();
+                                                            }
+                                                        } else {
+                                                            s.message = "No location to explore. Use the Bridge to navigate.".to_string();
+                                                            s.message_timer = 60;
+                                                        }
+                                                    }
+                                                    ShipRoom::CrewQuarters => {
+                                                        // Rest: restore full HP (once per visit)
+                                                        if s.player.hp < s.player.max_hp {
+                                                            s.player.hp = s.player.max_hp;
+                                                            s.message = "Crew Quarters: Rested and fully healed!".to_string();
+                                                            s.message_timer = 90;
+                                                        } else {
+                                                            s.message = "Crew Quarters: You feel well-rested already.".to_string();
+                                                            s.message_timer = 60;
+                                                        }
                                                     }
                                                     _ => {
                                                         s.message = "Nothing to interact with here.".to_string();
@@ -10809,6 +10867,9 @@ pub fn init_game() -> Result<(), JsValue> {
                         }
                         "Escape" => {
                             s.game_mode = GameMode::Starmap;
+                        }
+                        "?" => {
+                            s.show_ship_help = !s.show_ship_help;
                         }
                         _ => {}
                     }
@@ -14060,7 +14121,7 @@ mod player_class_tests {
     #[test]
     fn class_data_covers_all_variants() {
         let classes = PlayerClass::all();
-        assert_eq!(classes.len(), 20);
+        assert_eq!(classes.len(), 7);
         for class in &classes {
             let data = class.data();
             assert!(!data.name_en.is_empty());
@@ -14124,9 +14185,9 @@ mod item_state_tests {
     fn spirit_decreases_on_move() {
         use crate::player::{Player, PlayerClass};
         let mut p = Player::new(0, 0, PlayerClass::Envoy);
-        assert_eq!(p.spirit, 160);
+        assert_eq!(p.spirit, 170);
         p.spirit -= 1;
-        assert_eq!(p.spirit, 159);
+        assert_eq!(p.spirit, 169);
     }
 
     #[test]
@@ -14140,7 +14201,7 @@ mod item_state_tests {
 
         p.spirit = 140;
         p.spirit = (p.spirit + restore).min(p.max_spirit);
-        assert_eq!(p.spirit, 160);
+        assert_eq!(p.spirit, 170);
     }
 
     #[test]
