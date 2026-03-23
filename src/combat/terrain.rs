@@ -1,5 +1,5 @@
 use crate::combat::action::deal_damage;
-use crate::combat::{ArenaBiome, BattleTile, TacticalBattle, Weather};
+use crate::combat::{ArenaBiome, AudioEvent, BattleTile, TacticalBattle, Weather};
 use crate::status::{StatusInstance, StatusKind};
 use std::collections::VecDeque;
 
@@ -572,6 +572,7 @@ pub fn explode_barrel(battle: &mut TacticalBattle, bx: i32, by: i32) -> Vec<Stri
     }
     for (cx, cy) in chain_targets {
         messages.push("Chain reaction!".to_string());
+        battle.audio_events.push(AudioEvent::ChainExplosion);
         let mut chain_msgs = explode_barrel(battle, cx, cy);
         messages.append(&mut chain_msgs);
     }
@@ -722,6 +723,7 @@ pub fn tick_terrain(battle: &mut TacticalBattle) {
         for (x, y) in oil_ignitions {
             battle.arena.set_tile(x, y, BattleTile::BlastMark);
             battle.log_message(format!("🔥🛢 Oil slick ignites at ({},{})!", x, y));
+            battle.audio_events.push(AudioEvent::OilIgnition);
             if let Some(uid) = battle.unit_at(x, y) {
                 battle.units[uid]
                     .statuses
@@ -1012,9 +1014,11 @@ pub fn tick_terrain(battle: &mut TacticalBattle) {
         }
         if toggled_active {
             battle.log_message("♨ Steam vents activate!");
+            battle.audio_events.push(AudioEvent::SteamVent);
         }
         if toggled_inactive {
             battle.log_message("♨ Steam vents deactivate!");
+            battle.audio_events.push(AudioEvent::SteamVent);
         }
     }
 

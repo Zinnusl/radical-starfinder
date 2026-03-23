@@ -1522,6 +1522,7 @@ impl GameState {
         s.ship.hull -= e_hull_dmg;
         s.space_combat_log.push(format!("{} {} {} dmg ({} shield, {} hull)",
             enemy.name, tactic_msg, e_dmg, e_shield_absorb, e_hull_dmg));
+        if let Some(ref audio) = s.audio { audio.play_enemy_weapon_fire(); }
     }
 
     /// Convert tile position to screen coordinates for particles.
@@ -11092,6 +11093,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                                 let dmg = base_wp;
                                                 GameState::apply_subsystem_damage(&mut enemy, target, dmg);
                                                 s.space_combat_log.push(format!("{} {} => {} for {} dmg", weapon.icon(), weapon.name(), target_name, dmg));
+                                                if let Some(ref audio) = s.audio { audio.play_laser_fire(); }
                                             }
                                             ShipWeapon::Missiles => {
                                                 let roll = (s.seed.wrapping_mul(1664525).wrapping_add(1013904223)) % 100;
@@ -11100,8 +11102,10 @@ pub fn init_game() -> Result<(), JsValue> {
                                                     let dmg = base_wp * 2;
                                                     GameState::apply_subsystem_damage(&mut enemy, target, dmg);
                                                     s.space_combat_log.push(format!("{} {} HIT {} for {} dmg!", weapon.icon(), weapon.name(), target_name, dmg));
+                                                    if let Some(ref audio) = s.audio { audio.play_missile_launch(); }
                                                 } else {
                                                     s.space_combat_log.push(format!("{} {} MISSED {}!", weapon.icon(), weapon.name(), target_name));
+                                                    if let Some(ref audio) = s.audio { audio.play_missile_miss(); }
                                                 }
                                             }
                                             ShipWeapon::IonCannon => {
@@ -11114,6 +11118,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                                 };
                                                 GameState::apply_subsystem_damage(&mut enemy, target, dmg);
                                                 s.space_combat_log.push(format!("{} {} => {} for {} dmg", weapon.icon(), weapon.name(), target_name, dmg));
+                                                if let Some(ref audio) = s.audio { audio.play_ion_cannon(); }
                                             }
                                             ShipWeapon::Broadside => {
                                                 // Should not reach here — broadside auto-fires
@@ -11122,6 +11127,9 @@ pub fn init_game() -> Result<(), JsValue> {
 
                                         // Apply subsystem destruction effects
                                         GameState::apply_subsystem_effects(&mut enemy);
+                                        if enemy.weapons_sub.is_destroyed() || enemy.shields_sub.is_destroyed() || enemy.engines_sub.is_destroyed() {
+                                            if let Some(ref audio) = s.audio { audio.play_subsystem_destroyed(); }
+                                        }
 
                                         // Check victory
                                         if enemy.hull <= 0 {
@@ -11211,7 +11219,11 @@ pub fn init_game() -> Result<(), JsValue> {
                                                     GameState::apply_subsystem_damage(&mut enemy, *target, dmg);
                                                 }
                                                 s.space_combat_log.push(format!("== Broadside! {} dmg to all subsystems", dmg));
+                                                if let Some(ref audio) = s.audio { audio.play_broadside(); }
                                                 GameState::apply_subsystem_effects(&mut enemy);
+                                                if enemy.weapons_sub.is_destroyed() || enemy.shields_sub.is_destroyed() || enemy.engines_sub.is_destroyed() {
+                                                    if let Some(ref audio) = s.audio { audio.play_subsystem_destroyed(); }
+                                                }
 
                                                 if enemy.hull <= 0 {
                                                     s.space_combat_phase = SpaceCombatPhase::Victory;
@@ -11246,6 +11258,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                                 let total_restore = restore + eng_bonus;
                                                 s.ship.shields = (s.ship.shields + total_restore).min(s.ship.max_shields);
                                                 s.space_combat_log.push(format!("Shields recharged! +{} shields", total_restore));
+                                                if let Some(ref audio) = s.audio { audio.play_shield_recharge(); }
 
                                                 enemy.turns_taken += 1;
                                                 GameState::enemy_fires(&mut enemy, &mut *s, false);
@@ -11279,6 +11292,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                                     }
                                                 }
                                                 s.space_combat_evading = evading;
+                                                if let Some(ref audio) = s.audio { audio.play_evasion(); }
 
                                                 // Engineer passive
                                                 if s.crew.iter().any(|c| c.role == CrewRole::Engineer) {
@@ -11304,6 +11318,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                                 if skill_total > enemy.weapon_power {
                                                     enemy.hull = 0;
                                                     s.space_combat_log.push(format!("Boarding successful! Crew skill {} vs enemy power {}", skill_total, enemy.weapon_power));
+                                                    if let Some(ref audio) = s.audio { audio.play_boarding(); }
                                                     enemy.loot_credits = (enemy.loot_credits as f64 * 1.5) as i32;
                                                     s.space_combat_phase = SpaceCombatPhase::Victory;
                                                     s.space_combat_log.push(format!("{} captured!", enemy.name));
@@ -11314,6 +11329,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                                     let dmg = enemy.weapon_power;
                                                     s.ship.hull -= dmg;
                                                     s.space_combat_log.push(format!("Boarding failed! Took {} hull dmg. (Skill {} vs power {})", dmg, skill_total, enemy.weapon_power));
+                                                    if let Some(ref audio) = s.audio { audio.play_boarding(); }
                                                     if s.ship.hull <= 0 {
                                                         s.space_combat_phase = SpaceCombatPhase::Defeat;
                                                         s.space_combat_log.push("Your ship has been destroyed!".to_string());
@@ -13223,6 +13239,13 @@ pub fn init_game() -> Result<(), JsValue> {
                                 combat::AudioEvent::WaterSplash => audio.play_water_splash(),
                                 combat::AudioEvent::LavaRumble => audio.play_lava_rumble(),
                                 combat::AudioEvent::ComboStrike => audio.play_critical_hit(),
+                                combat::AudioEvent::GravityPull => audio.play_gravity_pull(),
+                                combat::AudioEvent::SteamVent => audio.play_steam_vent(),
+                                combat::AudioEvent::OilIgnition => audio.play_oil_ignition(),
+                                combat::AudioEvent::CratePush => audio.play_crate_push(),
+                                combat::AudioEvent::CrateCrush => audio.play_crate_crush(),
+                                combat::AudioEvent::ConveyorMove => audio.play_conveyor(),
+                                combat::AudioEvent::ChainExplosion => audio.play_chain_explosion(),
                             }
                         }
                     }
@@ -14360,6 +14383,13 @@ pub fn init_game() -> Result<(), JsValue> {
                                     combat::AudioEvent::WaterSplash => audio.play_water_splash(),
                                     combat::AudioEvent::LavaRumble => audio.play_lava_rumble(),
                                     combat::AudioEvent::ComboStrike => audio.play_critical_hit(),
+                                    combat::AudioEvent::GravityPull => audio.play_gravity_pull(),
+                                    combat::AudioEvent::SteamVent => audio.play_steam_vent(),
+                                    combat::AudioEvent::OilIgnition => audio.play_oil_ignition(),
+                                    combat::AudioEvent::CratePush => audio.play_crate_push(),
+                                    combat::AudioEvent::CrateCrush => audio.play_crate_crush(),
+                                    combat::AudioEvent::ConveyorMove => audio.play_conveyor(),
+                                    combat::AudioEvent::ChainExplosion => audio.play_chain_explosion(),
                                 }
                             }
                         }

@@ -595,6 +595,7 @@ fn tick_arcing_projectiles(battle: &mut TacticalBattle) {
 fn apply_flow_water(battle: &mut TacticalBattle) -> Vec<String> {
     let mut messages = Vec::new();
     let mut pushes: Vec<(usize, i32, i32)> = Vec::new();
+    let mut conveyor_played = false;
 
     for idx in 0..battle.units.len() {
         if !battle.units[idx].alive {
@@ -650,6 +651,10 @@ fn apply_flow_water(battle: &mut TacticalBattle) -> Vec<String> {
             battle.units[idx].x = dest_x;
             battle.units[idx].y = dest_y;
             messages.push(format!("{} pushed by the conveyor!", name));
+            if !conveyor_played {
+                battle.audio_events.push(AudioEvent::ConveyorMove);
+                conveyor_played = true;
+            }
         }
     }
 
@@ -769,11 +774,13 @@ fn push_boulder_recursive(
             format!("{} is", battle.units[unit_idx].hanzi)
         };
         messages.push(format!("{} crushed by a cargo crate! ({} dmg)", name, actual));
+        battle.audio_events.push(AudioEvent::CrateCrush);
         battle.arena.tiles[src_idx] = BattleTile::MetalFloor;
         battle.arena.tiles[dest_idx] = BattleTile::CargoCrate;
     } else if battle.arena.tiles[dest_idx].is_walkable() {
         battle.arena.tiles[src_idx] = BattleTile::MetalFloor;
         battle.arena.tiles[dest_idx] = BattleTile::CargoCrate;
+        battle.audio_events.push(AudioEvent::CratePush);
         if depth > 0 {
             messages.push("📦 A chained crate slides!".to_string());
         } else {
@@ -790,6 +797,7 @@ fn apply_gravity_wells(battle: &mut TacticalBattle) -> Vec<String> {
     let mut messages = Vec::new();
     let w = battle.arena.width as i32;
     let h = battle.arena.height as i32;
+    let mut gravity_played = false;
 
     // Collect gravity well positions
     let mut wells: Vec<(i32, i32)> = Vec::new();
@@ -858,6 +866,10 @@ fn apply_gravity_wells(battle: &mut TacticalBattle) -> Vec<String> {
                 format!("{} is", battle.units[idx].hanzi)
             };
             messages.push(format!("⬇ Gravity well pulls {} closer!", name));
+            if !gravity_played {
+                battle.audio_events.push(AudioEvent::GravityPull);
+                gravity_played = true;
+            }
         }
     }
 

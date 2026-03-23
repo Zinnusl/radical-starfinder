@@ -33,6 +33,13 @@ pub enum AudioEvent {
     WaterSplash,
     LavaRumble,
     ComboStrike,
+    GravityPull,
+    SteamVent,
+    OilIgnition,
+    CratePush,
+    CrateCrush,
+    ConveyorMove,
+    ChainExplosion,
 }
 
 // ── Player Combat Stances ────────────────────────────────────────────────────

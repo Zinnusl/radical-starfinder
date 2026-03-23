@@ -650,6 +650,125 @@ impl Audio {
         self.tone(120.0, 0.12, 0.08, OscillatorType::Square);
     }
 
+    // ── Space Combat Sounds ─────────────────────────────────────────
+
+    /// Laser weapon fire — quick ascending zap.
+    pub fn play_laser_fire(&self) {
+        self.sweep(200.0, 1800.0, 0.08, OscillatorType::Sawtooth, 0.09);
+        self.tone(1200.0, 0.04, 0.06, OscillatorType::Sine);
+    }
+
+    /// Missile launch — rumbling whoosh ascending.
+    pub fn play_missile_launch(&self) {
+        self.sweep(80.0, 400.0, 0.25, OscillatorType::Triangle, 0.08);
+        self.tone_at(200.0, 0.15, 0.06, OscillatorType::Square, 0.1);
+    }
+
+    /// Ion cannon — electric crackling discharge.
+    pub fn play_ion_cannon(&self) {
+        self.sweep(600.0, 200.0, 0.15, OscillatorType::Square, 0.10);
+        self.sweep(1200.0, 300.0, 0.12, OscillatorType::Sawtooth, 0.07);
+        self.tone_at(150.0, 0.1, 0.08, OscillatorType::Square, 0.08);
+    }
+
+    /// Broadside — multiple thuds in rapid succession.
+    pub fn play_broadside(&self) {
+        self.tone_at(100.0, 0.08, 0.10, OscillatorType::Triangle, 0.0);
+        self.tone_at(120.0, 0.08, 0.09, OscillatorType::Triangle, 0.06);
+        self.tone_at(90.0, 0.08, 0.10, OscillatorType::Triangle, 0.12);
+        self.tone_at(110.0, 0.08, 0.08, OscillatorType::Triangle, 0.18);
+    }
+
+    /// Shield recharge — ascending shimmer.
+    pub fn play_shield_recharge(&self) {
+        self.sweep(400.0, 1200.0, 0.3, OscillatorType::Sine, 0.06);
+        self.tone_at(800.0, 0.2, 0.04, OscillatorType::Triangle, 0.15);
+    }
+
+    /// Subsystem damaged — metallic crunch.
+    #[allow(dead_code)]
+    pub fn play_subsystem_damage(&self) {
+        self.sfx_voice(150.0, OscillatorType::Square, 0.12, &Adsr::percussive());
+        self.tone(80.0, 0.15, 0.10, OscillatorType::Sawtooth);
+    }
+
+    /// Subsystem destroyed — alarm-like descending wail.
+    pub fn play_subsystem_destroyed(&self) {
+        self.sweep(800.0, 200.0, 0.3, OscillatorType::Sawtooth, 0.10);
+        self.tone_at(150.0, 0.2, 0.08, OscillatorType::Square, 0.15);
+    }
+
+    /// Evasive maneuver — quick swoosh.
+    pub fn play_evasion(&self) {
+        self.sweep(600.0, 200.0, 0.1, OscillatorType::Triangle, 0.07);
+        self.sweep(200.0, 600.0, 0.1, OscillatorType::Sine, 0.05);
+    }
+
+    /// Enemy ship weapon fire — slightly different from player.
+    pub fn play_enemy_weapon_fire(&self) {
+        self.sweep(300.0, 100.0, 0.12, OscillatorType::Square, 0.08);
+        self.tone(80.0, 0.1, 0.07, OscillatorType::Triangle);
+    }
+
+    /// Boarding attempt — tense ascending tones.
+    pub fn play_boarding(&self) {
+        self.tone_at(200.0, 0.15, 0.08, OscillatorType::Triangle, 0.0);
+        self.tone_at(300.0, 0.15, 0.07, OscillatorType::Triangle, 0.1);
+        self.tone_at(400.0, 0.15, 0.06, OscillatorType::Triangle, 0.2);
+    }
+
+    /// Missile miss — descending whiff.
+    pub fn play_missile_miss(&self) {
+        self.sweep(400.0, 100.0, 0.15, OscillatorType::Triangle, 0.06);
+    }
+
+    // ── Arena Terrain Sounds ────────────────────────────────────────
+
+    /// Gravity well pull — deep resonant hum.
+    pub fn play_gravity_pull(&self) {
+        self.sweep(200.0, 60.0, 0.3, OscillatorType::Sine, 0.08);
+        self.tone(40.0, 0.2, 0.06, OscillatorType::Triangle);
+    }
+
+    /// Steam vent activation — hissing rush.
+    pub fn play_steam_vent(&self) {
+        self.tone(2000.0, 0.15, 0.04, OscillatorType::Square);
+        self.tone(2500.0, 0.12, 0.03, OscillatorType::Square);
+        self.sweep(3000.0, 1500.0, 0.2, OscillatorType::Square, 0.03);
+    }
+
+    /// Oil/lubricant ignition — whoompf.
+    pub fn play_oil_ignition(&self) {
+        self.sweep(100.0, 400.0, 0.12, OscillatorType::Triangle, 0.10);
+        self.tone_at(300.0, 0.1, 0.08, OscillatorType::Sawtooth, 0.05);
+    }
+
+    /// Crate sliding/chain push — scraping thud.
+    pub fn play_crate_push(&self) {
+        self.tone(100.0, 0.1, 0.08, OscillatorType::Triangle);
+        self.tone_at(80.0, 0.08, 0.10, OscillatorType::Square, 0.05);
+    }
+
+    /// Crate crushing a unit — heavy impact.
+    pub fn play_crate_crush(&self) {
+        self.sfx_voice(80.0, OscillatorType::Square, 0.14, &Adsr::percussive());
+        self.tone(50.0, 0.15, 0.12, OscillatorType::Triangle);
+        self.tone_at(120.0, 0.08, 0.08, OscillatorType::Sawtooth, 0.05);
+    }
+
+    /// Conveyor engagement — mechanical whir.
+    pub fn play_conveyor(&self) {
+        self.sweep(150.0, 300.0, 0.15, OscillatorType::Triangle, 0.05);
+        self.tone(200.0, 0.1, 0.04, OscillatorType::Square);
+    }
+
+    /// Explosion chain reaction — escalating booms.
+    pub fn play_chain_explosion(&self) {
+        self.tone_at(80.0, 0.12, 0.12, OscillatorType::Triangle, 0.0);
+        self.tone_at(100.0, 0.14, 0.14, OscillatorType::Triangle, 0.08);
+        self.tone_at(60.0, 0.18, 0.16, OscillatorType::Sawtooth, 0.16);
+    }
+
     /// Turn advance — subtle tick.
     pub fn play_turn_tick(&self) {
         self.tone(400.0, 0.015, 0.03, OscillatorType::Triangle);
