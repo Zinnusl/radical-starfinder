@@ -934,6 +934,11 @@ pub struct Projectile {
 }
 
 impl Projectile {
+    pub const SPEED_FAST: f64 = 0.16;   // Arrives in ~6 frames (lasers, lightning)
+    pub const SPEED_NORMAL: f64 = 0.10; // Arrives in ~10 frames (standard attacks)
+    pub const SPEED_SLOW: f64 = 0.06;   // Arrives in ~17 frames (heavy projectiles)
+    pub const SPEED_CRAWL: f64 = 0.03;  // Arrives in ~33 frames (area denial)
+
     pub fn current_pos(&self) -> (f64, f64) {
         let t = self.progress;
         let x = self.from_x + (self.to_x as f64 - self.from_x) * t;
@@ -954,6 +959,8 @@ pub struct ArcingProjectile {
     pub owner_is_player: bool,
     /// Skip the first tick so projectiles don't resolve on the round they're spawned
     pub fresh: bool,
+    /// 0 = single tile, 1 = 3×3, 2 = 5×5
+    pub aoe_radius: u8,
 }
 
 /// Collapsed tactical phases per Oracle review (~5 core states).

@@ -1,8 +1,8 @@
 //! Tactical battle (combat arena) rendering.
 
 use crate::combat::{
-    ArenaBiome, BattleTile, Direction, EnemyIntent, TacticalBattle, TacticalPhase, TargetMode,
-    TypingAction, Weather, WuxingElement,
+    ArenaBiome, BattleTile, Direction, EnemyIntent, Projectile, TacticalBattle, TacticalPhase,
+    TargetMode, TypingAction, Weather, WuxingElement,
 };
 use crate::player::Player;
 use crate::radical;
@@ -1238,6 +1238,27 @@ impl super::Renderer {
             let (px, py) = proj.current_pos();
             let sx = grid_x + px * cell;
             let sy = grid_y + py * cell;
+
+            // Trail behind fast projectiles
+            if proj.speed >= Projectile::SPEED_FAST && proj.progress > 0.1 {
+                let trail_len = 3;
+                for t in 1..=trail_len {
+                    let tp = (proj.progress - t as f64 * 0.04).max(0.0);
+                    let (tpx, tpy) = (
+                        proj.from_x + (proj.to_x as f64 - proj.from_x) * tp,
+                        proj.from_y + (proj.to_y as f64 - proj.from_y) * tp,
+                    );
+                    let tsx = grid_x + tpx * cell;
+                    let tsy = grid_y + tpy * cell;
+                    let trail_alpha = 0.3 - t as f64 * 0.08;
+                    self.ctx.set_fill_style_str(
+                        &format!("rgba(200,200,255,{})", trail_alpha.max(0.05)),
+                    );
+                    self.ctx
+                        .fill_rect(tsx + cell / 2.0 - 2.0, tsy + cell / 2.0 - 2.0, 4.0, 4.0);
+                }
+            }
+
             self.ctx.set_shadow_color(proj.color);
             self.ctx.set_shadow_blur(8.0);
             self.ctx.set_fill_style_str(proj.color);
@@ -1256,6 +1277,47 @@ impl super::Renderer {
             let urgent = arc.turns_remaining <= 1;
             let pulse_speed = if urgent { 6.0 } else { 3.5 };
             let pulse = ((anim_t * pulse_speed).sin() * 0.2 + 0.5).clamp(0.25, 0.7);
+
+            // AoE danger zone rendering
+            if arc.aoe_radius > 0 {
+                let r = arc.aoe_radius as i32;
+                for dx in -r..=r {
+                    for dy in -r..=r {
+                        if dx == 0 && dy == 0 {
+                            continue;
+                        }
+                        let ax = arc.target_x + dx;
+                        let ay = arc.target_y + dy;
+                        if ax >= 0
+                            && ay >= 0
+                            && (ax as usize) < battle.arena.width
+                            && (ay as usize) < battle.arena.height
+                        {
+                            let asx = grid_x + ax as f64 * cell;
+                            let asy = grid_y + ay as f64 * cell;
+                            let aoe_alpha = pulse * 0.25;
+                            let (ar, ag, ab) =
+                                if urgent { (255, 60, 60) } else { (255, 180, 50) };
+                            self.ctx.set_fill_style_str(&format!(
+                                "rgba({},{},{},{})",
+                                ar, ag, ab, aoe_alpha
+                            ));
+                            self.ctx
+                                .fill_rect(asx + 2.0, asy + 2.0, cell - 4.0, cell - 4.0);
+                            self.ctx.set_stroke_style_str(&format!(
+                                "rgba({},{},{},{})",
+                                ar,
+                                ag,
+                                ab,
+                                aoe_alpha * 1.5
+                            ));
+                            self.ctx.set_line_width(0.5);
+                            self.ctx
+                                .stroke_rect(asx + 2.0, asy + 2.0, cell - 4.0, cell - 4.0);
+                        }
+                    }
+                }
+            }
 
             let (fill_r, fill_g, fill_b) = if urgent { (255, 60, 60) } else { (255, 200, 50) };
             let fill_color = format!("rgba({},{},{},{})", fill_r, fill_g, fill_b, pulse * 0.55);
@@ -1288,6 +1350,14 @@ impl super::Renderer {
                 sx + cell - 3.0,
                 sy + cell - 4.0,
             ).ok();
+
+            // Danger icon for imminent impacts
+            if arc.turns_remaining <= 1 {
+                self.ctx.set_fill_style_str("rgba(255,40,40,0.9)");
+                self.ctx.set_font("bold 10px monospace");
+                self.ctx.set_text_align("left");
+                self.ctx.fill_text("!", sx + 2.0, sy + 10.0).ok();
+            }
         }
 
         // Right panel: info area
@@ -1303,6 +1373,14 @@ impl super::Renderer {
         self.ctx.set_line_width(1.0);
         self.ctx
             .stroke_rect(panel_x - 6.0, py - 4.0, panel_w + 8.0, grid_px + 8.0);
+        // Inner glow border
+        self.ctx.set_stroke_style_str("rgba(100,80,160,0.15)");
+        self.ctx.set_line_width(1.0);
+        self.ctx
+            .stroke_rect(panel_x - 5.5, py - 3.5, panel_w + 7.0, grid_px + 7.0);
+        // Top accent line
+        self.ctx.set_fill_style_str("rgba(0,204,221,0.25)");
+        self.ctx.fill_rect(panel_x - 6.0, py - 4.0, panel_w + 8.0, 1.5);
 
         let player_unit = &battle.units[0];
         let p_bar_w = panel_w.min(130.0);
@@ -1346,6 +1424,16 @@ impl super::Renderer {
         self.ctx.set_fill_style_str(panel_hp_color);
         self.ctx
             .fill_rect(panel_x, py, p_bar_w * p_hp_frac, hp_bar_h);
+        // Low HP glow effect
+        if p_hp_frac < 0.3 {
+            self.ctx.set_shadow_color("rgba(255,50,50,0.5)");
+            self.ctx.set_shadow_blur(4.0);
+            self.ctx.set_fill_style_str(panel_hp_color);
+            self.ctx
+                .fill_rect(panel_x, py, p_bar_w * p_hp_frac, hp_bar_h);
+            self.ctx.set_shadow_blur(0.0);
+            self.ctx.set_shadow_color("transparent");
+        }
         self.ctx.set_stroke_style_str("rgba(255,255,255,0.12)");
         self.ctx.set_line_width(0.5);
         self.ctx.stroke_rect(panel_x, py, p_bar_w, hp_bar_h);
@@ -1548,6 +1636,9 @@ impl super::Renderer {
             self.ctx.set_font("bold 11px monospace");
             self.ctx.set_fill_style_str("#00ccdd");
             self.ctx.fill_text("─ Actions ─", panel_x, py + 10.0).ok();
+            // Section header underline
+            self.ctx.set_fill_style_str("rgba(0,204,221,0.15)");
+            self.ctx.fill_rect(panel_x, py + 12.0, p_bar_w, 1.0);
             py += 16.0;
 
             let actions: &[(&str, &str, bool)] = &[
@@ -1565,16 +1656,32 @@ impl super::Renderer {
             self.ctx.set_font("11px monospace");
             for (hotkey, label, enabled) in actions {
                 if *enabled {
-                    self.ctx.set_fill_style_str("rgba(255,204,50,0.08)");
+                    // Darker inner background
+                    self.ctx.set_fill_style_str("rgba(0,204,221,0.06)");
                     self.ctx
                         .fill_rect(panel_x - 2.0, py - 1.0, p_bar_w + 2.0, 14.0);
+                    // Left accent bar
+                    self.ctx.set_fill_style_str("rgba(0,204,221,0.5)");
+                    self.ctx.fill_rect(panel_x - 2.0, py - 1.0, 2.0, 14.0);
+                    // Hotkey in cyan, label in light
+                    self.ctx.set_fill_style_str("#00ccdd");
+                    self.ctx
+                        .fill_text(&format!("[{}]", hotkey), panel_x, py + 10.0)
+                        .ok();
                     self.ctx.set_fill_style_str("#dde0e8");
+                    self.ctx
+                        .fill_text(&format!(" {}", label), panel_x + 22.0, py + 10.0)
+                        .ok();
                 } else {
-                    self.ctx.set_fill_style_str("#444");
+                    // Disabled: dim text, no accent
+                    self.ctx.set_fill_style_str("#333");
+                    self.ctx
+                        .fill_rect(panel_x - 2.0, py - 1.0, p_bar_w + 2.0, 14.0);
+                    self.ctx.set_fill_style_str("#555");
+                    self.ctx
+                        .fill_text(&format!("[{}] {}", hotkey, label), panel_x, py + 10.0)
+                        .ok();
                 }
-                self.ctx
-                    .fill_text(&format!("[{}] {}", hotkey, label), panel_x, py + 10.0)
-                    .ok();
                 py += 14.0;
             }
 
@@ -1587,13 +1694,23 @@ impl super::Renderer {
 
         if battle.spell_menu_open && matches!(battle.phase, TacticalPhase::Command) {
             py += 6.0;
+            let spell_menu_w = panel_w.min(170.0);
+            let spell_menu_h = 16.0 + battle.available_spells.len() as f64 * 18.0 + 20.0;
             self.ctx.set_fill_style_str("rgba(0,0,0,0.6)");
             self.ctx.fill_rect(
                 panel_x - 4.0,
                 py,
-                panel_w.min(170.0),
-                16.0 + battle.available_spells.len() as f64 * 18.0 + 20.0,
+                spell_menu_w,
+                spell_menu_h,
             );
+            // Menu border
+            self.ctx.set_stroke_style_str("rgba(100,80,160,0.3)");
+            self.ctx.set_line_width(1.0);
+            self.ctx
+                .stroke_rect(panel_x - 4.0, py, spell_menu_w, spell_menu_h);
+            // Header accent
+            self.ctx.set_fill_style_str("rgba(0,204,221,0.2)");
+            self.ctx.fill_rect(panel_x - 4.0, py, spell_menu_w, 1.5);
             self.ctx.set_fill_style_str("#00ccdd");
             self.ctx.set_font("bold 11px monospace");
             self.ctx.fill_text("Spells:", panel_x, py + 12.0).ok();
@@ -1661,13 +1778,23 @@ impl super::Renderer {
 
         if battle.item_menu_open && matches!(battle.phase, TacticalPhase::Command) {
             py += 6.0;
+            let item_menu_w = panel_w.min(170.0);
+            let item_menu_h = 16.0 + battle.available_items.len() as f64 * 18.0 + 20.0;
             self.ctx.set_fill_style_str("rgba(0,0,0,0.6)");
             self.ctx.fill_rect(
                 panel_x - 4.0,
                 py,
-                panel_w.min(170.0),
-                16.0 + battle.available_items.len() as f64 * 18.0 + 20.0,
+                item_menu_w,
+                item_menu_h,
             );
+            // Menu border
+            self.ctx.set_stroke_style_str("rgba(100,80,160,0.3)");
+            self.ctx.set_line_width(1.0);
+            self.ctx
+                .stroke_rect(panel_x - 4.0, py, item_menu_w, item_menu_h);
+            // Header accent
+            self.ctx.set_fill_style_str("rgba(0,204,221,0.2)");
+            self.ctx.fill_rect(panel_x - 4.0, py, item_menu_w, 1.5);
             self.ctx.set_fill_style_str("#44dd88");
             self.ctx.set_font("bold 11px monospace");
             self.ctx.fill_text("Items:", panel_x, py + 12.0).ok();
@@ -1778,13 +1905,23 @@ impl super::Renderer {
         if battle.skill_menu_open && matches!(battle.phase, TacticalPhase::Command) {
             py += 6.0;
             let count = battle.player_radical_abilities.len();
+            let skill_menu_w = panel_w.min(200.0);
+            let skill_menu_h = 16.0 + count as f64 * 18.0 + 36.0;
             self.ctx.set_fill_style_str("rgba(0,0,0,0.6)");
             self.ctx.fill_rect(
                 panel_x - 4.0,
                 py,
-                panel_w.min(200.0),
-                16.0 + count as f64 * 18.0 + 36.0,
+                skill_menu_w,
+                skill_menu_h,
             );
+            // Menu border
+            self.ctx.set_stroke_style_str("rgba(100,80,160,0.3)");
+            self.ctx.set_line_width(1.0);
+            self.ctx
+                .stroke_rect(panel_x - 4.0, py, skill_menu_w, skill_menu_h);
+            // Header accent
+            self.ctx.set_fill_style_str("rgba(0,204,221,0.2)");
+            self.ctx.fill_rect(panel_x - 4.0, py, skill_menu_w, 1.5);
             self.ctx.set_fill_style_str("#ff9944");
             self.ctx.set_font("bold 11px monospace");
             self.ctx.fill_text("Skills:", panel_x, py + 12.0).ok();
@@ -1868,6 +2005,9 @@ impl super::Renderer {
             self.ctx
                 .fill_text("── LOOK MODE ──", panel_x, py + 10.0)
                 .ok();
+            // Section header underline
+            self.ctx.set_fill_style_str("rgba(0,204,221,0.15)");
+            self.ctx.fill_rect(panel_x, py + 12.0, p_bar_w, 1.0);
             py += 18.0;
 
             if let Some(tile) = battle.arena.tile(cursor_x, cursor_y) {
@@ -2113,6 +2253,9 @@ impl super::Renderer {
                                         py + 10.0,
                                     )
                                     .ok();
+                                // Section header underline
+                                self.ctx.set_fill_style_str("rgba(0,204,221,0.15)");
+                                self.ctx.fill_rect(panel_x, py + 12.0, p_bar_w, 1.0);
                                 py += 14.0;
 
                                 for skill in &unit.radical_actions {
@@ -2519,6 +2662,34 @@ impl super::Renderer {
                 1.0
             };
             let alpha = (recency * 0.6 + 0.4).min(1.0);
+            // Alternating row backgrounds
+            if i % 2 == 0 {
+                self.ctx.set_fill_style_str("rgba(255,255,255,0.02)");
+                self.ctx.fill_rect(
+                    log_x + 1.0,
+                    log_y + 4.0 + i as f64 * line_h,
+                    log_w - 2.0,
+                    line_h,
+                );
+            }
+            // Left accent bar by message type
+            let accent_color =
+                if msg.contains("damage") || msg.contains("hit") || msg.contains("kill") {
+                    "rgba(255,80,60,0.6)"
+                } else if msg.contains("heal") || msg.contains("restore") {
+                    "rgba(60,220,60,0.6)"
+                } else if msg.contains("ability") || msg.contains("cast") {
+                    "rgba(80,120,255,0.6)"
+                } else {
+                    "rgba(100,100,120,0.3)"
+                };
+            self.ctx.set_fill_style_str(accent_color);
+            self.ctx.fill_rect(
+                log_x + 1.0,
+                log_y + 4.0 + i as f64 * line_h,
+                2.0,
+                line_h - 1.0,
+            );
             let color = if msg.contains("damage") || msg.contains("hit") || msg.contains("kill") {
                 format!("rgba(255,130,100,{})", alpha)
             } else if msg.contains("heal") || msg.contains("restore") {
@@ -2532,7 +2703,7 @@ impl super::Renderer {
             };
             self.ctx.set_fill_style_str(&color);
             self.ctx
-                .fill_text(msg, log_x + 6.0, log_y + 12.0 + i as f64 * line_h)
+                .fill_text(msg, log_x + 10.0, log_y + 12.0 + i as f64 * line_h)
                 .ok();
         }
 

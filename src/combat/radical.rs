@@ -51,7 +51,7 @@ pub fn apply_radical_action(
                 to_x: px,
                 to_y: py,
                 progress: 0.0,
-                speed: 0.12,
+                speed: Projectile::SPEED_FAST,
                 arc_height: 0.2,
                 effect: ProjectileEffect::Damage(dmg),
                 owner_idx: unit_idx,
@@ -81,7 +81,7 @@ pub fn apply_radical_action(
                 to_x: px,
                 to_y: py,
                 progress: 0.0,
-                speed: 0.10,
+                speed: Projectile::SPEED_NORMAL,
                 arc_height: 0.3,
                 effect: ProjectileEffect::Damage(1),
                 owner_idx: unit_idx,
@@ -149,6 +149,7 @@ pub fn apply_radical_action(
                 color: "#ddaa00",
                 owner_is_player: false,
                 fresh: true,
+                aoe_radius: 0,
             });
             format!(
                 "{} — Reaping incoming! (lands next turn)",
@@ -212,6 +213,7 @@ pub fn apply_radical_action(
                 color: "#ff8800",
                 owner_is_player: false,
                 fresh: true,
+                aoe_radius: 0,
             });
             format!(
                 "{} — Potential bursts! (lands next turn)",
@@ -242,6 +244,7 @@ pub fn apply_radical_action(
                     color: "#ffff00",
                     owner_is_player: false,
                     fresh: true,
+                    aoe_radius: 0,
                 });
                 format!(
                     "{} — The gambit succeeds! (lands next turn)",
@@ -272,6 +275,7 @@ pub fn apply_radical_action(
                 color: "#886644",
                 owner_is_player: false,
                 fresh: true,
+                aoe_radius: 0,
             });
             format!(
                 "{} — A crushing weight incoming! (lands next turn)",
@@ -290,7 +294,7 @@ pub fn apply_radical_action(
                 to_x: px,
                 to_y: py,
                 progress: 0.0,
-                speed: 0.14,
+                speed: Projectile::SPEED_FAST,
                 arc_height: 0.2,
                 effect: ProjectileEffect::Damage(dmg),
                 owner_idx: unit_idx,
@@ -315,6 +319,7 @@ pub fn apply_radical_action(
                 color: "#ff2222",
                 owner_is_player: false,
                 fresh: true,
+                aoe_radius: 0,
             });
             format!(
                 "{} — Precise execution incoming! (lands next turn)",
@@ -332,7 +337,7 @@ pub fn apply_radical_action(
                 to_x: px,
                 to_y: py,
                 progress: 0.0,
-                speed: 0.13,
+                speed: Projectile::SPEED_FAST,
                 arc_height: 0.2,
                 effect: ProjectileEffect::Damage(2),
                 owner_idx: unit_idx,
@@ -389,7 +394,7 @@ pub fn apply_radical_action(
                 to_x: px,
                 to_y: py,
                 progress: 0.0,
-                speed: 0.14,
+                speed: Projectile::SPEED_FAST,
                 arc_height: 0.1,
                 effect: ProjectileEffect::Damage(1),
                 owner_idx: unit_idx,
@@ -450,7 +455,7 @@ pub fn apply_radical_action(
                 to_x: px,
                 to_y: py,
                 progress: 0.0,
-                speed: 0.12,
+                speed: Projectile::SPEED_FAST,
                 arc_height: 0.2,
                 effect: ProjectileEffect::Damage(dmg),
                 owner_idx: unit_idx,
@@ -486,6 +491,7 @@ pub fn apply_radical_action(
                         color: "#4488ff",
                         owner_is_player: false,
                         fresh: true,
+                        aoe_radius: 1,
                     });
                 }
             }
@@ -512,7 +518,7 @@ pub fn apply_radical_action(
                 to_x: px,
                 to_y: py,
                 progress: 0.0,
-                speed: 0.09,
+                speed: Projectile::SPEED_NORMAL,
                 arc_height: 0.4,
                 effect: ProjectileEffect::Damage(1),
                 owner_idx: unit_idx,
@@ -557,7 +563,7 @@ pub fn apply_radical_action(
                 to_x: px,
                 to_y: py,
                 progress: 0.0,
-                speed: 0.11,
+                speed: Projectile::SPEED_NORMAL,
                 arc_height: 0.3,
                 effect: ProjectileEffect::Damage(3),
                 owner_idx: unit_idx,
@@ -583,6 +589,7 @@ pub fn apply_radical_action(
                 color: "#ff8844",
                 owner_is_player: false,
                 fresh: true,
+                aoe_radius: 0,
             });
             format!(
                 "{} — Launches an arcing shot! (lands in 2 turns)",
@@ -600,7 +607,7 @@ pub fn apply_radical_action(
                 to_x: px,
                 to_y: py,
                 progress: 0.0,
-                speed: 0.10,
+                speed: Projectile::SPEED_NORMAL,
                 arc_height: 0.3,
                 effect: ProjectileEffect::Damage(2),
                 owner_idx: unit_idx,
@@ -660,7 +667,7 @@ pub fn apply_radical_action(
                 to_x: px,
                 to_y: py,
                 progress: 0.0,
-                speed: 0.13,
+                speed: Projectile::SPEED_FAST,
                 arc_height: 0.1,
                 effect: ProjectileEffect::Damage(dmg),
                 owner_idx: unit_idx,
@@ -702,7 +709,7 @@ pub fn apply_radical_action(
                 to_x: px,
                 to_y: py,
                 progress: 0.0,
-                speed: 0.11,
+                speed: Projectile::SPEED_NORMAL,
                 arc_height: 0.2,
                 effect: ProjectileEffect::Damage(2),
                 owner_idx: unit_idx,
@@ -773,6 +780,7 @@ pub fn apply_radical_action(
                 color: "#aaaaaa",
                 owner_is_player: false,
                 fresh: true,
+                aoe_radius: 0,
             });
             format!(
                 "{} — Needle strike incoming! (lands next turn)",
@@ -852,6 +860,7 @@ pub fn apply_radical_action(
                 color: "#664422",
                 owner_is_player: false,
                 fresh: true,
+                aoe_radius: 0,
             });
             format!(
                 "{} — Ground cracks beneath! Move or fall! (1 turn)",
@@ -883,7 +892,7 @@ pub fn apply_radical_action(
                     to_x: tx,
                     to_y: ty,
                     progress: 0.0,
-                    speed: 0.14,
+                    speed: Projectile::SPEED_FAST,
                     arc_height: 0.1,
                     effect: ProjectileEffect::Damage(2),
                     owner_idx: unit_idx,
@@ -911,6 +920,7 @@ pub fn apply_radical_action(
                 color: "#44cc44",
                 owner_is_player: false,
                 fresh: true,
+                aoe_radius: 0,
             });
             battle.units[0]
                 .statuses
@@ -960,7 +970,7 @@ pub fn apply_radical_action(
                 to_x: px,
                 to_y: py,
                 progress: 0.0,
-                speed: 0.12,
+                speed: Projectile::SPEED_FAST,
                 arc_height: 0.3,
                 effect: ProjectileEffect::Damage(2),
                 owner_idx: unit_idx,
@@ -1062,7 +1072,7 @@ pub fn apply_radical_action(
                     to_x: px,
                     to_y: py,
                     progress: 0.0,
-                    speed: 0.11,
+                    speed: Projectile::SPEED_NORMAL,
                     arc_height: 0.2,
                     effect: ProjectileEffect::Damage(2),
                     owner_idx: unit_idx,
@@ -1112,6 +1122,7 @@ pub fn apply_radical_action(
                 color: "#eeddcc",
                 owner_is_player: false,
                 fresh: true,
+                aoe_radius: 0,
             });
             format!(
                 "{} — Bone shard incoming! Armor shattered! (1 turn)",
@@ -1148,6 +1159,7 @@ pub fn apply_radical_action(
                     color: "#886644",
                     owner_is_player: false,
                     fresh: true,
+                    aoe_radius: 1,
                 });
             }
             format!(
@@ -1621,12 +1633,45 @@ pub fn apply_player_radical_ability(
             let tx = battle.units[target_idx].x;
             let ty = battle.units[target_idx].y;
             let fire_tiles = vec![(tx - 1, ty), (tx + 1, ty), (tx, ty - 1), (tx, ty + 1)];
+            // First try terrain-specific interactions (dungeon tiles)
             let terrain_msgs =
                 apply_terrain_interactions(battle, TerrainSource::FireAbility, &fire_tiles);
             for tm in &terrain_msgs {
                 battle.log_message(tm);
             }
-            format!("{} — Fire terrain placed!", ability.name())
+            // For tiles that weren't transformed, place BlastMark directly
+            let mut placed = 0u32;
+            for &(fx, fy) in &fire_tiles {
+                if let Some(tile) = battle.arena.tile(fx, fy) {
+                    if tile.is_walkable()
+                        && tile != crate::combat::BattleTile::BlastMark
+                        && tile != crate::combat::BattleTile::PlasmaPool
+                    {
+                        battle
+                            .arena
+                            .set_tile(fx, fy, crate::combat::BattleTile::BlastMark);
+                        placed += 1;
+                        if let Some(idx) = battle.unit_at(fx, fy) {
+                            if idx != attacker_idx {
+                                let actual = deal_damage(battle, idx, 1);
+                                battle.log_message(&format!(
+                                    "🔥 Fire scorches for {} damage!",
+                                    actual
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+            if placed > 0 || !terrain_msgs.is_empty() {
+                format!(
+                    "{} — Fire terrain placed! {} tiles ablaze!",
+                    ability.name(),
+                    placed + terrain_msgs.len() as u32
+                )
+            } else {
+                format!("{} — No room for fire terrain!", ability.name())
+            }
         }
         PlayerRadicalAbility::Purify => {
             battle.focus = (battle.focus + 3).min(battle.max_focus);
