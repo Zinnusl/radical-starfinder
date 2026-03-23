@@ -8070,7 +8070,6 @@ fn is_wall_tile(tile: Tile) -> bool {
             | Tile::WeakBulkhead
             | Tile::CargoPipes
             | Tile::CrystalPanel
-            | Tile::FrequencyWall
     )
 }
 
@@ -8079,7 +8078,7 @@ fn tile_visual_group(tile: Tile) -> u8 {
     match tile {
         // Wall group
         Tile::Bulkhead | Tile::DamagedBulkhead | Tile::WeakBulkhead
-        | Tile::CargoPipes | Tile::CrystalPanel | Tile::FrequencyWall => 0,
+        | Tile::CargoPipes | Tile::CrystalPanel => 0,
         // Basic floor group
         Tile::MetalFloor | Tile::Hallway | Tile::CorruptedFloor
         | Tile::FrozenDeck | Tile::Catwalk | Tile::PressureSensor => 1,
