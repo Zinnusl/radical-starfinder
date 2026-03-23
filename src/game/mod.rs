@@ -1426,11 +1426,104 @@ pub struct GameState {
     pub space_combat_cursor: usize,
     /// Battle log messages for space combat
     pub space_combat_log: Vec<String>,
+    /// Currently selected weapon for space combat
+    pub space_combat_weapon: ShipWeapon,
+    /// Currently selected subsystem target
+    pub space_combat_target: SubsystemTarget,
+    /// Cursor for subsystem target selection
+    pub space_combat_target_cursor: usize,
+    /// Whether the player is evading this turn
+    pub space_combat_evading: bool,
     /// Whether the shop is in sell mode (player sells items)
     pub shop_sell_mode: bool,
 }
 
 impl GameState {
+    // ── Space combat helpers ──────────────────────────────────────
+
+    fn apply_subsystem_damage(enemy: &mut EnemyShip, target: SubsystemTarget, dmg: i32) {
+        match target {
+            SubsystemTarget::Weapons => enemy.weapons_sub.hp -= dmg,
+            SubsystemTarget::Shields => enemy.shields_sub.hp -= dmg,
+            SubsystemTarget::Engines => enemy.engines_sub.hp -= dmg,
+            SubsystemTarget::Hull    => {
+                // Hull target: absorb with shields first, then hull
+                let shield_absorb = dmg.min(enemy.shields);
+                enemy.shields -= shield_absorb;
+                let hull_dmg = dmg - shield_absorb;
+                enemy.hull -= hull_dmg;
+            }
+        }
+    }
+
+    fn apply_subsystem_effects(enemy: &mut EnemyShip) {
+        if enemy.weapons_sub.is_destroyed() {
+            enemy.weapon_power = (enemy.weapon_power / 2).max(1);
+        }
+        if enemy.shields_sub.is_destroyed() {
+            enemy.shields = 0;
+            enemy.max_shields = 0;
+        }
+        // Hull subsystem acts as the overall hull check
+        if enemy.weapons_sub.is_destroyed() && enemy.shields_sub.is_destroyed() && enemy.engines_sub.is_destroyed() {
+            // All subsystems destroyed — crippled, auto-damage hull
+            enemy.hull -= 5;
+        }
+    }
+
+    fn enemy_fires(enemy: &mut EnemyShip, s: &mut GameState, evading: bool) {
+        let mut e_dmg = enemy.weapon_power;
+        if enemy.weapons_sub.is_destroyed() {
+            e_dmg = (e_dmg / 2).max(1);
+        }
+        if evading {
+            e_dmg = (e_dmg / 2).max(1);
+        }
+
+        // Determine tactic-based message
+        let tactic_msg = match enemy.tactic {
+            EnemyTactic::Aggressive => {
+                "targets your hull!"
+            }
+            EnemyTactic::Disabling => {
+                if enemy.turns_taken % 2 == 0 {
+                    // Reduce player weapon power temporarily
+                    s.ship.weapon_power = (s.ship.weapon_power - 1).max(1);
+                    "targets your weapons! (-1 weapon power)"
+                } else {
+                    s.ship.engine_power = (s.ship.engine_power - 1).max(1);
+                    "targets your engines! (-1 engine power)"
+                }
+            }
+            EnemyTactic::Balanced => {
+                match enemy.turns_taken % 3 {
+                    0 => "fires a focused volley!",
+                    1 => {
+                        s.ship.weapon_power = (s.ship.weapon_power - 1).max(1);
+                        "strafes your weapons!"
+                    }
+                    _ => "fires a broadside!",
+                }
+            }
+            EnemyTactic::Boarding => {
+                if s.ship.weapon_power <= 2 {
+                    // Attempt boarding — extra hull damage
+                    e_dmg += 3;
+                    "attempts boarding action!"
+                } else {
+                    "fires cautiously."
+                }
+            }
+        };
+
+        let e_shield_absorb = e_dmg.min(s.ship.shields);
+        s.ship.shields -= e_shield_absorb;
+        let e_hull_dmg = e_dmg - e_shield_absorb;
+        s.ship.hull -= e_hull_dmg;
+        s.space_combat_log.push(format!("{} {} {} dmg ({} shield, {} hull)",
+            enemy.name, tactic_msg, e_dmg, e_shield_absorb, e_hull_dmg));
+    }
+
     /// Convert tile position to screen coordinates for particles.
     fn tile_to_screen(&self, tx: i32, ty: i32) -> (f64, f64) {
         let cam_x = self.player.x as f64 * 24.0 - self.renderer.canvas_w / 2.0 + 12.0;
@@ -9135,8 +9228,10 @@ impl GameState {
                 if let Some(ref enemy) = self.enemy_ship {
                     self.renderer.draw_space_combat(
                         &self.ship, enemy, &self.space_combat_phase,
-                        self.space_combat_cursor, &self.space_combat_log,
-                        self.crew.len(), js_sys::Date::now() / 1000.0,
+                        self.space_combat_cursor, self.space_combat_target_cursor,
+                        &self.space_combat_log, &self.crew,
+                        self.space_combat_weapon, self.space_combat_evading,
+                        js_sys::Date::now() / 1000.0,
                     );
                 }
                 return;
@@ -10207,6 +10302,10 @@ pub fn init_game() -> Result<(), JsValue> {
         space_combat_phase: SpaceCombatPhase::Choosing,
         space_combat_cursor: 0,
         space_combat_log: vec![],
+        space_combat_weapon: ShipWeapon::Laser,
+        space_combat_target: SubsystemTarget::Hull,
+        space_combat_target_cursor: 0,
+        space_combat_evading: false,
         shop_sell_mode: false,
     }));
 
@@ -10511,8 +10610,10 @@ pub fn init_game() -> Result<(), JsValue> {
                                         if encounter_roll < 20 {
                                             let difficulty = s.floor_num as i32 + 1;
                                             let names = ["Pirate Raider", "Void Corsair", "Rogue Frigate", "Scav Interceptor"];
+                                            let ship_name_idx = (encounter_roll as usize / 5) % 4;
+                                            let sub_hp = 10 + difficulty * 5;
                                             s.enemy_ship = Some(EnemyShip {
-                                                name: names[(encounter_roll as usize / 5) % 4].to_string(),
+                                                name: names[ship_name_idx].to_string(),
                                                 hull: 30 + difficulty * 10,
                                                 max_hull: 30 + difficulty * 10,
                                                 shields: 10 + difficulty * 5,
@@ -10520,9 +10621,23 @@ pub fn init_game() -> Result<(), JsValue> {
                                                 weapon_power: 3 + difficulty,
                                                 engine_power: 2 + difficulty / 2,
                                                 loot_credits: 50 + difficulty * 20,
+                                                weapons_sub: Subsystem::new(sub_hp),
+                                                shields_sub: Subsystem::new(sub_hp),
+                                                engines_sub: Subsystem::new(sub_hp),
+                                                tactic: match ship_name_idx % 4 {
+                                                    0 => EnemyTactic::Aggressive,
+                                                    1 => EnemyTactic::Disabling,
+                                                    2 => EnemyTactic::Balanced,
+                                                    _ => EnemyTactic::Boarding,
+                                                },
+                                                turns_taken: 0,
                                             });
                                             s.space_combat_phase = SpaceCombatPhase::Choosing;
                                             s.space_combat_cursor = 0;
+                                            s.space_combat_weapon = ShipWeapon::Laser;
+                                            s.space_combat_target = SubsystemTarget::Hull;
+                                            s.space_combat_target_cursor = 0;
+                                            s.space_combat_evading = false;
                                             s.space_combat_log = vec!["Enemy ship detected!".to_string()];
                                             s.game_mode = GameMode::SpaceCombat;
                                         }
@@ -10919,16 +11034,25 @@ pub fn init_game() -> Result<(), JsValue> {
                     if let Some(ref mut enemy) = s.enemy_ship.clone() {
                         match s.space_combat_phase {
                             SpaceCombatPhase::Victory => {
-                                // Award loot and return to starmap
-                                s.player.gold += enemy.loot_credits;
-                                s.message = format!("Victory! Gained {} credits.", enemy.loot_credits);
+                                // Apply Quartermaster bonus (+25% loot)
+                                let mut loot = enemy.loot_credits;
+                                if s.crew.iter().any(|c| c.role == CrewRole::Quartermaster) {
+                                    loot = (loot as f64 * 1.25) as i32;
+                                }
+                                s.player.gold += loot;
+                                // Medic heals 1 crew HP after battle
+                                if s.crew.iter().any(|c| c.role == CrewRole::Medic) {
+                                    for crew in s.crew.iter_mut() {
+                                        crew.hp = (crew.hp + 1).min(crew.max_hp);
+                                    }
+                                }
+                                s.message = format!("Victory! Gained {} credits.", loot);
                                 s.message_timer = 120;
                                 s.enemy_ship = None;
                                 s.space_combat_log.clear();
                                 s.game_mode = GameMode::Starmap;
                             }
                             SpaceCombatPhase::Defeat => {
-                                // Game over — reset player
                                 s.player.hp = 0;
                                 s.enemy_ship = None;
                                 s.space_combat_log.clear();
@@ -10936,76 +11060,274 @@ pub fn init_game() -> Result<(), JsValue> {
                                 s.message = "Your ship was destroyed...".to_string();
                                 s.message_timer = 120;
                             }
-                            SpaceCombatPhase::Choosing => {
-                                let mut enemy = enemy.clone();
-                                let mut evading = false;
+                            SpaceCombatPhase::TargetingSubsystem => {
                                 match key.as_str() {
                                     "ArrowUp" | "w" | "W" => {
-                                        if s.space_combat_cursor > 0 {
-                                            s.space_combat_cursor -= 1;
+                                        if s.space_combat_target_cursor > 0 {
+                                            s.space_combat_target_cursor -= 1;
                                         }
                                     }
                                     "ArrowDown" | "s" | "S" => {
+                                        if s.space_combat_target_cursor < 3 {
+                                            s.space_combat_target_cursor += 1;
+                                        }
+                                    }
+                                    "Escape" => {
+                                        s.space_combat_phase = SpaceCombatPhase::Choosing;
+                                    }
+                                    "Enter" | " " => {
+                                        let targets = SubsystemTarget::all();
+                                        s.space_combat_target = targets[s.space_combat_target_cursor];
+                                        let weapon = s.space_combat_weapon;
+                                        let target = s.space_combat_target;
+                                        let target_name = target.name();
+                                        let mut enemy = enemy.clone();
+
+                                        // Crew bonus: SecurityChief (gunner) +2 damage
+                                        let gunner_bonus: i32 = if s.crew.iter().any(|c| c.role == CrewRole::SecurityChief) { 2 } else { 0 };
+                                        let base_wp = s.ship.weapon_power + gunner_bonus;
+
+                                        match weapon {
+                                            ShipWeapon::Laser => {
+                                                let dmg = base_wp;
+                                                GameState::apply_subsystem_damage(&mut enemy, target, dmg);
+                                                s.space_combat_log.push(format!("{} {} => {} for {} dmg", weapon.icon(), weapon.name(), target_name, dmg));
+                                            }
+                                            ShipWeapon::Missiles => {
+                                                let roll = (s.seed.wrapping_mul(1664525).wrapping_add(1013904223)) % 100;
+                                                s.seed = s.seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                                                if roll < 75 {
+                                                    let dmg = base_wp * 2;
+                                                    GameState::apply_subsystem_damage(&mut enemy, target, dmg);
+                                                    s.space_combat_log.push(format!("{} {} HIT {} for {} dmg!", weapon.icon(), weapon.name(), target_name, dmg));
+                                                } else {
+                                                    s.space_combat_log.push(format!("{} {} MISSED {}!", weapon.icon(), weapon.name(), target_name));
+                                                }
+                                            }
+                                            ShipWeapon::IonCannon => {
+                                                let dmg = if target == SubsystemTarget::Shields {
+                                                    base_wp * 2
+                                                } else if target == SubsystemTarget::Hull {
+                                                    (base_wp / 2).max(1)
+                                                } else {
+                                                    base_wp
+                                                };
+                                                GameState::apply_subsystem_damage(&mut enemy, target, dmg);
+                                                s.space_combat_log.push(format!("{} {} => {} for {} dmg", weapon.icon(), weapon.name(), target_name, dmg));
+                                            }
+                                            ShipWeapon::Broadside => {
+                                                // Should not reach here — broadside auto-fires
+                                            }
+                                        }
+
+                                        // Apply subsystem destruction effects
+                                        GameState::apply_subsystem_effects(&mut enemy);
+
+                                        // Check victory
+                                        if enemy.hull <= 0 {
+                                            s.space_combat_phase = SpaceCombatPhase::Victory;
+                                            s.space_combat_log.push(format!("{} destroyed!", enemy.name));
+                                            s.enemy_ship = Some(enemy);
+                                            s.render();
+                                            return;
+                                        }
+
+                                        // Engineer passive: +2 shields per turn
+                                        if s.crew.iter().any(|c| c.role == CrewRole::Engineer) {
+                                            s.ship.shields = (s.ship.shields + 2).min(s.ship.max_shields);
+                                        }
+
+                                        // Enemy fires back
+                                        enemy.turns_taken += 1;
+                                        GameState::enemy_fires(&mut enemy, &mut *s, false);
+
+                                        if s.ship.hull <= 0 {
+                                            s.space_combat_phase = SpaceCombatPhase::Defeat;
+                                            s.space_combat_log.push("Your ship has been destroyed!".to_string());
+                                            s.enemy_ship = Some(enemy);
+                                            s.render();
+                                            return;
+                                        }
+
+                                        s.space_combat_phase = SpaceCombatPhase::Choosing;
+                                        s.enemy_ship = Some(enemy);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            SpaceCombatPhase::Choosing => {
+                                let mut enemy = enemy.clone();
+                                match key.as_str() {
+                                    "ArrowUp" | "w" | "W" => {
+                                        // Move up a row: 4-7 -> 0-3
+                                        if s.space_combat_cursor >= 4 {
+                                            s.space_combat_cursor -= 4;
+                                        }
+                                    }
+                                    "ArrowDown" | "s" | "S" => {
+                                        // Move down a row: 0-3 -> 4-7
                                         if s.space_combat_cursor < 4 {
+                                            s.space_combat_cursor += 4;
+                                        }
+                                    }
+                                    "ArrowLeft" | "a" | "A" => {
+                                        let row_start = (s.space_combat_cursor / 4) * 4;
+                                        if s.space_combat_cursor > row_start {
+                                            s.space_combat_cursor -= 1;
+                                        }
+                                    }
+                                    "ArrowRight" | "d" | "D" => {
+                                        let row_end = (s.space_combat_cursor / 4) * 4 + 3;
+                                        if s.space_combat_cursor < row_end {
                                             s.space_combat_cursor += 1;
                                         }
                                     }
                                     "Enter" | " " => {
                                         match s.space_combat_cursor {
                                             0 => {
-                                                // Fire
-                                                let dmg = s.ship.weapon_power * 2;
-                                                let shield_absorb = dmg.min(enemy.shields);
-                                                enemy.shields -= shield_absorb;
-                                                let hull_dmg = dmg - shield_absorb;
-                                                enemy.hull -= hull_dmg;
-                                                s.space_combat_log.push(format!("You fire! {} dmg ({} to shields, {} to hull)", dmg, shield_absorb, hull_dmg));
-                                                s.space_combat_phase = SpaceCombatPhase::PlayerFiring;
+                                                // Fire Laser -> targeting
+                                                s.space_combat_weapon = ShipWeapon::Laser;
+                                                s.space_combat_phase = SpaceCombatPhase::TargetingSubsystem;
+                                                s.space_combat_target_cursor = 3; // default Hull
                                             }
                                             1 => {
-                                                // Evade
-                                                evading = true;
+                                                // Fire Missiles -> targeting
+                                                s.space_combat_weapon = ShipWeapon::Missiles;
+                                                s.space_combat_phase = SpaceCombatPhase::TargetingSubsystem;
+                                                s.space_combat_target_cursor = 3;
+                                            }
+                                            2 => {
+                                                // Fire Ion Cannon -> targeting
+                                                s.space_combat_weapon = ShipWeapon::IonCannon;
+                                                s.space_combat_phase = SpaceCombatPhase::TargetingSubsystem;
+                                                s.space_combat_target_cursor = 1; // default Shields for ion
+                                            }
+                                            3 => {
+                                                // Broadside — auto-fires all subsystems
+                                                let gunner_bonus: i32 = if s.crew.iter().any(|c| c.role == CrewRole::SecurityChief) { 2 } else { 0 };
+                                                let base_wp = s.ship.weapon_power + gunner_bonus;
+                                                let dmg = (base_wp / 2).max(1);
+                                                for target in SubsystemTarget::all().iter() {
+                                                    GameState::apply_subsystem_damage(&mut enemy, *target, dmg);
+                                                }
+                                                s.space_combat_log.push(format!("== Broadside! {} dmg to all subsystems", dmg));
+                                                GameState::apply_subsystem_effects(&mut enemy);
+
+                                                if enemy.hull <= 0 {
+                                                    s.space_combat_phase = SpaceCombatPhase::Victory;
+                                                    s.space_combat_log.push(format!("{} destroyed!", enemy.name));
+                                                    s.enemy_ship = Some(enemy);
+                                                    s.render();
+                                                    return;
+                                                }
+
+                                                // Engineer passive
+                                                if s.crew.iter().any(|c| c.role == CrewRole::Engineer) {
+                                                    s.ship.shields = (s.ship.shields + 2).min(s.ship.max_shields);
+                                                }
+
+                                                enemy.turns_taken += 1;
+                                                GameState::enemy_fires(&mut enemy, &mut *s, false);
+
+                                                if s.ship.hull <= 0 {
+                                                    s.space_combat_phase = SpaceCombatPhase::Defeat;
+                                                    s.space_combat_log.push("Your ship has been destroyed!".to_string());
+                                                    s.enemy_ship = Some(enemy);
+                                                    s.render();
+                                                    return;
+                                                }
+                                                s.space_combat_phase = SpaceCombatPhase::Choosing;
+                                            }
+                                            4 => {
+                                                // Raise Shields
+                                                let restore = s.ship.max_shields / 3;
+                                                // Engineer passive
+                                                let eng_bonus = if s.crew.iter().any(|c| c.role == CrewRole::Engineer) { 2 } else { 0 };
+                                                let total_restore = restore + eng_bonus;
+                                                s.ship.shields = (s.ship.shields + total_restore).min(s.ship.max_shields);
+                                                s.space_combat_log.push(format!("Shields recharged! +{} shields", total_restore));
+
+                                                enemy.turns_taken += 1;
+                                                GameState::enemy_fires(&mut enemy, &mut *s, false);
+
+                                                if s.ship.hull <= 0 {
+                                                    s.space_combat_phase = SpaceCombatPhase::Defeat;
+                                                    s.space_combat_log.push("Your ship has been destroyed!".to_string());
+                                                    s.enemy_ship = Some(enemy);
+                                                    s.render();
+                                                    return;
+                                                }
+                                                s.space_combat_phase = SpaceCombatPhase::Choosing;
+                                            }
+                                            5 => {
+                                                // Evasive Maneuvers
+                                                let mut evading = true;
+                                                let pilot_bonus: i32 = if s.crew.iter().any(|c| c.role == CrewRole::Pilot) { 20 } else { 0 };
                                                 if s.ship.engine_power > enemy.engine_power {
                                                     s.space_combat_log.push("Evasive maneuvers! Enemy damage halved.".to_string());
+                                                } else if enemy.engines_sub.is_destroyed() {
+                                                    s.space_combat_log.push("Enemy engines destroyed — evasion auto-succeeds!".to_string());
                                                 } else {
                                                     let roll = (s.seed.wrapping_mul(1664525).wrapping_add(1013904223)) % 100;
                                                     s.seed = s.seed.wrapping_mul(1664525).wrapping_add(1013904223);
-                                                    if roll < 50 {
+                                                    let threshold = 50 + pilot_bonus;
+                                                    if (roll as i32) < threshold {
                                                         s.space_combat_log.push("Evasive maneuvers! Enemy damage halved.".to_string());
                                                     } else {
                                                         evading = false;
                                                         s.space_combat_log.push("Evasion failed!".to_string());
                                                     }
                                                 }
-                                                s.space_combat_phase = SpaceCombatPhase::PlayerFiring;
+                                                s.space_combat_evading = evading;
+
+                                                // Engineer passive
+                                                if s.crew.iter().any(|c| c.role == CrewRole::Engineer) {
+                                                    s.ship.shields = (s.ship.shields + 2).min(s.ship.max_shields);
+                                                }
+
+                                                enemy.turns_taken += 1;
+                                                GameState::enemy_fires(&mut enemy, &mut *s, evading);
+
+                                                s.space_combat_evading = false;
+                                                if s.ship.hull <= 0 {
+                                                    s.space_combat_phase = SpaceCombatPhase::Defeat;
+                                                    s.space_combat_log.push("Your ship has been destroyed!".to_string());
+                                                    s.enemy_ship = Some(enemy);
+                                                    s.render();
+                                                    return;
+                                                }
+                                                s.space_combat_phase = SpaceCombatPhase::Choosing;
                                             }
-                                            2 => {
-                                                // Shields
-                                                let restore = s.ship.max_shields / 3;
-                                                s.ship.shields = (s.ship.shields + restore).min(s.ship.max_shields);
-                                                s.space_combat_log.push(format!("Shields recharged! +{} shields", restore));
-                                                s.space_combat_phase = SpaceCombatPhase::PlayerFiring;
-                                            }
-                                            3 => {
+                                            6 => {
                                                 // Board
                                                 let skill_total: i32 = s.crew.iter().map(|c| c.skill).sum();
                                                 if skill_total > enemy.weapon_power {
                                                     enemy.hull = 0;
                                                     s.space_combat_log.push(format!("Boarding successful! Crew skill {} vs enemy power {}", skill_total, enemy.weapon_power));
-                                                    // Bonus loot on boarding
                                                     enemy.loot_credits = (enemy.loot_credits as f64 * 1.5) as i32;
+                                                    s.space_combat_phase = SpaceCombatPhase::Victory;
+                                                    s.space_combat_log.push(format!("{} captured!", enemy.name));
+                                                    s.enemy_ship = Some(enemy);
+                                                    s.render();
+                                                    return;
                                                 } else {
                                                     let dmg = enemy.weapon_power;
                                                     s.ship.hull -= dmg;
-                                                    s.space_combat_log.push(format!("Boarding failed! Took {} hull damage. (Skill {} vs power {})", dmg, skill_total, enemy.weapon_power));
+                                                    s.space_combat_log.push(format!("Boarding failed! Took {} hull dmg. (Skill {} vs power {})", dmg, skill_total, enemy.weapon_power));
+                                                    if s.ship.hull <= 0 {
+                                                        s.space_combat_phase = SpaceCombatPhase::Defeat;
+                                                        s.space_combat_log.push("Your ship has been destroyed!".to_string());
+                                                        s.enemy_ship = Some(enemy);
+                                                        s.render();
+                                                        return;
+                                                    }
+                                                    s.space_combat_phase = SpaceCombatPhase::Choosing;
                                                 }
-                                                s.space_combat_phase = SpaceCombatPhase::Boarding;
                                             }
-                                            4 | _ => {
+                                            7 | _ => {
                                                 // Flee
-                                                if s.ship.engine_power >= enemy.engine_power {
-                                                    s.space_combat_log.push("Escaped successfully!".to_string());
-                                                    s.enemy_ship = Some(enemy);
+                                                let can_flee = enemy.engines_sub.is_destroyed() || s.ship.engine_power >= enemy.engine_power;
+                                                if can_flee {
                                                     s.enemy_ship = None;
                                                     s.space_combat_log.clear();
                                                     s.game_mode = GameMode::Starmap;
@@ -11014,10 +11336,10 @@ pub fn init_game() -> Result<(), JsValue> {
                                                     s.render();
                                                     return;
                                                 } else {
+                                                    let pilot_bonus: i32 = if s.crew.iter().any(|c| c.role == CrewRole::Pilot) { 15 } else { 0 };
                                                     let roll = (s.seed.wrapping_mul(1664525).wrapping_add(1013904223)) % 100;
                                                     s.seed = s.seed.wrapping_mul(1664525).wrapping_add(1013904223);
-                                                    if roll < 50 {
-                                                        s.space_combat_log.push("Escaped successfully!".to_string());
+                                                    if (roll as i32) < 50 + pilot_bonus {
                                                         s.enemy_ship = None;
                                                         s.space_combat_log.clear();
                                                         s.game_mode = GameMode::Starmap;
@@ -11032,7 +11354,14 @@ pub fn init_game() -> Result<(), JsValue> {
                                                         let hull_dmg = dmg - shield_absorb;
                                                         s.ship.hull -= hull_dmg;
                                                         s.space_combat_log.push(format!("Escape failed! Took {} damage.", dmg));
-                                                        s.space_combat_phase = SpaceCombatPhase::PlayerFiring;
+                                                        if s.ship.hull <= 0 {
+                                                            s.space_combat_phase = SpaceCombatPhase::Defeat;
+                                                            s.space_combat_log.push("Your ship has been destroyed!".to_string());
+                                                            s.enemy_ship = Some(enemy);
+                                                            s.render();
+                                                            return;
+                                                        }
+                                                        s.space_combat_phase = SpaceCombatPhase::Choosing;
                                                     }
                                                 }
                                             }
@@ -11040,7 +11369,8 @@ pub fn init_game() -> Result<(), JsValue> {
                                     }
                                     "Escape" => {
                                         // Escape key = attempt flee
-                                        if s.ship.engine_power >= enemy.engine_power {
+                                        let can_flee = enemy.engines_sub.is_destroyed() || s.ship.engine_power >= enemy.engine_power;
+                                        if can_flee {
                                             s.enemy_ship = None;
                                             s.space_combat_log.clear();
                                             s.game_mode = GameMode::Starmap;
@@ -11049,9 +11379,10 @@ pub fn init_game() -> Result<(), JsValue> {
                                             s.render();
                                             return;
                                         } else {
+                                            let pilot_bonus: i32 = if s.crew.iter().any(|c| c.role == CrewRole::Pilot) { 15 } else { 0 };
                                             let roll = (s.seed.wrapping_mul(1664525).wrapping_add(1013904223)) % 100;
                                             s.seed = s.seed.wrapping_mul(1664525).wrapping_add(1013904223);
-                                            if roll < 50 {
+                                            if (roll as i32) < 50 + pilot_bonus {
                                                 s.enemy_ship = None;
                                                 s.space_combat_log.clear();
                                                 s.game_mode = GameMode::Starmap;
@@ -11086,29 +11417,6 @@ pub fn init_game() -> Result<(), JsValue> {
                                     s.enemy_ship = Some(enemy);
                                     s.render();
                                     return;
-                                }
-
-                                // Enemy fires back (if action was taken)
-                                if s.space_combat_phase != SpaceCombatPhase::Choosing {
-                                    let mut e_dmg = enemy.weapon_power;
-                                    if evading { e_dmg /= 2; }
-                                    let e_shield_absorb = e_dmg.min(s.ship.shields);
-                                    s.ship.shields -= e_shield_absorb;
-                                    let e_hull_dmg = e_dmg - e_shield_absorb;
-                                    s.ship.hull -= e_hull_dmg;
-                                    s.space_combat_log.push(format!("{} fires! {} dmg ({} to shields, {} to hull)", enemy.name, e_dmg, e_shield_absorb, e_hull_dmg));
-
-                                    // Check defeat after enemy fires
-                                    if s.ship.hull <= 0 {
-                                        s.space_combat_phase = SpaceCombatPhase::Defeat;
-                                        s.space_combat_log.push("Your ship has been destroyed!".to_string());
-                                        s.enemy_ship = Some(enemy);
-                                        s.render();
-                                        return;
-                                    }
-
-                                    // Return to choosing phase
-                                    s.space_combat_phase = SpaceCombatPhase::Choosing;
                                 }
 
                                 s.enemy_ship = Some(enemy);
