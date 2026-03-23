@@ -32,8 +32,8 @@ pub enum EquipEffect {
     GoldBonus(i32),
     /// Allows digging through walls
     Digging,
-    /// Halves spirit drain rate (drain 1 per 2 moves instead of every move)
-    SpiritSustain,
+    /// Grants slow HP regeneration (heal 1 HP every 3 moves)
+    PassiveRegen,
     /// +1 to all spell damage
     SpellPowerBoost(i32),
     /// Heal HP per kill (weapon variant)
@@ -72,8 +72,8 @@ impl EquipEffect {
             EquipEffect::Digging => {
                 "Allows you to breach through bulkheads by walking into them.".to_string()
             }
-            EquipEffect::SpiritSustain => {
-                "Halves energy drain rate — lose 1 energy every 2 moves instead of every move."
+            EquipEffect::PassiveRegen => {
+                "Grants slow passive regeneration — heal 1 HP every 3 moves."
                     .to_string()
             }
             EquipEffect::SpellPowerBoost(n) => {
@@ -336,11 +336,11 @@ pub enum Item {
     StimPack(i32),
     /// Stun all visible enemies
     EMPGrenade,
-    /// Restore spirit energy
+    /// Restore HP
     RationPack(i32),
-    /// Block spirit drain for N moves
+    /// Restore Focus in combat, or grant Regen outside combat
     FocusStim(i32),
-    /// Full spirit restore + Confused for N turns
+    /// Restore 5 HP + Confused for N turns
     SynthAle(i32),
     /// Grant Haste for N turns (smoke cover)
     HoloDecoy(i32),
@@ -358,7 +358,7 @@ pub enum Item {
     BiogelPatch(i32),
     /// Apply Envenomed to self weapon for 5 turns
     VenomDart,
-    /// Grant Shield + SpiritShield for N turns
+    /// Grant Shield + Regen for N turns
     DeflectorDrone(i32),
     /// Stun all visible enemies + confuse (like enhanced EMPGrenade)
     NaniteSwarm,
@@ -558,9 +558,9 @@ impl Item {
             Item::PersonalTeleporter => "Short-range teleport to a random explored tile. Perfect for emergency extraction.",
             Item::StimPack(_) => "Military-grade stimulant granting Haste for extra actions each turn.",
             Item::EMPGrenade => "Electromagnetic pulse that disables all visible enemies for several turns.",
-            Item::RationPack(_) => "Standard-issue rations that restore spirit energy to stave off exhaustion.",
-            Item::FocusStim(_) => "Neural stabilizer that shields your spirit from decay for several moves.",
-            Item::SynthAle(_) => "Potent synthetic alcohol that fully restores spirit but leaves you disoriented.",
+            Item::RationPack(_) => "Standard-issue rations that restore HP.",
+            Item::FocusStim(_) => "Neural stabilizer that restores focus in combat, or grants regeneration.",
+            Item::SynthAle(_) => "Potent synthetic alcohol that restores 5 HP but leaves you disoriented.",
             Item::HoloDecoy(_) => "Projects a holographic duplicate, granting you swift movement for several turns.",
             Item::PlasmaBurst(_) => "Overcharged plasma cell that detonates dealing damage to all visible enemies.",
             Item::NanoShield(_) => "Deploys a nanite barrier granting a protective shield and slow regeneration.",
@@ -569,7 +569,7 @@ impl Item {
             Item::ShockModule(_) => "Discharges a focused energy bolt at the nearest enemy, dealing heavy damage.",
             Item::BiogelPatch(_) => "Medical-grade biogel that slowly regenerates wounds over time.",
             Item::VenomDart => "Coats your weapon in synthesized neurotoxin, envenoming strikes for several turns.",
-            Item::DeflectorDrone(_) => "Deploys a drone that projects shields protecting both body and spirit.",
+            Item::DeflectorDrone(_) => "Deploys a drone that projects a shield with slow regeneration.",
             Item::NaniteSwarm => "Releases blinding nanites on all visible enemies, stunning them in place.",
             Item::Revitalizer(_) => "Emergency revival system that activates on death, restoring you from critical state.",
             Item::ReflectorPlate => "Energy-reflective plating that bounces the next attack back at the attacker.",
@@ -647,7 +647,7 @@ pub const EQUIPMENT_POOL: &[Equipment] = &[
     Equipment {
         name: "Energy Recycler",
         slot: EquipSlot::Charm,
-        effect: EquipEffect::SpiritSustain,
+        effect: EquipEffect::PassiveRegen,
     },
     Equipment {
         name: "Psi Amplifier",
@@ -905,9 +905,6 @@ pub struct Player {
     pub form: PlayerForm,
     /// Turns remaining in current form (0 = permanent/human)
     pub form_timer: i32,
-    /// Spirit energy — ticks down each move, player takes damage at 0
-    pub spirit: i32,
-    pub max_spirit: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -1045,25 +1042,9 @@ impl Player {
             piety: Vec::new(),
             form: PlayerForm::Human,
             form_timer: 0,
-            spirit: Self::base_max_spirit(class),
-            max_spirit: Self::base_max_spirit(class),
         }
     }
 
-    fn base_max_spirit(class: PlayerClass) -> i32 {
-        match class {
-            PlayerClass::Mystic => 180,
-            PlayerClass::Technomancer | PlayerClass::Envoy => 170,
-            PlayerClass::Mechanic => 160,
-            _ => 150,
-        }
-    }
-
-    pub fn has_spirit_sustain(&self) -> bool {
-        self.charm
-            .map(|c| matches!(c.effect, EquipEffect::SpiritSustain))
-            .unwrap_or(false)
-    }
 
     pub fn get_piety(&self, faction: Faction) -> i32 {
         self.piety

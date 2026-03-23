@@ -146,7 +146,7 @@ pub enum RadicalAction {
     ScatteringPages,
     /// 见 see — Remove all buffs from target (dispel)
     TrueVision,
-    /// 气 air/energy — Drain focus/spirit from player
+    /// 气 air/energy — Drain focus from player
     QiDisruption,
     /// 广 wide — Create zone where enemy gets +1 damage
     ExpandingDomain,
@@ -422,7 +422,7 @@ impl RadicalAction {
             Self::CleansingLight => "Removes all debuffs, heals 3 HP",
             Self::ScatteringPages => "Confuses all units in 2-tile radius for 1 turn",
             Self::TrueVision => "Removes all buffs from target (dispel)",
-            Self::QiDisruption => "Drains 3 spirit from the player",
+            Self::QiDisruption => "Drains 3 focus from the player",
             Self::ExpandingDomain => "Gains +1 damage in a 3x3 zone, +1 armor",
             Self::SinkholeSnare => "Creates cracked floor under player (1 turn to escape)",
             Self::SonicBurst => "2 damage to all in 2-tile radius + stun",
@@ -563,7 +563,7 @@ impl RadicalAction {
             Self::CleansingLight => "Heal 3",
             Self::ScatteringPages => "No damage",
             Self::TrueVision => "No damage",
-            Self::QiDisruption => "Drain 3 spirit",
+            Self::QiDisruption => "Drain 3 focus",
             Self::ExpandingDomain => "No damage",
             Self::SinkholeSnare => "No damage",
             Self::SonicBurst => "2 AoE + stun",

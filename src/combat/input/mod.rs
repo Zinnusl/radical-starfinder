@@ -874,9 +874,9 @@ fn use_item_in_combat(
             battle.units[0].defending = true;
             battle.units[0]
                 .statuses
-                .push(StatusInstance::new(StatusKind::SpiritShield, turns));
+                .push(StatusInstance::new(StatusKind::Shield, turns));
             battle.audio_events.push(AudioEvent::ShieldBlock);
-            format!("Ward active! Shield + Spirit Shield for {} turns!", turns)
+            format!("Ward active! Double Shield for {} turns!", turns)
         }
         Item::NaniteSwarm => {
             let mut count = 0;

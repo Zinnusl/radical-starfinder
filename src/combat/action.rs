@@ -60,13 +60,13 @@ pub fn move_unit(
         let mut combo_msgs = check_status_combos(battle, unit_idx);
         messages.append(&mut combo_msgs);
     }
-    // SpiritWell: one-time spirit restore, convert to Open
+    // EnergyNode: one-time HP restore, convert to Open
     if battle.arena.tile(dest_x, dest_y) == Some(BattleTile::EnergyNode)
         && battle.units[unit_idx].is_player()
     {
         battle.arena.set_tile(dest_x, dest_y, BattleTile::MetalFloor);
-        battle.pending_spirit_delta += 15;
-        messages.push("🌊 The Spirit Well restores your energy! (+15 spirit)".to_string());
+        battle.units[unit_idx].hp = (battle.units[unit_idx].hp + 3).min(battle.units[unit_idx].max_hp);
+        messages.push("🌊 The Energy Node restores your vitality! (+3 HP)".to_string());
     }
     // TrapTile: trigger hidden or revealed spike trap
     let dest_tile = battle.arena.tile(dest_x, dest_y);
@@ -148,8 +148,8 @@ pub fn wait(battle: &mut TacticalBattle, unit_idx: usize) {
         battle.player_acted = true;
         let tile = battle.arena.tile(ux, uy);
         if tile == Some(BattleTile::ChargingPad) {
-            battle.pending_spirit_delta += 10;
-            battle.log_message("You meditate on the stone... (+10 spirit)");
+            battle.focus = (battle.focus + 3).min(battle.max_focus);
+            battle.log_message("You meditate on the stone... (+3 focus)");
         } else {
             battle.log_message("You wait, gathering momentum.");
         }
@@ -248,13 +248,13 @@ pub fn deal_damage(battle: &mut TacticalBattle, target_idx: usize, raw_damage: i
         if reading_bonus > 0 {
             battle.log_message(format!("Reading order bonus! +{} damage", reading_bonus));
         }
-        // SoulTrap: if enemy dies on a SoulTrap tile, log it for spirit gain
+        // SoulTrap: if enemy dies on a GravityTrap tile, heal player
         if !battle.units[target_idx].is_player() {
             let dx = battle.units[target_idx].x;
             let dy = battle.units[target_idx].y;
             if battle.arena.tile(dx, dy) == Some(BattleTile::GravityTrap) {
-                battle.pending_spirit_delta += 10;
-                battle.log_message("💀 Soul Trap captures the fallen spirit! (+10 spirit)");
+                battle.units[0].hp = (battle.units[0].hp + 2).min(battle.units[0].max_hp);
+                battle.log_message("💀 Soul Trap captures the fallen essence! (+2 HP)");
             }
             // Revenge: adjacent allies get enraged when an enemy dies.
             crate::combat::synergy::on_enemy_death_revenge(battle, target_idx);

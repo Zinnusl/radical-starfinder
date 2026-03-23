@@ -312,7 +312,6 @@ pub fn enter_combat(
         radical_synergy_streak: 0,
         chengyu_history: Vec::new(),
         intents_calculated: false,
-        pending_spirit_delta: 0,
         player_radical_abilities: player
             .radicals
             .iter()
@@ -446,7 +445,7 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
     }
 
     if floor >= 2 {
-        let boulder_count = 1 + ((floor / 4) as usize).min(3);
+        let boulder_count = 2 + ((floor / 3) as usize).min(3);
         let boulder_seed = seed.wrapping_mul(7919).wrapping_add(42);
         for i in 0..boulder_count {
             let hash = boulder_seed
@@ -469,8 +468,8 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
     // Interactive terrain: explosive barrels, crumbling floors, trap tiles
     if floor >= 3 {
         let interactive_seed = seed.wrapping_mul(9901).wrapping_add(77);
-        // Explosive barrels: 1-2 per arena
-        let barrel_count = 1 + ((interactive_seed >> 4) % 2) as usize;
+        // Explosive barrels: 2-3 per arena
+        let barrel_count = 2 + ((interactive_seed >> 4) % 2) as usize;
         for i in 0..barrel_count {
             let hash = interactive_seed
                 .wrapping_mul(6469)
@@ -523,6 +522,58 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
         }
     }
 
+    // Oil slick clusters for chain ignition potential (floor >= 3)
+    if floor >= 3 {
+        let oil_seed = seed.wrapping_mul(13397).wrapping_add(123);
+        let oil_count = 2 + (floor as usize / 3).min(4);
+        let mut placed_oil = 0;
+        for attempt in 0..(oil_count * 5) {
+            let hash = oil_seed
+                .wrapping_mul(7307)
+                .wrapping_add(attempt as u64)
+                .wrapping_mul(25171);
+            let ox = ((hash >> 16) % size as u64) as i32;
+            let oy = (1 + (hash >> 8) % (size as u64 - 3)) as i32;
+            if arena.tile(ox, oy) == Some(BattleTile::MetalFloor) {
+                arena.set_tile(ox, oy, BattleTile::OilSlick);
+                placed_oil += 1;
+                // Place adjacent oil for cluster effect
+                let deltas: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+                let adj_hash = hash.wrapping_add(700);
+                let adj_dir = (adj_hash % 4) as usize;
+                let (adx, ady) = deltas[adj_dir];
+                if arena.tile(ox + adx, oy + ady) == Some(BattleTile::MetalFloor) {
+                    arena.set_tile(ox + adx, oy + ady, BattleTile::OilSlick);
+                }
+                if placed_oil >= oil_count {
+                    break;
+                }
+            }
+        }
+    }
+
+    // Extra fuel canisters near crates for chain explosion potential
+    if floor >= 4 {
+        let fuel_adj_seed = seed.wrapping_mul(14879).wrapping_add(200);
+        for y in 0..size as i32 {
+            for x in 0..size as i32 {
+                if arena.tile(x, y) == Some(BattleTile::CargoCrate) {
+                    let try_dirs: [(i32, i32); 4] = [(2, 0), (-2, 0), (0, 2), (0, -2)];
+                    let dir_hash = fuel_adj_seed
+                        .wrapping_mul(x as u64 + 1)
+                        .wrapping_add(y as u64);
+                    let dir_idx = (dir_hash % 4) as usize;
+                    let (dx, dy) = try_dirs[dir_idx];
+                    let fx = x + dx;
+                    let fy = y + dy;
+                    if arena.tile(fx, fy) == Some(BattleTile::MetalFloor) {
+                        arena.set_tile(fx, fy, BattleTile::FuelCanister);
+                    }
+                }
+            }
+        }
+    }
+
     if floor >= 4 {
         let flow_seed = seed.wrapping_mul(6271).wrapping_add(99);
         let flow_hash = flow_seed.wrapping_mul(31337);
@@ -564,10 +615,10 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
         }
     }
 
-    // High Ground: 1-2 elevated tiles per arena (hill positions)
+    // High Ground: scaled to arena size (hill positions)
     {
         let hg_seed = seed.wrapping_mul(12347).wrapping_add(55);
-        let hg_count = 1 + ((hg_seed >> 4) % 2) as usize;
+        let hg_count = 1 + (size / 5);
         for i in 0..hg_count {
             let hash = hg_seed
                 .wrapping_mul(7727)
@@ -627,6 +678,49 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
                 continue;
             }
             arena.set_tile(x, y, BattleTile::SteamVentInactive);
+        }
+    }
+
+    // Extra cover barriers near hazards for destructible cover dynamics
+    if floor >= 3 {
+        let barrier_seed = seed.wrapping_mul(16411).wrapping_add(300);
+        let mut placed_barriers = 0;
+        let max_extra_barriers = 2 + size / 4;
+        'outer: for y in 1..size as i32 - 1 {
+            for x in 0..size as i32 {
+                if placed_barriers >= max_extra_barriers {
+                    break 'outer;
+                }
+                let is_hazard = matches!(
+                    arena.tile(x, y),
+                    Some(BattleTile::FuelCanister)
+                        | Some(BattleTile::OilSlick)
+                        | Some(BattleTile::CargoCrate)
+                );
+                if !is_hazard {
+                    continue;
+                }
+                let deltas: [(i32, i32); 4] = [(1, 1), (-1, 1), (1, -1), (-1, -1)];
+                let hash = barrier_seed
+                    .wrapping_mul(x as u64 + 1)
+                    .wrapping_add(y as u64)
+                    .wrapping_mul(31991);
+                let dir_idx = (hash % 4) as usize;
+                let (dx, dy) = deltas[dir_idx];
+                let bx = x + dx;
+                let by = y + dy;
+                let mid = size as i32 / 2;
+                if by >= (size as i32 - 2) && (bx - mid).abs() <= 1 {
+                    continue;
+                }
+                if by <= 0 || by >= size as i32 - 1 {
+                    continue;
+                }
+                if arena.tile(bx, by) == Some(BattleTile::MetalFloor) {
+                    arena.set_tile(bx, by, BattleTile::CoverBarrier);
+                    placed_barriers += 1;
+                }
+            }
         }
     }
 
@@ -711,17 +805,16 @@ pub fn exit_combat(
         }
     }
 
-    player.spirit = (player.spirit - 2).max(0);
     killed
 }
 
 fn compute_deployment_tiles(arena: &TacticalArena, units: &[BattleUnit]) -> Vec<(i32, i32)> {
     let h = arena.height as i32;
     let mut tiles = Vec::new();
-    for y in (h - 2)..h {
+    for y in (h - 3)..h {
         for x in 0..arena.width as i32 {
             if arena.tile(x, y).map(|t| t.is_walkable()).unwrap_or(false)
-                && !units.iter().any(|u| u.x == x && u.y == y)
+                && !units.iter().skip(1).any(|u| u.x == x && u.y == y)
             {
                 tiles.push((x, y));
             }

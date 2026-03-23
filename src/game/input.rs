@@ -29,7 +29,7 @@ pub(crate) fn longest_common_prefix_ci(strings: &[&str]) -> String {
 impl super::GameState {
     const CONSOLE_COMMANDS: &'static [&'static str] = &[
         "help", "god", "hp", "gold", "floor", "reveal", "kill_all",
-        "focus", "spirit", "clear", "stats", "items", "give_item",
+        "focus", "clear", "stats", "items", "give_item",
         "radicals", "give_radical", "spells", "give_spell", "fight", "boss",
     ];
 
@@ -152,8 +152,6 @@ impl super::GameState {
                 self.console_history
                     .push("focus [n]    - Set focus in combat".into());
                 self.console_history
-                    .push("spirit [n]   - Set spirit to n".into());
-                self.console_history
                     .push("clear        - Clear console".into());
                 self.console_history
                     .push("stats        - Show player stats".into());
@@ -255,17 +253,6 @@ impl super::GameState {
                     "Not in tactical combat".into()
                 }
             }
-            "spirit" => {
-                let amount = parts
-                    .get(1)
-                    .and_then(|s| s.parse::<i32>().ok())
-                    .unwrap_or(self.player.max_spirit);
-                self.player.spirit = amount.min(self.player.max_spirit);
-                format!(
-                    "Spirit set to {}/{}",
-                    self.player.spirit, self.player.max_spirit
-                )
-            }
             "clear" => {
                 self.console_history.clear();
                 return;
@@ -276,8 +263,8 @@ impl super::GameState {
                     self.player.hp, self.player.max_hp, self.player.gold, self.floor_num
                 ));
                 self.console_history.push(format!(
-                    "Spirit: {}/{}  Kills: {}  God: {}",
-                    self.player.spirit, self.player.max_spirit, self.total_kills, self.god_mode
+                    "Kills: {}  God: {}",
+                    self.total_kills, self.god_mode
                 ));
                 self.console_history.push(format!(
                     "Radicals: {}  Spells: {}  Items: {}",
@@ -295,9 +282,9 @@ impl super::GameState {
                     ("TeleportScroll", "Teleport"),
                     ("HastePotion", "Grant haste"),
                     ("StunBomb", "Stun enemies"),
-                    ("RiceBall", "Restore spirit"),
-                    ("MeditationIncense", "Block spirit drain"),
-                    ("AncestralWine", "Full spirit restore"),
+                    ("RiceBall", "Restore HP"),
+                    ("MeditationIncense", "Grant regen"),
+                    ("AncestralWine", "Restore 5 HP"),
                     ("SmokeScreen", "Smoke + haste"),
                     ("FireCracker", "AoE damage"),
                     ("IronSkinElixir", "Shield + regen"),
@@ -306,7 +293,7 @@ impl super::GameState {
                     ("ThunderTalisman", "High damage"),
                     ("JadeSalve", "Regen over time"),
                     ("SerpentFang", "Envenom weapon"),
-                    ("WardingCharm", "Shield + spirit shield"),
+                    ("WardingCharm", "Shield + regen"),
                     ("InkBomb", "Stun + confuse"),
                     ("PhoenixPlume", "Auto-revive"),
                 ];

@@ -350,14 +350,14 @@ impl EnemyIntent {
 }
 
 /// Determine arena size based on encounter type.
-/// Normal = 7×7, Elite = 9×9, Boss = 11×11.
+/// Normal = 9×9, Elite = 11×11, Boss = 13×13.
 pub fn arena_size_for_encounter(has_elite: bool, has_boss: bool) -> usize {
     if has_boss {
-        11
+        13
     } else if has_elite {
-        9
+        11
     } else {
-        7
+        9
     }
 }
 
@@ -1137,8 +1137,6 @@ pub struct TacticalBattle {
     pub chengyu_history: Vec<String>,
     /// Enemy intents calculated at start of each round.
     pub intents_calculated: bool,
-    /// Accumulated energy delta from tile effects (applied by game.rs each tick).
-    pub pending_spirit_delta: i32,
     /// Player radical abilities available this combat.
     pub player_radical_abilities: Vec<(&'static str, crate::enemy::PlayerRadicalAbility)>,
     /// Radicals consumed during this battle (the radical char strings).
@@ -1349,7 +1347,6 @@ pub mod test_helpers {
             radical_synergy_streak: 0,
             chengyu_history: Vec::new(),
             intents_calculated: false,
-            pending_spirit_delta: 0,
             player_radical_abilities: Vec::new(),
             consumed_radicals: Vec::new(),
             selected_radical_ability: None,

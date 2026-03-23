@@ -484,10 +484,10 @@ pub fn apply_scorched_damage(battle: &mut TacticalBattle) -> Vec<String> {
                 name, actual
             ));
         }
-        // SpiritDrain: drains spirit from player standing on it
+        // PowerDrain: damages player standing on it
         if tile == Some(BattleTile::PowerDrain) && battle.units[i].is_player() {
-            battle.pending_spirit_delta -= 3;
-            messages.push("⚫ The spirit drain saps your energy! (-3 spirit)".to_string());
+            battle.units[i].hp -= 1;
+            messages.push("⚫ The power drain saps your vitality! (-1 HP)".to_string());
         }
         // ShieldZone: heal units standing on it
         if tile == Some(BattleTile::ShieldZone) {

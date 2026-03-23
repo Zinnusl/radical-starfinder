@@ -27,8 +27,6 @@ pub enum StatusKind {
     Burn {
         damage: i32,
     },
-    /// Energy shield blocks drain for N turns (overworld).
-    SpiritShield,
     /// Cryofreeze: skip next turn, then clears
     Freeze,
     /// Impeded: movement reduced by 1
@@ -57,6 +55,8 @@ pub enum StatusKind {
     Blessed,
     /// Soaked: harmless alone, but enables combos (Soaked+PlasmaBurn=Steam, Soaked+Cryofreeze=deep freeze)
     Wet,
+    /// Defensive shield: reduces incoming damage
+    Shield,
 }
 
 /// An active status effect with remaining duration.
@@ -88,7 +88,6 @@ impl StatusInstance {
             StatusKind::Revealed => "👁Map",
             StatusKind::Envenomed => "☢Wep",
             StatusKind::Empowered { .. } => "⚡Sup",
-            StatusKind::SpiritShield => "🛡Shd",
             StatusKind::Freeze => "❄Cry",
             StatusKind::Slow => "🐌Imp",
             StatusKind::Fear => "😨Pnk",
@@ -101,6 +100,7 @@ impl StatusInstance {
             StatusKind::Cursed => "💀Mlw",
             StatusKind::Blessed => "✨Opt",
             StatusKind::Wet => "💧Skd",
+            StatusKind::Shield => "🛡Shd",
         }
     }
 
@@ -114,7 +114,6 @@ impl StatusInstance {
             StatusKind::Revealed => "#44ccff",
             StatusKind::Envenomed => "#00ff00",
             StatusKind::Empowered { .. } => "#ff4400",
-            StatusKind::SpiritShield => "#8844ff",
             StatusKind::Freeze => "#00ffff",
             StatusKind::Slow => "#aaaaaa",
             StatusKind::Fear => "#660066",
@@ -127,6 +126,7 @@ impl StatusInstance {
             StatusKind::Cursed => "#660044",
             StatusKind::Blessed => "#ffffaa",
             StatusKind::Wet => "#4488ff",
+            StatusKind::Shield => "#44aaff",
         }
     }
 
@@ -199,12 +199,6 @@ pub fn has_envenomed(statuses: &[StatusInstance]) -> bool {
     statuses
         .iter()
         .any(|s| matches!(s.kind, StatusKind::Envenomed))
-}
-
-pub fn has_spirit_shield(statuses: &[StatusInstance]) -> bool {
-    statuses
-        .iter()
-        .any(|s| matches!(s.kind, StatusKind::SpiritShield))
 }
 
 pub fn empowered_amount(statuses: &[StatusInstance]) -> i32 {

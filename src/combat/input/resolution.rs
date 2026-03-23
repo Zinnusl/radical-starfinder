@@ -20,7 +20,7 @@ fn tile_spell_bonus(battle: &TacticalBattle, unit_idx: usize) -> i32 {
         .arena
         .tile(battle.units[unit_idx].x, battle.units[unit_idx].y)
     {
-        // SpiritualInk + InkPool → +2 spell power instead of +1
+        // InkPool → +2 spell power with EnergyFlux weather, +1 otherwise
         Some(BattleTile::OilSlick) => {
             if battle.weather == Weather::EnergyFlux { 2 } else { 1 }
         }

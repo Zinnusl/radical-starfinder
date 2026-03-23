@@ -2501,14 +2501,13 @@ impl GameState {
             Tile::MedBayTile => {
                 let heal = self.player.max_hp / 2;
                 self.player.hp = (self.player.hp + heal).min(self.player.max_hp);
-                self.player.spirit = (self.player.spirit + 20).min(self.player.max_spirit);
                 self.player.statuses.push(crate::status::StatusInstance::new(
                     crate::status::StatusKind::Regen { heal: 3 },
                     10,
                 ));
                 let idx = self.level.idx(self.player.x, self.player.y);
                 self.level.tiles[idx] = Tile::CoolantPool;
-                self.message = format!("🌊 The spirit spring heals {} HP, restores 20 spirit, and grants auto-repair!", heal);
+                self.message = format!("🌊 The med bay heals {} HP and grants auto-repair!", heal);
                 self.message_timer = 80;
                 self.flash = Some((100, 255, 200, 0.2));
                 if let Some(ref audio) = self.audio {
@@ -3038,8 +3037,8 @@ impl GameState {
                 // Don't mark completed — each shrine is a step
                 let idx = self.level.idx(self.player.x, self.player.y);
                 self.level.tiles[idx] = Tile::MetalFloor;
-                self.player.spirit = (self.player.spirit + 5).min(self.player.max_spirit);
-                self.message = "🎵 Correct tone! Spirit +5. Ascend the staircase!".to_string();
+                self.player.hp = (self.player.hp + 5).min(self.player.max_hp);
+                self.message = "🎵 Correct tone! +5 HP. Ascend the staircase!".to_string();
                 self.message_timer = 60;
                 self.flash = Some((255, 220, 100, 0.15));
             }
@@ -3194,7 +3193,7 @@ impl GameState {
             SpecialRoomKind::DataArchive => {
                 if target_tile != Tile::MedBayTile { return; }
                 self.mark_room_completed();
-                // The spirit spring tile effect (heal) is handled by apply_player_tile_effect
+                // The med bay tile effect (heal) is handled by apply_player_tile_effect
                 // Additional: permanent spell power bonus
                 self.player.spell_power_bonus += 1;
                 self.message = "✨ The fountain refines your radicals! All spells gain +1 damage permanently!".to_string();
@@ -3241,13 +3240,13 @@ impl GameState {
                 self.mark_room_completed();
                 let idx = self.level.idx(self.player.x, self.player.y);
                 self.level.tiles[idx] = Tile::MetalFloor;
-                // XP/spirit reward for recalling memories
-                self.player.spirit = self.player.max_spirit;
+                // Reward for recalling memories
+                self.player.hp = self.player.max_hp;
                 self.player.gold += 25;
                 let radicals: &[&str] = &["心", "力", "气", "光"];
                 let r = radicals[self.rng_next() as usize % radicals.len()];
                 self.player.add_radical(r);
-                self.message = format!("🧠 Memories flood back! Spirit restored, +25 gold, radical {}!", r);
+                self.message = format!("🧠 Memories flood back! HP restored, +25 gold, radical {}!", r);
                 self.message_timer = 100;
                 self.flash = Some((180, 200, 255, 0.2));
                 if let Some(ref audio) = self.audio {
@@ -3409,24 +3408,13 @@ impl GameState {
         let (pdmg, pheal) = status::tick_statuses(&mut self.player.statuses);
         self.player.tick_form();
 
-        // Spirit clock tick
-        let spirit_shielded = crate::status::has_spirit_shield(&self.player.statuses);
-        let spirit_sustained = self.player.has_spirit_sustain();
-        let skip_drain = spirit_shielded || (spirit_sustained && self.move_count % 2 == 0);
-        if self.player.spirit > 0 {
-            if !skip_drain {
-                self.player.spirit -= 1;
-            }
-            if self.player.spirit == 0 {
-                self.message = "🌑 Your spirit is exhausted! Find food or an ink well!".to_string();
-                self.message_timer = 80;
-            }
-        } else {
+        // Hunger clock tick (removed spirit drain — now purely HP-based starvation)
+        {
             // Starving: damage scales with depth
             let starvation_dmg = 1 + self.floor_num / 5;
             self.player.hp -= starvation_dmg;
             self.message = format!(
-                "🌑 Spiritual exhaustion drains your life force! (-{} HP)",
+                "🌑 Exhaustion drains your life force! (-{} HP)",
                 starvation_dmg
             );
             self.message_timer = 40;
@@ -7901,8 +7889,8 @@ impl GameState {
                     ItemState::Blessed => "✨ Blessed! ",
                     ItemState::Normal => "",
                 };
-                self.player.spirit = (self.player.spirit + amount).min(self.player.max_spirit);
-                self.message = format!("{}🍙 Restored {} spirit energy!", prefix, amount);
+                self.player.hp = (self.player.hp + amount).min(self.player.max_hp);
+                self.message = format!("{}🍙 Restored {} HP!", prefix, amount);
                 self.message_timer = 60;
             }
             crate::player::Item::FocusStim(turns) => {
@@ -7919,10 +7907,10 @@ impl GameState {
                 self.player
                     .statuses
                     .push(crate::status::StatusInstance::new(
-                        crate::status::StatusKind::SpiritShield,
+                        crate::status::StatusKind::Shield,
                         turns,
                     ));
-                self.message = format!("{}🌕 Spirit Shield active for {} turns!", prefix, turns);
+                self.message = format!("{}🛡 Shield active for {} turns!", prefix, turns);
                 self.message_timer = 60;
             }
             crate::player::Item::SynthAle(confuse_turns) => {
@@ -7936,7 +7924,7 @@ impl GameState {
                     ItemState::Blessed => "✨ Blessed! ",
                     ItemState::Normal => "",
                 };
-                self.player.spirit = self.player.max_spirit;
+                self.player.hp = self.player.max_hp;
                 if confuse_turns > 0 {
                     self.player
                         .statuses
@@ -7945,12 +7933,12 @@ impl GameState {
                             confuse_turns,
                         ));
                     self.message = format!(
-                        "{}🍶 Spirit fully restored! But you feel dizzy for {} turns...",
+                        "{}🍶 Restored 5 HP! But you feel dizzy for {} turns...",
                         prefix, confuse_turns
                     );
                 } else {
                     self.message = format!(
-                        "{}🍶 Spirit fully restored! The blessed wine clears your mind!",
+                        "{}🍶 Restored 5 HP! The blessed wine clears your mind!",
                         prefix
                     );
                 }
@@ -8072,8 +8060,7 @@ impl GameState {
                     self.message = format!("{}🍵 All negative effects purged!", prefix);
                     if item_state == ItemState::Blessed {
                         self.player.hp = (self.player.hp + 3).min(self.player.max_hp);
-                        self.player.spirit = (self.player.spirit + 10).min(self.player.max_spirit);
-                        self.message.push_str(" +3 HP, +10 spirit!");
+                        self.message.push_str(" +3 HP!");
                     }
                 }
                 self.message_timer = 60;
@@ -8197,18 +8184,18 @@ impl GameState {
                     ItemState::Normal => "",
                 };
                 self.player.statuses.push(status::StatusInstance::new(
-                    status::StatusKind::SpiritShield,
+                    status::StatusKind::Shield,
                     turns,
                 ));
                 if item_state != ItemState::Cursed {
                     self.player.shield = true;
                     self.message = format!(
-                        "{}🔮 Ward active! Shield + Spirit Shield for {} turns!",
+                        "{}🔮 Ward active! Double Shield for {} turns!",
                         prefix, turns
                     );
                 } else {
                     self.message = format!(
-                        "{}Spirit Shield for {} turns, but no physical shield!",
+                        "{}Shield for {} turns, but no physical shield!",
                         prefix, turns
                     );
                 }
@@ -9536,7 +9523,7 @@ fn tile_look_text(tile: Tile) -> String {
         Tile::PressureSensor => "Pressure plate — something heavy might activate it.".to_string(),
         Tile::CrystalPanel => "Crystal formation — reflects light beautifully.".to_string(),
         Tile::WarpGatePortal => "Dragon Gate — an otherworldly portal shimmering with power.".to_string(),
-        Tile::MedBayTile => "Spirit spring — step in to restore HP and spirit.".to_string(),
+        Tile::MedBayTile => "Med bay — step in to restore HP.".to_string(),
         Tile::CreditCache => "Gold pile — walk over it to collect.".to_string(),
     }
 }
@@ -10439,9 +10426,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                         s.player.gold = parse_i32(&save_data, "gold", s.player.gold);
                                         s.floor_num = parse_i32(&save_data, "floor", s.floor_num);
                                         s.best_floor = parse_i32(&save_data, "best", s.best_floor);
-                                        s.player.spirit = parse_i32(&save_data, "spirit", s.player.spirit);
-                                        s.player.max_spirit = parse_i32(&save_data, "max_spirit", s.player.max_spirit);
-                                        // Restore player class
+                                        // Spirit fields removed
                                         let class_id = parse_u32(&save_data, "class", 0);
                                         let all_classes = crate::player::PlayerClass::all();
                                         let class = all_classes.get(class_id as usize).copied().unwrap_or(crate::player::PlayerClass::Soldier);
@@ -10451,8 +10436,6 @@ pub fn init_game() -> Result<(), JsValue> {
                                         s.player.hp = parse_i32(&save_data, "hp", s.player.hp);
                                         s.player.max_hp = parse_i32(&save_data, "max_hp", s.player.max_hp);
                                         s.player.gold = parse_i32(&save_data, "gold", s.player.gold);
-                                        s.player.spirit = parse_i32(&save_data, "spirit", s.player.spirit);
-                                        s.player.max_spirit = parse_i32(&save_data, "max_spirit", s.player.max_spirit);
                                         // Ship
                                         s.ship.hull = parse_i32(&save_data, "ship_hull", s.ship.hull);
                                         s.ship.max_hull = parse_i32(&save_data, "ship_max_hull", s.ship.max_hull);
@@ -12033,12 +12016,11 @@ pub fn init_game() -> Result<(), JsValue> {
                         s.codex.record(hanzi, pinyin, meaning, correct);
                         if correct {
                             s.player.hp = (s.player.hp + 1).min(s.player.max_hp);
-                            s.player.spirit = (s.player.spirit + 35).min(s.player.max_spirit);
                             let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
                             let gs = &mut *s;
                             gs.particles.spawn_heal(sx, sy, &mut gs.rng_state);
                             s.message = format!(
-                                "✓ Correct! {} has {} components. +1 HP, +35 Spirit!",
+                                "✓ Correct! {} has {} components. +1 HP!",
                                 hanzi, correct_count
                             );
                         } else {
@@ -13388,12 +13370,7 @@ pub fn init_game() -> Result<(), JsValue> {
                         combat::input::BattleEvent::None => {}
                     }
 
-                    if battle.pending_spirit_delta != 0 {
-                        gs.player.spirit = (gs.player.spirit + battle.pending_spirit_delta)
-                            .max(0)
-                            .min(gs.player.max_spirit);
-                        battle.pending_spirit_delta = 0;
-                    }
+
                 }
                 gs.combat = old_combat;
                 // Check for boss phase triggers after processing tactical battle input
@@ -14422,13 +14399,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                 gs.handle_tactical_defeat(killer_name);
                             }
                             _ => {
-                                if battle.pending_spirit_delta != 0 {
-                                    gs.player.spirit = (gs.player.spirit
-                                        + battle.pending_spirit_delta)
-                                        .max(0)
-                                        .min(gs.player.max_spirit);
-                                    battle.pending_spirit_delta = 0;
-                                }
+
                                 gs.combat = old_combat;
                             }
                         }
@@ -14517,29 +14488,6 @@ mod item_state_tests {
             p.equipment_state(crate::player::EquipSlot::Weapon),
             ItemState::Cursed
         );
-    }
-
-    #[test]
-    fn spirit_decreases_on_move() {
-        use crate::player::{Player, PlayerClass};
-        let mut p = Player::new(0, 0, PlayerClass::Envoy);
-        assert_eq!(p.spirit, 170);
-        p.spirit -= 1;
-        assert_eq!(p.spirit, 169);
-    }
-
-    #[test]
-    fn rice_ball_restores_spirit() {
-        use crate::player::{Player, PlayerClass};
-        let mut p = Player::new(0, 0, PlayerClass::Envoy);
-        p.spirit = 50;
-        let restore = 40;
-        p.spirit = (p.spirit + restore).min(p.max_spirit);
-        assert_eq!(p.spirit, 90);
-
-        p.spirit = 140;
-        p.spirit = (p.spirit + restore).min(p.max_spirit);
-        assert_eq!(p.spirit, 170);
     }
 
     #[test]

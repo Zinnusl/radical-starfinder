@@ -1584,7 +1584,7 @@ impl LocationLevel {
                         }
                     }
                 }
-                // Spirit spring at center
+                // Med bay at center
                 if self.in_bounds(cx, cy) {
                     let idx = self.idx(cx, cy);
                     self.tiles[idx] = Tile::MedBayTile;
@@ -1785,7 +1785,7 @@ impl LocationLevel {
                         }
                     }
                 }
-                // Spirit spring at center
+                // Med bay at center
                 if self.in_bounds(cx, cy) {
                     let idx = self.idx(cx, cy);
                     self.tiles[idx] = Tile::MedBayTile;
@@ -2602,7 +2602,7 @@ impl LocationLevel {
                         }
                     }
                 }
-                // Spirit spring at center
+                // Med bay at center
                 if self.in_bounds(cx, cy) {
                     let idx = self.idx(cx, cy);
                     self.tiles[idx] = Tile::MedBayTile;
@@ -3476,7 +3476,7 @@ impl LocationLevel {
                         }
                     }
                 }
-                // Spirit spring (tea pot warmth)
+                // Med bay (tea pot warmth)
                 if self.in_bounds(cx, cy - 1) {
                     let idx = self.idx(cx, cy - 1);
                     self.tiles[idx] = Tile::MedBayTile;
@@ -3672,7 +3672,7 @@ impl LocationLevel {
                         }
                     }
                 }
-                // Spirit spring (campfire warmth)
+                // Med bay (campfire warmth)
                 if self.in_bounds(cx, cy) {
                     let idx = self.idx(cx, cy);
                     self.tiles[idx] = Tile::MedBayTile;
@@ -3829,7 +3829,7 @@ impl LocationLevel {
                         }
                     }
                 }
-                // Spirit spring fuel
+                // Med bay fuel
                 if self.in_bounds(cx, cy + 1) {
                     let idx = self.idx(cx, cy + 1);
                     if self.tiles[idx] == Tile::MetalFloor {
@@ -4128,7 +4128,7 @@ impl LocationLevel {
                 }
             }
             SpecialRoomKind::RadicalReactor => {
-                // Spirit spring fountain with water and crystals
+                // Med bay fountain with water and crystals
                 if self.in_bounds(cx, cy) {
                     let idx = self.idx(cx, cy);
                     if self.tiles[idx] == Tile::MetalFloor {
@@ -4265,7 +4265,7 @@ impl LocationLevel {
                 }
             }
             SpecialRoomKind::PhoenixNest => {
-                // Central spirit spring with lava nest ring
+                // Central med bay with lava nest ring
                 if self.in_bounds(cx, cy) {
                     let idx = self.idx(cx, cy);
                     if self.tiles[idx] == Tile::MetalFloor {

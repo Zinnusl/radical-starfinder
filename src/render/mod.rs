@@ -578,33 +578,6 @@ impl Renderer {
             )
             .ok();
 
-        let spirit_y = bar_y + bar_h + 4.0;
-        let spirit_frac = (player.spirit as f64 / player.max_spirit as f64).clamp(0.0, 1.0);
-        let spirit_color = if player.spirit < player.max_spirit / 6 {
-            "#ff4444"
-        } else {
-            "#8844ff"
-        };
-
-        self.ctx.set_fill_style_str(COL_HP_BG);
-        self.ctx.fill_rect(bar_x, spirit_y, bar_w, bar_h);
-        self.ctx.set_fill_style_str(spirit_color);
-        self.ctx
-            .fill_rect(bar_x, spirit_y, bar_w * spirit_frac, bar_h);
-        self.ctx.set_stroke_style_str("#666");
-        self.ctx.set_line_width(1.0);
-        self.ctx.stroke_rect(bar_x, spirit_y, bar_w, bar_h);
-
-        self.ctx.set_fill_style_str("#ffffff");
-        self.ctx.set_font("12px monospace");
-        self.ctx.set_text_align("left");
-        self.ctx
-            .fill_text(
-                &format!("🌕 Spirit: {}/{}", player.spirit, player.max_spirit),
-                bar_x + 4.0,
-                spirit_y + 12.0,
-            )
-            .ok();
 
         // Status effect icons (right of HP bar)
         {

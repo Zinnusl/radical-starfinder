@@ -370,7 +370,7 @@ impl SpecialRoomKind {
             Self::SensorArray => "The sensor array reveals all that is hidden on this deck.",
             Self::InscriptionWall => "Ancient inscriptions teach a forgotten radical.",
             Self::TrainingSimulator => "A training simulator. Push yourself to gain +1 base damage.",
-            Self::ZenChamber => "A place of deep stillness. Spirit energy gathers here.",
+            Self::ZenChamber => "A place of deep stillness. Restorative energy gathers here.",
             Self::TranslationChallenge => "Data tablets await correct translations.",
             Self::AncientDatapad => "A weathered datapad contains a rare spell formula.",
             Self::WisdomCore => "An AI wisdom core. Answer its query for a reward.",
@@ -578,7 +578,7 @@ pub enum Tile {
     CrystalPanel,
     /// Warp gate portal — end-game content
     WarpGatePortal,
-    /// Med bay tile — restores HP and spirit
+    /// Med bay tile — restores HP
     MedBayTile,
     /// Credit cache — pick up for credits
     CreditCache,

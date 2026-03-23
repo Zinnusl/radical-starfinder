@@ -128,8 +128,6 @@ impl super::GameState {
         save.push_str(&format!("class={}\n", self.player.class as u8));
         save.push_str(&format!("floor={}\n", self.floor_num));
         save.push_str(&format!("best={}\n", self.best_floor));
-        save.push_str(&format!("spirit={}\n", self.player.spirit));
-        save.push_str(&format!("max_spirit={}\n", self.player.max_spirit));
 
         // Ship stats
         save.push_str(&format!("ship_hull={}\n", self.ship.hull));
