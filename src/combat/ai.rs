@@ -709,14 +709,29 @@ pub fn path_toward(
         let mut score = -d * 10;
 
         if let Some(tile) = battle.arena.tile(rx, ry) {
-            if matches!(
-                tile,
+            // Smart conveyor evaluation: bonus if it pushes toward player
+            match tile {
                 crate::combat::BattleTile::ConveyorN
-                    | crate::combat::BattleTile::ConveyorS
-                    | crate::combat::BattleTile::ConveyorE
-                    | crate::combat::BattleTile::ConveyorW
-            ) {
-                score -= 30;
+                | crate::combat::BattleTile::ConveyorS
+                | crate::combat::BattleTile::ConveyorE
+                | crate::combat::BattleTile::ConveyorW => {
+                    let (cdx, cdy) = match tile {
+                        crate::combat::BattleTile::ConveyorN => (0, -1),
+                        crate::combat::BattleTile::ConveyorS => (0, 1),
+                        crate::combat::BattleTile::ConveyorE => (1, 0),
+                        crate::combat::BattleTile::ConveyorW => (-1, 0),
+                        _ => (0, 0),
+                    };
+                    let dist_now = manhattan(rx, ry, target_x, target_y);
+                    let dist_after = manhattan(rx + cdx, ry + cdy, target_x, target_y);
+                    if dist_after < dist_now {
+                        // Conveyor pushes us toward the player — useful!
+                        score += 15;
+                    } else {
+                        score -= 30;
+                    }
+                }
+                _ => {}
             }
             if tile == crate::combat::BattleTile::MineTileRevealed {
                 score -= 40;
@@ -746,6 +761,15 @@ pub fn path_toward(
             }
             if tile == crate::combat::BattleTile::SteamVentInactive {
                 score -= 10;
+            }
+            if tile == crate::combat::BattleTile::EnergyVentActive {
+                score -= 60;
+            }
+            if tile == crate::combat::BattleTile::EnergyVentCharging {
+                score -= 45;
+            }
+            if tile == crate::combat::BattleTile::EnergyVentDormant {
+                score -= 5;
             }
             if tile == crate::combat::BattleTile::ElectrifiedWire {
                 score -= 20;
@@ -873,6 +897,12 @@ pub fn path_away(
             if tile == crate::combat::BattleTile::SteamVentInactive {
                 adj_d -= 1;
             }
+            if tile == crate::combat::BattleTile::EnergyVentActive {
+                adj_d -= 6;
+            }
+            if tile == crate::combat::BattleTile::EnergyVentCharging {
+                adj_d -= 5;
+            }
             if tile == crate::combat::BattleTile::ElectrifiedWire {
                 adj_d -= 2;
             }
@@ -953,6 +983,19 @@ pub fn consider_crate_push(
                 (push_dest_x - player.x).abs() + (push_dest_y - player.y).abs();
             if player_dist_to_explosion <= 2 {
                 return Some((crate_x, crate_y, dx, dy));
+            }
+        }
+
+        // Push crate onto player who is standing on an energy vent (trap them)
+        if dist_to_player <= 1 {
+            if let Some(player_tile) = battle.arena.tile(player.x, player.y) {
+                if matches!(
+                    player_tile,
+                    crate::combat::BattleTile::EnergyVentCharging
+                        | crate::combat::BattleTile::EnergyVentActive
+                ) {
+                    return Some((crate_x, crate_y, dx, dy));
+                }
             }
         }
     }
