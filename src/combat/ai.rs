@@ -250,6 +250,27 @@ fn count_allies_near(battle: &TacticalBattle, unit_idx: usize, radius: i32) -> u
     count
 }
 
+/// Evaluate overall battle pressure for adaptive AI scoring.
+///
+/// Returns `(enemy_alive, enemy_total, player_hp_ratio)` where enemy counts
+/// exclude companions and the player. When enemies are outnumbered or losing,
+/// callers should bias toward defensive/evasive abilities.
+fn evaluate_battle_pressure(battle: &TacticalBattle) -> (usize, usize, f32) {
+    let mut alive = 0usize;
+    let mut total = 0usize;
+    for u in battle.units.iter().skip(1) {
+        if u.is_companion() {
+            continue;
+        }
+        total += 1;
+        if u.alive {
+            alive += 1;
+        }
+    }
+    let player_hp_ratio = battle.units[0].hp as f32 / battle.units[0].max_hp.max(1) as f32;
+    (alive, total, player_hp_ratio)
+}
+
 fn score_and_pick_radical(
     battle: &TacticalBattle,
     unit_idx: usize,
@@ -317,6 +338,32 @@ fn score_and_pick_radical(
                     score += 50;
                 }
             }
+        }
+
+        // ── Adaptive battle-state modifiers ────────────────────────
+        // Shift scoring based on the overall fight: favour defence when
+        // outnumbered/losing, favour offence when the player is weak.
+        let (enemy_alive, enemy_total, player_hp_ratio_global) =
+            evaluate_battle_pressure(battle);
+
+        // Losing side: most allies dead → lean defensive / evasive.
+        if enemy_total > 0 && (enemy_alive * 2 <= enemy_total) {
+            if role == TacticalRole::Defensive {
+                score += 40;
+            }
+            if role == TacticalRole::Offensive {
+                score -= 20;
+            }
+        }
+
+        // Player is weak → press the advantage with offensive abilities.
+        if player_hp_ratio_global < 0.30 && role == TacticalRole::Offensive {
+            score += 35;
+        }
+
+        // Last enemy standing → survival mode.
+        if enemy_alive == 1 && role == TacticalRole::Defensive {
+            score += 50;
         }
 
         match role {

@@ -267,6 +267,13 @@ impl GameState {
     }
 
     pub(super) fn enemy_fires(enemy: &mut EnemyShip, s: &mut GameState, evading: bool) {
+        // Adapt tactic based on current battle state before firing.
+        let player_shield_pct = s.ship.shields as f64 / s.ship.max_shields.max(1) as f64;
+        let player_hull_pct = s.ship.hull as f64 / s.ship.max_hull.max(1) as f64;
+        if let Some(adapt_msg) = enemy.adapt_space_combat_tactic(player_shield_pct, player_hull_pct) {
+            s.space_combat_log.push(format!("{} {}", enemy.name, adapt_msg));
+        }
+
         let mut e_dmg = enemy.weapon_power;
         if enemy.weapons_sub.is_destroyed() {
             e_dmg = (e_dmg / 2).max(1);
@@ -1135,6 +1142,13 @@ pub fn init_game() -> Result<(), JsValue> {
                                                     _ => EnemyTactic::Boarding,
                                                 },
                                                 turns_taken: 0,
+                                                is_boss: false,
+                                                initial_tactic: match ship_name_idx % 4 {
+                                                    0 => EnemyTactic::Aggressive,
+                                                    1 => EnemyTactic::Disabling,
+                                                    2 => EnemyTactic::Balanced,
+                                                    _ => EnemyTactic::Boarding,
+                                                },
                                             });
                                             s.space_combat_phase = SpaceCombatPhase::Choosing;
                                             s.space_combat_cursor = 0;
