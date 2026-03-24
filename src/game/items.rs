@@ -1263,4 +1263,65 @@ impl GameState {
         false
     }
 
+    // ── Equipment Set Bonus Helpers ──────────────────────────────────────────
+
+    /// Apply equipment set bonuses that trigger on floor entry.
+    /// Call this from `new_floor()` after the floor is set up.
+    pub(super) fn apply_set_bonuses_on_floor(&mut self) {
+        use crate::player::{active_set_bonuses, SetBonus};
+        self.player.phase_walk_used = false;
+        for set in active_set_bonuses(&self.player) {
+            match set.bonus {
+                SetBonus::HealOnFloor(amt) => {
+                    let max_hp = self.player.max_hp;
+                    if self.player.hp < max_hp {
+                        let healed = amt.min(max_hp - self.player.hp);
+                        self.player.hp = (self.player.hp + amt).min(max_hp);
+                        if self.message.is_empty() {
+                            self.message =
+                                format!("🔗 {} set heals you for {} HP!", set.name, healed);
+                        } else {
+                            self.message
+                                .push_str(&format!(" 🔗 {} +{} HP!", set.name, healed));
+                        }
+                        self.message_timer = self.message_timer.max(90);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Returns bonus damage from equipment sets for the first combat turn.
+    pub(super) fn set_bonus_first_strike_damage(&self) -> i32 {
+        use crate::player::{active_set_bonuses, SetBonus};
+        active_set_bonuses(&self.player)
+            .iter()
+            .map(|set| match set.bonus {
+                SetBonus::FirstStrikeDamage(amt) => amt,
+                _ => 0,
+            })
+            .sum()
+    }
+
+    /// Returns total flat bonus damage from equipment set bonuses.
+    pub(super) fn set_bonus_damage(&self) -> i32 {
+        use crate::player::{active_set_bonuses, SetBonus};
+        active_set_bonuses(&self.player)
+            .iter()
+            .map(|set| match set.bonus {
+                SetBonus::BonusDamage(amt) => amt,
+                _ => 0,
+            })
+            .sum()
+    }
+
+    /// Check if the player has the PhaseWalk set bonus active and unused.
+    pub(super) fn has_phase_walk_available(&self) -> bool {
+        use crate::player::{active_set_bonuses, SetBonus};
+        !self.player.phase_walk_used
+            && active_set_bonuses(&self.player)
+                .iter()
+                .any(|set| matches!(set.bonus, SetBonus::PhaseWalk))
+    }
 }
