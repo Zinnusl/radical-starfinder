@@ -1007,7 +1007,6 @@ pub struct Player {
     /// Turns remaining in current form (0 = permanent/human)
     pub form_timer: i32,
     /// Whether the PhaseWalk set bonus has been used this floor.
-    #[allow(dead_code)]
     pub phase_walk_used: bool,
 }
 
@@ -1413,7 +1412,6 @@ impl Player {
     }
 
     /// Check if any active set bonus satisfies the given predicate.
-    #[allow(dead_code)]
     pub fn has_set_bonus(&self, check: fn(&SetBonus) -> bool) -> bool {
         active_set_bonuses(self).iter().any(|set| check(&set.bonus))
     }

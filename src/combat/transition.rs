@@ -8,7 +8,7 @@ use crate::combat::{
 use crate::world::RoomModifier;
 use crate::enemy::{AiBehavior, Enemy};
 use crate::game::Companion;
-use crate::player::Player;
+use crate::player::{Player, SetBonus};
 use crate::srs::SrsTracker;
 use crate::vocab::SentenceEntry;
 
@@ -349,6 +349,8 @@ pub fn enter_combat(
         pending_event: None,
         event_message: None,
         event_message_timer: 0,
+        phase_walk_available: !player.phase_walk_used
+            && player.has_set_bonus(|b| matches!(b, SetBonus::PhaseWalk)),
     }
 }
 

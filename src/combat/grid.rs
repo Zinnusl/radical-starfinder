@@ -71,6 +71,32 @@ pub fn reachable_tiles(
             }
         }
     }
+
+    // PhaseWalk: allow stepping onto one adjacent non-walkable tile.
+    if battle.phase_walk_available {
+        for y in 0..h {
+            for x in 0..w {
+                let idx = (y * w + x) as usize;
+                if cost_map[idx] >= movement || cost_map[idx] == i32::MAX {
+                    continue;
+                }
+                for (dx, dy) in &deltas {
+                    let nx = x + dx;
+                    let ny = y + dy;
+                    if nx < 0 || ny < 0 || nx >= w || ny >= h {
+                        continue;
+                    }
+                    let ntile = arena.tiles[(ny * w + nx) as usize];
+                    if !ntile.is_walkable() && battle.unit_at(nx, ny).is_none() {
+                        if !result.contains(&(nx, ny)) {
+                            result.push((nx, ny));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     result
 }
 
