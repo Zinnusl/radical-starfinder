@@ -1,7 +1,7 @@
 use crate::combat::action::move_unit;
 use crate::combat::ai::{step_away, step_toward};
 use crate::combat::grid::manhattan;
-use crate::combat::{BattleTile, BattleUnit, Direction, TacticalBattle, UnitKind};
+use crate::combat::{BattleTile, BattleUnit, Direction, Projectile, ProjectileEffect, TacticalBattle, UnitKind};
 use crate::enemy::{AiBehavior, BossKind};
 
 /// Try to perform a boss-specific action. Returns Some(log_message) if the boss
@@ -281,6 +281,20 @@ fn ancient_guardian_action(battle: &mut TacticalBattle, unit_idx: usize) -> Opti
         let tile = battle.arena.tile(x, y).unwrap_or(BattleTile::MetalFloor);
         if tile == BattleTile::MetalFloor || tile == BattleTile::WiringPanel {
             battle.arena.set_tile(x, y, BattleTile::OilSlick);
+            battle.projectiles.push(Projectile {
+                from_x: bx as f64,
+                from_y: by as f64,
+                to_x: x,
+                to_y: y,
+                progress: 0.0,
+                speed: Projectile::SPEED_CRAWL,
+                arc_height: 0.0,
+                effect: ProjectileEffect::Damage(0),
+                owner_idx: unit_idx,
+                glyph: "⚡",
+                color: "#997700",
+                done: false,
+            });
             placed += 1;
         }
     }

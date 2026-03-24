@@ -723,7 +723,6 @@ pub struct EquipmentSet {
 }
 
 impl EquipmentSet {
-    #[allow(dead_code)]
     pub fn bonus_description(&self) -> &'static str {
         match self.bonus {
             SetBonus::BonusDamage(_) => "Bonus damage on all attacks",
@@ -734,7 +733,6 @@ impl EquipmentSet {
     }
 }
 
-#[allow(dead_code)]
 pub const EQUIPMENT_SETS: &[EquipmentSet] = &[
     // Void Lance (CriticalStrike) + Nanoweave Suit (DodgeChance) + Threat Analyzer (EnemyIntentReveal)
     EquipmentSet {
@@ -779,7 +777,6 @@ pub const EQUIPMENT_SETS: &[EquipmentSet] = &[
 ];
 
 /// Returns all equipment sets whose requirements are met by the player's gear.
-#[allow(dead_code)]
 pub fn active_set_bonuses(player: &Player) -> Vec<&'static EquipmentSet> {
     let equipped = player.equipped_effects();
     EQUIPMENT_SETS
