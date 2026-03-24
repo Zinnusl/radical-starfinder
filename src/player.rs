@@ -1406,7 +1406,6 @@ impl Player {
     }
 
     /// Check if any active set bonus satisfies the given predicate.
-    #[allow(dead_code)]
     pub fn has_set_bonus(&self, check: fn(&SetBonus) -> bool) -> bool {
         active_set_bonuses(self).iter().any(|set| check(&set.bonus))
     }

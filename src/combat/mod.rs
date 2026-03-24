@@ -1266,6 +1266,8 @@ pub struct TacticalBattle {
     pub event_message: Option<String>,
     /// Fade timer for event message (frames).
     pub event_message_timer: u16,
+    /// PhaseWalk set bonus: player may pass through one impassable tile this battle.
+    pub phase_walk_available: bool,
 }
 
 impl TacticalBattle {

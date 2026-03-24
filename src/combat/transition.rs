@@ -355,6 +355,8 @@ pub fn enter_combat(
         pending_event: None,
         event_message: None,
         event_message_timer: 0,
+        phase_walk_available: !player.phase_walk_used
+            && player.has_set_bonus(|b| matches!(b, SetBonus::PhaseWalk)),
     }
 }
 

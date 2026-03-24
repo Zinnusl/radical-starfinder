@@ -34,6 +34,18 @@ pub fn move_unit(
     }
 
     let mut messages = Vec::new();
+
+    // PhaseWalk: if the player steps onto a non-walkable tile, convert it and consume the bonus.
+    if let Some(tile) = battle.arena.tile(dest_x, dest_y) {
+        if !tile.is_walkable()
+            && battle.units[unit_idx].is_player()
+            && battle.phase_walk_available
+        {
+            battle.arena.set_tile(dest_x, dest_y, BattleTile::MetalFloor);
+            battle.phase_walk_available = false;
+            messages.push("Phase Walk! Passed through wall.".to_string());
+        }
+    }
     if battle.arena.tile(dest_x, dest_y) == Some(BattleTile::ElectrifiedWire) {
         let actual = deal_damage(battle, unit_idx, 1);
         let name = if battle.units[unit_idx].is_player() {
