@@ -65,6 +65,7 @@ fn get_radical_role(action: &RadicalAction) -> TacticalRole {
         | RadicalAction::BoneShatter
         | RadicalAction::BerserkerFury
         | RadicalAction::FlockAssault
+        | RadicalAction::PhaseStrike
         | RadicalAction::VenomousLash => TacticalRole::Offensive,
 
         RadicalAction::MortalResilience
@@ -119,7 +120,8 @@ fn get_radical_intent(action: &RadicalAction) -> EnemyIntent {
             | RadicalAction::ArtisanTrap
             | RadicalAction::VenomousLash
             | RadicalAction::BoneShatter
-            | RadicalAction::FlockAssault => EnemyIntent::RangedAttack,
+            | RadicalAction::FlockAssault
+            | RadicalAction::PhaseStrike => EnemyIntent::RangedAttack,
             _ => EnemyIntent::Attack,
         },
         TacticalRole::Debuff => EnemyIntent::RangedAttack,

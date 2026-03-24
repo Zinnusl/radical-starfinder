@@ -69,6 +69,8 @@ pub(super) fn spell_category(effect: &SpellEffect) -> &'static str {
         SpellEffect::Sanctify(_) => "heal",
         SpellEffect::FloodWave(_) => "strike",
         SpellEffect::SummonBoulder => "shield",
+        SpellEffect::Charge(_) => "strike",
+        SpellEffect::Blink(_) => "utility",
     }
 }
 

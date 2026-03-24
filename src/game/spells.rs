@@ -42,6 +42,8 @@ impl GameState {
                     SpellEffect::Teleport => None,
                     SpellEffect::Poison(_, _) => Some("Poison"),
                     SpellEffect::Dash(_) => None,
+                    SpellEffect::Charge(_) => None,
+                    SpellEffect::Blink(_) => None,
                     SpellEffect::Pierce(_) => Some("Strike"),
                     SpellEffect::PullToward => None,
                     SpellEffect::KnockBack(_) => Some("Strike"),
@@ -679,6 +681,68 @@ impl GameState {
                         self.message =
                             format!("{}🪨 A boulder materializes!", spell.hanzi);
                         self.message_timer = 60;
+                    }
+                    SpellEffect::Charge(dmg) => {
+                        let dmg = dmg * arcane_mult + spell_power;
+                        if enemy_idx < self.enemies.len() {
+                            if let Some((ex, ey)) = e_screen {
+                                self.particles.spawn_kill(ex, ey, &mut self.rng_state);
+                            }
+                            self.enemies[enemy_idx].hp -= dmg;
+                            let e_hanzi = self.enemies[enemy_idx].hanzi;
+                            if self.enemies[enemy_idx].hp <= 0 {
+                                let available = radical::radicals_for_floor(self.floor_num);
+                                let drop_idx = self.rng_next() as usize % available.len();
+                                self.player.add_radical(available[drop_idx].ch);
+                                self.message = format!(
+                                    "{}🐎 Charged into {}! {} damage! Defeated! Got [{}]",
+                                    spell.hanzi, e_hanzi, dmg, available[drop_idx].ch
+                                );
+                                self.message_timer = 80;
+                                self.combat = CombatState::Explore;
+                                self.typing.clear();
+                            } else {
+                                self.message = format!(
+                                    "{}🐎 Charged into {}! {} damage ({} HP left)",
+                                    spell.hanzi, e_hanzi, dmg, self.enemies[enemy_idx].hp
+                                );
+                                self.message_timer = 60;
+                            }
+                        }
+                    }
+                    SpellEffect::Blink(dmg) => {
+                        let dmg = dmg * arcane_mult + spell_power;
+                        if enemy_idx < self.enemies.len() {
+                            if let Some((ex, ey)) = e_screen {
+                                self.particles.spawn_damage(ex, ey, &mut self.rng_state);
+                            }
+                            self.enemies[enemy_idx].hp -= dmg;
+                            let e_hanzi = self.enemies[enemy_idx].hanzi;
+                            if self.enemies[enemy_idx].hp <= 0 {
+                                let available = radical::radicals_for_floor(self.floor_num);
+                                let drop_idx = self.rng_next() as usize % available.len();
+                                self.player.add_radical(available[drop_idx].ch);
+                                self.message = format!(
+                                    "{}⚡ Blink explosion hits {}! {} damage! Defeated! Got [{}]",
+                                    spell.hanzi, e_hanzi, dmg, available[drop_idx].ch
+                                );
+                                self.message_timer = 80;
+                                self.combat = CombatState::Explore;
+                                self.typing.clear();
+                            } else {
+                                self.message = format!(
+                                    "{}⚡ Blink explosion hits {}! {} damage ({} HP left)",
+                                    spell.hanzi, e_hanzi, dmg, self.enemies[enemy_idx].hp
+                                );
+                                self.message_timer = 60;
+                            }
+                        } else {
+                            self.flash = Some((100, 210, 255, 0.2));
+                            self.message = format!("{}⚡ You vanish and reappear!", spell.hanzi);
+                            self.message_timer = 60;
+                            self.combat = CombatState::Explore;
+                            self.typing.clear();
+                        }
                     }
                 }
 

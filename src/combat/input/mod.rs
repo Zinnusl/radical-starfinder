@@ -617,6 +617,8 @@ fn handle_spell_menu(battle: &mut TacticalBattle, key: &str) -> BattleEvent {
                         los_tiles
                     } else if matches!(effect, SpellEffect::Dash(_)) {
                         targeting::dash_target_tiles(battle, px, py, range)
+                    } else if matches!(effect, SpellEffect::Blink(_)) {
+                        targeting::blink_target_tiles(battle, &los_tiles)
                     } else {
                         los_tiles
                             .into_iter()

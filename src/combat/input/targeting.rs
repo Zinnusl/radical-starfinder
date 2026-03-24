@@ -35,6 +35,8 @@ pub(super) fn spell_range(effect: &SpellEffect) -> i32 {
         SpellEffect::Sanctify(_) => 3,
         SpellEffect::FloodWave(_) => 5,
         SpellEffect::SummonBoulder => 4,
+        SpellEffect::Charge(_) => 5,
+        SpellEffect::Blink(_) => 4,
         _ => 1,
     }
 }
@@ -188,6 +190,20 @@ pub(super) fn compute_aoe_preview(
             tiles
         }
         SpellEffect::SummonBoulder => vec![(cx, cy)],
+        SpellEffect::Charge(_) => {
+            // Show the path from player to target
+            line_between(px, py, cx, cy)
+        }
+        SpellEffect::Blink(_) => {
+            // Show AoE explosion at player's current (departure) position
+            vec![
+                (px, py),
+                (px - 1, py),
+                (px + 1, py),
+                (px, py - 1),
+                (px, py + 1),
+            ]
+        }
         _ => vec![(cx, cy)],
     }
 }
@@ -244,6 +260,30 @@ pub(super) fn dash_target_tiles(battle: &TacticalBattle, px: i32, py: i32, range
         }
     }
     targets
+}
+
+/// Blink (teleport) targets: all walkable, unoccupied tiles within range and LOS.
+pub(super) fn blink_target_tiles(
+    battle: &TacticalBattle,
+    los_tiles: &[(i32, i32)],
+) -> Vec<(i32, i32)> {
+    let px = battle.units[0].x;
+    let py = battle.units[0].y;
+    los_tiles
+        .iter()
+        .copied()
+        .filter(|&(tx, ty)| {
+            if tx == px && ty == py {
+                return false;
+            }
+            let walkable = battle
+                .arena
+                .tile(tx, ty)
+                .map(|t| t.is_walkable())
+                .unwrap_or(false);
+            walkable && battle.unit_at(tx, ty).is_none()
+        })
+        .collect()
 }
 
 pub(super) fn enter_move_targeting(battle: &mut TacticalBattle) {

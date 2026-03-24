@@ -1167,6 +1167,59 @@ pub fn apply_radical_action(
                 action.name()
             )
         }
+        RadicalAction::PhaseStrike => {
+            // Teleport adjacent to player, deal 2 AoE damage at departure point
+            let old_x = battle.units[unit_idx].x;
+            let old_y = battle.units[unit_idx].y;
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            // Find an empty walkable tile adjacent to the player
+            let adj = [(px - 1, py), (px + 1, py), (px, py - 1), (px, py + 1)];
+            let mut dest = None;
+            for &(ax, ay) in &adj {
+                if !battle.arena.in_bounds(ax, ay) {
+                    continue;
+                }
+                if !battle
+                    .arena
+                    .tile(ax, ay)
+                    .map(|t| t.is_walkable())
+                    .unwrap_or(false)
+                {
+                    continue;
+                }
+                if battle.unit_at(ax, ay).is_some() {
+                    continue;
+                }
+                dest = Some((ax, ay));
+                break;
+            }
+            if let Some((dx, dy)) = dest {
+                battle.units[unit_idx].x = dx;
+                battle.units[unit_idx].y = dy;
+                // AoE damage at departure point (cross pattern)
+                let aoe_tiles = [
+                    (old_x, old_y),
+                    (old_x - 1, old_y),
+                    (old_x + 1, old_y),
+                    (old_x, old_y - 1),
+                    (old_x, old_y + 1),
+                ];
+                for &(ax, ay) in &aoe_tiles {
+                    if let Some(idx) = battle.unit_at(ax, ay) {
+                        if battle.units[idx].is_player() || battle.units[idx].is_companion() {
+                            deal_damage(battle, idx, 2);
+                        }
+                    }
+                }
+                format!(
+                    "{} — Vanishes and reappears next to you! Departure blast!",
+                    action.name()
+                )
+            } else {
+                format!("{} — Tries to phase but finds no space!", action.name())
+            }
+        }
     };
     let proj_count_after = battle.projectiles.len() + battle.arcing_projectiles.len();
     if proj_count_after > proj_count_before {

@@ -174,6 +174,8 @@ pub enum RadicalAction {
     BerserkerFury,
     /// 隹 short-tailed bird — 3 ArcingProjectiles at random tiles near player
     FlockAssault,
+    /// 风 wind — Teleport adjacent to player + AoE damage at departure
+    PhaseStrike,
 }
 
 impl RadicalAction {
@@ -239,6 +241,7 @@ impl RadicalAction {
             Self::AdaptiveShift => "革",
             Self::BerserkerFury => "鬥",
             Self::FlockAssault => "隹",
+            Self::PhaseStrike => "风",
         }
     }
 
@@ -304,6 +307,7 @@ impl RadicalAction {
             "革" => Some(Self::AdaptiveShift),
             "鬥" => Some(Self::BerserkerFury),
             "隹" => Some(Self::FlockAssault),
+            "风" => Some(Self::PhaseStrike),
             _ => None,
         }
     }
@@ -370,6 +374,7 @@ impl RadicalAction {
             Self::AdaptiveShift => "\u{1F6E1} Adaptive Shift",
             Self::BerserkerFury => "\u{1F4A2} Berserker Fury",
             Self::FlockAssault => "\u{1F426} Flock Assault",
+            Self::PhaseStrike => "💨 Phase Strike",
         }
     }
 
@@ -436,6 +441,7 @@ impl RadicalAction {
             Self::AdaptiveShift => "Gains +2 armor and +1 fortify",
             Self::BerserkerFury => "Self-damage 2, gains +3 damage for 2 turns",
             Self::FlockAssault => "3 arcing projectiles at random tiles near player",
+            Self::PhaseStrike => "Teleport adjacent to player + 2 AoE damage at departure",
         }
     }
 
@@ -511,7 +517,8 @@ impl RadicalAction {
             // AoE (radius-based)
             Self::ScatteringPages
             | Self::SonicBurst
-            | Self::IntoxicatingMist => "AoE (2)",
+            | Self::IntoxicatingMist
+            | Self::PhaseStrike => "AoE (2)",
         }
     }
 
@@ -577,6 +584,7 @@ impl RadicalAction {
             Self::AdaptiveShift => "No damage",
             Self::BerserkerFury => "Self -2 HP",
             Self::FlockAssault => "1 dmg ×3",
+            Self::PhaseStrike => "2 AoE + move",
         }
     }
 
@@ -655,7 +663,8 @@ impl RadicalAction {
             Self::SpreadingWildfire
             | Self::ScatteringPages
             | Self::SonicBurst
-            | Self::IntoxicatingMist => "AoE",
+            | Self::IntoxicatingMist
+            | Self::PhaseStrike => "AoE",
         }
     }
 
