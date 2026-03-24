@@ -720,7 +720,6 @@ pub struct EquipmentSet {
 }
 
 impl EquipmentSet {
-    #[allow(dead_code)]
     pub fn bonus_description(&self) -> &'static str {
         match self.bonus {
             SetBonus::BonusDamage(_) => "Bonus damage on all attacks",

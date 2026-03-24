@@ -1,7 +1,7 @@
 //! UI overlay rendering: inventory, spellbook, codex, console, and modal overlays.
 
 use crate::game::{CombatState, ListenMode};
-use crate::player::{Player, ItemState};
+use crate::player::{active_set_bonuses, Player, ItemState};
 
 use super::helpers::{
     equipment_name, equipment_sprite_key, item_sprite_key, radical_stack_counts,
@@ -821,6 +821,28 @@ impl super::Renderer {
                 self.ctx
                     .fill_text(
                         &format!("{} ({} turns)", status.label(), status.turns_left),
+                        left_x + 12.0,
+                        left_y,
+                    )
+                    .ok();
+                left_y += 16.0;
+            }
+        }
+
+        // ── Equipment set bonuses ──
+        let set_bonuses = active_set_bonuses(player);
+        if !set_bonuses.is_empty() {
+            left_y += 10.0;
+            self.ctx.set_fill_style_str("#9ab0d7");
+            self.ctx
+                .fill_text("Set bonuses", left_x + 12.0, left_y)
+                .ok();
+            left_y += 18.0;
+            for set in &set_bonuses {
+                self.ctx.set_fill_style_str("#ffcc33");
+                self.ctx
+                    .fill_text(
+                        &format!("\u{1F4E6} {} \u{2014} {}", set.name, set.bonus_description()),
                         left_x + 12.0,
                         left_y,
                     )
