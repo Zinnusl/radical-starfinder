@@ -148,7 +148,6 @@ fn rogue_ai_core_action(battle: &mut TacticalBattle, _unit_idx: usize) -> Option
 }
 
 /// Returns damage multiplier for spells against Rogue AI Core (0.5 if resisted).
-#[allow(dead_code)]
 pub fn elementalist_resistance(
     battle: &TacticalBattle,
     target_idx: usize,

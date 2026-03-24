@@ -15,7 +15,6 @@ use crate::vocab;
 
 use super::BattleEvent;
 
-#[allow(dead_code)]
 fn tile_spell_bonus(battle: &TacticalBattle, unit_idx: usize) -> i32 {
     let tile_bonus = match battle
         .arena
@@ -770,11 +769,12 @@ pub(super) fn resolve_spell_cast(
     battle.last_answer = Some((spell_hanzi, true));
     battle.combo_streak += 1;
     battle.audio_events.push(AudioEvent::TypingCorrect);
+    let school = spell_effect_school(&effect);
     battle
         .audio_events
-        .push(AudioEvent::SpellElement(spell_effect_school(&effect).to_string()));
+        .push(AudioEvent::SpellElement(school.to_string()));
 
-    let spell_power = battle.player_stance.spell_power_mod();
+    let spell_power = battle.player_stance.spell_power_mod() + tile_spell_bonus(battle, 0);
 
     let msg = match effect {
         SpellEffect::FireAoe(dmg) => {
@@ -1015,6 +1015,7 @@ pub(super) fn resolve_spell_cast(
             for &(tx, ty) in &path {
                 if let Some(idx) = battle.unit_at(tx, ty) {
                     if battle.units[idx].is_enemy() && battle.units[idx].alive {
+                        let dmg = (dmg as f64 * boss::elementalist_resistance(battle, idx, school)) as i32;
                         deal_damage(battle, idx, dmg);
                         hits += 1;
                     }
@@ -1051,6 +1052,7 @@ pub(super) fn resolve_spell_cast(
                 }
                 if let Some(idx) = battle.unit_at(x, y) {
                     if battle.units[idx].is_enemy() && battle.units[idx].alive {
+                        let dmg = (dmg as f64 * boss::elementalist_resistance(battle, idx, school)) as i32;
                         deal_damage(battle, idx, dmg);
                         hits += 1;
                     }
@@ -1112,6 +1114,7 @@ pub(super) fn resolve_spell_cast(
                 if battle.units[idx].is_enemy() {
                     let px = battle.units[0].x;
                     let py = battle.units[0].y;
+                    let dmg = (dmg as f64 * boss::elementalist_resistance(battle, idx, school)) as i32;
                     deal_damage(battle, idx, dmg);
                     let kb1 = apply_knockback(battle, idx, px, py);
                     for m in &kb1 {
@@ -1517,6 +1520,7 @@ pub(super) fn resolve_spell_cast(
                 if battle.units[idx].is_enemy() {
                     let scaled_dmg =
                         base_dmg + (tiles_moved as f64 * 0.5).ceil() as i32 + spell_power;
+                    let scaled_dmg = (scaled_dmg as f64 * boss::elementalist_resistance(battle, idx, school)) as i32;
                     deal_damage(battle, idx, scaled_dmg);
                     format!(
                         "Charged {} tiles into {}! {} damage!",
@@ -1546,6 +1550,7 @@ pub(super) fn resolve_spell_cast(
             for &(ax, ay) in &aoe_tiles {
                 if let Some(idx) = battle.unit_at(ax, ay) {
                     if battle.units[idx].is_enemy() && battle.units[idx].alive {
+                        let dmg = (dmg as f64 * boss::elementalist_resistance(battle, idx, school)) as i32;
                         deal_damage(battle, idx, dmg);
                         hits += 1;
                     }
@@ -1591,7 +1596,7 @@ pub(super) fn resolve_spell_cast(
         battle.last_spell_turn = battle.turn_number;
     }
 
-    battle.last_spell_school = Some(spell_effect_school(&effect));
+    battle.last_spell_school = Some(school);
     battle.spent_spell_index = Some(spell_idx);
     battle.player_acted = true;
 
