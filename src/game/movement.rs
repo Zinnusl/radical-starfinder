@@ -92,28 +92,35 @@ impl GameState {
         let (pdmg, pheal) = status::tick_statuses(&mut self.player.statuses);
         self.player.tick_form();
 
-        // Hunger clock tick (removed spirit drain — now purely HP-based starvation)
+        // Hunger clock: grace period then periodic HP drain
         {
-            // Starving: damage scales with depth
-            let starvation_dmg = 1 + self.floor_num / 5;
-            self.player.hp -= starvation_dmg;
-            self.message = format!(
-                "🌑 Exhaustion drains your life force! (-{} HP)",
-                starvation_dmg
-            );
-            self.message_timer = 40;
-            if self.player.hp <= 0 && !self.try_phoenix_revive() {
-                self.player.hp = 0;
-                if let Some(ref audio) = self.audio {
-                    audio.play_death();
+            let grace: u32 = if self.floor_num <= 1 { 200 } else { 100 };
+            let warning_threshold = grace * 4 / 5;
+
+            if self.move_count == warning_threshold {
+                self.message = "⚠ Your energy reserves are running low...".to_string();
+                self.message_timer = 60;
+            } else if self.move_count > grace && (self.move_count - grace) % 25 == 0 {
+                let starvation_dmg = 1 + self.floor_num / 5;
+                self.player.hp -= starvation_dmg;
+                self.message = format!(
+                    "🌑 Exhaustion drains your life force! (-{} HP)",
+                    starvation_dmg
+                );
+                self.message_timer = 40;
+                if self.player.hp <= 0 && !self.try_phoenix_revive() {
+                    self.player.hp = 0;
+                    if let Some(ref audio) = self.audio {
+                        audio.play_death();
+                    }
+                    self.run_journal
+                        .log(RunEvent::DiedTo("Starvation".to_string(), self.floor_num));
+                    self.post_mortem_page = 0;
+                    self.combat = CombatState::GameOver;
+                    self.message = self.run_summary();
+                    self.message_timer = 255;
+                    return;
                 }
-                self.run_journal
-                    .log(RunEvent::DiedTo("Starvation".to_string(), self.floor_num));
-                self.post_mortem_page = 0;
-                self.combat = CombatState::GameOver;
-                self.message = self.run_summary();
-                self.message_timer = 255;
-                return;
             }
         }
 
