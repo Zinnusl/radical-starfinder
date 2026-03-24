@@ -110,26 +110,30 @@ impl super::super::Renderer {
         let max_lines = ((log_h - 10.0) / line_h).floor() as usize;
 
         // Gradient background: darker at bottom, slightly lighter at top
-        for gi in 0..4 {
-            let gy_off = gi as f64 * (log_h / 4.0);
-            let alpha = 0.45 + gi as f64 * 0.08;
+        for gi in 0..5 {
+            let gy_off = gi as f64 * (log_h / 5.0);
+            let alpha = 0.45 + gi as f64 * 0.07;
             self.ctx
                 .set_fill_style_str(&format!("rgba(8,6,16,{:.3})", alpha));
-            self.ctx.fill_rect(log_x, log_y + gy_off, log_w, log_h / 4.0);
+            self.ctx.fill_rect(log_x, log_y + gy_off, log_w, log_h / 5.0);
         }
-        // Accent line at top of log
-        self.ctx.set_fill_style_str("rgba(100,80,160,0.3)");
-        self.ctx.fill_rect(log_x, log_y, log_w, 1.0);
+        // Accent line at top of log (cyan)
+        self.ctx.set_fill_style_str("rgba(0,204,221,0.2)");
+        self.ctx.fill_rect(log_x, log_y, log_w, 1.5);
         self.ctx.set_stroke_style_str("rgba(100,80,140,0.25)");
         self.ctx.set_line_width(1.0);
         self.ctx.stroke_rect(log_x, log_y, log_w, log_h);
 
-        // "LOG" label
+        // "LOG T{turn}" label with turn indicator
         self.ctx.set_fill_style_str("rgba(120,100,160,0.5)");
         self.ctx.set_font("bold 8px monospace");
         self.ctx.set_text_align("right");
         self.ctx
-            .fill_text("LOG", log_x + log_w - 4.0, log_y + 10.0)
+            .fill_text(
+                &format!("LOG · T{}", battle.turn_number),
+                log_x + log_w - 4.0,
+                log_y + 10.0,
+            )
             .ok();
         self.ctx.set_text_align("left");
 
@@ -157,14 +161,19 @@ impl super::super::Renderer {
                     line_h,
                 );
             }
-            // Left accent bar by message type
+            // Left accent bar by message type (expanded categories)
+            let lower = msg.to_lowercase();
             let accent_color =
-                if msg.contains("damage") || msg.contains("hit") || msg.contains("kill") {
+                if lower.contains("damage") || lower.contains("hit") || lower.contains("kill") || lower.contains("attack") {
                     "rgba(255,80,60,0.6)"
-                } else if msg.contains("heal") || msg.contains("restore") {
+                } else if lower.contains("heal") || lower.contains("restore") || lower.contains("regen") {
                     "rgba(60,220,60,0.6)"
-                } else if msg.contains("ability") || msg.contains("cast") {
-                    "rgba(80,120,255,0.6)"
+                } else if lower.contains("move") || lower.contains("walk") || lower.contains("dash") {
+                    "rgba(80,140,255,0.5)"
+                } else if lower.contains("ability") || lower.contains("cast") || lower.contains("spell") {
+                    "rgba(140,100,255,0.6)"
+                } else if lower.contains("status") || lower.contains("poison") || lower.contains("burn") || lower.contains("stun") {
+                    "rgba(220,200,60,0.5)"
                 } else {
                     "rgba(100,100,120,0.3)"
                 };
@@ -172,17 +181,20 @@ impl super::super::Renderer {
             self.ctx.fill_rect(
                 log_x + 1.0,
                 log_y + 4.0 + i as f64 * line_h,
-                2.0,
+                2.5,
                 line_h - 1.0,
             );
-            let color = if msg.contains("damage") || msg.contains("hit") || msg.contains("kill") {
+            // Text color by message type (expanded)
+            let color = if lower.contains("damage") || lower.contains("hit") || lower.contains("kill") || lower.contains("attack") {
                 format!("rgba(255,130,100,{})", alpha)
-            } else if msg.contains("heal") || msg.contains("restore") {
+            } else if lower.contains("heal") || lower.contains("restore") || lower.contains("regen") {
                 format!("rgba(100,220,100,{})", alpha)
-            } else if msg.contains("ability") || msg.contains("cast") {
-                format!("rgba(130,160,255,{})", alpha)
-            } else if msg.contains("move") || msg.contains("walk") {
-                format!("rgba(160,160,180,{})", alpha * 0.8)
+            } else if lower.contains("move") || lower.contains("walk") || lower.contains("dash") {
+                format!("rgba(120,170,255,{})", alpha * 0.9)
+            } else if lower.contains("ability") || lower.contains("cast") || lower.contains("spell") {
+                format!("rgba(160,140,255,{})", alpha)
+            } else if lower.contains("status") || lower.contains("poison") || lower.contains("burn") || lower.contains("stun") {
+                format!("rgba(220,210,100,{})", alpha)
             } else {
                 format!("rgba(180,175,190,{})", alpha)
             };

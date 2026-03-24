@@ -7,6 +7,8 @@ pub mod tiles;
 pub mod ui;
 mod overlays;
 
+use std::cell::{Cell, RefCell};
+
 use js_sys::Date;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
@@ -44,6 +46,31 @@ const COL_PLAYER_OUTLINE: &str = "#008899";
 const COL_HP_BAR: &str = "#44cc55";
 const COL_HP_BG: &str = "#442222";
 
+/// Smooth HP bar color gradient: green → yellow → red based on fraction.
+pub(crate) fn hp_gradient_color(frac: f64) -> String {
+    if frac > 0.5 {
+        let t = ((frac - 0.5) * 2.0).clamp(0.0, 1.0);
+        let r = (204.0 - 136.0 * t) as u8;
+        let g = (170.0 + 34.0 * t) as u8;
+        let b = (34.0 + 51.0 * t) as u8;
+        format!("rgb({},{},{})", r, g, b)
+    } else {
+        let t = (frac * 2.0).clamp(0.0, 1.0);
+        let g = (51.0 + 119.0 * t) as u8;
+        format!("rgb(204,{},34)", g)
+    }
+}
+
+/// A floating text element that rises and fades (damage numbers, heals, crits).
+pub(crate) struct FloatingText {
+    pub x: f64,
+    pub y: f64,
+    pub text: String,
+    pub color: String,
+    pub spawn_time: f64,
+    pub is_critical: bool,
+}
+
 pub struct Renderer {
     #[allow(dead_code)]
     pub canvas: HtmlCanvasElement,
@@ -51,6 +78,10 @@ pub struct Renderer {
     pub canvas_w: f64,
     pub canvas_h: f64,
     sprites: SpriteCache,
+    /// Floating damage/heal numbers for combat visual feedback.
+    pub(crate) combat_floats: RefCell<Vec<FloatingText>>,
+    /// Tracks log length to detect new entries for spawning floats.
+    pub(crate) last_log_len: Cell<usize>,
 }
 
 
@@ -70,6 +101,8 @@ impl Renderer {
             canvas_w,
             canvas_h,
             sprites: SpriteCache::new(),
+            combat_floats: RefCell::new(Vec::new()),
+            last_log_len: Cell::new(0),
         })
     }
 
