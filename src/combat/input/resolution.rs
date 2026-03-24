@@ -64,6 +64,8 @@ fn spell_effect_school(effect: &SpellEffect) -> &'static str {
         SpellEffect::Sanctify(_) => "heal",
         SpellEffect::FloodWave(_) => "ice",
         SpellEffect::SummonBoulder => "shield",
+        SpellEffect::Charge(_) => "force",
+        SpellEffect::Blink(_) => "wind",
     }
 }
 
@@ -83,6 +85,7 @@ pub fn spell_effect_element(effect: &SpellEffect) -> Option<WuxingElement> {
         | SpellEffect::ArmorBreak
         | SpellEffect::Pierce(_)
         | SpellEffect::KnockBack(_)
+        | SpellEffect::Charge(_)
         | SpellEffect::Stun => Some(WuxingElement::Metal),
         // Wood/Nature
         SpellEffect::Poison(_, _)
@@ -1438,6 +1441,102 @@ pub(super) fn resolve_spell_cast(
                 }
             } else {
                 "Target out of bounds.".to_string()
+            }
+        }
+        SpellEffect::Charge(base_dmg) => {
+            // Move toward target, stop adjacent. Damage = base + 50% per tile traveled.
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            let dist = (target_x - px).abs() + (target_y - py).abs();
+            // Find the closest empty walkable tile adjacent to the target
+            let dx = (target_x - px).signum();
+            let dy = (target_y - py).signum();
+            let mut dest_x = px;
+            let mut dest_y = py;
+            let mut tiles_moved = 0;
+            // Move along the line toward target, stop one tile before target (or at target if empty)
+            let path = super::targeting::line_between(px, py, target_x, target_y);
+            for &(tx, ty) in &path {
+                if tx == target_x && ty == target_y {
+                    break; // Don't move onto the target's tile
+                }
+                if !battle.arena.in_bounds(tx, ty) {
+                    break;
+                }
+                let walkable = battle
+                    .arena
+                    .tile(tx, ty)
+                    .map(|t| t.is_walkable())
+                    .unwrap_or(false);
+                if !walkable {
+                    break;
+                }
+                if battle.unit_at(tx, ty).is_some() {
+                    break;
+                }
+                dest_x = tx;
+                dest_y = ty;
+                tiles_moved += 1;
+            }
+            // Move the player
+            if dest_x != px || dest_y != py {
+                battle.units[0].x = dest_x;
+                battle.units[0].y = dest_y;
+                battle.player_moved = true;
+                if let Some(dir) = crate::combat::Direction::from_delta(dx, dy) {
+                    battle.units[0].facing = dir;
+                }
+            }
+            // Deal damage to the target: base + 50% per tile traveled
+            if let Some(idx) = battle.unit_at(target_x, target_y) {
+                if battle.units[idx].is_enemy() {
+                    let scaled_dmg =
+                        base_dmg + (tiles_moved as f64 * 0.5).ceil() as i32 + spell_power;
+                    deal_damage(battle, idx, scaled_dmg);
+                    format!(
+                        "Charged {} tiles into {}! {} damage!",
+                        tiles_moved, battle.units[idx].hanzi, scaled_dmg
+                    )
+                } else {
+                    format!("Charged {} tiles forward!", tiles_moved)
+                }
+            } else {
+                format!("Charged {} tiles forward!", tiles_moved)
+            }
+        }
+        SpellEffect::Blink(dmg) => {
+            // Teleport to empty target tile, AoE damage at departure point
+            let px = battle.units[0].x;
+            let py = battle.units[0].y;
+            let dmg = dmg + spell_power;
+            // AoE explosion at departure point (cross pattern)
+            let aoe_tiles = vec![
+                (px, py),
+                (px - 1, py),
+                (px + 1, py),
+                (px, py - 1),
+                (px, py + 1),
+            ];
+            let mut hits = 0;
+            for &(ax, ay) in &aoe_tiles {
+                if let Some(idx) = battle.unit_at(ax, ay) {
+                    if battle.units[idx].is_enemy() && battle.units[idx].alive {
+                        deal_damage(battle, idx, dmg);
+                        hits += 1;
+                    }
+                }
+            }
+            // Teleport player
+            battle.units[0].x = target_x;
+            battle.units[0].y = target_y;
+            battle.player_moved = true;
+            if hits > 0 {
+                format!(
+                    "Blinked away! Departure explosion hits {} enemies for {} damage!",
+                    hits, dmg
+                )
+            } else {
+                "Blinked to new position!".to_string()
             }
         }
     };

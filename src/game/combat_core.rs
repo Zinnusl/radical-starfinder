@@ -1336,6 +1336,10 @@ impl GameState {
                 self.player.hp -= 2;
                 format!("{} — A flock descends! (-2 HP)", action.name())
             }
+            RadicalAction::PhaseStrike => {
+                self.player.hp -= 2;
+                format!("{} — Vanishes and strikes from nowhere! (-2 HP)", action.name())
+            }
         }
     }
 

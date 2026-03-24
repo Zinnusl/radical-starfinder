@@ -99,6 +99,8 @@ pub(super) fn spell_sprite_key(effect: &radical::SpellEffect) -> &'static str {
         radical::SpellEffect::Sanctify(_) => "spell_heal",
         radical::SpellEffect::FloodWave(_) => "spell_stun",
         radical::SpellEffect::SummonBoulder => "spell_shield",
+        radical::SpellEffect::Charge(_) => "spell_strike",
+        radical::SpellEffect::Blink(_) => "spell_reveal",
     }
 }
 
@@ -109,6 +111,7 @@ pub(super) fn spell_school_color(effect: &radical::SpellEffect) -> &'static str 
         radical::SpellEffect::Reveal
         | radical::SpellEffect::Teleport
         | radical::SpellEffect::Dash(_)
+        | radical::SpellEffect::Blink(_)
         | radical::SpellEffect::PullToward => "#66bbff",
         radical::SpellEffect::Shield
         | radical::SpellEffect::Wall(_)
@@ -116,6 +119,7 @@ pub(super) fn spell_school_color(effect: &radical::SpellEffect) -> &'static str 
         radical::SpellEffect::StrongHit(_)
         | radical::SpellEffect::ArmorBreak
         | radical::SpellEffect::Pierce(_)
+        | radical::SpellEffect::Charge(_)
         | radical::SpellEffect::KnockBack(_) => "#ff9944",
         radical::SpellEffect::Drain(_) | radical::SpellEffect::Poison(_, _) => "#aa66dd",
         radical::SpellEffect::Stun | radical::SpellEffect::Slow(_) => "#66ddff",

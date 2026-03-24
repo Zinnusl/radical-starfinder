@@ -78,6 +78,10 @@ pub enum SpellEffect {
     FloodWave(i32),
     /// Deploy a barrier on target empty tile
     SummonBoulder,
+    /// Charge toward a target — move adjacent and deal damage scaling with distance traveled
+    Charge(i32),
+    /// Blink (teleport) to an empty tile — AoE damage at departure point
+    Blink(i32),
 }
 
 impl SpellEffect {
@@ -111,6 +115,8 @@ impl SpellEffect {
             SpellEffect::Sanctify(_) => "✨ Purify Field",
             SpellEffect::FloodWave(_) => "🌊 Coolant Wave",
             SpellEffect::SummonBoulder => "🪨 Deploy Barrier",
+            SpellEffect::Charge(_) => "🐎 Charge",
+            SpellEffect::Blink(_) => "⚡ Blink",
         }
     }
 
@@ -216,6 +222,18 @@ impl SpellEffect {
             }
             SpellEffect::SummonBoulder => {
                 "Deploy a barrier on target tile. Blocks movement and line of sight.".to_string()
+            }
+            SpellEffect::Charge(dmg) => {
+                format!(
+                    "Charge toward target enemy, stopping adjacent. {} base damage + 50% bonus per tile traveled.",
+                    dmg
+                )
+            }
+            SpellEffect::Blink(dmg) => {
+                format!(
+                    "Teleport to an empty tile. {} damage AoE explosion at departure point.",
+                    dmg
+                )
             }
         }
     }
@@ -1291,6 +1309,50 @@ pub const RECIPES: &[Recipe] = &[
         output_pinyin: "dūn",
         output_meaning: "mound/block",
         effect: SpellEffect::SummonBoulder,
+    },
+    // ── Charge recipes ──────────────────────────────────────────────────────
+    Recipe {
+        inputs: &["马", "火"],
+        output_hanzi: "骋",
+        output_pinyin: "chěng",
+        output_meaning: "to gallop/charge",
+        effect: SpellEffect::Charge(3),
+    },
+    Recipe {
+        inputs: &["车", "大"],
+        output_hanzi: "辗",
+        output_pinyin: "niǎn",
+        output_meaning: "to roll over",
+        effect: SpellEffect::Charge(4),
+    },
+    Recipe {
+        inputs: &["力", "足"],
+        output_hanzi: "蹴",
+        output_pinyin: "cù",
+        output_meaning: "to kick/rush",
+        effect: SpellEffect::Charge(3),
+    },
+    // ── Blink recipes ───────────────────────────────────────────────────────
+    Recipe {
+        inputs: &["门", "风"],
+        output_hanzi: "闪",
+        output_pinyin: "shǎn",
+        output_meaning: "flash/dodge",
+        effect: SpellEffect::Blink(3),
+    },
+    Recipe {
+        inputs: &["风", "足"],
+        output_hanzi: "遁",
+        output_pinyin: "dùn",
+        output_meaning: "to vanish/escape",
+        effect: SpellEffect::Blink(2),
+    },
+    Recipe {
+        inputs: &["气", "门"],
+        output_hanzi: "瞬",
+        output_pinyin: "shùn",
+        output_meaning: "instant/blink",
+        effect: SpellEffect::Blink(4),
     },
 ];
 
