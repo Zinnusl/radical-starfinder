@@ -18,7 +18,20 @@ pub enum Companion {
     SecurityChief,
 }
 
+/// Number of companions (used for fixed-size bond arrays).
+pub const COMPANION_COUNT: usize = 4;
+
 impl Companion {
+    /// Stable index for array-based bond tracking.
+    pub fn index(&self) -> usize {
+        match self {
+            Companion::ScienceOfficer => 0,
+            Companion::Medic => 1,
+            Companion::Quartermaster => 2,
+            Companion::SecurityChief => 3,
+        }
+    }
+
     pub fn name(&self) -> &'static str {
         match self {
             Companion::ScienceOfficer => "Science Officer 研",
@@ -177,6 +190,107 @@ impl Companion {
     }
 }
 
+// ── Companion Bond / Synergy ──────────────────────────────────────
+
+/// Tracks the relationship between the player and a companion over time.
+/// As `floors_together` increases, `synergy_level` unlocks new effects.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CompanionBond {
+    pub floors_together: u32,
+    /// 0 = no synergy, 1 = callouts, 2 = passive bonus, 3 = combo ability
+    pub synergy_level: u8,
+}
+
+impl CompanionBond {
+    /// Advance bond by one floor and recalculate synergy level.
+    pub fn advance_floor(&mut self) {
+        self.floors_together += 1;
+        self.synergy_level = Self::level_for_floors(self.floors_together);
+    }
+
+    pub fn level_for_floors(floors: u32) -> u8 {
+        match floors {
+            0..=4 => 0,
+            5..=9 => 1,
+            10..=14 => 2,
+            _ => 3,
+        }
+    }
+}
+
+impl Companion {
+    /// Random combat callout (synergy level 1+). Returns a flavour message.
+    pub fn synergy_callout(&self, rng_val: u64) -> &'static str {
+        let pool: &[&str] = match self {
+            Companion::ScienceOfficer => &[
+                "🔬 Officer: That enemy is weak to fire!",
+                "🔬 Officer: I'm detecting a structural weakness!",
+                "🔬 Officer: Scans show reduced defenses!",
+            ],
+            Companion::Medic => &[
+                "💊 Medic: Stay steady, I've got your back!",
+                "💊 Medic: That one's venom glands are exposed!",
+                "💊 Medic: Watch the counterattack pattern!",
+            ],
+            Companion::Quartermaster => &[
+                "📦 QM: That one's carrying valuable loot!",
+                "📦 QM: I've seen this type — hit it hard!",
+                "📦 QM: Careful, these drop rare components!",
+            ],
+            Companion::SecurityChief => &[
+                "🛡 Chief: Flanking position — strike now!",
+                "🛡 Chief: I see an opening in its guard!",
+                "🛡 Chief: Cover me, setting up a crossfire!",
+            ],
+        };
+        pool[(rng_val as usize) % pool.len()]
+    }
+
+    /// Synergy level 2 passive bonus: extra damage on correct answers.
+    pub fn synergy_damage_bonus(&self) -> i32 {
+        match self {
+            Companion::ScienceOfficer => 1,
+            Companion::SecurityChief => 1,
+            _ => 0,
+        }
+    }
+
+    /// Synergy level 2 passive bonus: extra gold percentage from kills.
+    pub fn synergy_gold_pct(&self) -> i32 {
+        match self {
+            Companion::Quartermaster => 15,
+            _ => 0,
+        }
+    }
+
+    /// Synergy level 2 passive bonus: extra heal per floor.
+    pub fn synergy_heal_bonus(&self) -> i32 {
+        match self {
+            Companion::Medic => 1,
+            _ => 0,
+        }
+    }
+
+    /// Name of the level-3 combo ability.
+    pub fn combo_ability_name(&self) -> &'static str {
+        match self {
+            Companion::ScienceOfficer => "Nanite Surge",
+            Companion::Medic => "Vital Strike",
+            Companion::Quartermaster => "Supply Drop",
+            Companion::SecurityChief => "Fortified Stance",
+        }
+    }
+
+    /// Trigger message for the level-3 combo ability.
+    pub fn combo_ability_message(&self) -> &'static str {
+        match self {
+            Companion::ScienceOfficer => "🔬 Nanite Surge! Healing nanites + weakness scan!",
+            Companion::Medic => "💊 Vital Strike! Heal on correct answer!",
+            Companion::Quartermaster => "📦 Supply Drop! Double gold from this kill!",
+            Companion::SecurityChief => "🛡 Fortified Stance! Damage negated!",
+        }
+    }
+}
 
 // ── Run Journal ────────────────────────────────────────────────────
 #[derive(Clone, Debug)]

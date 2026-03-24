@@ -148,7 +148,7 @@ impl GameState {
                         self.enemies[i].hanzi,
                         combat_prompt_for(&self.enemies[i], self.listening_mode, self.mirror_hint)
                     );
-                    if let Some(ref comp) = self.companion {
+                    if let Some(comp) = self.companion {
                         let lvl = self.companion_level();
                         if let Some(hint) = comp.contextual_hint(
                             &self.enemies[i],
@@ -158,6 +158,15 @@ impl GameState {
                             lvl,
                         ) {
                             self.message.push_str(&format!("\n{}", hint));
+                        }
+                        // Synergy level 1+: companion callout on combat start (~40% chance)
+                        let syn = self.companion_synergy_level();
+                        if syn >= 1 {
+                            let roll = self.rng_next();
+                            if roll % 100 < 40 {
+                                let callout = comp.synergy_callout(roll);
+                                self.message.push_str(&format!("\n{}", callout));
+                            }
                         }
                     }
                     self.message_timer = 255;
@@ -332,6 +341,13 @@ impl GameState {
 
                 let security_bonus = self.crew_bonus(CrewRole::SecurityChief);
 
+                // Synergy level 2+: companion passive damage bonus
+                let synergy_dmg = if self.companion_synergy_level() >= 2 {
+                    self.companion.map_or(0, |c| c.synergy_damage_bonus())
+                } else {
+                    0
+                };
+
                 let hit_dmg = 2
                     + self.player.bonus_damage()
                     + self.player.enchant_bonus_damage()
@@ -342,7 +358,8 @@ impl GameState {
                     + empowered_bonus
                     + iron_bonus
                     + tactical_insight
-                    + security_bonus;
+                    + security_bonus
+                    + synergy_dmg;
 
                 self.answer_streak += 1;
                 if self.answer_streak > self.run_journal.max_combo {
@@ -490,6 +507,21 @@ impl GameState {
                     }
                     gold_gain = (gold_gain as f64 * self.floor_profile.gold_multiplier()) as i32;
                     gold_gain = gold_gain.max(1);
+                    // Synergy level 2+ Quartermaster gold bonus
+                    if self.companion_synergy_level() >= 2 {
+                        let pct = self.companion.map_or(0, |c| c.synergy_gold_pct());
+                        if pct > 0 {
+                            gold_gain += (gold_gain * pct) / 100;
+                        }
+                    }
+                    // Synergy level 3 Supply Drop: chance for double gold
+                    if self.companion_synergy_level() >= 3 && self.companion == Some(Companion::Quartermaster) {
+                        if self.rng_next() % 100 < 20 {
+                            gold_gain *= 2;
+                            self.message = Companion::Quartermaster.combo_ability_message().to_string();
+                            self.message_timer = 90;
+                        }
+                    }
                     // Location gold bonus
                     if self.current_location_type == Some(crate::world::LocationType::AsteroidBase)
                         || self.current_location_type == Some(crate::world::LocationType::MiningColony)
@@ -660,6 +692,40 @@ impl GameState {
                     };
                     self.add_companion_xp(kill_xp);
 
+                    // Synergy level 3 combo abilities on kill
+                    if self.companion_synergy_level() >= 3 {
+                        match self.companion {
+                            Some(Companion::Medic) => {
+                                // Vital Strike: heal on kill (20% chance)
+                                if self.rng_next() % 100 < 20 {
+                                    let heal = 3;
+                                    self.player.hp = (self.player.hp + heal).min(self.player.max_hp);
+                                    self.message.push_str(&format!(
+                                        "\n{} +{} HP!",
+                                        Companion::Medic.combo_ability_message(),
+                                        heal
+                                    ));
+                                }
+                            }
+                            Some(Companion::ScienceOfficer) => {
+                                // Nanite Surge: heal 2 + reveal enemies (15% chance)
+                                if self.rng_next() % 100 < 15 {
+                                    self.player.hp = (self.player.hp + 2).min(self.player.max_hp);
+                                    for e in self.enemies.iter_mut() {
+                                        if e.is_alive() {
+                                            e.alert = true;
+                                        }
+                                    }
+                                    self.message.push_str(&format!(
+                                        "\n{}",
+                                        Companion::ScienceOfficer.combo_ability_message()
+                                    ));
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+
                     // Achievement checks
                     self.achievements.record_correct();
                     self.achievements.check_kills(self.total_kills);
@@ -805,6 +871,12 @@ impl GameState {
                         }
                     }
 
+                    // Synergy level 3 SecurityChief: Fortified Stance (25% negate even after guard)
+                    let fortified = !evaded
+                        && self.companion == Some(Companion::SecurityChief)
+                        && self.companion_synergy_level() >= 3
+                        && (self.rng_next() % 100) < 25;
+
                     if evaded {
                         let (sx, sy) = self.tile_to_screen(self.player.x, self.player.y);
                         self.particles.spawn_synergy(sx, sy, &mut self.rng_state);
@@ -817,6 +889,21 @@ impl GameState {
                             format!(
                                 "Wrong! (was \"{}\") — you evaded {}'s attack!",
                                 expected_pinyin, e_hanzi
+                            )
+                        };
+                        self.message_timer = if e_is_elite { 70 } else { 60 };
+                    } else if fortified {
+                        self.message = if e_is_elite {
+                            format!(
+                                "✗ Wrong chain! Needed \"{}\" — {}",
+                                expected_pinyin,
+                                Companion::SecurityChief.combo_ability_message()
+                            )
+                        } else {
+                            format!(
+                                "Wrong! (was \"{}\") — {}",
+                                expected_pinyin,
+                                Companion::SecurityChief.combo_ability_message()
                             )
                         };
                         self.message_timer = if e_is_elite { 70 } else { 60 };

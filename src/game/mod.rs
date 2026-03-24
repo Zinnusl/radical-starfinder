@@ -121,6 +121,8 @@ pub struct GameState {
     pub guard_used_this_fight: bool,
     pub guard_blocks_used: u8,
     pub companion_xp: u32,
+    /// Per-companion bond tracking (indexed by Companion::index())
+    pub companion_bonds: [CompanionBond; COMPANION_COUNT],
     pub merchant_reroll_used: bool,
     /// Active quests
     pub quests: Vec<Quest>,
@@ -440,6 +442,43 @@ impl GameState {
         }
     }
 
+    /// Current companion's synergy bond level (0-3).
+    pub(super) fn companion_synergy_level(&self) -> u8 {
+        match self.companion {
+            Some(c) => self.companion_bonds[c.index()].synergy_level,
+            None => 0,
+        }
+    }
+
+    /// Advance the current companion's bond and show a message on level-up.
+    pub(super) fn advance_companion_bond(&mut self) {
+        if let Some(comp) = self.companion {
+            let bond = &mut self.companion_bonds[comp.index()];
+            let old_level = bond.synergy_level;
+            bond.advance_floor();
+            let new_level = bond.synergy_level;
+            if new_level > old_level {
+                self.message = match new_level {
+                    1 => format!(
+                        "🤝 Bond Lv1 with {}! Combat Callouts unlocked!",
+                        comp.name()
+                    ),
+                    2 => format!(
+                        "🤝 Bond Lv2 with {}! Passive Bonus unlocked!",
+                        comp.name()
+                    ),
+                    3 => format!(
+                        "🤝 Bond Lv3 with {}! {} unlocked!",
+                        comp.name(),
+                        comp.combo_ability_name()
+                    ),
+                    _ => String::new(),
+                };
+                self.message_timer = 120;
+            }
+        }
+    }
+
     pub(super) fn effective_shop_discount_pct(&self) -> i32 {
         let mut discount = self.player.shop_discount_pct;
         if let Some(ref comp) = self.companion {
@@ -719,6 +758,7 @@ pub fn init_game() -> Result<(), JsValue> {
         guard_used_this_fight: false,
         guard_blocks_used: 0,
         companion_xp: 0,
+        companion_bonds: [CompanionBond::default(); COMPANION_COUNT],
         merchant_reroll_used: false,
         quests: Vec::new(),
         daily_mode: false,
