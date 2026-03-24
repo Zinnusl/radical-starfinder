@@ -520,7 +520,7 @@ pub enum FloorProfile {
 
 impl FloorProfile {
     pub(super) fn roll(floor: i32, rng_val: u64) -> Self {
-        if floor <= 2 {
+        if floor <= 4 {
             return FloorProfile::Normal;
         }
         match rng_val % 100 {

@@ -34,7 +34,7 @@ impl super::GameState {
         // Always offer heal
         items.push(ShopItem {
             label: "Full Heal".to_string(),
-            cost: 20 + self.floor_num * 4,
+            cost: 12 + self.floor_num * 3,
             kind: ShopItemKind::HealFull,
         });
 
@@ -45,7 +45,7 @@ impl super::GameState {
             let rad = available[idx];
             items.push(ShopItem {
                 label: format!("Radical [{}] ({})", rad.ch, rad.meaning),
-                cost: 12 + self.floor_num * 2,
+                cost: 8 + self.floor_num * 2,
                 kind: ShopItemKind::Radical(rad.ch),
             });
         }
@@ -55,7 +55,7 @@ impl super::GameState {
         let eq = &EQUIPMENT_POOL[eq_idx];
         items.push(ShopItem {
             label: format!("{} ({:?})", eq.name, eq.slot),
-            cost: 30 + self.floor_num * 6,
+            cost: 20 + self.floor_num * 5,
             kind: ShopItemKind::Equipment(eq_idx),
         });
 
@@ -64,13 +64,13 @@ impl super::GameState {
         let cname = self.item_display_name(&consumable);
         items.push(ShopItem {
             label: cname,
-            cost: 15 + self.floor_num * 3,
+            cost: 10 + self.floor_num * 2,
             kind: ShopItemKind::Consumable(consumable),
         });
 
         items.push(ShopItem {
             label: "🍙 Rice Ball".to_string(),
-            cost: 8,
+            cost: 5,
             kind: ShopItemKind::Consumable(crate::player::Item::RationPack(40)),
         });
 
