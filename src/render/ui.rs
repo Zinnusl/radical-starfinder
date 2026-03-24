@@ -1381,10 +1381,10 @@ impl super::Renderer {
         }
     }
 
-    pub fn draw_console(&self, history: &[String], buffer: &str) {
+    pub fn draw_console(&self, history: &[String], buffer: &str, scroll_offset: usize) {
         let ctx = &self.ctx;
         let w = self.canvas_w;
-        let h = self.canvas_h / 2.0;
+        let h = (self.canvas_h * 0.4).max(120.0);
 
         ctx.set_fill_style_str("rgba(5,3,15,0.92)");
         ctx.fill_rect(0.0, 0.0, w, h);
@@ -1430,19 +1430,35 @@ impl super::Renderer {
         ctx.line_to(w, input_y - 16.0);
         let _ = ctx.stroke();
 
+        // Blinking cursor: use JS performance.now() for timing
+        let blink_on = web_sys::window()
+            .and_then(|w| w.performance())
+            .map(|p| ((p.now() / 530.0) as u64) % 2 == 0)
+            .unwrap_or(true);
+        let cursor = if blink_on { "_" } else { " " };
+
         ctx.set_fill_style_str("#39ff14");
         ctx.set_font("bold 14px monospace");
-        let _ = ctx.fill_text(&format!("> {}_", buffer), 10.0, input_y);
+        let _ = ctx.fill_text(&format!("> {}{}", buffer, cursor), 10.0, input_y);
+
+        // Scroll indicator
+        if scroll_offset > 0 {
+            ctx.set_fill_style_str("#556655");
+            ctx.set_font("11px monospace");
+            let _ = ctx.fill_text(
+                &format!("▲ scroll: {} lines  (PgUp/PgDn)", scroll_offset),
+                w - 260.0,
+                16.0,
+            );
+        }
 
         ctx.set_font(&format!("{}px monospace", font_size));
         let max_lines = ((h - 50.0) / line_height) as usize;
-        let start = if history.len() > max_lines {
-            history.len() - max_lines
-        } else {
-            0
-        };
-        for (i, line) in history[start..].iter().enumerate() {
-            let y = input_y - 22.0 - (history[start..].len() - 1 - i) as f64 * line_height;
+        let total = history.len();
+        let end = total.saturating_sub(scroll_offset);
+        let start = end.saturating_sub(max_lines);
+        for (i, line) in history[start..end].iter().enumerate() {
+            let y = input_y - 22.0 - (end - start - 1 - i) as f64 * line_height;
             if y > 28.0 {
                 let color = if line.starts_with("> ") {
                     "#556655"
@@ -1460,6 +1476,11 @@ impl super::Renderer {
                     || line.starts_with("God mode")
                     || line.starts_with("Teleported")
                     || line.starts_with("Granted")
+                    || line.starts_with("Warped")
+                    || line.starts_with("Map revealed")
+                    || line.starts_with("Killed")
+                    || line.starts_with("HP ")
+                    || line.starts_with("Focus ")
                 {
                     "#55ff77"
                 } else if line.starts_with("  ") {
