@@ -54,7 +54,6 @@ pub enum EquipEffect {
 
 impl EquipEffect {
     /// Returns true if two effects are the same variant, ignoring inner values.
-    #[allow(dead_code)]
     pub fn same_variant(&self, other: &EquipEffect) -> bool {
         core::mem::discriminant(self) == core::mem::discriminant(other)
     }
@@ -701,7 +700,6 @@ pub const EQUIPMENT_POOL: &[Equipment] = &[
 
 /// Bonus granted when a complete equipment set is worn.
 #[derive(Clone, Copy, Debug)]
-#[allow(dead_code)]
 pub enum SetBonus {
     /// Flat bonus damage on all attacks.
     BonusDamage(i32),
@@ -714,7 +712,6 @@ pub enum SetBonus {
 }
 
 /// An equipment set: a named combination of effects that grants a bonus.
-#[allow(dead_code)]
 pub struct EquipmentSet {
     pub name: &'static str,
     /// Which equip effect variants must be present (inner values ignored).
@@ -734,7 +731,6 @@ impl EquipmentSet {
     }
 }
 
-#[allow(dead_code)]
 pub const EQUIPMENT_SETS: &[EquipmentSet] = &[
     // Void Lance (CriticalStrike) + Nanoweave Suit (DodgeChance) + Threat Analyzer (EnemyIntentReveal)
     EquipmentSet {
@@ -779,7 +775,6 @@ pub const EQUIPMENT_SETS: &[EquipmentSet] = &[
 ];
 
 /// Returns all equipment sets whose requirements are met by the player's gear.
-#[allow(dead_code)]
 pub fn active_set_bonuses(player: &Player) -> Vec<&'static EquipmentSet> {
     let equipped = player.equipped_effects();
     EQUIPMENT_SETS
@@ -1007,7 +1002,6 @@ pub struct Player {
     /// Turns remaining in current form (0 = permanent/human)
     pub form_timer: i32,
     /// Whether the PhaseWalk set bonus has been used this floor.
-    #[allow(dead_code)]
     pub phase_walk_used: bool,
 }
 
@@ -1397,7 +1391,6 @@ impl Player {
     }
 
     /// Collect all currently equipped effects into a Vec.
-    #[allow(dead_code)]
     pub fn equipped_effects(&self) -> Vec<EquipEffect> {
         let mut effects = Vec::new();
         if let Some(w) = self.weapon {

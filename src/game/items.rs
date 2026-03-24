@@ -1267,7 +1267,6 @@ impl GameState {
 
     /// Apply equipment set bonuses that trigger on floor entry.
     /// Call this from `new_floor()` after the floor is set up.
-    #[allow(dead_code)]
     pub(super) fn apply_set_bonuses_on_floor(&mut self) {
         use crate::player::{active_set_bonuses, SetBonus};
         self.player.phase_walk_used = false;

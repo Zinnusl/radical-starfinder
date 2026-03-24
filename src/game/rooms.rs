@@ -570,6 +570,9 @@ impl GameState {
             }
         }
 
+        // Apply equipment set bonuses (e.g. HealOnFloor)
+        self.apply_set_bonuses_on_floor();
+
         // Advance companion bond on each floor transition
         self.advance_companion_bond();
 
