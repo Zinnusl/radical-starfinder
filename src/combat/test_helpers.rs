@@ -107,6 +107,7 @@ pub fn make_test_battle(units: Vec<BattleUnit>) -> TacticalBattle {
         pending_event: None,
         event_message: None,
         event_message_timer: 0,
+        pending_impacts: Vec::new(),
     }
 }
 
