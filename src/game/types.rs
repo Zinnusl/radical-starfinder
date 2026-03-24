@@ -1,9 +1,7 @@
 //! Type definitions for the game module.
 
 use crate::combat;
-use crate::player::ItemKind;
-use crate::radical;
-use crate::world::{AltarKind, SealKind};
+use crate::world::AltarKind;
 
 use super::ShopItem;
 

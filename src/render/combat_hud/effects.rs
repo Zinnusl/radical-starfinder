@@ -1,13 +1,9 @@
 //! Combat effects, messages, battle log, and typing UI.
 
 use crate::combat::{
-    ArenaBiome, BattleTile, Direction, EnemyIntent, Projectile, TacticalBattle, TacticalPhase,
-    TargetMode, TypingAction, Weather, WuxingElement,
+    TacticalBattle, TacticalPhase,
 };
-use crate::player::Player;
-use crate::radical;
 
-use super::super::{COL_PLAYER, COL_HP_BAR, COL_HP_BG};
 
 impl super::super::Renderer {
     #[allow(clippy::too_many_arguments)]
@@ -15,11 +11,11 @@ impl super::super::Renderer {
         &self,
         battle: &TacticalBattle,
         anim_t: f64,
-        cell: f64,
+        _cell: f64,
         grid_px: f64,
         grid_x: f64,
         grid_y: f64,
-        grid_size: f64,
+        _grid_size: f64,
     ) {
 
         // ── Arena event warning banner ──────────────────────────────────

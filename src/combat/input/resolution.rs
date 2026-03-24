@@ -15,6 +15,7 @@ use crate::vocab;
 
 use super::BattleEvent;
 
+#[allow(dead_code)]
 fn tile_spell_bonus(battle: &TacticalBattle, unit_idx: usize) -> i32 {
     let tile_bonus = match battle
         .arena
@@ -1471,7 +1472,7 @@ pub(super) fn resolve_spell_cast(
             // Move toward target, stop adjacent. Damage = base + 50% per tile traveled.
             let px = battle.units[0].x;
             let py = battle.units[0].y;
-            let dist = (target_x - px).abs() + (target_y - py).abs();
+            let _dist = (target_x - px).abs() + (target_y - py).abs();
             // Find the closest empty walkable tile adjacent to the target
             let dx = (target_x - px).signum();
             let dy = (target_y - py).signum();

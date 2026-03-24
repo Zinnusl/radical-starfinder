@@ -1267,6 +1267,7 @@ impl GameState {
 
     /// Apply equipment set bonuses that trigger on floor entry.
     /// Call this from `new_floor()` after the floor is set up.
+    #[allow(dead_code)]
     pub(super) fn apply_set_bonuses_on_floor(&mut self) {
         use crate::player::{active_set_bonuses, SetBonus};
         self.player.phase_walk_used = false;
@@ -1293,6 +1294,7 @@ impl GameState {
     }
 
     /// Returns bonus damage from equipment sets for the first combat turn.
+    #[allow(dead_code)]
     pub(super) fn set_bonus_first_strike_damage(&self) -> i32 {
         use crate::player::{active_set_bonuses, SetBonus};
         active_set_bonuses(&self.player)
@@ -1305,6 +1307,7 @@ impl GameState {
     }
 
     /// Returns total flat bonus damage from equipment set bonuses.
+    #[allow(dead_code)]
     pub(super) fn set_bonus_damage(&self) -> i32 {
         use crate::player::{active_set_bonuses, SetBonus};
         active_set_bonuses(&self.player)
@@ -1317,6 +1320,7 @@ impl GameState {
     }
 
     /// Check if the player has the PhaseWalk set bonus active and unused.
+    #[allow(dead_code)]
     pub(super) fn has_phase_walk_available(&self) -> bool {
         use crate::player::{active_set_bonuses, SetBonus};
         !self.player.phase_walk_used

@@ -1,25 +1,23 @@
 //! Right info panel, action menus, and look mode display.
 
 use crate::combat::{
-    ArenaBiome, BattleTile, Direction, EnemyIntent, Projectile, TacticalBattle, TacticalPhase,
-    TargetMode, TypingAction, Weather, WuxingElement,
+    TacticalBattle, TacticalPhase,
+    TargetMode, TypingAction, Weather,
 };
-use crate::player::Player;
-use crate::radical;
 
-use super::super::{COL_PLAYER, COL_HP_BAR, COL_HP_BG, hp_gradient_color};
+use super::super::{COL_HP_BG, hp_gradient_color};
 
 impl super::super::Renderer {
     #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn draw_tactical_panels(
         &self,
         battle: &TacticalBattle,
-        anim_t: f64,
-        cell: f64,
+        _anim_t: f64,
+        _cell: f64,
         grid_px: f64,
         grid_x: f64,
         grid_y: f64,
-        grid_size: f64,
+        _grid_size: f64,
     ) {
         // Right panel: info area
         let panel_x = grid_x + grid_px + 16.0;

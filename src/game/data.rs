@@ -1,6 +1,5 @@
 //! Static data tables for challenges and mini-games.
 
-use super::*;
 
 
 /// Sentence data for sentence construction challenges.

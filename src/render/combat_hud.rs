@@ -1,13 +1,9 @@
 //! Tactical battle (combat arena) rendering.
 
-use crate::combat::{
-    ArenaBiome, BattleTile, Direction, EnemyIntent, Projectile, TacticalBattle, TacticalPhase,
-    TargetMode, TypingAction, Weather, WuxingElement,
-};
+use crate::combat::TacticalBattle;
 use crate::player::Player;
-use crate::radical;
 
-use super::{COL_PLAYER, COL_HP_BAR, COL_HP_BG, FloatingText};
+use super::FloatingText;
 
 mod grid;
 mod panels;

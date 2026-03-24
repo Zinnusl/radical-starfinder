@@ -1003,6 +1003,7 @@ impl Projectile {
     pub const SPEED_FAST: f64 = 0.16;   // Arrives in ~6 frames (lasers, lightning)
     pub const SPEED_NORMAL: f64 = 0.10; // Arrives in ~10 frames (standard attacks)
     pub const SPEED_SLOW: f64 = 0.06;   // Arrives in ~17 frames (heavy projectiles)
+    #[allow(dead_code)]
     pub const SPEED_CRAWL: f64 = 0.03;  // Arrives in ~33 frames (area denial)
 
     pub fn current_pos(&self) -> (f64, f64) {

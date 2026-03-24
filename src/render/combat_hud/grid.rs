@@ -2,12 +2,12 @@
 
 use crate::combat::{
     ArenaBiome, BattleTile, Direction, EnemyIntent, Projectile, TacticalBattle,
-    TacticalPhase, TargetMode, TypingAction, Weather, WuxingElement,
+    TacticalPhase, TargetMode, WuxingElement,
 };
 use crate::player::Player;
 use crate::radical;
 
-use super::super::{COL_PLAYER, COL_HP_BAR, COL_HP_BG, hp_gradient_color};
+use super::super::{COL_PLAYER, COL_HP_BG, hp_gradient_color};
 
 impl super::super::Renderer {
     #[allow(clippy::too_many_arguments)]
@@ -20,7 +20,7 @@ impl super::super::Renderer {
         grid_px: f64,
         grid_x: f64,
         grid_y: f64,
-        grid_size: f64,
+        _grid_size: f64,
     ) {
 
         // Full-screen dark backdrop
