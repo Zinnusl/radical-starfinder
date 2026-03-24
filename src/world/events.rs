@@ -91,6 +91,99 @@ pub(super) mod types {
 }
 
 // ---------------------------------------------------------------------------
+// Consequence tracking: maps (event id, choice index) → memory updates
+// ---------------------------------------------------------------------------
+
+use crate::game::EventMemory;
+
+/// Records persistent consequences in EventMemory based on which choice the
+/// player made in a specific event.  Called after `apply_event_outcome`.
+pub fn record_event_consequence(memory: &mut EventMemory, event_id: usize, choice_idx: usize) {
+    match (event_id, choice_idx) {
+        // Stowaway: take them on → helped_stowaway, morale +5
+        (33, 0) => {
+            memory.record_choice("helped_stowaway");
+            memory.crew_morale += 5;
+        }
+        // Stowaway: interrogate → morale -3
+        (33, 2) => {
+            memory.record_choice("interrogated_stowaway");
+            memory.crew_morale -= 3;
+        }
+        // Pirate Ambush: fight → faction -3
+        (7, 0) => {
+            memory.record_choice("fought_pirates");
+            memory.faction_standing -= 3;
+        }
+        // Pirate Ambush: pay tribute → faction +2
+        (7, 1) => {
+            memory.record_choice("paid_pirates");
+            memory.faction_standing += 2;
+        }
+        // Pirate Defector: welcome → faction -5
+        (10, 0) => {
+            memory.record_choice("sheltered_defector");
+            memory.faction_standing -= 5;
+        }
+        // Pirate Defector: drive away → faction +1
+        (10, 2) => {
+            memory.faction_standing += 1;
+        }
+        // Crew Celebration: shore leave → morale +10
+        (34, 0) => {
+            memory.crew_morale += 10;
+        }
+        // Crew Celebration: push on → morale -5
+        (34, 2) => {
+            memory.crew_morale -= 5;
+        }
+        // Crew Conflict: mediate → morale +8, good captain
+        (31, 0) => {
+            memory.record_choice("good_captain");
+            memory.crew_morale += 8;
+        }
+        // Crew Conflict: let them sort it → morale -8
+        (31, 1) => {
+            memory.crew_morale -= 8;
+        }
+        // Refugee Convoy: share fuel → helped refugees, morale +3
+        (51, 0) => {
+            memory.record_choice("helped_refugees");
+            memory.crew_morale += 3;
+        }
+        // Refugee Convoy: ignore → morale -2
+        (51, 4) => {
+            memory.record_choice("ignored_refugees");
+            memory.crew_morale -= 2;
+        }
+        // First Contact: communicate → peaceful, faction +5
+        (35, 0) => {
+            memory.record_choice("peaceful_contact");
+            memory.faction_standing += 5;
+        }
+        // First Contact: offer gift → faction +3
+        (35, 1) => {
+            memory.faction_standing += 3;
+        }
+        // First Contact: power weapons → attacked aliens, faction -8
+        (35, 2) => {
+            memory.record_choice("attacked_aliens");
+            memory.faction_standing -= 8;
+        }
+        // Pirate Base: raid → faction -10
+        (8, 0) => {
+            memory.record_choice("raided_pirates");
+            memory.faction_standing -= 10;
+        }
+        // Pirate Base: trade → faction +3
+        (8, 2) => {
+            memory.faction_standing += 3;
+        }
+        _ => {}
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Master event pool
 // ---------------------------------------------------------------------------
 
@@ -180,6 +273,10 @@ pub static ALL_EVENTS: &[&SpaceEvent] = &[
     &EVENT_GHOST_FLEET,
     &EVENT_MEDITATION_NEBULA,
     &EVENT_EMERGENCY_BEACON,
+    // Conditional events — gated by EventMemory (74–76)
+    &EVENT_PIRATE_DEBT_COLLECTION,
+    &EVENT_REFUGEE_GRATITUDE,
+    &EVENT_CREW_MUTINY_THREAT,
 ];
 
 // ---------------------------------------------------------------------------
@@ -192,6 +289,50 @@ pub fn select_event(sector: usize, system_id: usize, seed: u32) -> &'static Spac
     let hash = simple_hash(sector as u32, system_id as u32, seed);
     let index = (hash as usize) % ALL_EVENTS.len();
     ALL_EVENTS[index]
+}
+
+/// Indices of conditional events that require specific EventMemory state.
+const CONDITIONAL_EVENT_INDICES: &[(usize, fn(&EventMemory) -> bool)] = &[
+    (74, |m| m.faction_standing < -5),                                      // Pirate Debt Collection
+    (75, |m| m.has_choice("helped_refugees") || m.has_choice("helped_stowaway")), // Refugee Gratitude
+    (76, |m| m.crew_morale < -10),                                          // Crew Mutiny Threat
+];
+
+/// Memory-aware event selection.  Given the original event index from the
+/// starmap, checks whether any conditional events should be injected based
+/// on the player's EventMemory.
+///
+/// - If a conditional event is eligible and the seed hash favours it (≈40%),
+///   the conditional event replaces the original.
+/// - If the original index itself points to a conditional event whose
+///   condition is NOT met, falls back to a regular event.
+pub fn select_event_with_memory(
+    original_id: usize,
+    memory: &EventMemory,
+    seed: u32,
+) -> usize {
+    // Check if the original id IS a conditional event that doesn't qualify
+    for &(idx, condition) in CONDITIONAL_EVENT_INDICES {
+        if original_id == idx && !condition(memory) {
+            // Fall back to a different event using hash
+            let fallback = simple_hash(original_id as u32, seed, 999);
+            // Pick from the non-conditional portion of the pool (0..74)
+            let base_count = ALL_EVENTS.len() - CONDITIONAL_EVENT_INDICES.len();
+            return (fallback as usize) % base_count;
+        }
+    }
+
+    // Try to inject a qualifying conditional event (~40% chance per eligible)
+    let inject_hash = simple_hash(seed, original_id as u32, 7777);
+    if inject_hash % 100 < 40 {
+        for &(idx, condition) in CONDITIONAL_EVENT_INDICES {
+            if condition(memory) {
+                return idx;
+            }
+        }
+    }
+
+    original_id
 }
 
 /// Selects an event from a specific category.  Returns the first match after

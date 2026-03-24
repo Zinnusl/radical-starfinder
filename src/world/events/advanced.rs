@@ -1054,3 +1054,114 @@ pub(super) static EVENT_EMERGENCY_BEACON: SpaceEvent = SpaceEvent {
     category: EventCategory::DistressSignal,
 };
 
+// ── Conditional Events (74–76) ──────────────────────────────────────────────
+// These events are gated by EventMemory and only appear when conditions are met.
+
+pub(super) static EVENT_PIRATE_DEBT_COLLECTION: SpaceEvent = SpaceEvent {
+    id: 74,
+    title: "Pirate Debt Collection",
+    chinese_title: "海盗追债",
+    description: "A heavily armed pirate enforcer drops out of hyperspace and hails you. \
+                  'You've made enemies among the fleet. Time to settle accounts — with \
+                  credits or with blood.'",
+    choices: &[
+        EventChoice {
+            text: "[-30 credits] Pay what they demand and hope they leave",
+            chinese_hint: "还债 (huánzhài) — repay a debt",
+            outcome: EventOutcome::LoseCredits(30),
+            requires: Some(EventRequirement::HasCredits(30)),
+        },
+        EventChoice {
+            text: "[Combat level 3, +35 credits] Fight the enforcer",
+            chinese_hint: "反抗 (fǎnkàng) — resist",
+            outcome: EventOutcome::CombatReward(3, 35),
+            requires: None,
+        },
+        EventChoice {
+            text: "[-8 fuel] Dump fuel to create a flashpoint and flee",
+            chinese_hint: "逃 (táo) — escape",
+            outcome: EventOutcome::LoseFuel(8),
+            requires: Some(EventRequirement::HasFuel(8)),
+        },
+        EventChoice {
+            text: "[-10 hull] Take a hit while escaping through an asteroid field",
+            chinese_hint: "损伤 (sǔnshāng) — damage",
+            outcome: EventOutcome::LoseHull(10),
+            requires: None,
+        },
+    ],
+    category: EventCategory::PirateEncounter,
+};
+
+pub(super) static EVENT_REFUGEE_GRATITUDE: SpaceEvent = SpaceEvent {
+    id: 75,
+    title: "Refugee Gratitude",
+    chinese_title: "难民感恩",
+    description: "A small convoy intercepts you with a friendly hail. 'Captain! We are \
+                  the refugees you helped before. We've rebuilt and want to repay \
+                  your kindness.'",
+    choices: &[
+        EventChoice {
+            text: "[+25 credits, +5 fuel] Accept their generous gift package",
+            chinese_hint: "感谢 (gǎnxiè) — gratitude",
+            outcome: EventOutcome::FuelAndCredits(5, 25),
+            requires: None,
+        },
+        EventChoice {
+            text: "[Gain crew member] Welcome a skilled refugee aboard",
+            chinese_hint: "欢迎 (huānyíng) — welcome",
+            outcome: EventOutcome::GainCrewMember,
+            requires: None,
+        },
+        EventChoice {
+            text: "[+15 hull] Accept hull repair materials they salvaged",
+            chinese_hint: "材料 (cáiliào) — materials",
+            outcome: EventOutcome::RepairShip(15),
+            requires: None,
+        },
+        EventChoice {
+            text: "[Gain radical 恩] Decline — their freedom is reward enough",
+            chinese_hint: "恩 (ēn) — grace, kindness",
+            outcome: EventOutcome::GainRadical("恩"),
+            requires: None,
+        },
+    ],
+    category: EventCategory::CrewEvent,
+};
+
+pub(super) static EVENT_CREW_MUTINY_THREAT: SpaceEvent = SpaceEvent {
+    id: 76,
+    title: "Crew Mutiny Threat",
+    chinese_title: "船员哗变威胁",
+    description: "A delegation of crew members blocks the bridge entrance. Their leader \
+                  speaks with barely controlled fury: 'Captain, we've had enough. \
+                  Conditions are unbearable. Change course or we take the ship.'",
+    choices: &[
+        EventChoice {
+            text: "[-20 credits] Promise better rations and shore leave",
+            chinese_hint: "承诺 (chéngnuò) — promise",
+            outcome: EventOutcome::HealCrew(20),
+            requires: Some(EventRequirement::HasCredits(20)),
+        },
+        EventChoice {
+            text: "[Lose crew member] Lock down the ringleader in the brig",
+            chinese_hint: "镇压 (zhènyā) — suppress",
+            outcome: EventOutcome::LoseCrewMember,
+            requires: None,
+        },
+        EventChoice {
+            text: "[-5 fuel] Divert to the nearest station for shore leave",
+            chinese_hint: "休假 (xiūjià) — leave, vacation",
+            outcome: EventOutcome::FuelAndCredits(-5, 0),
+            requires: Some(EventRequirement::HasFuel(5)),
+        },
+        EventChoice {
+            text: "[-10 hull] Crew sabotages systems before you regain control",
+            chinese_hint: "破坏 (pòhuài) — sabotage",
+            outcome: EventOutcome::LoseHull(10),
+            requires: None,
+        },
+    ],
+    category: EventCategory::CrewEvent,
+};
+
