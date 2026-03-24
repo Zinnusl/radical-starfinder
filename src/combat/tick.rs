@@ -325,6 +325,7 @@ fn advance_and_set_phase(battle: &mut TacticalBattle) -> BattleEvent {
         battle.arena.tick_steam();
         battle.arena.tick_holy();
         tick_arcing_projectiles(battle);
+        tick_pending_impacts(battle);
         apply_exhaustion(battle);
         let scorched_msgs = apply_scorched_damage(battle);
         for msg in &scorched_msgs {
@@ -589,6 +590,110 @@ fn tick_arcing_projectiles(battle: &mut TacticalBattle) {
                 }
             }
         }
+    }
+}
+
+/// Decrement pending-impact timers and detonate any that reach zero.
+fn tick_pending_impacts(battle: &mut TacticalBattle) {
+    let mut detonated = Vec::new();
+    for imp in battle.pending_impacts.iter_mut() {
+        imp.turns_until_hit = imp.turns_until_hit.saturating_sub(1);
+        if imp.turns_until_hit == 0 {
+            detonated.push((
+                imp.x,
+                imp.y,
+                imp.damage,
+                imp.radius,
+                imp.source_is_player,
+                imp.element,
+            ));
+        }
+    }
+    battle.pending_impacts.retain(|p| p.turns_until_hit > 0);
+
+    for (cx, cy, damage, radius, is_player, element) in &detonated {
+        let r = *radius as i32;
+        let mut total_hits = 0;
+        for dx in -r..=r {
+            for dy in -r..=r {
+                let tx = cx + dx;
+                let ty = cy + dy;
+                if !battle.arena.in_bounds(tx, ty) {
+                    continue;
+                }
+                if let Some(idx) = battle.unit_at(tx, ty) {
+                    if *is_player && battle.units[idx].is_enemy() {
+                        let actual = deal_damage(battle, idx, *damage);
+                        total_hits += 1;
+                        if dx == 0 && dy == 0 {
+                            battle.log_message(format!(
+                                "Impact detonates for {} damage!",
+                                actual
+                            ));
+                        }
+                    } else if !*is_player && battle.units[idx].is_player() {
+                        let actual = deal_damage(battle, idx, *damage);
+                        total_hits += 1;
+                        battle.log_message(format!(
+                            "Incoming strike hits you for {} damage!",
+                            actual
+                        ));
+                    }
+                }
+            }
+        }
+        // Element-based status effects on detonation
+        if let Some(elem) = element {
+            let r = *radius as i32;
+            for dx in -r..=r {
+                for dy in -r..=r {
+                    let tx = cx + dx;
+                    let ty = cy + dy;
+                    if !battle.arena.in_bounds(tx, ty) {
+                        continue;
+                    }
+                    if let Some(idx) = battle.unit_at(tx, ty) {
+                        let dominated = if *is_player {
+                            battle.units[idx].is_enemy()
+                        } else {
+                            battle.units[idx].is_player()
+                        };
+                        if dominated {
+                            match elem {
+                                crate::combat::WuxingElement::Fire => {
+                                    battle.units[idx].statuses.push(
+                                        crate::status::StatusInstance::new(
+                                            crate::status::StatusKind::Burn { damage: 1 },
+                                            2,
+                                        ),
+                                    );
+                                }
+                                crate::combat::WuxingElement::Water => {
+                                    let already = battle.units[idx].statuses.iter().any(|s| {
+                                        matches!(s.kind, crate::status::StatusKind::Wet)
+                                    });
+                                    if !already {
+                                        battle.units[idx].statuses.push(
+                                            crate::status::StatusInstance::new(
+                                                crate::status::StatusKind::Wet,
+                                                2,
+                                            ),
+                                        );
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if total_hits > 1 {
+            battle.log_message(format!("Impact zone hits {} targets!", total_hits));
+        }
+    }
+    if !detonated.is_empty() {
+        battle.audio_events.push(AudioEvent::ProjectileImpact);
     }
 }
 

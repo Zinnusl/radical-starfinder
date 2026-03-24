@@ -963,6 +963,25 @@ pub struct ArcingProjectile {
     pub aoe_radius: u8,
 }
 
+/// A telegraphed area-of-effect attack that detonates after a countdown.
+///
+/// Created when AoE spells are cast; the impact zone is visible to the
+/// player (and AI) so they can dodge.  Processed once per round-wrap in
+/// `tick_pending_impacts`.
+#[derive(Clone, Debug)]
+pub struct PendingImpact {
+    pub x: i32,
+    pub y: i32,
+    pub turns_until_hit: u8,
+    pub damage: i32,
+    /// 0 = single tile, 1 = 3×3, 2 = 5×5
+    pub radius: u8,
+    pub source_is_player: bool,
+    pub element: Option<WuxingElement>,
+    pub glyph: &'static str,
+    pub color: &'static str,
+}
+
 /// Collapsed tactical phases per Oracle review (~5 core states).
 ///
 /// Transient UI state (cursor position, valid tiles, etc.) is stored
@@ -1153,6 +1172,8 @@ pub struct TacticalBattle {
     pub skill_menu_cursor: usize,
     pub projectiles: Vec<Projectile>,
     pub arcing_projectiles: Vec<ArcingProjectile>,
+    /// Telegraphed AoE impacts that detonate after a turn countdown.
+    pub pending_impacts: Vec<PendingImpact>,
     pub god_mode: bool,
     /// Audio events queued during combat logic, drained by `game.rs`.
     pub audio_events: Vec<AudioEvent>,

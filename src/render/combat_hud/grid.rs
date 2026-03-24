@@ -1,8 +1,8 @@
 //! Tactical grid, terrain, units, and projectile rendering.
 
 use crate::combat::{
-    ArenaBiome, BattleTile, Direction, EnemyIntent, Projectile, TacticalBattle, TacticalPhase,
-    TargetMode, TypingAction, Weather, WuxingElement,
+    ArenaBiome, BattleTile, Direction, EnemyIntent, Projectile, TacticalBattle,
+    TacticalPhase, TargetMode, TypingAction, Weather, WuxingElement,
 };
 use crate::player::Player;
 use crate::radical;
@@ -1363,6 +1363,103 @@ impl super::super::Renderer {
                 self.ctx.set_font("bold 10px monospace");
                 self.ctx.set_text_align("left");
                 self.ctx.fill_text("!", sx + 2.0, sy + 10.0).ok();
+            }
+        }
+
+        // ── Pending Impact Indicators ──────────────────────────────────
+        for imp in &battle.pending_impacts {
+            let urgent = imp.turns_until_hit <= 1;
+            let pulse_speed = if urgent { 7.0 } else { 3.0 };
+            let pulse = ((anim_t * pulse_speed).sin() * 0.25 + 0.55).clamp(0.2, 0.8);
+
+            let (base_r, base_g, base_b) = match imp.element {
+                Some(WuxingElement::Fire)  => (255, 60, 20),
+                Some(WuxingElement::Water) => (40, 120, 255),
+                Some(WuxingElement::Metal) => (200, 200, 220),
+                Some(WuxingElement::Wood)  => (60, 200, 60),
+                Some(WuxingElement::Earth) => (200, 150, 60),
+                None                       => (255, 180, 50),
+            };
+
+            let r = imp.radius as i32;
+            for dx in -r..=r {
+                for dy in -r..=r {
+                    let tx = imp.x + dx;
+                    let ty = imp.y + dy;
+                    if tx < 0
+                        || ty < 0
+                        || (tx as usize) >= battle.arena.width
+                        || (ty as usize) >= battle.arena.height
+                    {
+                        continue;
+                    }
+                    let tsx = grid_x + tx as f64 * cell;
+                    let tsy = grid_y + ty as f64 * cell;
+
+                    // Pulsing fill
+                    let fill_alpha = if urgent { pulse * 0.45 } else { pulse * 0.25 };
+                    self.ctx.set_fill_style_str(&format!(
+                        "rgba({},{},{},{})",
+                        base_r, base_g, base_b, fill_alpha
+                    ));
+                    self.ctx
+                        .fill_rect(tsx + 1.0, tsy + 1.0, cell - 2.0, cell - 2.0);
+
+                    // Border
+                    let border_alpha = if urgent { pulse * 1.0 } else { pulse * 0.5 };
+                    self.ctx.set_stroke_style_str(&format!(
+                        "rgba({},{},{},{})",
+                        base_r, base_g, base_b, border_alpha.min(1.0)
+                    ));
+                    self.ctx.set_line_width(if urgent { 2.0 } else { 1.0 });
+                    self.ctx
+                        .stroke_rect(tsx + 1.0, tsy + 1.0, cell - 2.0, cell - 2.0);
+                }
+            }
+
+            // Center glyph and countdown on the impact origin tile
+            let csx = grid_x + imp.x as f64 * cell;
+            let csy = grid_y + imp.y as f64 * cell;
+
+            if urgent {
+                self.ctx.set_shadow_color(&format!(
+                    "rgba({},{},{},0.8)",
+                    base_r, base_g, base_b
+                ));
+                self.ctx.set_shadow_blur(8.0);
+            }
+            self.ctx.set_fill_style_str(imp.color);
+            self.ctx.set_font("14px 'Noto Serif SC', 'SimSun', serif");
+            self.ctx.set_text_align("center");
+            self.ctx
+                .fill_text(imp.glyph, csx + cell / 2.0, csy + cell / 2.0 + 2.0)
+                .ok();
+            self.ctx.set_shadow_blur(0.0);
+            self.ctx.set_shadow_color("transparent");
+
+            // Turn countdown
+            let count_color = if urgent {
+                "rgba(255,255,255,0.95)"
+            } else {
+                "rgba(255,255,200,0.8)"
+            };
+            self.ctx.set_fill_style_str(count_color);
+            self.ctx.set_font("bold 11px monospace");
+            self.ctx.set_text_align("right");
+            self.ctx
+                .fill_text(
+                    &format!("{}", imp.turns_until_hit),
+                    csx + cell - 3.0,
+                    csy + cell - 4.0,
+                )
+                .ok();
+
+            // Danger icon for imminent impacts
+            if urgent {
+                self.ctx.set_fill_style_str("rgba(255,40,40,0.9)");
+                self.ctx.set_font("bold 10px monospace");
+                self.ctx.set_text_align("left");
+                self.ctx.fill_text("!", csx + 2.0, csy + 10.0).ok();
             }
         }
     }

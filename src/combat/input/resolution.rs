@@ -5,8 +5,8 @@ use crate::combat::boss;
 use crate::combat::grid::manhattan;
 use crate::combat::terrain::{apply_knockback, apply_terrain_interactions, TerrainSource};
 use crate::combat::{
-    AudioEvent, BattleTile, Projectile, ProjectileEffect, TacticalBattle, TacticalPhase,
-    TypingAction, Weather, WuxingElement,
+    AudioEvent, BattleTile, PendingImpact, Projectile, ProjectileEffect, TacticalBattle,
+    TacticalPhase, TypingAction, Weather, WuxingElement,
 };
 use crate::enemy::BossKind;
 use crate::radical::SpellEffect;
@@ -780,7 +780,6 @@ pub(super) fn resolve_spell_cast(
                 0
             };
             let dmg = (dmg + spell_power - rain_penalty).max(1);
-            let school = spell_effect_school(&effect);
             let mut cross = vec![
                 (target_x, target_y),
                 (target_x - 1, target_y),
@@ -788,7 +787,6 @@ pub(super) fn resolve_spell_cast(
                 (target_x, target_y - 1),
                 (target_x, target_y + 1),
             ];
-            // SpellPowerBoost + terrain spell → affect 1 extra tile
             if crate::combat::action::spell_power_extra_tiles(battle) {
                 cross.push((target_x - 1, target_y - 1));
                 cross.push((target_x + 1, target_y - 1));
@@ -796,18 +794,7 @@ pub(super) fn resolve_spell_cast(
                 cross.push((target_x + 1, target_y + 1));
                 battle.log_message("📖 SpellPower expands the terrain effect!");
             }
-            let mut total_hits = 0;
-            for &(cx, cy) in &cross {
-                if let Some(idx) = battle.unit_at(cx, cy) {
-                    if battle.units[idx].is_enemy() {
-                        let resist = boss::elementalist_resistance(battle, idx, school);
-                        let bonus = tile_spell_bonus(battle, idx);
-                        let final_dmg = ((dmg + bonus) as f64 * resist).ceil() as i32;
-                        deal_damage(battle, idx, final_dmg);
-                        total_hits += 1;
-                    }
-                }
-            }
+            // Terrain interactions happen immediately (visual feedback)
             let terrain_msgs = apply_terrain_interactions(
                 battle,
                 TerrainSource::FireAbility,
@@ -816,9 +803,25 @@ pub(super) fn resolve_spell_cast(
             for tm in &terrain_msgs {
                 battle.log_message(tm);
             }
+            // Damage is telegraphed: detonates next round
+            for &(cx, cy) in &cross {
+                if battle.arena.in_bounds(cx, cy) {
+                    battle.pending_impacts.push(PendingImpact {
+                        x: cx,
+                        y: cy,
+                        turns_until_hit: 1,
+                        damage: dmg,
+                        radius: 0,
+                        source_is_player: true,
+                        element: Some(WuxingElement::Fire),
+                        glyph: "🔥",
+                        color: "#ff4422",
+                    });
+                }
+            }
             format!(
-                "Fire erupts! Hit {} enemies for {} damage!",
-                total_hits, dmg
+                "Fire erupts across {} tiles! Impact in 1 turn!",
+                cross.len()
             )
         }
         SpellEffect::Heal(amt) => {
@@ -1137,20 +1140,23 @@ pub(super) fn resolve_spell_cast(
             let px = battle.units[0].x;
             let py = battle.units[0].y;
             let preview = super::targeting::compute_aoe_preview(&effect, target_x, target_y, px, py);
-            let school = spell_effect_school(&effect);
-            let mut total_hits = 0;
+            // Cone blast is telegraphed: detonates next round
             for &(cx, cy) in &preview {
-                if let Some(idx) = battle.unit_at(cx, cy) {
-                    if battle.units[idx].is_enemy() {
-                        let resist = boss::elementalist_resistance(battle, idx, school);
-                        let bonus = tile_spell_bonus(battle, idx);
-                        let final_dmg = ((dmg + bonus) as f64 * resist).ceil() as i32;
-                        deal_damage(battle, idx, final_dmg);
-                        total_hits += 1;
-                    }
+                if battle.arena.in_bounds(cx, cy) {
+                    battle.pending_impacts.push(PendingImpact {
+                        x: cx,
+                        y: cy,
+                        turns_until_hit: 1,
+                        damage: dmg,
+                        radius: 0,
+                        source_is_player: true,
+                        element: Some(WuxingElement::Metal),
+                        glyph: "⚡",
+                        color: "#cccccc",
+                    });
                 }
             }
-            format!("Cone blast hits {} enemies for {} damage!", total_hits, dmg)
+            format!("Arc blast charging across {} tiles! Impact in 1 turn!", preview.len())
         }
         SpellEffect::Wall(len) => {
             let px = battle.units[0].x;
@@ -1199,6 +1205,7 @@ pub(super) fn resolve_spell_cast(
             let py = battle.units[0].y;
             let preview = super::targeting::compute_aoe_preview(&effect, target_x, target_y, px, py);
             let mut frozen = 0;
+            // Freeze terrain immediately (visual feedback)
             for &(tx, ty) in &preview {
                 if battle.arena.in_bounds(tx, ty) {
                     if let Some(tile) = battle.arena.tile(tx, ty) {
@@ -1207,19 +1214,25 @@ pub(super) fn resolve_spell_cast(
                             frozen += 1;
                         }
                     }
-                    if let Some(idx) = battle.unit_at(tx, ty) {
-                        let school = spell_effect_school(&effect);
-                        let resist = boss::elementalist_resistance(battle, idx, school);
-                        let bonus = tile_spell_bonus(battle, idx);
-                        let final_dmg = ((dmg + bonus) as f64 * resist).ceil() as i32;
-                        deal_damage(battle, idx, final_dmg);
-                        battle.units[idx]
-                            .statuses
-                            .push(StatusInstance::new(StatusKind::Slow, 2));
-                    }
                 }
             }
-            format!("Ground freezes! {} tiles frozen, {} damage!", frozen, dmg)
+            // Damage + Slow are telegraphed: crystallization detonates next round
+            for &(tx, ty) in &preview {
+                if battle.arena.in_bounds(tx, ty) {
+                    battle.pending_impacts.push(PendingImpact {
+                        x: tx,
+                        y: ty,
+                        turns_until_hit: 1,
+                        damage: dmg,
+                        radius: 0,
+                        source_is_player: true,
+                        element: Some(WuxingElement::Water),
+                        glyph: "❄",
+                        color: "#88ccff",
+                    });
+                }
+            }
+            format!("Ground freezes! {} tiles frozen! Cryo blast in 1 turn!", frozen)
         }
         SpellEffect::Ignite => {
             let px = battle.units[0].x;
@@ -1294,8 +1307,7 @@ pub(super) fn resolve_spell_cast(
             let px = battle.units[0].x;
             let py = battle.units[0].y;
             let preview = super::targeting::compute_aoe_preview(&effect, target_x, target_y, px, py);
-            let school = spell_effect_school(&effect);
-            let mut hits = 0;
+            // Terrain cracking happens immediately (visual warning)
             for &(tx, ty) in &preview {
                 if battle.arena.in_bounds(tx, ty) {
                     if let Some(tile) = battle.arena.tile(tx, ty) {
@@ -1312,13 +1324,6 @@ pub(super) fn resolve_spell_cast(
                             }
                             _ => {}
                         }
-                    }
-                    if let Some(idx) = battle.unit_at(tx, ty) {
-                        let resist = boss::elementalist_resistance(battle, idx, school);
-                        let bonus = tile_spell_bonus(battle, idx);
-                        let final_dmg = ((dmg + bonus) as f64 * resist).ceil() as i32;
-                        deal_damage(battle, idx, final_dmg);
-                        hits += 1;
                     }
                 }
             }
@@ -1339,7 +1344,6 @@ pub(super) fn resolve_spell_cast(
                     }
                 }
             }
-            // Apply earthquake terrain interactions (e.g. cracking remaining ground)
             let terrain_msgs = apply_terrain_interactions(
                 battle,
                 TerrainSource::Earthquake,
@@ -1348,7 +1352,19 @@ pub(super) fn resolve_spell_cast(
             for tm in &terrain_msgs {
                 battle.log_message(tm);
             }
-            format!("The deck shakes! {} damage to {} units!", dmg, hits)
+            // Seismic damage is telegraphed: detonates in 2 turns
+            battle.pending_impacts.push(PendingImpact {
+                x: target_x,
+                y: target_y,
+                turns_until_hit: 2,
+                damage: dmg,
+                radius: 2,
+                source_is_player: true,
+                element: Some(WuxingElement::Earth),
+                glyph: "💥",
+                color: "#cc9944",
+            });
+            format!("The deck shakes! Seismic charge detonates in 2 turns!")
         }
         SpellEffect::Sanctify(heal) => {
             let px = battle.units[0].x;
@@ -1375,27 +1391,19 @@ pub(super) fn resolve_spell_cast(
             let px = battle.units[0].x;
             let py = battle.units[0].y;
             let preview = super::targeting::compute_aoe_preview(&effect, target_x, target_y, px, py);
-            let school = spell_effect_school(&effect);
             let dx = (target_x - px).signum();
             let dy = (target_y - py).signum();
-            let mut hits = 0;
-            // Push units first, then place water
+            // Push units immediately (wave front)
             let mut push_targets = Vec::new();
             for &(tx, ty) in &preview {
                 if battle.arena.in_bounds(tx, ty) {
                     if let Some(idx) = battle.unit_at(tx, ty) {
                         if battle.units[idx].is_enemy() {
-                            let resist = boss::elementalist_resistance(battle, idx, school);
-                            let bonus = tile_spell_bonus(battle, idx);
-                            let final_dmg = ((dmg + bonus) as f64 * resist).ceil() as i32;
-                            deal_damage(battle, idx, final_dmg);
                             push_targets.push(idx);
-                            hits += 1;
                         }
                     }
                 }
             }
-            // Push units 2 tiles in wave direction
             for idx in push_targets {
                 if battle.units[idx].alive {
                     for _ in 0..2 {
@@ -1413,7 +1421,7 @@ pub(super) fn resolve_spell_cast(
                     }
                 }
             }
-            // Place coolant tiles
+            // Place coolant tiles immediately (visible hazard)
             for &(tx, ty) in &preview {
                 if battle.arena.in_bounds(tx, ty) {
                     if let Some(tile) = battle.arena.tile(tx, ty) {
@@ -1423,7 +1431,23 @@ pub(super) fn resolve_spell_cast(
                     }
                 }
             }
-            format!("Coolant wave hits {} enemies for {} damage!", hits, dmg)
+            // Damage is telegraphed: wave crashes next round
+            for &(tx, ty) in &preview {
+                if battle.arena.in_bounds(tx, ty) {
+                    battle.pending_impacts.push(PendingImpact {
+                        x: tx,
+                        y: ty,
+                        turns_until_hit: 1,
+                        damage: dmg,
+                        radius: 0,
+                        source_is_player: true,
+                        element: Some(WuxingElement::Water),
+                        glyph: "🌊",
+                        color: "#4488ff",
+                    });
+                }
+            }
+            format!("Coolant wave surges! Impact in 1 turn!")
         }
         SpellEffect::SummonBoulder => {
             if battle.arena.in_bounds(target_x, target_y) {

@@ -327,6 +327,7 @@ pub fn enter_combat(
         skill_menu_cursor: 0,
         projectiles: Vec::new(),
         arcing_projectiles: Vec::new(),
+        pending_impacts: Vec::new(),
         god_mode: false,
         audio_events: Vec::new(),
         companion_kind: companion,
