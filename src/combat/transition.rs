@@ -681,6 +681,41 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
         }
     }
 
+    // Energy Vents: ~35% chance, 2-3 per arena, floor >= 3
+    // Appear in StationInterior, IrradiatedZone, ReactorRoom, DerelictShip biomes
+    if floor >= 3 {
+        let ev_seed = seed.wrapping_mul(21773).wrapping_add(137);
+        let ev_chance = ev_seed % 100;
+        let biome_ok = matches!(
+            biome,
+            ArenaBiome::StationInterior
+                | ArenaBiome::IrradiatedZone
+                | ArenaBiome::ReactorRoom
+                | ArenaBiome::DerelictShip
+        );
+        if biome_ok && ev_chance < 35 {
+            let ev_count = 2 + ((ev_seed >> 8) % 2) as usize;
+            for i in 0..ev_count {
+                let hash = ev_seed
+                    .wrapping_mul(10607)
+                    .wrapping_add(i as u64)
+                    .wrapping_mul(27449);
+                let x = ((hash >> 16) % size as u64) as i32;
+                let y = (2 + (hash >> 8) % (size as u64 - 4)) as i32;
+                let mid = size as i32 / 2;
+                if y >= (size as i32 - 2) && (x - mid).abs() <= 1 {
+                    continue;
+                }
+                if arena.tile(x, y) != Some(BattleTile::MetalFloor) {
+                    continue;
+                }
+                // Stagger initial timers so vents don't all fire at once
+                let initial_timer = 1 + (hash % 3) as u8;
+                arena.set_energy_vent(x, y, initial_timer);
+            }
+        }
+    }
+
     // Extra cover barriers near hazards for destructible cover dynamics
     if floor >= 3 {
         let barrier_seed = seed.wrapping_mul(16411).wrapping_add(300);

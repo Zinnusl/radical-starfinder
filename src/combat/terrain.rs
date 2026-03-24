@@ -489,6 +489,19 @@ pub fn apply_scorched_damage(battle: &mut TacticalBattle) -> Vec<String> {
             battle.units[i].hp -= 1;
             messages.push("⚫ The power drain saps your vitality! (-1 HP)".to_string());
         }
+        // EnergyVentActive: deals 3 damage to anyone standing on it
+        if tile == Some(BattleTile::EnergyVentActive) {
+            let actual = deal_damage(battle, i, 3);
+            let name = if battle.units[i].is_player() {
+                "You".to_string()
+            } else {
+                battle.units[i].hanzi.to_string()
+            };
+            messages.push(format!(
+                "⚡ {} electrocuted by energy vent! (-{} HP)",
+                name, actual
+            ));
+        }
         // ShieldZone: heal units standing on it
         if tile == Some(BattleTile::ShieldZone) {
             let ux = battle.units[i].x;

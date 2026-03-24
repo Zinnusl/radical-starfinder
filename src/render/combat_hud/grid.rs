@@ -291,6 +291,9 @@ impl super::super::Renderer {
                         ArenaBiome::CryoBay => "arena_floor_frozen",
                         ArenaBiome::ReactorRoom => "arena_floor_infernal",
                     },
+                    BattleTile::EnergyVentDormant => "arena_meditation_stone",
+                    BattleTile::EnergyVentCharging => "arena_arcane_glyph",
+                    BattleTile::EnergyVentActive => "arena_lava",
                 };
 
                 if !self.draw_tiling_sprite_key(sprite_key, gx, gy, sx, sy, cell) {
@@ -331,6 +334,9 @@ impl super::super::Renderer {
                         BattleTile::GravityWell => "#2a0a3a",
                         BattleTile::SteamVentActive => "#5a5a6a",
                         BattleTile::SteamVentInactive => "#3a3a40",
+                        BattleTile::EnergyVentDormant => "#2a3a4a",
+                        BattleTile::EnergyVentCharging => "#4a4a1a",
+                        BattleTile::EnergyVentActive => "#6a5a0a",
                     };
                     self.ctx.set_fill_style_str(fill);
                     self.ctx.fill_rect(sx, sy, cell, cell);

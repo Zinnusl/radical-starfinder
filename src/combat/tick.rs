@@ -13,6 +13,7 @@ use crate::status::tick_statuses;
 const _RESOLVE_FRAMES: u8 = 30; // ~500ms at 60fps
 const ENEMY_TURN_FRAMES: u8 = 24; // ~400ms
 const END_DELAY_FRAMES: u8 = 60; // ~1s before key accepted
+const ENVIRONMENT_TICK_FRAMES: u8 = 18; // ~300ms for environment phase
 
 pub fn tick_battle(battle: &mut TacticalBattle) -> BattleEvent {
     // Decrement event message fade timer (per-frame)
@@ -103,6 +104,14 @@ pub fn tick_battle(battle: &mut TacticalBattle) -> BattleEvent {
         TacticalPhase::ProjectileAnimation { .. } => {
             tick_projectiles(battle);
             BattleEvent::None
+        }
+        TacticalPhase::EnvironmentTick { ref mut timer } => {
+            if *timer > 0 {
+                *timer -= 1;
+                return BattleEvent::None;
+            }
+            // Environment phase done — proceed to next unit in queue
+            finish_environment_tick(battle)
         }
         _ => BattleEvent::None,
     }
@@ -338,6 +347,7 @@ fn advance_and_set_phase(battle: &mut TacticalBattle) -> BattleEvent {
 
         tick_terrain(battle);
 
+        // ── EnvironmentTick: interactive hazards ────────────────────────
         let flow_msgs = apply_flow_water(battle);
         for msg in &flow_msgs {
             battle.log_message(msg);
@@ -353,89 +363,122 @@ fn advance_and_set_phase(battle: &mut TacticalBattle) -> BattleEvent {
             battle.log_message(msg);
         }
 
-        if battle.weather == Weather::CoolantLeak {
-            spread_rain_water(&mut battle.arena);
+        // Energy vent cycling: Dormant → Charging → Active → Dormant
+        let (became_charging, became_active, became_dormant) =
+            battle.arena.tick_energy_vents();
+        if became_charging {
+            battle.log_message("⚡ Energy vents begin charging!");
+            battle.audio_events.push(AudioEvent::SteamVent);
+        }
+        if became_active {
+            battle.log_message("⚡ Energy vents discharge!");
+            battle.audio_events.push(AudioEvent::SteamVent);
+        }
+        if became_dormant {
+            battle.log_message("⚡ Energy vents power down.");
         }
 
-        // ── Weather + Terrain Synergies ──────────────────────────────────
-        let weather_terrain_msgs = apply_weather_terrain_synergies(battle);
-        for msg in &weather_terrain_msgs {
-            battle.log_message(msg);
-        }
-
-        // ── Rain: apply Wet to all units ─────────────────────────────────
-        if battle.weather == Weather::CoolantLeak {
-            for i in 0..battle.units.len() {
-                if !battle.units[i].alive {
-                    continue;
-                }
-                let already_wet = battle.units[i]
-                    .statuses
-                    .iter()
-                    .any(|s| matches!(s.kind, crate::status::StatusKind::Wet));
-                if !already_wet {
-                    battle.units[i]
-                        .statuses
-                        .push(crate::status::StatusInstance::new(
-                            crate::status::StatusKind::Wet,
-                            3,
-                        ));
-                }
-            }
-            battle.log_message("🌧 Coolant leak soaks everyone!");
-            // Check status combos after applying wet
-            for i in 0..battle.units.len() {
-                if !battle.units[i].alive {
-                    continue;
-                }
-                let combo_msgs = crate::combat::action::check_status_combos(battle, i);
-                for msg in &combo_msgs {
-                    battle.log_message(msg);
-                }
-            }
-        }
-
-        // ── Companion Passive Abilities ──────────────────────────────────
-        let companion_msgs = apply_companion_passives(battle);
-        for msg in &companion_msgs {
-            battle.log_message(msg);
-        }
-
-        // ── Enemy Synergies (round start) ───────────────────────────────
-        let synergy_msgs = crate::combat::synergy::apply_round_start_synergies(battle);
-        for msg in &synergy_msgs {
-            battle.log_message(msg);
-        }
-
-        // ── Arena Events ────────────────────────────────────────────────
-        let arena_event_msgs = tick_arena_events(battle);
-        for msg in &arena_event_msgs {
-            battle.log_message(msg);
-        }
-
-        let focus_regen = match battle.weather {
-            Weather::EnergyFlux => 4,
-            _ => 3,
+        // Transition to EnvironmentTick phase for visual pause
+        battle.phase = TacticalPhase::EnvironmentTick {
+            timer: ENVIRONMENT_TICK_FRAMES,
         };
-        battle.focus = (battle.focus + focus_regen).min(battle.max_focus);
+        return BattleEvent::None;
+    }
 
-        calculate_all_intents(battle);
-        if battle.player_dead() {
-            battle.phase = TacticalPhase::End {
-                victory: false,
-                timer: END_DELAY_FRAMES,
-            };
-            return BattleEvent::None;
+    select_next_unit(battle)
+}
+
+/// Called after the EnvironmentTick timer expires to process remaining
+/// end-of-round effects (weather, companions, arena events) and select
+/// the next acting unit.
+fn finish_environment_tick(battle: &mut TacticalBattle) -> BattleEvent {
+    if battle.weather == Weather::CoolantLeak {
+        spread_rain_water(&mut battle.arena);
+    }
+
+    // ── Weather + Terrain Synergies ──────────────────────────────────
+    let weather_terrain_msgs = apply_weather_terrain_synergies(battle);
+    for msg in &weather_terrain_msgs {
+        battle.log_message(msg);
+    }
+
+    // ── Rain: apply Wet to all units ─────────────────────────────────
+    if battle.weather == Weather::CoolantLeak {
+        for i in 0..battle.units.len() {
+            if !battle.units[i].alive {
+                continue;
+            }
+            let already_wet = battle.units[i]
+                .statuses
+                .iter()
+                .any(|s| matches!(s.kind, crate::status::StatusKind::Wet));
+            if !already_wet {
+                battle.units[i]
+                    .statuses
+                    .push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Wet,
+                        3,
+                    ));
+            }
         }
-        if battle.all_enemies_dead() {
-            battle.phase = TacticalPhase::End {
-                victory: true,
-                timer: END_DELAY_FRAMES,
-            };
-            return BattleEvent::None;
+        battle.log_message("🌧 Coolant leak soaks everyone!");
+        // Check status combos after applying wet
+        for i in 0..battle.units.len() {
+            if !battle.units[i].alive {
+                continue;
+            }
+            let combo_msgs = crate::combat::action::check_status_combos(battle, i);
+            for msg in &combo_msgs {
+                battle.log_message(msg);
+            }
         }
     }
 
+    // ── Companion Passive Abilities ──────────────────────────────────
+    let companion_msgs = apply_companion_passives(battle);
+    for msg in &companion_msgs {
+        battle.log_message(msg);
+    }
+
+    // ── Enemy Synergies (round start) ───────────────────────────────
+    let synergy_msgs = crate::combat::synergy::apply_round_start_synergies(battle);
+    for msg in &synergy_msgs {
+        battle.log_message(msg);
+    }
+
+    // ── Arena Events ────────────────────────────────────────────────
+    let arena_event_msgs = tick_arena_events(battle);
+    for msg in &arena_event_msgs {
+        battle.log_message(msg);
+    }
+
+    let focus_regen = match battle.weather {
+        Weather::EnergyFlux => 4,
+        _ => 3,
+    };
+    battle.focus = (battle.focus + focus_regen).min(battle.max_focus);
+
+    calculate_all_intents(battle);
+    if battle.player_dead() {
+        battle.phase = TacticalPhase::End {
+            victory: false,
+            timer: END_DELAY_FRAMES,
+        };
+        return BattleEvent::None;
+    }
+    if battle.all_enemies_dead() {
+        battle.phase = TacticalPhase::End {
+            victory: true,
+            timer: END_DELAY_FRAMES,
+        };
+        return BattleEvent::None;
+    }
+
+    select_next_unit(battle)
+}
+
+/// Find the next living unit in the turn queue and set the appropriate phase.
+fn select_next_unit(battle: &mut TacticalBattle) -> BattleEvent {
     loop {
         let current = battle.current_unit_idx();
         let unit = &battle.units[current];

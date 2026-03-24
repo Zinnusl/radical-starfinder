@@ -525,6 +525,12 @@ pub enum BattleTile {
     SteamVentActive,
     /// Inactive steam vent. Will activate soon.
     SteamVentInactive,
+    /// Energy vent — dormant phase. Safe to stand on. Cycles every 3 turns.
+    EnergyVentDormant,
+    /// Energy vent — charging phase. Telegraphed glow warning. Activates next turn.
+    EnergyVentCharging,
+    /// Energy vent — active phase. Deals 3 damage to anyone standing on it.
+    EnergyVentActive,
 }
 
 impl BattleTile {
@@ -597,6 +603,9 @@ impl BattleTile {
             BattleTile::GravityWell => "Gravity well. Pulls nearby units 1 tile closer each round.",
             BattleTile::SteamVentActive => "Active steam vent. Blocks sight, 1 damage/turn.",
             BattleTile::SteamVentInactive => "Inactive steam vent. Will activate soon.",
+            BattleTile::EnergyVentDormant => "Energy vent (dormant). Safe for now. Cycles every 3 turns.",
+            BattleTile::EnergyVentCharging => "Energy vent (charging)! Will discharge next turn!",
+            BattleTile::EnergyVentActive => "Energy vent (active)! 3 damage to anyone standing here!",
         }
     }
 
@@ -636,6 +645,7 @@ impl BattleTile {
             BattleTile::ElevatedPlatform => "Elevated Platform",
             BattleTile::GravityWell => "Gravity Well",
             BattleTile::SteamVentActive | BattleTile::SteamVentInactive => "Steam Vent",
+            BattleTile::EnergyVentDormant | BattleTile::EnergyVentCharging | BattleTile::EnergyVentActive => "Energy Vent",
         }
     }
 
@@ -665,6 +675,9 @@ impl BattleTile {
             BattleTile::GravityWell => Some("Pulls units within 2 tiles each round"),
             BattleTile::SteamVentActive => Some("1 dmg/turn, blocks LOS"),
             BattleTile::SteamVentInactive => Some("Toggles every 2 rounds"),
+            BattleTile::EnergyVentDormant => Some("Cycles every 3 turns"),
+            BattleTile::EnergyVentCharging => Some("⚡ Discharges NEXT turn!"),
+            BattleTile::EnergyVentActive => Some("⚡ 3 dmg this turn!"),
             _ => None,
         }
     }
@@ -681,6 +694,8 @@ pub struct TacticalArena {
     pub holy_timers: Vec<u8>,
     /// Per-tile age counter for PlasmaPool cooling (0 = fresh or non-plasma).
     pub lava_timers: Vec<u8>,
+    /// Per-tile cycle counter for EnergyVent (counts turns until next phase transition).
+    pub vent_timers: Vec<u8>,
     pub biome: ArenaBiome,
 }
 
@@ -694,6 +709,7 @@ impl TacticalArena {
             steam_timers: vec![0; count],
             holy_timers: vec![0; count],
             lava_timers: vec![0; count],
+            vent_timers: vec![0; count],
             biome,
         }
     }
@@ -753,6 +769,56 @@ impl TacticalArena {
                 }
             }
         }
+    }
+
+    /// Place an energy vent tile with its initial cycle timer.
+    /// Dormant vents wait 2 turns before charging, then 1 turn before active.
+    pub fn set_energy_vent(&mut self, x: i32, y: i32, initial_timer: u8) {
+        if let Some(i) = self.idx(x, y) {
+            self.tiles[i] = BattleTile::EnergyVentDormant;
+            self.vent_timers[i] = initial_timer;
+        }
+    }
+
+    /// Cycle energy vents through their 3-phase pattern.
+    /// Returns true if any vent changed state (for log messages).
+    pub fn tick_energy_vents(&mut self) -> (bool, bool, bool) {
+        let mut became_charging = false;
+        let mut became_active = false;
+        let mut became_dormant = false;
+        for i in 0..self.tiles.len() {
+            match self.tiles[i] {
+                BattleTile::EnergyVentDormant => {
+                    if self.vent_timers[i] > 1 {
+                        self.vent_timers[i] -= 1;
+                    } else {
+                        self.tiles[i] = BattleTile::EnergyVentCharging;
+                        self.vent_timers[i] = 1; // 1 turn of charging before active
+                        became_charging = true;
+                    }
+                }
+                BattleTile::EnergyVentCharging => {
+                    if self.vent_timers[i] > 1 {
+                        self.vent_timers[i] -= 1;
+                    } else {
+                        self.tiles[i] = BattleTile::EnergyVentActive;
+                        self.vent_timers[i] = 1; // 1 turn of active before dormant
+                        became_active = true;
+                    }
+                }
+                BattleTile::EnergyVentActive => {
+                    if self.vent_timers[i] > 1 {
+                        self.vent_timers[i] -= 1;
+                    } else {
+                        self.tiles[i] = BattleTile::EnergyVentDormant;
+                        self.vent_timers[i] = 2; // 2 turns dormant before charging again
+                        became_dormant = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        (became_charging, became_active, became_dormant)
     }
 
     /// Whether (x, y) is in-bounds.
@@ -1026,6 +1092,12 @@ pub enum TacticalPhase {
     ProjectileAnimation {
         message: String,
         end_turn: bool,
+    },
+
+    /// Environmental hazards are resolving (conveyors, vents, gravity wells, etc.).
+    EnvironmentTick {
+        /// Countdown timer in frames (~60fps).
+        timer: u8,
     },
 }
 
