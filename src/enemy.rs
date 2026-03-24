@@ -1109,7 +1109,7 @@ impl Enemy {
 
     pub fn from_vocab(entry: &'static VocabEntry, x: i32, y: i32, floor: i32) -> Self {
         let is_elite = crate::vocab::is_elite(entry);
-        let hp = if is_elite { 4 + floor } else { 2 + floor / 2 };
+        let hp = if is_elite { 3 + floor } else { 2 + floor / 2 };
         let damage = if is_elite {
             2 + floor / 2
         } else {
@@ -1164,7 +1164,7 @@ impl Enemy {
     pub fn boss_from_vocab(entry: &'static VocabEntry, x: i32, y: i32, floor: i32) -> Self {
         let boss_kind = BossKind::for_floor(floor);
         let (hp, damage, gold, cooldown) = match boss_kind {
-            Some(BossKind::PirateCaptain) => (16 + floor, 3 + floor / 3, 40 + floor * 4, 1),
+            Some(BossKind::PirateCaptain) => (14 + floor, 3 + floor / 3, 40 + floor * 4, 1),
             Some(BossKind::HiveQueen) => (14 + floor, 3 + floor / 3, 45 + floor * 4, 0),
             Some(BossKind::RogueAICore) => (18 + floor, 4 + floor / 3, 50 + floor * 4, 0),
             Some(BossKind::VoidEntity) => (22 + floor, 4 + floor / 3, 55 + floor * 4, 2),
