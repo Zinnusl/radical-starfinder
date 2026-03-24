@@ -41,6 +41,7 @@ pub fn make_test_unit(kind: UnitKind, x: i32, y: i32) -> BattleUnit {
         sacrifice_bonus_turns: 0,
         momentum: 0,
         last_move_dir: None,
+        first_strike_bonus: 0,
     }
 }
 

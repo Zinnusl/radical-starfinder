@@ -334,6 +334,13 @@ pub fn deal_damage_from(
         battle.log_message("Cornered!");
     }
 
+    // Equipment set first-strike bonus (turn 1 only)
+    let first_strike = battle.units[attacker_idx].first_strike_bonus;
+    if first_strike > 0 && battle.turn_number <= 1 {
+        modified += first_strike;
+        battle.log_message(format!("First strike +{}!", first_strike));
+    }
+
     let actual = deal_damage(battle, target_idx, modified);
 
     // Reset attacker momentum after attack (spent on the attack)

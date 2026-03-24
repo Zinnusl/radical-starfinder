@@ -245,6 +245,7 @@ fn void_entity_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<St
             sacrifice_bonus_turns: 0,
             momentum: 0,
             last_move_dir: None,
+            first_strike_bonus: 0,
         };
 
         battle.units.push(decoy);
