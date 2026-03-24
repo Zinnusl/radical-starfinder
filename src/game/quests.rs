@@ -2,6 +2,187 @@
 
 use super::*;
 
+/// Archetype for NPC questgivers.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum QuestGiverArchetype {
+    Admiral,
+    Scientist,
+    Merchant,
+    Medic,
+}
+
+/// A hand-crafted narrative quest template.
+struct NarrativeQuestDef {
+    archetype: QuestGiverArchetype,
+    giver_name: &'static str,
+    giver_title: &'static str,
+    /// Chain index within this giver's quest line (0-based)
+    chain_index: u8,
+    description: &'static str,
+    intro_text: &'static str,
+    completion_text: &'static str,
+    /// Build the QuestGoal; takes current floor so targets scale
+    goal_factory: fn(floor: i32) -> QuestGoal,
+    base_gold: i32,
+    /// Gold scaling per floor
+    gold_per_floor: i32,
+}
+
+/// 12 hand-crafted narrative quests, 3 per archetype, forming chains.
+/// Chain IDs are assigned at runtime starting from `NARRATIVE_CHAIN_ID_BASE`.
+const NARRATIVE_CHAIN_ID_BASE: u32 = 10_000;
+
+static NARRATIVE_QUESTS: &[NarrativeQuestDef] = &[
+    // ── Admiral Zhao — Military Operations ────────────────────
+    NarrativeQuestDef {
+        archetype: QuestGiverArchetype::Admiral,
+        giver_name: "Admiral Zhao",
+        giver_title: "Fleet Command",
+        chain_index: 0,
+        description: "Operation Silent Deck — neutralise hostiles",
+        intro_text: "We've lost contact with forward recon. Clear the hostiles so we can re-establish comms.",
+        completion_text: "Comms restored. You've earned Fleet Command's attention, operative.",
+        goal_factory: |floor| QuestGoal::KillEnemies(0, 5 + floor / 2),
+        base_gold: 35,
+        gold_per_floor: 4,
+    },
+    NarrativeQuestDef {
+        archetype: QuestGiverArchetype::Admiral,
+        giver_name: "Admiral Zhao",
+        giver_title: "Fleet Command",
+        chain_index: 1,
+        description: "Operation Vanguard — push to the front line",
+        intro_text: "Intel says the enemy command post is two decks up. Push forward and secure a foothold.",
+        completion_text: "Foothold established. The fleet is moving up behind you. Outstanding work.",
+        goal_factory: |floor| QuestGoal::ReachFloor(floor + 3),
+        base_gold: 50,
+        gold_per_floor: 5,
+    },
+    NarrativeQuestDef {
+        archetype: QuestGiverArchetype::Admiral,
+        giver_name: "Admiral Zhao",
+        giver_title: "Fleet Command",
+        chain_index: 2,
+        description: "Operation Iron Tide — full sweep",
+        intro_text: "This is it. Wipe out every remaining hostile on your path. Leave nothing standing.",
+        completion_text: "Sector secured. The Admiral sends personal commendation — and a hefty bonus.",
+        goal_factory: |floor| QuestGoal::KillEnemies(0, 8 + floor / 2),
+        base_gold: 70,
+        gold_per_floor: 5,
+    },
+    // ── Dr. Wei — Research Division ───────────────────────────
+    NarrativeQuestDef {
+        archetype: QuestGiverArchetype::Scientist,
+        giver_name: "Dr. Wei",
+        giver_title: "Research Division",
+        chain_index: 0,
+        description: "Radical Harvest — gather linguistic fragments",
+        intro_text: "These radicals aren't just symbols — they're keys to ancient star-maps. Collect samples for analysis.",
+        completion_text: "Fascinating specimens! The patterns are starting to align with our star-chart models.",
+        goal_factory: |floor| QuestGoal::CollectRadicals(0, 4 + floor / 3),
+        base_gold: 30,
+        gold_per_floor: 3,
+    },
+    NarrativeQuestDef {
+        archetype: QuestGiverArchetype::Scientist,
+        giver_name: "Dr. Wei",
+        giver_title: "Research Division",
+        chain_index: 1,
+        description: "Deep Scan — collect more radical data",
+        intro_text: "The initial data is promising but we need a larger corpus. Every radical brings us closer to decryption.",
+        completion_text: "The cipher is almost broken. One more step and we'll unlock the star-gate coordinates.",
+        goal_factory: |floor| QuestGoal::CollectRadicals(0, 6 + floor / 2),
+        base_gold: 45,
+        gold_per_floor: 4,
+    },
+    NarrativeQuestDef {
+        archetype: QuestGiverArchetype::Scientist,
+        giver_name: "Dr. Wei",
+        giver_title: "Research Division",
+        chain_index: 2,
+        description: "Star-Gate Calibration — reach the antenna array",
+        intro_text: "We've decoded the coordinates! Ascend to the antenna deck so I can transmit the activation sequence.",
+        completion_text: "Transmission complete! The star-gate is online. You've changed the course of this expedition.",
+        goal_factory: |floor| QuestGoal::ReachFloor(floor + 4),
+        base_gold: 65,
+        gold_per_floor: 5,
+    },
+    // ── Mei Lin — Trade Consortium ────────────────────────────
+    NarrativeQuestDef {
+        archetype: QuestGiverArchetype::Merchant,
+        giver_name: "Mei Lin",
+        giver_title: "Trade Consortium",
+        chain_index: 0,
+        description: "Supply Run — scavenge radical components",
+        intro_text: "Trade routes are cut off. I need raw radicals to keep my shop stocked. Help me out and I'll make it worth your while.",
+        completion_text: "Shelves restocked! Here's your cut — and first pick of new inventory next time.",
+        goal_factory: |floor| QuestGoal::CollectRadicals(0, 3 + floor / 3),
+        base_gold: 25,
+        gold_per_floor: 3,
+    },
+    NarrativeQuestDef {
+        archetype: QuestGiverArchetype::Merchant,
+        giver_name: "Mei Lin",
+        giver_title: "Trade Consortium",
+        chain_index: 1,
+        description: "Route Recon — scout the upper decks",
+        intro_text: "I've heard there are untouched supply caches higher up. Scout ahead and map a safe trade route for my caravan.",
+        completion_text: "Route mapped! My caravan will follow in your footsteps. The Consortium owes you one.",
+        goal_factory: |floor| QuestGoal::ReachFloor(floor + 2),
+        base_gold: 40,
+        gold_per_floor: 4,
+    },
+    NarrativeQuestDef {
+        archetype: QuestGiverArchetype::Merchant,
+        giver_name: "Mei Lin",
+        giver_title: "Trade Consortium",
+        chain_index: 2,
+        description: "Pirate Purge — eliminate raider threats",
+        intro_text: "Raiders keep ambushing my supply convoys. Take them out so legitimate trade can resume.",
+        completion_text: "Trade lanes clear! The Consortium is sending a bonus freight your way. Well earned.",
+        goal_factory: |floor| QuestGoal::KillEnemies(0, 6 + floor / 2),
+        base_gold: 55,
+        gold_per_floor: 5,
+    },
+    // ── Nurse Sato — Medical Corps ────────────────────────────
+    NarrativeQuestDef {
+        archetype: QuestGiverArchetype::Medic,
+        giver_name: "Nurse Sato",
+        giver_title: "Medical Corps",
+        chain_index: 0,
+        description: "Triage Duty — clear hostiles near the ward",
+        intro_text: "Wounded crew can't rest with hostiles prowling outside the infirmary. Clear them so my patients can heal.",
+        completion_text: "The ward is safe again. You've saved lives today — the crew won't forget it.",
+        goal_factory: |floor| QuestGoal::KillEnemies(0, 4 + floor / 3),
+        base_gold: 28,
+        gold_per_floor: 3,
+    },
+    NarrativeQuestDef {
+        archetype: QuestGiverArchetype::Medic,
+        giver_name: "Nurse Sato",
+        giver_title: "Medical Corps",
+        chain_index: 1,
+        description: "Herb Gathering — collect medicinal radicals",
+        intro_text: "Medical supplies are critical. These radicals have restorative properties — I need them to synthesise antidotes.",
+        completion_text: "Antidotes synthesised! We can treat the infected crew now. You're a lifesaver — literally.",
+        goal_factory: |floor| QuestGoal::CollectRadicals(0, 5 + floor / 3),
+        base_gold: 38,
+        gold_per_floor: 4,
+    },
+    NarrativeQuestDef {
+        archetype: QuestGiverArchetype::Medic,
+        giver_name: "Nurse Sato",
+        giver_title: "Medical Corps",
+        chain_index: 2,
+        description: "Evacuation — reach the escape pods",
+        intro_text: "The lower decks are compromised. I need you to reach the pod bay and prep the evac sequence for the wounded.",
+        completion_text: "Pods prepped and wounded evacuated. The Medical Corps awards you their highest commendation.",
+        goal_factory: |floor| QuestGoal::ReachFloor(floor + 3),
+        base_gold: 60,
+        gold_per_floor: 5,
+    },
+];
+
 impl GameState {
     pub(super) fn advance_kill_quests(&mut self) {
         for q in &mut self.quests {
@@ -93,6 +274,7 @@ impl GameState {
     }
 
     /// Generate 1-3 quests based on current floor and seed.
+    /// Mixes narrative quests (when available) with procedural ones.
     pub(super) fn generate_quests(&mut self) {
         self.quests.retain(|q| !q.completed);
         if self.quests.len() >= 5 {
@@ -105,40 +287,45 @@ impl GameState {
             if self.quests.len() >= 5 {
                 break;
             }
+            // 40% chance to offer a narrative quest if one is available
             let qseed = seed.wrapping_add(i as u64 * 7919);
+            if qseed % 5 < 2 {
+                if let Some(nq) = self.try_narrative_quest() {
+                    if !self.quests.iter().any(|q| q.description == nq.description) {
+                        self.quests.push(nq);
+                        continue;
+                    }
+                }
+            }
             let quest = match qseed % 4 {
-                0 => Quest {
-                    description: format!("Eliminate {} hostiles", 3 + (qseed % 5) as i32),
-                    goal: QuestGoal::KillEnemies(0, 3 + (qseed % 5) as i32),
-                    gold_reward: 30 + (qseed % 40) as i32,
-                    completed: false,
-                    chain_step: 0,
-                    chain_id: 0,
-                },
-                1 => Quest {
-                    description: format!("Reach deck {}", self.floor_num + 2 + (qseed % 3) as i32),
-                    goal: QuestGoal::ReachFloor(self.floor_num + 2 + (qseed % 3) as i32),
-                    gold_reward: 50 + (qseed % 50) as i32,
-                    completed: false,
-                    chain_step: 0,
-                    chain_id: 0,
-                },
-                2 => Quest {
-                    description: format!("Collect {} radicals", 2 + (qseed % 4) as i32),
-                    goal: QuestGoal::CollectRadicals(0, 2 + (qseed % 4) as i32),
-                    gold_reward: 40 + (qseed % 30) as i32,
-                    completed: false,
-                    chain_step: 0,
-                    chain_id: 0,
-                },
-                _ => Quest {
-                    description: "Clear the deck of enemies".to_string(),
-                    goal: QuestGoal::KillEnemies(0, 5 + (qseed % 3) as i32),
-                    gold_reward: 60 + (qseed % 40) as i32,
-                    completed: false,
-                    chain_step: 0,
-                    chain_id: 0,
-                },
+                0 => Quest::procedural(
+                    format!("Eliminate {} hostiles", 3 + (qseed % 5) as i32),
+                    QuestGoal::KillEnemies(0, 3 + (qseed % 5) as i32),
+                    30 + (qseed % 40) as i32,
+                    0,
+                    0,
+                ),
+                1 => Quest::procedural(
+                    format!("Reach deck {}", self.floor_num + 2 + (qseed % 3) as i32),
+                    QuestGoal::ReachFloor(self.floor_num + 2 + (qseed % 3) as i32),
+                    50 + (qseed % 50) as i32,
+                    0,
+                    0,
+                ),
+                2 => Quest::procedural(
+                    format!("Collect {} radicals", 2 + (qseed % 4) as i32),
+                    QuestGoal::CollectRadicals(0, 2 + (qseed % 4) as i32),
+                    40 + (qseed % 30) as i32,
+                    0,
+                    0,
+                ),
+                _ => Quest::procedural(
+                    "Clear the deck of enemies".to_string(),
+                    QuestGoal::KillEnemies(0, 5 + (qseed % 3) as i32),
+                    60 + (qseed % 40) as i32,
+                    0,
+                    0,
+                ),
             };
             if !self.quests.iter().any(|q| q.description == quest.description) {
                 self.quests.push(quest);
@@ -159,20 +346,41 @@ impl GameState {
                     quest_xp += 10;
                 }
                 if q.is_chain() && q.chain_step < 4 {
-                    self.message = format!(
-                        "⛓ Chain quest step complete: {}! +{}g — Next step incoming!",
-                        q.description, q.gold_reward
-                    );
+                    if q.is_narrative() && !q.completion_text.is_empty() {
+                        self.message = format!(
+                            "⛓ {} ({}): {} +{}g",
+                            q.giver_name, q.giver_title, q.completion_text, q.gold_reward
+                        );
+                    } else {
+                        self.message = format!(
+                            "⛓ Chain quest step complete: {}! +{}g — Next step incoming!",
+                            q.description, q.gold_reward
+                        );
+                    }
                     chain_follow_ups.push((q.chain_step, q.chain_id));
                 } else if q.is_chain() && q.chain_step >= 4 {
-                    self.message = format!(
-                        "🏆 Quest chain complete: {}! +{}g — Bonus: +20g!",
-                        q.description, q.gold_reward
-                    );
+                    if q.is_narrative() && !q.completion_text.is_empty() {
+                        self.message = format!(
+                            "🏆 {} ({}): {} +{}g — Bonus: +20g!",
+                            q.giver_name, q.giver_title, q.completion_text, q.gold_reward
+                        );
+                    } else {
+                        self.message = format!(
+                            "🏆 Quest chain complete: {}! +{}g — Bonus: +20g!",
+                            q.description, q.gold_reward
+                        );
+                    }
                     self.player.gold += 20;
                 } else {
-                    self.message =
-                        format!("Quest complete: {}! +{}g", q.description, q.gold_reward);
+                    if q.is_narrative() && !q.completion_text.is_empty() {
+                        self.message = format!(
+                            "✅ {} ({}): {} +{}g",
+                            q.giver_name, q.giver_title, q.completion_text, q.gold_reward
+                        );
+                    } else {
+                        self.message =
+                            format!("Quest complete: {}! +{}g", q.description, q.gold_reward);
+                    }
                 }
                 self.message_timer = 100;
                 q.gold_reward = 0;
@@ -712,137 +920,225 @@ impl GameState {
             .collect()
     }
 
-    /// Generate a random quest.
+    /// Generate a random quest. ~30% chance to offer a narrative quest when available.
     pub(super) fn generate_quest(&mut self) -> Quest {
+        // 30% chance to try a narrative quest
+        if self.rng_next() % 100 < 30 {
+            if let Some(nq) = self.try_narrative_quest() {
+                return nq;
+            }
+        }
         let floor = self.floor_num;
         match self.rng_next() % 4 {
             0 => {
                 let target = 3 + (floor / 3) as i32;
-                Quest {
-                    description: format!("Defeat {} enemies", target),
-                    goal: QuestGoal::KillEnemies(0, target),
-                    gold_reward: 10 + floor * 3,
-                    completed: false,
-                    chain_step: 0,
-                    chain_id: 0,
-                }
+                Quest::procedural(
+                    format!("Defeat {} enemies", target),
+                    QuestGoal::KillEnemies(0, target),
+                    10 + floor * 3,
+                    0,
+                    0,
+                )
             }
             1 => {
                 let target_floor = floor + 2;
-                Quest {
-                    description: format!("Reach floor {}", target_floor),
-                    goal: QuestGoal::ReachFloor(target_floor),
-                    gold_reward: 14 + floor * 3,
-                    completed: false,
-                    chain_step: 0,
-                    chain_id: 0,
-                }
+                Quest::procedural(
+                    format!("Reach floor {}", target_floor),
+                    QuestGoal::ReachFloor(target_floor),
+                    14 + floor * 3,
+                    0,
+                    0,
+                )
             }
             2 => {
                 let target = 3 + (floor / 2) as i32;
-                Quest {
-                    description: format!("Collect {} radicals", target),
-                    goal: QuestGoal::CollectRadicals(0, target),
-                    gold_reward: 8 + floor * 2,
-                    completed: false,
-                    chain_step: 0,
-                    chain_id: 0,
-                }
+                Quest::procedural(
+                    format!("Collect {} radicals", target),
+                    QuestGoal::CollectRadicals(0, target),
+                    8 + floor * 2,
+                    0,
+                    0,
+                )
             }
             _ => {
                 let candidates = Self::forge_quest_candidates_for_floor(floor);
                 if candidates.is_empty() {
                     let target = 3 + (floor / 2) as i32;
-                    Quest {
-                        description: format!("Collect {} radicals", target),
-                        goal: QuestGoal::CollectRadicals(0, target),
-                        gold_reward: 8 + floor * 2,
-                        completed: false,
-                        chain_step: 0,
-                        chain_id: 0,
-                    }
+                    Quest::procedural(
+                        format!("Collect {} radicals", target),
+                        QuestGoal::CollectRadicals(0, target),
+                        8 + floor * 2,
+                        0,
+                        0,
+                    )
                 } else {
                     let recipe = candidates[self.rng_next() as usize % candidates.len()];
-                    Quest {
-                        description: format!(
+                    Quest::procedural(
+                        format!(
                             "Forge {} ({})",
                             recipe.output_hanzi, recipe.output_meaning
                         ),
-                        goal: QuestGoal::ForgeCharacter(recipe.output_hanzi),
-                        gold_reward: 12 + floor * 3,
-                        completed: false,
-                        chain_step: 0,
-                        chain_id: 0,
-                    }
+                        QuestGoal::ForgeCharacter(recipe.output_hanzi),
+                        12 + floor * 3,
+                        0,
+                        0,
+                    )
                 }
             }
         }
     }
 
     pub(super) fn generate_chain_quest(&mut self, step: u8, chain_id: u32) -> Quest {
+        // If this is a narrative chain, delegate to narrative chain generation
+        if chain_id >= NARRATIVE_CHAIN_ID_BASE && chain_id < NARRATIVE_CHAIN_ID_BASE + 4 {
+            if let Some(nq) = self.generate_narrative_chain_step(step, chain_id) {
+                return nq;
+            }
+        }
         let floor = self.floor_num;
         let escalation = step as i32;
         match step {
             0 => {
                 let target = 3 + (floor / 3) + escalation;
-                Quest {
-                    description: format!("⛓① Defeat {} enemies", target),
-                    goal: QuestGoal::KillEnemies(0, target),
-                    gold_reward: 7 + floor * 2,
-                    completed: false,
-                    chain_step: 1,
+                Quest::procedural(
+                    format!("⛓① Defeat {} enemies", target),
+                    QuestGoal::KillEnemies(0, target),
+                    7 + floor * 2,
+                    1,
                     chain_id,
-                }
+                )
             }
             1 => {
                 let target = 3 + (floor / 2) + escalation;
-                Quest {
-                    description: format!("⛓② Collect {} radicals", target),
-                    goal: QuestGoal::CollectRadicals(0, target),
-                    gold_reward: 10 + floor * 3,
-                    completed: false,
-                    chain_step: 2,
+                Quest::procedural(
+                    format!("⛓② Collect {} radicals", target),
+                    QuestGoal::CollectRadicals(0, target),
+                    10 + floor * 3,
+                    2,
                     chain_id,
-                }
+                )
             }
             2 => {
                 let candidates = Self::forge_quest_candidates_for_floor(floor);
                 if !candidates.is_empty() {
                     let recipe = candidates[self.rng_next() as usize % candidates.len()];
-                    Quest {
-                        description: format!(
+                    Quest::procedural(
+                        format!(
                             "⛓③ Forge {} ({})",
                             recipe.output_hanzi, recipe.output_meaning
                         ),
-                        goal: QuestGoal::ForgeCharacter(recipe.output_hanzi),
-                        gold_reward: 18 + floor * 4,
-                        completed: false,
-                        chain_step: 3,
+                        QuestGoal::ForgeCharacter(recipe.output_hanzi),
+                        18 + floor * 4,
+                        3,
                         chain_id,
-                    }
+                    )
                 } else {
                     let target = 5 + (floor / 2) + escalation;
-                    Quest {
-                        description: format!("⛓③ Defeat {} enemies", target),
-                        goal: QuestGoal::KillEnemies(0, target),
-                        gold_reward: 18 + floor * 4,
-                        completed: false,
-                        chain_step: 3,
+                    Quest::procedural(
+                        format!("⛓③ Defeat {} enemies", target),
+                        QuestGoal::KillEnemies(0, target),
+                        18 + floor * 4,
+                        3,
                         chain_id,
-                    }
+                    )
                 }
             }
             _ => {
                 let target_floor = floor + 3;
-                Quest {
-                    description: format!("⛓④ Reach floor {} (finale!)", target_floor),
-                    goal: QuestGoal::ReachFloor(target_floor),
-                    gold_reward: 28 + floor * 4,
-                    completed: false,
-                    chain_step: 4,
+                Quest::procedural(
+                    format!("⛓④ Reach floor {} (finale!)", target_floor),
+                    QuestGoal::ReachFloor(target_floor),
+                    28 + floor * 4,
+                    4,
                     chain_id,
-                }
+                )
             }
         }
+    }
+
+    /// Try to create a narrative quest from an available archetype.
+    /// Returns `None` if all archetypes have active quests or no suitable quest exists.
+    fn try_narrative_quest(&mut self) -> Option<Quest> {
+        // Determine which archetype chain_ids are currently active (in quest list)
+        let active_narrative_ids: Vec<u32> = self
+            .quests
+            .iter()
+            .filter(|q| q.chain_id >= NARRATIVE_CHAIN_ID_BASE && q.chain_id < NARRATIVE_CHAIN_ID_BASE + 4)
+            .map(|q| q.chain_id)
+            .collect();
+
+        // Find archetypes with no active quest
+        let mut available: Vec<u32> = Vec::new();
+        for archetype_idx in 0..4u32 {
+            let cid = NARRATIVE_CHAIN_ID_BASE + archetype_idx;
+            if !active_narrative_ids.contains(&cid) {
+                available.push(archetype_idx);
+            }
+        }
+        if available.is_empty() {
+            return None;
+        }
+
+        let pick = available[self.rng_next() as usize % available.len()];
+        let chain_id = NARRATIVE_CHAIN_ID_BASE + pick;
+        // Start at chain_index 0 (chain_step 1)
+        self.generate_narrative_chain_step(0, chain_id)
+    }
+
+    /// Generate the next step in a narrative quest chain.
+    /// `step` is the chain_step of the *just-completed* quest (0 to start, 1-2 for follow-ups).
+    /// For initial creation, pass step=0.
+    fn generate_narrative_chain_step(&mut self, step: u8, chain_id: u32) -> Option<Quest> {
+        let archetype_idx = (chain_id - NARRATIVE_CHAIN_ID_BASE) as usize;
+        if archetype_idx >= 4 {
+            return None;
+        }
+
+        // Map step to chain_index in NARRATIVE_QUESTS
+        // step 0 → start chain, chain_index 0 (chain_step 1)
+        // step 1 → follow-up, chain_index 1 (chain_step 2)
+        // step 2 → follow-up, chain_index 2 (chain_step 3)
+        // step >= 3 → chain complete, no more steps
+        let chain_index = match step {
+            0 => 0u8,
+            1 => 1,
+            2 => 2,
+            _ => return None, // chain complete
+        };
+
+        // Find the matching narrative quest definition
+        let def = NARRATIVE_QUESTS.iter().find(|d| {
+            matches!(
+                (d.archetype, archetype_idx),
+                (QuestGiverArchetype::Admiral, 0)
+                    | (QuestGiverArchetype::Scientist, 1)
+                    | (QuestGiverArchetype::Merchant, 2)
+                    | (QuestGiverArchetype::Medic, 3)
+            ) && d.chain_index == chain_index
+        })?;
+
+        let floor = self.floor_num;
+        let goal = (def.goal_factory)(floor);
+        let gold = def.base_gold + floor * def.gold_per_floor;
+        let chain_step = chain_index + 1; // chain_step is 1-indexed
+
+        let step_icon = match chain_step {
+            1 => "⛓①",
+            2 => "⛓②",
+            _ => "⛓③",
+        };
+
+        Some(Quest {
+            description: format!("{} {}", step_icon, def.description),
+            goal,
+            gold_reward: gold,
+            completed: false,
+            chain_step,
+            chain_id,
+            giver_name: def.giver_name,
+            giver_title: def.giver_title,
+            intro_text: def.intro_text,
+            completion_text: def.completion_text,
+        })
     }
 }
