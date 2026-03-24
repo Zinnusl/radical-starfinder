@@ -594,9 +594,40 @@ pub struct Quest {
     pub chain_step: u8,
     /// Chain ID to group related quests (0 = not chained)
     pub chain_id: u32,
+    /// NPC questgiver name (empty for procedural quests)
+    pub giver_name: &'static str,
+    /// NPC questgiver title/division (empty for procedural quests)
+    pub giver_title: &'static str,
+    /// Flavor text when quest is given (empty for procedural quests)
+    #[allow(dead_code)]
+    pub intro_text: &'static str,
+    /// Flavor text on completion (empty for procedural quests)
+    pub completion_text: &'static str,
 }
 
 impl Quest {
+    /// Create a procedural (non-narrative) quest with empty flavor fields.
+    pub(super) fn procedural(
+        description: String,
+        goal: QuestGoal,
+        gold_reward: i32,
+        chain_step: u8,
+        chain_id: u32,
+    ) -> Self {
+        Self {
+            description,
+            goal,
+            gold_reward,
+            completed: false,
+            chain_step,
+            chain_id,
+            giver_name: "",
+            giver_title: "",
+            intro_text: "",
+            completion_text: "",
+        }
+    }
+
     #[allow(dead_code)]
     pub(super) fn check_complete(&mut self) -> bool {
         if self.completed {
@@ -616,6 +647,11 @@ impl Quest {
 
     pub(super) fn is_chain(&self) -> bool {
         self.chain_id > 0
+    }
+
+    /// Whether this quest has narrative flavor text.
+    pub(super) fn is_narrative(&self) -> bool {
+        !self.giver_name.is_empty()
     }
 }
 
