@@ -913,6 +913,8 @@ pub struct BattleUnit {
     pub momentum: i32,
     /// Direction of last movement (for momentum tracking).
     pub last_move_dir: Option<Direction>,
+    /// First-strike bonus damage (set bonus, applied on turn 1 only).
+    pub first_strike_bonus: i32,
 }
 
 impl BattleUnit {

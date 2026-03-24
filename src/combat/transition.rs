@@ -8,7 +8,7 @@ use crate::combat::{
 use crate::world::RoomModifier;
 use crate::enemy::{AiBehavior, Enemy};
 use crate::game::Companion;
-use crate::player::Player;
+use crate::player::{active_set_bonuses, Player, SetBonus};
 use crate::srs::SrsTracker;
 use crate::vocab::SentenceEntry;
 
@@ -37,6 +37,11 @@ pub fn enter_combat(
 
     let p_damage = 2 + player.bonus_damage() + player.enchant_bonus_damage();
 
+    // Equipment set bonuses
+    let set_bonuses = active_set_bonuses(player);
+    let set_flat: i32 = set_bonuses.iter().map(|s| match s.bonus { SetBonus::BonusDamage(d) => d, _ => 0 }).sum();
+    let set_first_strike: i32 = set_bonuses.iter().map(|s| match s.bonus { SetBonus::FirstStrikeDamage(d) => d, _ => 0 }).sum();
+
     units.push(BattleUnit {
         kind: UnitKind::Player,
         x: px,
@@ -49,7 +54,7 @@ pub fn enter_combat(
         stored_movement: 0,
         hp: player.hp,
         max_hp: player.max_hp,
-        damage: p_damage,
+        damage: p_damage + set_flat,
         defending: false,
         alive: true,
         ai: AiBehavior::Chase,
@@ -77,9 +82,8 @@ pub fn enter_combat(
         sacrifice_bonus_turns: 0,
         momentum: 0,
         last_move_dir: None,
-    });
-
-    // Companion unit adjacent to player (if any).
+        first_strike_bonus: set_first_strike,
+    });    // Companion unit adjacent to player (if any).
     if let Some(companion) = companion {
         let (c_hp, c_damage, c_movement, c_speed, c_hanzi, c_pinyin) = match companion {
             Companion::SecurityChief => (8, 2, 2, 3, "卫", "wèi"),
@@ -131,6 +135,7 @@ pub fn enter_combat(
             sacrifice_bonus_turns: 0,
             momentum: 0,
             last_move_dir: None,
+            first_strike_bonus: 0,
         });
     }
     // Multi-char words are split into one BattleUnit per character.
@@ -232,6 +237,7 @@ pub fn enter_combat(
                 sacrifice_bonus_turns: 0,
                 momentum: 0,
                 last_move_dir: None,
+                first_strike_bonus: 0,
             });
 
             let last_idx = units.len() - 1;
