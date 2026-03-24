@@ -23,6 +23,15 @@ Use numbered worker directories alongside this repo:
 5. After all complete: merge each branch back, resolve conflicts, verify `cargo test`
 6. Clean up: `git worktree remove`, delete branches if merged
 
+## Playwright
+
+Each agent runs in a shared environment. To avoid browser conflicts:
+
+- **Use unique browser profiles**: Pass `--user-data-dir` with a worker-specific path (e.g., `../radical-starfinder-worker01/.browser-profile/`)
+- **Use distinct ports**: If launching a dev server, each worker must bind to a unique port (e.g., worker01 → 3001, worker02 → 3002, etc.)
+- **Prefer headless mode**: Always use `headless: true` to avoid stealing focus or blocking other agents
+- **Close when done**: Always call `browser_close` when finished — never leave browser sessions open
+
 ## Agent Prompts
 
 Give each agent:
@@ -30,3 +39,4 @@ Give each agent:
 - Key files relevant to their feature
 - Clear scope boundaries (what to touch, what NOT to touch)
 - Instruction to run `cargo check` before committing
+- Playwright isolation rules (see above) if browser interaction is needed
