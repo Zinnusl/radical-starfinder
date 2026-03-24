@@ -506,15 +506,15 @@ fn select_next_unit(battle: &mut TacticalBattle) -> BattleEvent {
 }
 
 fn apply_exhaustion(battle: &mut TacticalBattle) {
-    let threshold = if battle.is_boss_battle { 15 } else { 10 };
-    let warning_turn = if battle.is_boss_battle { 13 } else { 8 };
+    let threshold = if battle.is_boss_battle { 30 } else { 20 };
+    let warning_turn = if battle.is_boss_battle { 25 } else { 15 };
     let turn = battle.turn_number;
 
     if turn == warning_turn {
         battle.log_message("The reactor grows unstable...");
     } else if turn >= threshold {
-        let escalation = (turn - threshold) / 2;
-        let dmg = (1 + escalation as i32).min(5);
+        let escalation = (turn - threshold) / 3;
+        let dmg = (1 + escalation as i32).min(3);
         battle.units[0].hp -= dmg;
         battle.log_message(format!("Overload! The reactor sears for {} damage!", dmg));
         if battle.units[0].hp <= 0 {
