@@ -1104,11 +1104,11 @@ pub struct CrewMember {
 impl Player {
     pub fn new(x: i32, y: i32, class: PlayerClass) -> Self {
         let (hp, max_hp) = match class {
-            PlayerClass::Soldier => (13, 13),
+            PlayerClass::Soldier => (12, 12),
             PlayerClass::Solarian => (11, 11),
             PlayerClass::Envoy | PlayerClass::Mechanic => (10, 10),
-            PlayerClass::Mystic | PlayerClass::Technomancer => (9, 9),
-            PlayerClass::Operative => (8, 8),
+            PlayerClass::Mystic | PlayerClass::Technomancer => (10, 10),
+            PlayerClass::Operative => (10, 10),
         };
         Self {
             x,
