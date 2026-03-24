@@ -340,6 +340,30 @@ pub fn combo_tier(streak: u32) -> ComboTier {
     }
 }
 
+// ── Event Memory ───────────────────────────────────────────────────
+/// Tracks persistent consequences of event choices across a run.
+#[derive(Clone, Debug, Default)]
+pub struct EventMemory {
+    /// Accumulated crew morale modifier from social choices
+    pub crew_morale: i32,
+    /// Standing with alien/pirate factions (negative = hostile)
+    pub faction_standing: i32,
+    /// Keys recording past choices (e.g. "helped_stowaway", "raided_pirates")
+    pub past_choices: Vec<String>,
+}
+
+impl EventMemory {
+    pub fn record_choice(&mut self, key: &str) {
+        if !self.past_choices.iter().any(|c| c == key) {
+            self.past_choices.push(key.to_string());
+        }
+    }
+
+    pub fn has_choice(&self, key: &str) -> bool {
+        self.past_choices.iter().any(|c| c == key)
+    }
+}
+
 /// Listening mode variants for audio-based combat challenges.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ListenMode {

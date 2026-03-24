@@ -14,7 +14,7 @@ use crate::combat;
 use crate::world::{compute_fov, TerminalKind, AltarKind, DungeonLevel, RoomModifier, SecuritySeal, SealKind, SpecialRoomKind, Tile};
 use crate::world::starmap::{SectorMap, generate_sector, jump_cost};
 use crate::world::ship::{ShipLayout, ShipRoom, ShipTile, generate_ship_layout};
-use crate::world::events::ALL_EVENTS;
+use crate::world::events::{ALL_EVENTS, record_event_consequence};
 use crate::enemy::{BossKind, Enemy, RadicalAction};
 use crate::particle::ParticleSystem;
 use crate::player::{
@@ -192,6 +192,8 @@ pub struct GameState {
     pub current_event: Option<usize>,
     /// Cursor for event choice selection
     pub event_choice_cursor: usize,
+    /// Persistent consequence tracking for events
+    pub event_memory: EventMemory,
     /// Player position inside ship
     pub ship_player_x: i32,
     pub ship_player_y: i32,
@@ -795,6 +797,7 @@ pub fn init_game() -> Result<(), JsValue> {
         ],
         current_event: None,
         event_choice_cursor: 0,
+        event_memory: EventMemory::default(),
         ship_player_x: 11,
         ship_player_y: 16,
         starmap_cursor: 0,
@@ -1103,7 +1106,11 @@ pub fn init_game() -> Result<(), JsValue> {
                                     }
                                     // Check for events at the new system
                                     if let Some(event_id) = event_id {
-                                        s.current_event = Some(event_id);
+                                        // Use memory-aware selection: may swap in a conditional event
+                                        let actual_id = crate::world::events::select_event_with_memory(
+                                            event_id, &s.event_memory, s.seed as u32,
+                                        );
+                                        s.current_event = Some(actual_id);
                                         s.event_choice_cursor = 0;
                                         s.game_mode = GameMode::Event;
                                     }
@@ -1512,9 +1519,12 @@ pub fn init_game() -> Result<(), JsValue> {
                                     }
                                 }
                                 "Enter" | " " => {
-                                    let choice = &ev.choices[s.event_choice_cursor];
+                                    let choice_idx = s.event_choice_cursor;
+                                    let choice = &ev.choices[choice_idx];
                                     let outcome = choice.outcome.clone();
+                                    let eid = ev.id;
                                     let result = apply_event_outcome(&mut *s, &outcome);
+                                    record_event_consequence(&mut s.event_memory, eid, choice_idx);
                                     s.message = result;
                                     s.message_timer = 120;
                                     s.current_event = None;

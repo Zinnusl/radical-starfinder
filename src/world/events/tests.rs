@@ -84,3 +84,50 @@ fn select_event_by_category_returns_correct_category() {
     assert_eq!(event.category, EventCategory::Trading);
 }
 
+#[test]
+fn conditional_events_present_in_pool() {
+    assert!(
+        ALL_EVENTS.iter().any(|e| e.id == 74),
+        "Pirate Debt Collection (74) missing"
+    );
+    assert!(
+        ALL_EVENTS.iter().any(|e| e.id == 75),
+        "Refugee Gratitude (75) missing"
+    );
+    assert!(
+        ALL_EVENTS.iter().any(|e| e.id == 76),
+        "Crew Mutiny Threat (76) missing"
+    );
+}
+
+#[test]
+fn select_event_with_memory_blocks_unqualified_conditional() {
+    use crate::game::EventMemory;
+    let memory = EventMemory::default(); // faction_standing = 0, no past choices
+    // Index 74 is Pirate Debt Collection (requires faction_standing < -5)
+    let result = select_event_with_memory(74, &memory, 42);
+    assert_ne!(result, 74, "Conditional event 74 should not trigger with neutral standing");
+}
+
+#[test]
+fn select_event_with_memory_allows_qualified_conditional() {
+    use crate::game::EventMemory;
+    let mut memory = EventMemory::default();
+    memory.faction_standing = -10;
+    // Even though we pass index 74, it should stay because condition is met
+    let result = select_event_with_memory(74, &memory, 42);
+    assert_eq!(result, 74);
+}
+
+#[test]
+fn record_event_consequence_tracks_choices() {
+    use crate::game::EventMemory;
+    let mut memory = EventMemory::default();
+    record_event_consequence(&mut memory, 33, 0); // helped stowaway
+    assert!(memory.has_choice("helped_stowaway"));
+    assert_eq!(memory.crew_morale, 5);
+    record_event_consequence(&mut memory, 8, 0); // raided pirates
+    assert!(memory.has_choice("raided_pirates"));
+    assert_eq!(memory.faction_standing, -10);
+}
+
