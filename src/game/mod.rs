@@ -33,6 +33,7 @@ pub(super) const FOV_RADIUS: i32 = 8;
 pub(super) const ENEMIES_PER_ROOM: i32 = 1;
 pub(super) const LOOK_RANGE: i32 = 3;
 
+mod console;
 mod events;
 mod input;
 mod serialization;
@@ -153,21 +154,8 @@ pub struct GameState {
     /// When a boss triggers a sentence challenge mid-tactical-battle,
     /// the battle state is stashed here and restored after the challenge.
     pub saved_battle: Option<Box<combat::TacticalBattle>>,
-    /// Cheat console visible
-    pub show_console: bool,
-    /// Current console input buffer
-    pub console_buffer: String,
-    /// Console output history (lines of text)
-    pub console_history: Vec<String>,
-    /// Command history for up/down recall
-    pub console_cmd_history: Vec<String>,
-    /// Index into command history (None = new input)
-    pub console_cmd_index: Option<usize>,
-    /// Tab-completion: cached matches and cycle index
-    pub tab_matches: Vec<String>,
-    pub tab_cycle_index: usize,
-    /// The prefix that was used to generate current tab_matches
-    pub tab_prefix: String,
+    /// Quake-style drop-down debug console
+    pub console: console::DebugConsole,
     /// God mode (invincible)
     pub god_mode: bool,
     /// Set of (floor, room_x, room_y) for special rooms already activated
@@ -781,14 +769,7 @@ pub fn init_game() -> Result<(), JsValue> {
         theft_catches: 0,
         shop_banned: false,
         saved_battle: None,
-        show_console: false,
-        console_buffer: String::new(),
-        console_history: Vec::new(),
-        console_cmd_history: Vec::new(),
-        console_cmd_index: None,
-        tab_matches: Vec::new(),
-        tab_cycle_index: 0,
-        tab_prefix: String::new(),
+        console: console::DebugConsole::new(),
         god_mode: false,
         completed_special_rooms: HashSet::new(),
         demon_deal_floors: 0,
@@ -896,70 +877,76 @@ pub fn init_game() -> Result<(), JsValue> {
             // Cheat console toggle
             if key == "`" || key == "Dead" {
                 event.prevent_default();
-                s.show_console = !s.show_console;
+                s.console.active = !s.console.active;
                 if let Some(ref audio) = s.audio {
                     audio.play_console_toggle();
                 }
-                if s.show_console {
-                    s.console_buffer.clear();
+                if s.console.active {
+                    s.console.input_buffer.clear();
                 }
                 s.render();
                 return;
             }
 
             // Console input handling — intercepts ALL keys when console is open
-            if s.show_console {
+            if s.console.active {
                 event.prevent_default();
                 match key.as_str() {
                     "Escape" => {
-                        s.show_console = false;
+                        s.console.active = false;
                     }
                     "Enter" => {
-                        let cmd = s.console_buffer.trim().to_string();
+                        let cmd = s.console.input_buffer.trim().to_string();
                         if !cmd.is_empty() {
-                            s.console_cmd_history.push(cmd.clone());
-                            s.console_cmd_index = None;
+                            s.console.cmd_history.push(cmd.clone());
+                            s.console.cmd_index = None;
                             s.execute_console_command(&cmd);
-                            s.console_buffer.clear();
+                            s.console.input_buffer.clear();
                         }
                     }
                     "Backspace" => {
-                        s.console_buffer.pop();
+                        s.console.input_buffer.pop();
                     }
                     "ArrowUp" => {
-                        if !s.console_cmd_history.is_empty() {
-                            let idx = match s.console_cmd_index {
+                        if !s.console.cmd_history.is_empty() {
+                            let idx = match s.console.cmd_index {
                                 Some(i) => i.saturating_sub(1),
-                                None => s.console_cmd_history.len() - 1,
+                                None => s.console.cmd_history.len() - 1,
                             };
-                            s.console_cmd_index = Some(idx);
-                            s.console_buffer = s.console_cmd_history[idx].clone();
+                            s.console.cmd_index = Some(idx);
+                            s.console.input_buffer = s.console.cmd_history[idx].clone();
                         }
                     }
                     "ArrowDown" => {
-                        if let Some(idx) = s.console_cmd_index {
-                            if idx + 1 < s.console_cmd_history.len() {
+                        if let Some(idx) = s.console.cmd_index {
+                            if idx + 1 < s.console.cmd_history.len() {
                                 let new_idx = idx + 1;
-                                s.console_cmd_index = Some(new_idx);
-                                s.console_buffer = s.console_cmd_history[new_idx].clone();
+                                s.console.cmd_index = Some(new_idx);
+                                s.console.input_buffer = s.console.cmd_history[new_idx].clone();
                             } else {
-                                s.console_cmd_index = None;
-                                s.console_buffer.clear();
+                                s.console.cmd_index = None;
+                                s.console.input_buffer.clear();
                             }
                         }
+                    }
+                    "PageUp" => {
+                        s.console.scroll_up(5);
+                    }
+                    "PageDown" => {
+                        s.console.scroll_down(5);
                     }
                     "Tab" => {
                         s.tab_complete();
                     }
                     _ => {
                         // Reset tab completion state on any non-Tab key
-                        s.tab_prefix.clear();
-                        s.tab_matches.clear();
-                        s.tab_cycle_index = 0;
+                        s.console.tab_prefix.clear();
+                        s.console.tab_matches.clear();
+                        s.console.tab_cycle_index = 0;
                         if key.len() == 1 {
-                            s.console_buffer.push_str(&key);
+                            s.console.input_buffer.push_str(&key);
                         } else if key == "Space" {
-                            s.console_buffer.push(' ');
+                            s.console.input_buffer.push(' ');
                         }
                     }
                 }

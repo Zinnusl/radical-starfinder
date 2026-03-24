@@ -156,9 +156,9 @@ impl GameState {
             self.renderer.draw_codex(&entries);
         }
 
-        if self.show_console {
+        if self.console.active {
             self.renderer
-                .draw_console(&self.console_history, &self.console_buffer);
+                .draw_console(&self.console.history, &self.console.input_buffer, self.console.scroll_offset);
         }
     }
 

@@ -28,9 +28,10 @@ pub(crate) fn longest_common_prefix_ci(strings: &[&str]) -> String {
 
 impl super::GameState {
     const CONSOLE_COMMANDS: &'static [&'static str] = &[
-        "help", "god", "hp", "gold", "floor", "reveal", "kill_all",
-        "focus", "clear", "stats", "items", "give_item",
-        "radicals", "give_radical", "spells", "give_spell", "fight", "boss",
+        "help", "god", "hp", "gold", "floor", "reveal", "kill", "kill_all",
+        "focus", "clear", "stats", "items", "give_item", "give",
+        "radicals", "give_radical", "spells", "give_spell", "fight", "spawn", "boss",
+        "list",
     ];
 
     const ITEM_NAMES: &'static [&'static str] = &[
@@ -48,7 +49,7 @@ impl super::GameState {
     const FIGHT_TYPES: &'static [&'static str] = &["normal", "elite", "boss"];
 
     pub(crate) fn tab_complete(&mut self) {
-        let input = self.console_buffer.clone();
+        let input = self.console.input_buffer.clone();
         let has_space = input.contains(' ');
 
         if has_space {
@@ -58,10 +59,10 @@ impl super::GameState {
             let arg_prefix = parts.get(1).unwrap_or(&"");
 
             let candidates: Vec<&str> = match cmd {
-                "give_item" => Self::ITEM_NAMES.iter()
+                "give_item" | "give" => Self::ITEM_NAMES.iter()
                     .filter(|n| n.to_lowercase().starts_with(&arg_prefix.to_lowercase()))
                     .copied().collect(),
-                "boss" => Self::BOSS_NAMES.iter()
+                "boss" | "spawn" => Self::BOSS_NAMES.iter()
                     .filter(|n| n.to_lowercase().starts_with(&arg_prefix.to_lowercase()))
                     .copied().collect(),
                 "fight" => Self::FIGHT_TYPES.iter()
@@ -75,22 +76,22 @@ impl super::GameState {
             }
 
             let prefix_key = format!("arg:{}", input);
-            if self.tab_prefix == prefix_key {
+            if self.console.tab_prefix == prefix_key {
                 // Cycle through matches
-                self.tab_cycle_index = (self.tab_cycle_index + 1) % self.tab_matches.len();
-                self.console_buffer = format!("{} {}", cmd, self.tab_matches[self.tab_cycle_index]);
+                self.console.tab_cycle_index = (self.console.tab_cycle_index + 1) % self.console.tab_matches.len();
+                self.console.input_buffer = format!("{} {}", cmd, self.console.tab_matches[self.console.tab_cycle_index]);
             } else {
                 // New completion
-                self.tab_matches = candidates.iter().map(|s| s.to_string()).collect();
-                self.tab_cycle_index = 0;
+                self.console.tab_matches = candidates.iter().map(|s| s.to_string()).collect();
+                self.console.tab_cycle_index = 0;
                 if candidates.len() == 1 {
-                    self.console_buffer = format!("{} {}", cmd, candidates[0]);
-                    self.tab_prefix = format!("arg:{}", self.console_buffer);
+                    self.console.input_buffer = format!("{} {}", cmd, candidates[0]);
+                    self.console.tab_prefix = format!("arg:{}", self.console.input_buffer);
                 } else {
                     let lcp = longest_common_prefix_ci(&candidates);
-                    self.console_buffer = format!("{} {}", cmd, lcp);
-                    self.console_history.push(format!("  completions: {}", candidates.join(", ")));
-                    self.tab_prefix = format!("arg:{}", self.console_buffer);
+                    self.console.input_buffer = format!("{} {}", cmd, lcp);
+                    self.console.push_history(format!("  completions: {}", candidates.join(", ")));
+                    self.console.tab_prefix = format!("arg:{}", self.console.input_buffer);
                 }
             }
         } else {
@@ -105,22 +106,22 @@ impl super::GameState {
             }
 
             let prefix_key = format!("cmd:{}", input);
-            if self.tab_prefix == prefix_key {
+            if self.console.tab_prefix == prefix_key {
                 // Cycle through matches
-                self.tab_cycle_index = (self.tab_cycle_index + 1) % self.tab_matches.len();
-                self.console_buffer = format!("{} ", self.tab_matches[self.tab_cycle_index]);
+                self.console.tab_cycle_index = (self.console.tab_cycle_index + 1) % self.console.tab_matches.len();
+                self.console.input_buffer = format!("{} ", self.console.tab_matches[self.console.tab_cycle_index]);
             } else {
                 // New completion
-                self.tab_matches = candidates.iter().map(|s| s.to_string()).collect();
-                self.tab_cycle_index = 0;
+                self.console.tab_matches = candidates.iter().map(|s| s.to_string()).collect();
+                self.console.tab_cycle_index = 0;
                 if candidates.len() == 1 {
-                    self.console_buffer = format!("{} ", candidates[0]);
-                    self.tab_prefix = format!("cmd:{}", self.console_buffer);
+                    self.console.input_buffer = format!("{} ", candidates[0]);
+                    self.console.tab_prefix = format!("cmd:{}", self.console.input_buffer);
                 } else {
                     let lcp = longest_common_prefix_ci(&candidates);
-                    self.console_buffer = lcp;
-                    self.console_history.push(format!("  completions: {}", candidates.join(", ")));
-                    self.tab_prefix = format!("cmd:{}", self.console_buffer);
+                    self.console.input_buffer = lcp;
+                    self.console.push_history(format!("  completions: {}", candidates.join(", ")));
+                    self.console.tab_prefix = format!("cmd:{}", self.console.input_buffer);
                 }
             }
         }
@@ -132,45 +133,46 @@ impl super::GameState {
             return;
         }
 
-        let response = match parts[0] {
+        // Normalize multi-word commands: "give item X" -> give_item, "list items" -> items, etc.
+        let (effective_cmd, effective_parts): (&str, Vec<&str>) = match (parts[0], parts.get(1).copied()) {
+            ("give", Some("item")) => ("give_item", parts[2..].to_vec()),
+            ("give", Some("gold")) => ("gold", parts[2..].to_vec()),
+            ("give", Some("hp")) => ("hp", parts[2..].to_vec()),
+            ("give", Some("radical")) => ("give_radical", parts[2..].to_vec()),
+            ("give", Some("spell")) => ("give_spell", parts[2..].to_vec()),
+            ("give", Some(_)) => ("give_item", parts[1..].to_vec()),
+            ("list", Some("items")) => ("items", vec![]),
+            ("list", Some("radicals")) => ("radicals", vec![]),
+            ("list", Some("spells")) => ("spells", vec![]),
+            ("list", _) => ("items", vec![]),
+            ("kill", _) => ("kill_all", parts[1..].to_vec()),
+            ("spawn", _) => ("fight", parts[1..].to_vec()),
+            _ => (parts[0], parts[1..].to_vec()),
+        };
+
+        let response = match effective_cmd {
             "help" => {
-                self.console_history.push("=== CHEAT CONSOLE ===".into());
-                self.console_history
-                    .push("help         - Show this help".into());
-                self.console_history
-                    .push("god          - Toggle god mode".into());
-                self.console_history
-                    .push("hp [n]       - Set HP to n (or full)".into());
-                self.console_history
-                    .push("gold [n]     - Add n gold (default 100)".into());
-                self.console_history
-                    .push("floor [n]    - Go to floor n".into());
-                self.console_history
-                    .push("reveal       - Reveal entire map".into());
-                self.console_history
-                    .push("kill_all     - Kill all enemies".into());
-                self.console_history
-                    .push("focus [n]    - Set focus in combat".into());
-                self.console_history
-                    .push("clear        - Clear console".into());
-                self.console_history
-                    .push("stats        - Show player stats".into());
-                self.console_history
-                    .push("items        - List all item types".into());
-                self.console_history
-                    .push("give_item <name> - Give item by name".into());
-                self.console_history
-                    .push("radicals     - List all radicals".into());
-                self.console_history
-                    .push("give_radical <ch> - Give a radical".into());
-                self.console_history
-                    .push("spells       - List player spells".into());
-                self.console_history
-                    .push("give_spell <hanzi> - Give spell by hanzi".into());
-                self.console_history
-                    .push("fight <type> - Fight normal/elite/boss".into());
-                self.console_history
-                    .push("boss <name>  - Fight a specific boss".into());
+                self.console.push_history("=== CHEAT CONSOLE ===".into());
+                self.console.push_history("help              - Show this help".into());
+                self.console.push_history("god               - Toggle god mode".into());
+                self.console.push_history("hp [n]            - Set HP to n (or full)".into());
+                self.console.push_history("gold [n]          - Add n gold (default 100)".into());
+                self.console.push_history("give item <name>  - Give item by name".into());
+                self.console.push_history("give gold <n>     - Add gold".into());
+                self.console.push_history("give hp <n>       - Heal player".into());
+                self.console.push_history("give radical <ch> - Give a radical".into());
+                self.console.push_history("give spell <h>    - Give spell by hanzi".into());
+                self.console.push_history("floor [n]         - Go to floor n".into());
+                self.console.push_history("reveal            - Reveal entire map".into());
+                self.console.push_history("kill              - Kill all enemies".into());
+                self.console.push_history("spawn <type>      - Spawn enemy (normal/elite/boss)".into());
+                self.console.push_history("focus [n]         - Set focus in combat".into());
+                self.console.push_history("clear             - Clear console".into());
+                self.console.push_history("stats             - Show player stats".into());
+                self.console.push_history("list items        - List all item types".into());
+                self.console.push_history("list radicals     - List all radicals".into());
+                self.console.push_history("list spells       - List player spells".into());
+                self.console.push_history("boss <name>       - Fight a specific boss".into());
                 return;
             }
             "god" => {
@@ -181,7 +183,7 @@ impl super::GameState {
                 format!("God mode: {}", if self.god_mode { "ON" } else { "OFF" })
             }
             "hp" => {
-                let amount = parts.get(1).and_then(|s| s.parse::<i32>().ok());
+                let amount = effective_parts.get(0).and_then(|s| s.parse::<i32>().ok());
                 match amount {
                     Some(n) => {
                         self.player.hp = n.min(self.player.max_hp);
@@ -194,15 +196,15 @@ impl super::GameState {
                 }
             }
             "gold" => {
-                let amount = parts
-                    .get(1)
+                let amount = effective_parts
+                    .get(0)
                     .and_then(|s| s.parse::<i32>().ok())
                     .unwrap_or(100);
                 self.player.gold += amount;
                 format!("Added {} gold (total: {})", amount, self.player.gold)
             }
             "floor" => {
-                if let Some(n) = parts.get(1).and_then(|s| s.parse::<i32>().ok()) {
+                if let Some(n) = effective_parts.get(0).and_then(|s| s.parse::<i32>().ok()) {
                     if n >= 1 {
                         self.floor_num = n - 1;
                         self.new_floor();
@@ -243,8 +245,8 @@ impl super::GameState {
             }
             "focus" => {
                 if let CombatState::TacticalBattle(ref mut battle) = self.combat {
-                    let amount = parts
-                        .get(1)
+                    let amount = effective_parts
+                        .get(0)
                         .and_then(|s| s.parse::<i32>().ok())
                         .unwrap_or(battle.max_focus);
                     battle.focus = amount;
@@ -254,19 +256,20 @@ impl super::GameState {
                 }
             }
             "clear" => {
-                self.console_history.clear();
+                self.console.history.clear();
+                self.console.scroll_offset = 0;
                 return;
             }
             "stats" => {
-                self.console_history.push(format!(
+                self.console.push_history(format!(
                     "HP: {}/{}  Gold: {}  Floor: {}",
                     self.player.hp, self.player.max_hp, self.player.gold, self.floor_num
                 ));
-                self.console_history.push(format!(
+                self.console.push_history(format!(
                     "Kills: {}  God: {}",
                     self.total_kills, self.god_mode
                 ));
-                self.console_history.push(format!(
+                self.console.push_history(format!(
                     "Radicals: {}  Spells: {}  Items: {}",
                     self.player.radicals.len(),
                     self.player.spells.len(),
@@ -297,16 +300,15 @@ impl super::GameState {
                     ("InkBomb", "Stun + confuse"),
                     ("PhoenixPlume", "Auto-revive"),
                 ];
-                self.console_history.push("=== ITEM TYPES ===".into());
+                self.console.push_history("=== ITEM TYPES ===".into());
                 for (name, desc) in all {
-                    self.console_history
-                        .push(format!("  {} - {}", name, desc));
+                    self.console.push_history(format!("  {} - {}", name, desc));
                 }
                 return;
             }
             "give_item" => {
                 use crate::player::Item;
-                if let Some(name) = parts.get(1) {
+                if let Some(name) = effective_parts.get(0) {
                     let lower = name.to_lowercase();
                     let item = match lower.as_str() {
                         "healthpotion" => Some(Item::MedHypo(5 + self.floor_num)),
@@ -340,45 +342,46 @@ impl super::GameState {
                                 "Inventory full!".into()
                             }
                         }
-                        None => format!("Unknown item '{}'. Type 'items' to list.", name),
+                        None => format!("Unknown item '{}'. Type 'list items' to see all.", name),
                     }
                 } else {
-                    "Usage: give_item <name>".into()
+                    "Usage: give item <name>".into()
                 }
             }
             "radicals" => {
-                self.console_history.push("=== RADICALS ===".into());
+                self.console.push_history("=== RADICALS ===".into());
                 for r in radical::RADICALS.iter() {
                     let tag = if r.rare { " [rare]" } else { "" };
-                    self.console_history
-                        .push(format!("  {} ({}) - {}{}", r.ch, r.name, r.meaning, tag));
+                    self.console.push_history(
+                        format!("  {} ({}) - {}{}", r.ch, r.name, r.meaning, tag),
+                    );
                 }
                 return;
             }
             "give_radical" => {
-                if let Some(ch) = parts.get(1) {
+                if let Some(ch) = effective_parts.get(0) {
                     if let Some(r) = radical::RADICALS.iter().find(|r| r.ch == *ch) {
                         self.player.add_radical(r.ch);
                         format!("Added radical {} ({})", r.ch, r.meaning)
                     } else {
-                        format!("Unknown radical '{}'. Type 'radicals' to list.", ch)
+                        format!("Unknown radical '{}'. Type 'list radicals' to see all.", ch)
                     }
                 } else {
-                    "Usage: give_radical <char>".into()
+                    "Usage: give radical <char>".into()
                 }
             }
             "spells" => {
                 if self.player.spells.is_empty() {
-                    self.console_history.push("No spells.".into());
+                    self.console.push_history("No spells.".into());
                 } else {
-                    self.console_history.push("=== SPELLS ===".into());
+                    self.console.push_history("=== SPELLS ===".into());
                     for (i, s) in self.player.spells.iter().enumerate() {
                         let sel = if i == self.player.selected_spell {
                             " ◀"
                         } else {
                             ""
                         };
-                        self.console_history.push(format!(
+                        self.console.push_history(format!(
                             "  {} {} ({}) - {:?}{}",
                             s.hanzi, s.pinyin, s.meaning, s.effect, sel
                         ));
@@ -387,7 +390,7 @@ impl super::GameState {
                 return;
             }
             "give_spell" => {
-                if let Some(hanzi) = parts.get(1) {
+                if let Some(hanzi) = effective_parts.get(0) {
                     if let Some(recipe) = radical::RECIPES
                         .iter()
                         .find(|r| r.output_hanzi == *hanzi)
@@ -406,11 +409,11 @@ impl super::GameState {
                         format!("No recipe for '{}'. Check radical.rs RECIPES.", hanzi)
                     }
                 } else {
-                    "Usage: give_spell <hanzi>".into()
+                    "Usage: give spell <hanzi>".into()
                 }
             }
             "fight" => {
-                if let Some(kind) = parts.get(1) {
+                if let Some(kind) = effective_parts.get(0) {
                     let lower = kind.to_lowercase();
                     let pool = vocab::vocab_for_floor(self.floor_num);
                     if pool.is_empty() {
@@ -489,11 +492,11 @@ impl super::GameState {
                         }
                     }
                 } else {
-                    "Usage: fight <normal|elite|boss>".into()
+                    "Usage: spawn <normal|elite|boss>".into()
                 }
             }
             "boss" => {
-                if let Some(name) = parts.get(1) {
+                if let Some(name) = effective_parts.get(0) {
                     let lower = name.to_lowercase();
                     let boss_kind = match lower.as_str() {
                         "piratecaptain" | "gatekeeper" => Some((BossKind::PirateCaptain, 5)),
@@ -549,11 +552,8 @@ impl super::GameState {
                 format!("Unknown command: '{}'. Type 'help' for commands.", other)
             }
         };
-        self.console_history.push(format!("> {}", cmd));
-        self.console_history.push(response);
-        while self.console_history.len() > 100 {
-            self.console_history.remove(0);
-        }
+        self.console.push_history(format!("> {}", cmd));
+        self.console.push_history(response);
     }
 
 }
