@@ -40,6 +40,7 @@ impl super::GameState {
         self.post_mortem_page = 0;
         self.theft_catches = 0;
         self.shop_banned = false;
+        self.companion_bonds = [CompanionBond::default(); COMPANION_COUNT];
         self.enemies.clear();
         self.typing.clear();
         // Keep discovered recipes across runs (loaded from localStorage)

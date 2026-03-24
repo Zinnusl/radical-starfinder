@@ -550,7 +550,11 @@ impl GameState {
 
         if self.companion == Some(Companion::Medic) {
             let lvl = self.companion_level();
-            let heal = Companion::Medic.heal_per_floor(lvl);
+            let mut heal = Companion::Medic.heal_per_floor(lvl);
+            // Synergy level 2 bonus: extra heal
+            if self.companion_synergy_level() >= 2 {
+                heal += Companion::Medic.synergy_heal_bonus();
+            }
             let max_hp = self.player.max_hp;
             if self.player.hp < max_hp && heal > 0 {
                 self.player.hp = (self.player.hp + heal).min(max_hp);
@@ -565,6 +569,9 @@ impl GameState {
                 }
             }
         }
+
+        // Advance companion bond on each floor transition
+        self.advance_companion_bond();
 
         if self.floor_num > 1 {
             if self.player.get_piety(Faction::Consortium) >= 10 && self.player.get_piety(Faction::AncientOrder) >= 10
