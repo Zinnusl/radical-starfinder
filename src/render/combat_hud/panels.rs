@@ -7,7 +7,7 @@ use crate::combat::{
 use crate::player::Player;
 use crate::radical;
 
-use super::super::{COL_PLAYER, COL_HP_BAR, COL_HP_BG};
+use super::super::{COL_PLAYER, COL_HP_BAR, COL_HP_BG, hp_gradient_color};
 
 impl super::super::Renderer {
     #[allow(clippy::too_many_arguments)]
@@ -26,10 +26,19 @@ impl super::super::Renderer {
         let panel_w = self.canvas_w - panel_x - 8.0;
         let mut py = grid_y;
 
-        // Panel background
-        self.ctx.set_fill_style_str("rgba(10,8,20,0.7)");
-        self.ctx
-            .fill_rect(panel_x - 6.0, py - 4.0, panel_w + 8.0, grid_px + 8.0);
+        // Panel background — multi-band gradient
+        for gi in 0..5 {
+            let gy_off = gi as f64 * (grid_px + 8.0) / 5.0;
+            let alpha = 0.65 + gi as f64 * 0.03;
+            self.ctx
+                .set_fill_style_str(&format!("rgba(10,8,20,{:.3})", alpha));
+            self.ctx.fill_rect(
+                panel_x - 6.0,
+                py - 4.0 + gy_off,
+                panel_w + 8.0,
+                (grid_px + 8.0) / 5.0,
+            );
+        }
         self.ctx.set_stroke_style_str("rgba(100,80,140,0.4)");
         self.ctx.set_line_width(1.0);
         self.ctx
@@ -39,9 +48,26 @@ impl super::super::Renderer {
         self.ctx.set_line_width(1.0);
         self.ctx
             .stroke_rect(panel_x - 5.5, py - 3.5, panel_w + 7.0, grid_px + 7.0);
-        // Top accent line
-        self.ctx.set_fill_style_str("rgba(0,204,221,0.25)");
-        self.ctx.fill_rect(panel_x - 6.0, py - 4.0, panel_w + 8.0, 1.5);
+        // Top accent line (cyan)
+        self.ctx.set_fill_style_str("rgba(0,204,221,0.3)");
+        self.ctx.fill_rect(panel_x - 6.0, py - 4.0, panel_w + 8.0, 2.0);
+        // Bottom accent line (subtle purple)
+        self.ctx.set_fill_style_str("rgba(100,80,160,0.2)");
+        self.ctx.fill_rect(panel_x - 6.0, py - 4.0 + grid_px + 6.0, panel_w + 8.0, 1.5);
+        // Corner accents (small diamond shapes)
+        for &(corner_x, corner_y) in &[
+            (panel_x - 6.0, py - 4.0),
+            (panel_x + panel_w + 2.0, py - 4.0),
+        ] {
+            self.ctx.set_fill_style_str("rgba(0,204,221,0.4)");
+            self.ctx.begin_path();
+            self.ctx.move_to(corner_x, corner_y + 3.0);
+            self.ctx.line_to(corner_x + 3.0, corner_y);
+            self.ctx.line_to(corner_x + 6.0, corner_y + 3.0);
+            self.ctx.line_to(corner_x + 3.0, corner_y + 6.0);
+            self.ctx.close_path();
+            self.ctx.fill();
+        }
 
         let player_unit = &battle.units[0];
         let p_bar_w = panel_w.min(130.0);
@@ -70,26 +96,26 @@ impl super::super::Renderer {
             0.0
         };
         let hp_bar_h = 8.0;
-        self.ctx.set_fill_style_str("rgba(0,0,0,0.5)");
+        // Drop shadow
+        self.ctx.set_fill_style_str("rgba(0,0,0,0.6)");
         self.ctx
-            .fill_rect(panel_x - 1.0, py - 1.0, p_bar_w + 2.0, hp_bar_h + 2.0);
+            .fill_rect(panel_x, py + 1.0, p_bar_w + 1.0, hp_bar_h + 1.0);
+        // Background
         self.ctx.set_fill_style_str(COL_HP_BG);
         self.ctx.fill_rect(panel_x, py, p_bar_w, hp_bar_h);
-        let panel_hp_color = if p_hp_frac > 0.6 {
-            COL_HP_BAR
-        } else if p_hp_frac > 0.3 {
-            "#ccaa22"
-        } else {
-            "#cc4422"
-        };
-        self.ctx.set_fill_style_str(panel_hp_color);
+        // Gradient fill
+        let panel_hp_color = hp_gradient_color(p_hp_frac);
+        self.ctx.set_fill_style_str(&panel_hp_color);
         self.ctx
             .fill_rect(panel_x, py, p_bar_w * p_hp_frac, hp_bar_h);
+        // Highlight shimmer (bright line at top)
+        self.ctx.set_fill_style_str("rgba(255,255,255,0.2)");
+        self.ctx.fill_rect(panel_x, py, p_bar_w * p_hp_frac, 1.5);
         // Low HP glow effect
         if p_hp_frac < 0.3 {
             self.ctx.set_shadow_color("rgba(255,50,50,0.5)");
             self.ctx.set_shadow_blur(4.0);
-            self.ctx.set_fill_style_str(panel_hp_color);
+            self.ctx.set_fill_style_str(&panel_hp_color);
             self.ctx
                 .fill_rect(panel_x, py, p_bar_w * p_hp_frac, hp_bar_h);
             self.ctx.set_shadow_blur(0.0);
@@ -168,13 +194,27 @@ impl super::super::Renderer {
             py += 14.0;
         }
 
-        // ─ Separator ─
+        // ─ Decorative separator ─
         self.ctx.set_stroke_style_str("rgba(100,80,140,0.3)");
         self.ctx.set_line_width(1.0);
         self.ctx.begin_path();
         self.ctx.move_to(panel_x, py);
+        self.ctx.line_to(panel_x + p_bar_w * 0.4 - 4.0, py);
+        self.ctx.stroke();
+        self.ctx.begin_path();
+        self.ctx.move_to(panel_x + p_bar_w * 0.4 + 4.0, py);
         self.ctx.line_to(panel_x + p_bar_w, py);
         self.ctx.stroke();
+        // Center diamond
+        self.ctx.set_fill_style_str("rgba(0,204,221,0.35)");
+        self.ctx.begin_path();
+        let dm_x = panel_x + p_bar_w * 0.4;
+        self.ctx.move_to(dm_x, py - 3.0);
+        self.ctx.line_to(dm_x + 3.0, py);
+        self.ctx.line_to(dm_x, py + 3.0);
+        self.ctx.line_to(dm_x - 3.0, py);
+        self.ctx.close_path();
+        self.ctx.fill();
         py += 6.0;
 
         if !matches!(battle.weather, Weather::Normal) {
@@ -286,12 +326,24 @@ impl super::super::Renderer {
         // Action menu (Command phase) — styled
         if matches!(battle.phase, TacticalPhase::Command) && battle.typing_action.is_none() {
             py += 4.0;
+            // Decorative separator with dots
             self.ctx.set_stroke_style_str("rgba(100,80,140,0.3)");
             self.ctx.set_line_width(1.0);
             self.ctx.begin_path();
             self.ctx.move_to(panel_x, py);
+            self.ctx.line_to(panel_x + p_bar_w * 0.35 - 3.0, py);
+            self.ctx.stroke();
+            self.ctx.begin_path();
+            self.ctx.move_to(panel_x + p_bar_w * 0.35 + 3.0, py);
             self.ctx.line_to(panel_x + p_bar_w, py);
             self.ctx.stroke();
+            // Center dot
+            self.ctx.set_fill_style_str("rgba(0,204,221,0.4)");
+            self.ctx.begin_path();
+            self.ctx
+                .arc(panel_x + p_bar_w * 0.35, py, 2.0, 0.0, std::f64::consts::TAU)
+                .ok();
+            self.ctx.fill();
             py += 6.0;
 
             self.ctx.set_font("bold 11px monospace");
@@ -1044,25 +1096,46 @@ impl super::super::Renderer {
             py += 14.0;
         }
 
-        // Resolve phase message banner
+        // Resolve phase message banner — floating text style
         if let TacticalPhase::Resolve {
             ref message, timer, ..
         } = battle.phase
         {
             let banner_h = 36.0;
-            let banner_y = grid_y + grid_px * 0.4;
+            let max_timer = 40.0_f64;
+            let progress = 1.0 - (timer as f64 / max_timer).clamp(0.0, 1.0);
+            let rise = progress * 12.0;
+            let banner_y = grid_y + grid_px * 0.4 - rise;
             // Semi-transparent overlay
-            self.ctx.set_fill_style_str("rgba(0,0,0,0.35)");
+            let bg_alpha = if timer > 20 { 0.35 } else { timer as f64 / 20.0 * 0.35 };
+            self.ctx.set_fill_style_str(&format!("rgba(0,0,0,{:.3})", bg_alpha));
             self.ctx.fill_rect(grid_x, banner_y, grid_px, banner_h);
-            // Message text centered on the grid
+            // Color based on message type
             let alpha = if timer > 20 { 1.0 } else { timer as f64 / 20.0 };
+            let lower = message.to_lowercase();
+            let (r, g, b) = if lower.contains("damage") || lower.contains("hit") || lower.contains("attack") {
+                (255, 130, 100)
+            } else if lower.contains("heal") || lower.contains("restore") {
+                (100, 220, 100)
+            } else if lower.contains("critical") {
+                (255, 215, 0)
+            } else if lower.contains("miss") || lower.contains("dodge") {
+                (170, 170, 200)
+            } else {
+                (255, 220, 100)
+            };
+            let glow_color = format!("rgba({},{},{},{})", r, g, b, alpha * 0.5);
+            self.ctx.set_shadow_color(&glow_color);
+            self.ctx.set_shadow_blur(6.0);
             self.ctx
-                .set_fill_style_str(&format!("rgba(255,220,100,{})", alpha));
+                .set_fill_style_str(&format!("rgba({},{},{},{})", r, g, b, alpha));
             self.ctx.set_font("bold 14px monospace");
             self.ctx.set_text_align("center");
             self.ctx
                 .fill_text(message, grid_x + grid_px / 2.0, banner_y + 22.0)
                 .ok();
+            self.ctx.set_shadow_blur(0.0);
+            self.ctx.set_shadow_color("transparent");
             self.ctx.set_text_align("left");
         }
 

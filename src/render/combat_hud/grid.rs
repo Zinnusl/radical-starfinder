@@ -7,7 +7,7 @@ use crate::combat::{
 use crate::player::Player;
 use crate::radical;
 
-use super::super::{COL_PLAYER, COL_HP_BAR, COL_HP_BG};
+use super::super::{COL_PLAYER, COL_HP_BAR, COL_HP_BG, hp_gradient_color};
 
 impl super::super::Renderer {
     #[allow(clippy::too_many_arguments)]
@@ -138,6 +138,12 @@ impl super::super::Renderer {
                     self.ctx.stroke();
                     self.ctx.set_shadow_blur(0.0);
                     self.ctx.set_shadow_color("transparent");
+
+                    // Animated scan line across active portrait
+                    let scan_progress = (anim_t * 1.5) % 1.0;
+                    let scan_y_pos = tq_y + scan_progress * tq_cell;
+                    self.ctx.set_fill_style_str("rgba(255,255,255,0.1)");
+                    self.ctx.fill_rect(sx + 2.0, scan_y_pos, tq_cell - 4.0, 2.0);
                 } else {
                     self.ctx.set_stroke_style_str("rgba(255,255,255,0.12)");
                     self.ctx.set_line_width(0.5);
@@ -180,14 +186,8 @@ impl super::super::Renderer {
                     let pip_y = tq_y + tq_cell + 1.0;
                     self.ctx.set_fill_style_str("rgba(0,0,0,0.5)");
                     self.ctx.fill_rect(sx + 2.0, pip_y, tq_cell - 4.0, tq_hp_h);
-                    let hp_color = if unit.is_player() || unit.is_companion() {
-                        "#44cc55"
-                    } else if hp_frac > 0.5 {
-                        "#cc4444"
-                    } else {
-                        "#ff6644"
-                    };
-                    self.ctx.set_fill_style_str(hp_color);
+                    let hp_color = hp_gradient_color(hp_frac);
+                    self.ctx.set_fill_style_str(&hp_color);
                     self.ctx
                         .fill_rect(sx + 2.0, pip_y, (tq_cell - 4.0) * hp_frac, tq_hp_h);
                 } else {
@@ -857,9 +857,36 @@ impl super::super::Renderer {
             let cx = grid_x + cursor_x as f64 * cell;
             let cy = grid_y + cursor_y as f64 * cell;
             let pulse = ((anim_t * 4.0).sin() * 0.12 + 0.45).max(0.25);
+
+            // Adjacent tile subtle borders
+            for &(dx, dy) in &[(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+                let ax = cursor_x + dx;
+                let ay = cursor_y + dy;
+                if ax >= 0
+                    && ay >= 0
+                    && (ax as usize) < battle.arena.width
+                    && (ay as usize) < battle.arena.height
+                {
+                    let adj_x = grid_x + ax as f64 * cell;
+                    let adj_y = grid_y + ay as f64 * cell;
+                    self.ctx.set_fill_style_str("rgba(100,180,255,0.06)");
+                    self.ctx.fill_rect(adj_x, adj_y, cell, cell);
+                    self.ctx.set_stroke_style_str("rgba(100,180,255,0.18)");
+                    self.ctx.set_line_width(1.0);
+                    self.ctx
+                        .stroke_rect(adj_x + 0.5, adj_y + 0.5, cell - 1.0, cell - 1.0);
+                }
+            }
+
+            // Hovered tile soft glow (via shadow)
+            self.ctx.set_shadow_color("rgba(100,200,255,0.5)");
+            self.ctx.set_shadow_blur(8.0);
             self.ctx
                 .set_fill_style_str(&format!("rgba(100,180,255,{})", pulse));
             self.ctx.fill_rect(cx, cy, cell, cell);
+            self.ctx.set_shadow_blur(0.0);
+            self.ctx.set_shadow_color("transparent");
+
             self.ctx
                 .set_stroke_style_str(&format!("rgba(100,200,255,{})", pulse + 0.3));
             self.ctx.set_line_width(2.5);
@@ -963,7 +990,7 @@ impl super::super::Renderer {
                 }
             }
 
-            // HP bar under unit (thicker, with border)
+            // HP bar under unit (with gradient color, drop shadow, shimmer)
             let bar_w = cell - 4.0;
             let bar_h = 5.0;
             let bar_x = sx + 2.0;
@@ -973,20 +1000,21 @@ impl super::super::Renderer {
             } else {
                 0.0
             };
-            self.ctx.set_fill_style_str("rgba(0,0,0,0.6)");
+            // Drop shadow
+            self.ctx.set_fill_style_str("rgba(0,0,0,0.7)");
             self.ctx
-                .fill_rect(bar_x - 0.5, bar_y - 0.5, bar_w + 1.0, bar_h + 1.0);
+                .fill_rect(bar_x, bar_y + 1.0, bar_w + 1.0, bar_h + 1.0);
+            // Background
             self.ctx.set_fill_style_str(COL_HP_BG);
             self.ctx.fill_rect(bar_x, bar_y, bar_w, bar_h);
-            let hp_color = if hp_frac > 0.6 {
-                "#44cc55"
-            } else if hp_frac > 0.3 {
-                "#ccaa22"
-            } else {
-                "#cc3322"
-            };
-            self.ctx.set_fill_style_str(hp_color);
+            // Gradient fill
+            let hp_color = hp_gradient_color(hp_frac);
+            self.ctx.set_fill_style_str(&hp_color);
             self.ctx.fill_rect(bar_x, bar_y, bar_w * hp_frac, bar_h);
+            // Highlight shimmer (bright line at top of bar)
+            self.ctx.set_fill_style_str("rgba(255,255,255,0.18)");
+            self.ctx.fill_rect(bar_x, bar_y, bar_w * hp_frac, 1.0);
+            // Border
             self.ctx.set_stroke_style_str("rgba(255,255,255,0.15)");
             self.ctx.set_line_width(0.5);
             self.ctx.stroke_rect(bar_x, bar_y, bar_w, bar_h);
