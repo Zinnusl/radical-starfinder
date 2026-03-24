@@ -53,6 +53,11 @@ pub enum EquipEffect {
 }
 
 impl EquipEffect {
+    /// Returns true if two effects are the same variant, ignoring inner values.
+    pub fn same_variant(&self, other: &EquipEffect) -> bool {
+        core::mem::discriminant(self) == core::mem::discriminant(other)
+    }
+
     pub fn description(&self) -> String {
         match self {
             EquipEffect::BonusDamage(n) => {
@@ -691,6 +696,96 @@ pub const EQUIPMENT_POOL: &[Equipment] = &[
     },
 ];
 
+// ── Equipment Set Synergies ──────────────────────────────────────────────────
+
+/// Bonus granted when a complete equipment set is worn.
+#[derive(Clone, Copy, Debug)]
+pub enum SetBonus {
+    /// Flat bonus damage on all attacks.
+    BonusDamage(i32),
+    /// Pass through one wall per floor.
+    PhaseWalk,
+    /// Extra damage on the first combat turn.
+    FirstStrikeDamage(i32),
+    /// Heal HP when entering a new floor.
+    HealOnFloor(i32),
+}
+
+/// An equipment set: a named combination of effects that grants a bonus.
+pub struct EquipmentSet {
+    pub name: &'static str,
+    /// Which equip effect variants must be present (inner values ignored).
+    pub required_effects: &'static [EquipEffect],
+    pub bonus: SetBonus,
+}
+
+impl EquipmentSet {
+    pub fn bonus_description(&self) -> &'static str {
+        match self.bonus {
+            SetBonus::BonusDamage(_) => "Bonus damage on all attacks",
+            SetBonus::PhaseWalk => "Pass through one wall per floor",
+            SetBonus::FirstStrikeDamage(_) => "Extra damage on first combat turn",
+            SetBonus::HealOnFloor(_) => "Heal HP when entering a new floor",
+        }
+    }
+}
+
+pub const EQUIPMENT_SETS: &[EquipmentSet] = &[
+    // Void Lance (CriticalStrike) + Nanoweave Suit (DodgeChance) + Threat Analyzer (EnemyIntentReveal)
+    EquipmentSet {
+        name: "Predator's Kit",
+        required_effects: &[
+            EquipEffect::CriticalStrike(0),
+            EquipEffect::DodgeChance(0),
+            EquipEffect::EnemyIntentReveal,
+        ],
+        bonus: SetBonus::FirstStrikeDamage(3),
+    },
+    // Zero Blade (LifeSteal) + Energy Shield (ThornsAura) + Auto-Repair/Targeting Computer (HealOnKill)
+    EquipmentSet {
+        name: "Lifeblood Array",
+        required_effects: &[
+            EquipEffect::LifeSteal(0),
+            EquipEffect::ThornsAura(0),
+            EquipEffect::HealOnKill(0),
+        ],
+        bonus: SetBonus::HealOnFloor(5),
+    },
+    // Laser Pistol/Plasma Rifle/Arc Emitter (BonusDamage) + Flight Suit/Kevlar/Power Armor (DamageReduction) + Energy Recycler (PassiveRegen)
+    EquipmentSet {
+        name: "Frontline Rig",
+        required_effects: &[
+            EquipEffect::BonusDamage(0),
+            EquipEffect::DamageReduction(0),
+            EquipEffect::PassiveRegen,
+        ],
+        bonus: SetBonus::BonusDamage(2),
+    },
+    // Ion Cannon (KnockbackStrike) + Nanoweave Suit (DodgeChance) + Neural Uplink (FocusRegen)
+    EquipmentSet {
+        name: "Phase Stalker",
+        required_effects: &[
+            EquipEffect::KnockbackStrike,
+            EquipEffect::DodgeChance(0),
+            EquipEffect::FocusRegen(0),
+        ],
+        bonus: SetBonus::PhaseWalk,
+    },
+];
+
+/// Returns all equipment sets whose requirements are met by the player's gear.
+pub fn active_set_bonuses(player: &Player) -> Vec<&'static EquipmentSet> {
+    let equipped = player.equipped_effects();
+    EQUIPMENT_SETS
+        .iter()
+        .filter(|set| {
+            set.required_effects
+                .iter()
+                .all(|req| equipped.iter().any(|e| e.same_variant(req)))
+        })
+        .collect()
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Faction {
     Consortium,       // Commerce & diplomacy
@@ -905,6 +1000,8 @@ pub struct Player {
     pub form: PlayerForm,
     /// Turns remaining in current form (0 = permanent/human)
     pub form_timer: i32,
+    /// Whether the PhaseWalk set bonus has been used this floor.
+    pub phase_walk_used: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -1042,6 +1139,7 @@ impl Player {
             piety: Vec::new(),
             form: PlayerForm::Human,
             form_timer: 0,
+            phase_walk_used: false,
         }
     }
 
@@ -1289,6 +1387,26 @@ impl Player {
             EquipSlot::Armor => self.armor_state,
             EquipSlot::Charm => self.charm_state,
         }
+    }
+
+    /// Collect all currently equipped effects into a Vec.
+    pub fn equipped_effects(&self) -> Vec<EquipEffect> {
+        let mut effects = Vec::new();
+        if let Some(w) = self.weapon {
+            effects.push(w.effect);
+        }
+        if let Some(a) = self.armor {
+            effects.push(a.effect);
+        }
+        if let Some(c) = self.charm {
+            effects.push(c.effect);
+        }
+        effects
+    }
+
+    /// Check if any active set bonus satisfies the given predicate.
+    pub fn has_set_bonus(&self, check: fn(&SetBonus) -> bool) -> bool {
+        active_set_bonuses(self).iter().any(|set| check(&set.bonus))
     }
 
     /// Bonus damage from enchantments (力=+1, 火=+1)
