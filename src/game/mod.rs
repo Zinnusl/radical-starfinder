@@ -1635,14 +1635,15 @@ pub fn init_game() -> Result<(), JsValue> {
                                                     gs.spawn_enemies();
                                                 }
                                             }
-                                            events::EventSideEffect::None => {}
+                                            events::EventSideEffect::None => {
+                                                gs.game_mode = GameMode::Starmap;
+                                            }
                                         }
                                         record_event_consequence(&mut gs.event_memory, eid, choice_idx);
                                         gs.message = result;
                                         gs.message_timer = 120;
                                         gs.current_event = None;
                                         gs.event_choice_cursor = 0;
-                                        gs.game_mode = GameMode::Starmap;
                                     }
                                 }
                                 "Escape" => {

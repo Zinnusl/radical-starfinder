@@ -138,9 +138,12 @@ pub(crate) fn apply_event_outcome(
                 EventSideEffect::StartCombat { difficulty: *difficulty as i32 },
             )
         }
-        EventOutcome::CombatReward(_difficulty, credits) => {
+        EventOutcome::CombatReward(difficulty, credits) => {
             player.gold += credits;
-            (format!("Combat resolved! +{} credits", credits), EventSideEffect::None)
+            (
+                format!("Entering combat! +{} credits on victory!", credits),
+                EventSideEffect::StartCombat { difficulty: *difficulty as i32 },
+            )
         }
         EventOutcome::GainItem(item_name) => {
             let item = match *item_name {
@@ -503,14 +506,18 @@ mod tests {
     }
 
     #[test]
-    fn combat_reward() {
+    fn combat_reward_starts_combat_and_gives_credits() {
         let mut p = test_player();
         let mut s = test_ship();
         let mut c = test_crew();
         p.gold = 10;
-        let (msg, _) = apply_event_outcome(&mut p, &mut s, &mut c, &EventOutcome::CombatReward(1, 25));
+        let (msg, effect) = apply_event_outcome(&mut p, &mut s, &mut c, &EventOutcome::CombatReward(3, 25));
         assert_eq!(p.gold, 35);
-        assert_eq!(msg, "Combat resolved! +25 credits");
+        assert!(msg.contains("25 credits"));
+        match effect {
+            EventSideEffect::StartCombat { difficulty } => assert_eq!(difficulty, 3),
+            EventSideEffect::None => panic!("Expected StartCombat side effect"),
+        }
     }
 
     #[test]
