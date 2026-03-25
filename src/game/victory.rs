@@ -317,7 +317,9 @@ impl GameState {
                 }
             }
 
-            let item_chance: u64 = if e_is_boss {
+            let item_chance: u64 = if self.player.skill_tree.has_scavenger() {
+                100
+            } else if e_is_boss {
                 40
             } else if e_is_elite {
                 15

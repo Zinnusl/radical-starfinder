@@ -97,6 +97,10 @@ pub static PREFIX_POOL: &[Affix] = &[
     Affix { name: "Brilliant",  effect: AffixEffect::SpellPower(2),     is_prefix: true },
     Affix { name: "Lucky",      effect: AffixEffect::GoldFind(15),      is_prefix: true },
     Affix { name: "Prosperous", effect: AffixEffect::GoldFind(25),      is_prefix: true },
+    Affix { name: "Precise",   effect: AffixEffect::CritChance(8),       is_prefix: true },
+    Affix { name: "Resonant",  effect: AffixEffect::SpellPower(3),       is_prefix: true },
+    Affix { name: "Vampiric",  effect: AffixEffect::LifeSteal(1),        is_prefix: true },
+    Affix { name: "Armored",   effect: AffixEffect::DamageReduction(1),  is_prefix: true },
 ];
 
 pub static SUFFIX_POOL: &[Affix] = &[
@@ -114,6 +118,10 @@ pub static SUFFIX_POOL: &[Affix] = &[
     Affix { name: "of Shielding",     effect: AffixEffect::DamageReduction(2),   is_prefix: false },
     Affix { name: "of Radicals",      effect: AffixEffect::RadicalFind(15),      is_prefix: false },
     Affix { name: "of Discovery",     effect: AffixEffect::RadicalFind(25),      is_prefix: false },
+    Affix { name: "of Power",        effect: AffixEffect::BonusDamage(2),    is_prefix: false },
+    Affix { name: "of the Bulwark",  effect: AffixEffect::BonusArmor(2),     is_prefix: false },
+    Affix { name: "of Vitality",     effect: AffixEffect::MaxHp(7),          is_prefix: false },
+    Affix { name: "of Swiftness",    effect: AffixEffect::MovementBonus(1),  is_prefix: false },
 ];
 
 // ---------------------------------------------------------------------------
@@ -289,6 +297,10 @@ pub enum UniqueEffect {
     DoubleRadicalDrops,
     EnemiesBurnOnSight,
     CritAlwaysOnHardAnswer,
+    FirstStrikeBonusDamage(i32),  // bonus damage on first attack each combat
+    HealOnCombo(i32),             // heal N HP when combo reaches multiple of 5
+    DamagePerFloor,               // +1 damage per 5 floors cleared
+    SpellEcho,                    // 25% chance spells fire twice
 }
 
 pub struct UniqueEquipment {
@@ -372,6 +384,30 @@ pub static UNIQUE_POOL: &[UniqueEquipment] = &[
         base_slot: EquipSlot::Weapon,
         lore: "Rewards deep knowledge. Hard answers always crit.",
         effects: &[UniqueEffect::CritAlwaysOnHardAnswer, UniqueEffect::BonusDamage(1)],
+    },
+    UniqueEquipment {
+        name: "Chrono Disruptor",
+        base_slot: EquipSlot::Weapon,
+        lore: "Strikes before the enemy can react. Devastating opening blow.",
+        effects: &[UniqueEffect::FirstStrikeBonusDamage(4), UniqueEffect::BonusDamage(1)],
+    },
+    UniqueEquipment {
+        name: "Harmony Matrix",
+        base_slot: EquipSlot::Charm,
+        lore: "Resonates with linguistic mastery. Heals through correct answers.",
+        effects: &[UniqueEffect::HealOnCombo(3), UniqueEffect::SpellPower(1)],
+    },
+    UniqueEquipment {
+        name: "Abyssal Depth Gauge",
+        base_slot: EquipSlot::Weapon,
+        lore: "Grows stronger the deeper you venture. A weapon for true explorers.",
+        effects: &[UniqueEffect::DamagePerFloor, UniqueEffect::MaxHp(5)],
+    },
+    UniqueEquipment {
+        name: "Resonance Engine",
+        base_slot: EquipSlot::Charm,
+        lore: "Echoes of ancient knowledge sometimes ripple outward twice.",
+        effects: &[UniqueEffect::SpellEcho, UniqueEffect::SpellPower(2)],
     },
 ];
 
@@ -707,8 +743,8 @@ mod tests {
     }
 
     #[test]
-    fn unique_pool_has_twelve_items() {
-        assert_eq!(UNIQUE_POOL.len(), 12);
+    fn unique_pool_has_sixteen_items() {
+        assert_eq!(UNIQUE_POOL.len(), 16);
     }
 
     #[test]

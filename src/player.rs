@@ -758,6 +758,37 @@ pub const EQUIPMENT_POOL: &[Equipment] = &[
         slot: EquipSlot::Charm,
         effect: EquipEffect::HardAnswerHeal(2),
     },
+    // ── New Balance-Pass Equipment ───────────────────────────────────────────
+    Equipment {
+        name: "Phase Pistol",
+        slot: EquipSlot::Weapon,
+        effect: EquipEffect::CriticalStrike(15),
+    },
+    Equipment {
+        name: "Reactive Plating",
+        slot: EquipSlot::Armor,
+        effect: EquipEffect::ThornsAura(2),
+    },
+    Equipment {
+        name: "Quantum Core",
+        slot: EquipSlot::Charm,
+        effect: EquipEffect::SpellPowerBoost(2),
+    },
+    Equipment {
+        name: "Salvage Drone",
+        slot: EquipSlot::Charm,
+        effect: EquipEffect::GoldBonus(20),
+    },
+    Equipment {
+        name: "Stealth Suit",
+        slot: EquipSlot::Armor,
+        effect: EquipEffect::DodgeChance(20),
+    },
+    Equipment {
+        name: "Bio-Armor",
+        slot: EquipSlot::Armor,
+        effect: EquipEffect::PassiveRegen,
+    },
 ];
 
 // ── Equipment Set Synergies ──────────────────────────────────────────────────

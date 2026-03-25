@@ -39,5 +39,16 @@ pub(crate) fn apply_dungeon_outcome(s: &mut super::GameState, outcome: &DungeonO
         DungeonOutcome::Nothing => {
             "You move on.".to_string()
         }
+        DungeonOutcome::GainCredits(n) => {
+            s.player.gold += n;
+            format!("Gained {} credits!", n)
+        }
+        DungeonOutcome::LoseCredits(n) => {
+            s.player.gold = (s.player.gold - n).max(0);
+            format!("Lost {} credits!", n)
+        }
+        DungeonOutcome::GainCrewMember => {
+            "A new crew member joins you!".to_string()
+        }
     }
 }

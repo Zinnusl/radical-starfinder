@@ -774,6 +774,22 @@ pub enum PlayerRadicalAbility {
     Sabotage,
     /// 白 white — Restore 3 focus + clear debuffs
     Purify,
+    /// 风 wind — Push all adjacent enemies 1 tile
+    Galeforce,
+    /// 气 air — Restore 5 focus + temporary spell power
+    QiSurge,
+    /// 耳 ear — Reveal all enemy positions and intents
+    Echolocation,
+    /// 鱼 fish — Create water terrain under target + push
+    Undertow,
+    /// 骨 bone — Shatter target armor + bonus damage
+    BoneBreaker,
+    /// 角 horn — Charge toward target + stun
+    RamStrike,
+    /// 见 see — Remove all buffs from target
+    Discern,
+    /// 身 body — Gain +3 armor, root self 2 turns
+    IronForm,
 }
 
 /// How a player radical ability is targeted when used independently (K key).
@@ -806,6 +822,9 @@ impl PlayerRadicalAbility {
             | Self::HitAndRun
             | Self::Inspire
             | Self::Purify
+            | Self::QiSurge
+            | Self::Echolocation
+            | Self::IronForm
             | Self::Bulwark
             | Self::Nourish
             | Self::SolarFlare => SkillType::SelfBuff,
@@ -826,7 +845,9 @@ impl PlayerRadicalAbility {
             | Self::Frenzy
             | Self::Reap
             | Self::Gamble
-            | Self::Plunder => SkillType::MeleeTarget,
+            | Self::Plunder
+            | Self::BoneBreaker
+            | Self::RamStrike => SkillType::MeleeTarget,
 
             // Ranged: needs enemy in range
             Self::FireStrike
@@ -836,14 +857,17 @@ impl PlayerRadicalAbility {
             | Self::Intimidate
             | Self::GrowingStrike
             | Self::Ensnare
-            | Self::Infest => SkillType::RangedTarget(3),
+            | Self::Infest
+            | Self::Discern
+            | Self::Undertow => SkillType::RangedTarget(3),
             Self::Snipe => SkillType::RangedTarget(5),
 
             // Ground-target: needs tile in range
             Self::Earthquake
             | Self::Downpour
             | Self::Sabotage
-            | Self::Cleave => SkillType::GroundTarget(3),
+            | Self::Cleave
+            | Self::Galeforce => SkillType::GroundTarget(3),
         }
     }
 
@@ -904,6 +928,14 @@ impl PlayerRadicalAbility {
             Self::PreciseStab => "小",
             Self::Sabotage => "工",
             Self::Purify => "白",
+            Self::Galeforce => "风",
+            Self::QiSurge => "气",
+            Self::Echolocation => "耳",
+            Self::Undertow => "鱼",
+            Self::BoneBreaker => "骨",
+            Self::RamStrike => "角",
+            Self::Discern => "见",
+            Self::IronForm => "身",
         }
     }
 
@@ -953,6 +985,14 @@ impl PlayerRadicalAbility {
             "小" => Some(Self::PreciseStab),
             "工" => Some(Self::Sabotage),
             "白" => Some(Self::Purify),
+            "风" => Some(Self::Galeforce),
+            "气" => Some(Self::QiSurge),
+            "耳" => Some(Self::Echolocation),
+            "鱼" => Some(Self::Undertow),
+            "骨" => Some(Self::BoneBreaker),
+            "角" => Some(Self::RamStrike),
+            "见" => Some(Self::Discern),
+            "身" => Some(Self::IronForm),
             _ => None,
         }
     }
@@ -1003,6 +1043,14 @@ impl PlayerRadicalAbility {
             Self::PreciseStab => "\u{1F53B} Precise Stab",
             Self::Sabotage => "\u{2699} Sabotage",
             Self::Purify => "\u{2728} Purify",
+            Self::Galeforce => "💨 Galeforce",
+            Self::QiSurge => "\u{1F32C} Qi Surge",
+            Self::Echolocation => "\u{1F442} Echolocation",
+            Self::Undertow => "\u{1F41F} Undertow",
+            Self::BoneBreaker => "\u{1F9B4} Bone Breaker",
+            Self::RamStrike => "\u{1F402} Ram Strike",
+            Self::Discern => "\u{1F440} Discern",
+            Self::IronForm => "\u{1F9CD} Iron Form",
         }
     }
 
@@ -1052,6 +1100,14 @@ impl PlayerRadicalAbility {
             Self::PreciseStab => "Ignore armor, +2 bonus damage",
             Self::Sabotage => "Create fire terrain around target",
             Self::Purify => "Restore 3 Focus, clear your debuffs",
+            Self::Galeforce => "Push all adjacent enemies 1 tile away",
+            Self::QiSurge => "Restore 5 focus, +1 spell power for 2 turns",
+            Self::Echolocation => "Reveal all enemy positions and intents for 3 turns",
+            Self::Undertow => "Create water terrain under target, push 2 tiles",
+            Self::BoneBreaker => "Destroy all target armor, +3 bonus damage",
+            Self::RamStrike => "Charge toward target, deal damage + stun 1 turn",
+            Self::Discern => "Remove all buffs from target (dispel)",
+            Self::IronForm => "Gain +3 armor for 2 turns, root self",
         }
     }
 }
@@ -1109,13 +1165,13 @@ impl Enemy {
 
     pub fn from_vocab(entry: &'static VocabEntry, x: i32, y: i32, floor: i32) -> Self {
         let is_elite = crate::vocab::is_elite(entry);
-        let hp = if is_elite { 3 + floor } else { 2 + floor / 2 };
+        let hp = if is_elite { 4 + floor } else { 3 + floor / 2 };
         let damage = if is_elite {
-            2 + floor / 2
+            2 + floor / 3
         } else {
-            1 + floor / 3
+            1 + floor / 4
         };
-        let gold = if is_elite { 8 + floor * 2 } else { 3 + floor };
+        let gold = if is_elite { 10 + floor * 2 } else { 4 + floor };
 
         let components = get_components(entry.hanzi);
 
@@ -1165,12 +1221,12 @@ impl Enemy {
         let boss_kind = BossKind::for_floor(floor);
         let (hp, damage, gold, cooldown) = match boss_kind {
             Some(BossKind::PirateCaptain) => (14 + floor, 3 + floor / 3, 40 + floor * 4, 1),
-            Some(BossKind::HiveQueen) => (14 + floor, 3 + floor / 3, 45 + floor * 4, 0),
-            Some(BossKind::RogueAICore) => (18 + floor, 4 + floor / 3, 50 + floor * 4, 0),
-            Some(BossKind::VoidEntity) => (22 + floor, 4 + floor / 3, 55 + floor * 4, 2),
-            Some(BossKind::AncientGuardian) => (20 + floor, 5 + floor / 3, 65 + floor * 4, 0),
-            Some(BossKind::DriftLeviathan) => (24 + floor, 5 + floor / 3, 80 + floor * 4, 0),
-            None => (8 + floor, 2 + floor / 2, 20 + floor * 3, 0),
+            Some(BossKind::HiveQueen) => (16 + floor, 3 + floor / 3, 45 + floor * 5, 0),
+            Some(BossKind::RogueAICore) => (20 + floor, 4 + floor / 4, 55 + floor * 5, 0),
+            Some(BossKind::VoidEntity) => (24 + floor, 4 + floor / 4, 60 + floor * 5, 2),
+            Some(BossKind::AncientGuardian) => (22 + floor, 5 + floor / 4, 70 + floor * 5, 0),
+            Some(BossKind::DriftLeviathan) => (28 + floor, 5 + floor / 4, 100 + floor * 6, 0),
+            None => (8 + floor, 2 + floor / 3, 25 + floor * 3, 0),
         };
         Self {
             x,

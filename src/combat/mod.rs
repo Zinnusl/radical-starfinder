@@ -69,7 +69,7 @@ impl PlayerStance {
             Self::Aggressive => 2,
             Self::Defensive => -1,
             Self::Mobile => -1,
-            Self::Focused => -1,
+            Self::Focused => 0,
             Self::Reckless => 4,
         }
     }
@@ -98,7 +98,7 @@ impl PlayerStance {
 
     pub fn spell_power_mod(&self) -> i32 {
         match self {
-            Self::Focused => 1,
+            Self::Focused => 2,
             _ => 0,
         }
     }
@@ -111,7 +111,7 @@ impl PlayerStance {
     }
 
     pub fn can_cast_spells(&self) -> bool {
-        !matches!(self, Self::Mobile | Self::Reckless)
+        !matches!(self, Self::Mobile)
     }
 
     pub fn name(&self) -> &'static str {
@@ -153,8 +153,8 @@ impl PlayerStance {
             Self::Aggressive => "+2 dmg, -1 armor, -1 move",
             Self::Defensive => "+2 armor, -1 dmg",
             Self::Mobile => "+2 move, -1 dmg, no spells",
-            Self::Focused => "+1 ability pwr/range, -1 move/dmg",
-            Self::Reckless => "+4 dmg, -2 armor, wrong=2× hit, no spells",
+            Self::Focused => "+2 ability pwr/range, -1 move",
+            Self::Reckless => "+4 dmg, -2 armor, wrong=2× hit",
         }
     }
 

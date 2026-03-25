@@ -419,6 +419,12 @@ impl GameState {
                 };
 
                 let berserker_bonus = if self.player.skill_tree.has_berserker() { 3 } else { 0 };
+                // FlowState: +1 damage per consecutive correct answer (max +5)
+                let flow_state_bonus = if self.player.skill_tree.has_flow_state() {
+                    (self.answer_streak as i32).min(5)
+                } else {
+                    0
+                };
                 let hit_dmg = 2
                     + self.player.bonus_damage()
                     + self.player.enchant_bonus_damage()
@@ -432,7 +438,8 @@ impl GameState {
                     + security_bonus
                     + synergy_dmg
                     + hard_answer_bonus
-                    + berserker_bonus;
+                    + berserker_bonus
+                    + flow_state_bonus;
 
                 self.answer_streak += 1;
                 if self.answer_streak > self.run_journal.max_combo {
@@ -461,6 +468,19 @@ impl GameState {
                     let e_hp = self.enemies[enemy_idx].hp;
                     let e_max_hp = self.enemies[enemy_idx].max_hp;
                     if e_hp * 100 < e_max_hp * 30 {
+                        (hit_dmg as f64 * 1.5).ceil() as i32
+                    } else {
+                        hit_dmg
+                    }
+                } else {
+                    hit_dmg
+                };
+                // Warmaster: +50% damage to stunned/slowed enemies
+                let hit_dmg = if self.player.skill_tree.has_warmaster() {
+                    let is_cc = self.enemies[enemy_idx].stunned
+                        || status::has_slow(&self.enemies[enemy_idx].statuses)
+                        || status::has_freeze(&self.enemies[enemy_idx].statuses);
+                    if is_cc {
                         (hit_dmg as f64 * 1.5).ceil() as i32
                     } else {
                         hit_dmg

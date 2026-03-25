@@ -551,14 +551,14 @@ pub const RECIPES: &[Recipe] = &[
         output_hanzi: "唱",
         output_pinyin: "chàng",
         output_meaning: "to sing",
-        effect: SpellEffect::FireAoe(3),
+        effect: SpellEffect::Cone(2),
     },
     Recipe {
         inputs: &["火", "山"],
         output_hanzi: "灿",
         output_pinyin: "càn",
         output_meaning: "glorious/radiant",
-        effect: SpellEffect::FireAoe(3),
+        effect: SpellEffect::FireAoe(4),
     },
     Recipe {
         inputs: &["日", "王"],
@@ -608,7 +608,7 @@ pub const RECIPES: &[Recipe] = &[
         output_hanzi: "李",
         output_pinyin: "lǐ",
         output_meaning: "plum tree",
-        effect: SpellEffect::Heal(2),
+        effect: SpellEffect::Heal(3),
     },
     Recipe {
         inputs: &["木", "目", "心"],
@@ -750,7 +750,7 @@ pub const RECIPES: &[Recipe] = &[
         output_hanzi: "看",
         output_pinyin: "kàn",
         output_meaning: "to look/watch",
-        effect: SpellEffect::StrongHit(3),
+        effect: SpellEffect::Reveal,
     },
     Recipe {
         inputs: &["女", "口"],
@@ -1353,6 +1353,102 @@ pub const RECIPES: &[Recipe] = &[
         output_pinyin: "shùn",
         output_meaning: "instant/blink",
         effect: SpellEffect::Blink(4),
+    },
+    // ── New Balance-Pass Recipes ─────────────────────────────────────────────
+    // Drain (common access — previously rare-only)
+    Recipe {
+        inputs: &["心", "水"],
+        output_hanzi: "沁",
+        output_pinyin: "qìn",
+        output_meaning: "to seep/permeate",
+        effect: SpellEffect::Drain(3),
+    },
+    Recipe {
+        inputs: &["月", "心"],
+        output_hanzi: "惺",
+        output_pinyin: "xīng",
+        output_meaning: "aware/astute",
+        effect: SpellEffect::Drain(4),
+    },
+    // Thorns (additional option)
+    Recipe {
+        inputs: &["金", "木"],
+        output_hanzi: "钉",
+        output_pinyin: "dīng",
+        output_meaning: "nail/spike",
+        effect: SpellEffect::Thorns(3),
+    },
+    // Fierce strike
+    Recipe {
+        inputs: &["火", "刀"],
+        output_hanzi: "烈",
+        output_pinyin: "liè",
+        output_meaning: "fierce/intense",
+        effect: SpellEffect::StrongHit(5),
+    },
+    // Tide (flood wave)
+    Recipe {
+        inputs: &["水", "月"],
+        output_hanzi: "潮",
+        output_pinyin: "cháo",
+        output_meaning: "tide/surge",
+        effect: SpellEffect::FloodWave(4),
+    },
+    // Mountain stream (heal)
+    Recipe {
+        inputs: &["山", "水"],
+        output_hanzi: "涧",
+        output_pinyin: "jiàn",
+        output_meaning: "mountain stream",
+        effect: SpellEffect::Heal(5),
+    },
+    // Mining focus
+    Recipe {
+        inputs: &["石", "金"],
+        output_hanzi: "矿",
+        output_pinyin: "kuàng",
+        output_meaning: "ore/mine",
+        effect: SpellEffect::FocusRestore(4),
+    },
+    // Mighty exertion
+    Recipe {
+        inputs: &["大", "力"],
+        output_hanzi: "奋",
+        output_pinyin: "fèn",
+        output_meaning: "to exert/strive",
+        effect: SpellEffect::StrongHit(6),
+    },
+    // Peaceful rest
+    Recipe {
+        inputs: &["木", "门"],
+        output_hanzi: "闲",
+        output_pinyin: "xián",
+        output_meaning: "leisure/rest",
+        effect: SpellEffect::Heal(4),
+    },
+    // Introspection
+    Recipe {
+        inputs: &["目", "心"],
+        output_hanzi: "省",
+        output_pinyin: "xǐng",
+        output_meaning: "to reflect/introspect",
+        effect: SpellEffect::FocusRestore(3),
+    },
+    // Float/blink
+    Recipe {
+        inputs: &["风", "小"],
+        output_hanzi: "飘",
+        output_pinyin: "piāo",
+        output_meaning: "to float/drift",
+        effect: SpellEffect::Blink(3),
+    },
+    // Fine steed (charge)
+    Recipe {
+        inputs: &["马", "大"],
+        output_hanzi: "骏",
+        output_pinyin: "jùn",
+        output_meaning: "fine horse/steed",
+        effect: SpellEffect::Charge(5),
     },
 ];
 

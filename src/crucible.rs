@@ -275,8 +275,8 @@ pub static CRUCIBLE_TEMPLATES: &[CrucibleTemplate] = &[
             },
             CrucibleNode {
                 name: "Counter Pulse",
-                description: "+1 bonus damage",
-                effect: CrucibleEffect::BonusDamage(1),
+                description: "+2 bonus damage",
+                effect: CrucibleEffect::BonusDamage(2),
                 xp_cost: 15,
             },
             CrucibleNode {
@@ -392,8 +392,8 @@ pub static CRUCIBLE_TEMPLATES: &[CrucibleTemplate] = &[
             },
             CrucibleNode {
                 name: "Economy Core",
-                description: "Heal 1 HP per kill",
-                effect: CrucibleEffect::HealOnKill(1),
+                description: "Heal 2 HP per kill",
+                effect: CrucibleEffect::HealOnKill(2),
                 xp_cost: 30,
             },
             CrucibleNode {
@@ -423,8 +423,8 @@ pub static CRUCIBLE_TEMPLATES: &[CrucibleTemplate] = &[
             },
             CrucibleNode {
                 name: "Repair Nanites",
-                description: "+2 max HP",
-                effect: CrucibleEffect::MaxHp(2),
+                description: "+3 max HP",
+                effect: CrucibleEffect::MaxHp(3),
                 xp_cost: 15,
             },
             CrucibleNode {

@@ -34,6 +34,10 @@ pub enum SkillEffect {
     IronWill,        // −1 damage taken from all sources (min 1)
     MidasTouch,      // gold drops doubled
     RadicalMagnet,   // always drop a radical on enemy kill
+    Warmaster,       // +50% damage to stunned/slowed enemies
+    ArcaneBarrier,   // gain armor equal to 50% of spell power
+    Scavenger,       // enemies always drop consumable items
+    FlowState,       // +1 damage per consecutive correct answer (max +5)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -93,8 +97,8 @@ pub struct SkillTree {
 pub const XP_NORMAL_KILL: u32 = 10;
 pub const XP_ELITE_KILL: u32 = 25;
 pub const XP_BOSS_KILL: u32 = 100;
-pub const XP_CORRECT_ANSWER: u32 = 5;
-pub const XP_HARD_BONUS: u32 = 5;
+pub const XP_CORRECT_ANSWER: u32 = 10;
+pub const XP_HARD_BONUS: u32 = 10;
 
 // ---------------------------------------------------------------------------
 // Static tree data — 41 nodes, 0-indexed
@@ -108,7 +112,7 @@ pub const XP_HARD_BONUS: u32 = 5;
 //
 // Main paths follow the axis; branches veer diagonally.
 
-static NODES: [SkillNode; 41] = [
+static NODES: [SkillNode; 45] = [
     // 0 — Start
     SkillNode {
         name: "Origin",
@@ -240,8 +244,8 @@ static NODES: [SkillNode; 41] = [
     //
     // Simplest: re-purpose index 10 as an extra bridge node.
     SkillNode {
-        name: "Warrior's Path",
-        description: "+1 damage",
+        name: "Warrior's Momentum",
+        description: "+1 damage, +5% crit chance",
         effect: SkillEffect::BonusDamage(1),
         is_notable: false,
         cluster: Cluster::Combat,
@@ -257,8 +261,8 @@ static NODES: [SkillNode; 41] = [
     // 11
     SkillNode {
         name: "Arcane Initiate",
-        description: "+1 spell power",
-        effect: SkillEffect::SpellPower(1),
+        description: "+2 spell power",
+        effect: SkillEffect::SpellPower(2),
         is_notable: false,
         cluster: Cluster::Scholar,
         pos: (0, -1),
@@ -266,8 +270,8 @@ static NODES: [SkillNode; 41] = [
     // 12
     SkillNode {
         name: "Mental Fortitude",
-        description: "+5 max focus",
-        effect: SkillEffect::MaxFocus(5),
+        description: "+10 max focus",
+        effect: SkillEffect::MaxFocus(10),
         is_notable: false,
         cluster: Cluster::Scholar,
         pos: (0, -2),
@@ -311,8 +315,8 @@ static NODES: [SkillNode; 41] = [
     // 17
     SkillNode {
         name: "Expanded Mind",
-        description: "+5 max focus",
-        effect: SkillEffect::MaxFocus(5),
+        description: "+10 max focus",
+        effect: SkillEffect::MaxFocus(10),
         is_notable: false,
         cluster: Cluster::Scholar,
         pos: (2, -5),
@@ -338,8 +342,8 @@ static NODES: [SkillNode; 41] = [
     // 20 — extra small
     SkillNode {
         name: "Scholar's Insight",
-        description: "+1 spell power",
-        effect: SkillEffect::SpellPower(1),
+        description: "+3 spell power",
+        effect: SkillEffect::SpellPower(3),
         is_notable: false,
         cluster: Cluster::Scholar,
         pos: (3, -4),
@@ -399,8 +403,8 @@ static NODES: [SkillNode; 41] = [
     // 26 (branch from 23)
     SkillNode {
         name: "Endurance",
-        description: "+3 max HP",
-        effect: SkillEffect::MaxHp(3),
+        description: "+5 max HP",
+        effect: SkillEffect::MaxHp(5),
         is_notable: false,
         cluster: Cluster::Survival,
         pos: (-4, 1),
@@ -435,8 +439,8 @@ static NODES: [SkillNode; 41] = [
     // 30 — extra small
     SkillNode {
         name: "Survivor's Grit",
-        description: "+3 max HP",
-        effect: SkillEffect::MaxHp(3),
+        description: "+4 max HP",
+        effect: SkillEffect::MaxHp(4),
         is_notable: false,
         cluster: Cluster::Survival,
         pos: (-6, 1),
@@ -532,11 +536,51 @@ static NODES: [SkillNode; 41] = [
     // 40 — extra small
     SkillNode {
         name: "Fortune's Favor",
-        description: "+10% gold find",
-        effect: SkillEffect::GoldFind(10),
+        description: "+10% better item rarity",
+        effect: SkillEffect::ItemRarityBonus(10),
         is_notable: false,
         cluster: Cluster::Fortune,
         pos: (-3, 4),
+    },
+
+    // -----------------------------------------------------------------------
+    // Extended notables — one per cluster, branching off the extra nodes
+    // -----------------------------------------------------------------------
+    // 41 — Combat: Warmaster (off node 10)
+    SkillNode {
+        name: "Warmaster",
+        description: "+50% damage to stunned/slowed enemies",
+        effect: SkillEffect::Warmaster,
+        is_notable: true,
+        cluster: Cluster::Combat,
+        pos: (7, -2),
+    },
+    // 42 — Scholar: Flow State (off node 20)
+    SkillNode {
+        name: "Flow State",
+        description: "+1 damage per consecutive correct answer (max +5)",
+        effect: SkillEffect::FlowState,
+        is_notable: true,
+        cluster: Cluster::Scholar,
+        pos: (4, -5),
+    },
+    // 43 — Survival: Arcane Barrier (off node 30)
+    SkillNode {
+        name: "Arcane Barrier",
+        description: "Gain armor equal to 50% of spell power",
+        effect: SkillEffect::ArcaneBarrier,
+        is_notable: true,
+        cluster: Cluster::Survival,
+        pos: (-7, 2),
+    },
+    // 44 — Fortune: Scavenger (off node 40)
+    SkillNode {
+        name: "Scavenger",
+        description: "Enemies always drop consumable items",
+        effect: SkillEffect::Scavenger,
+        is_notable: true,
+        cluster: Cluster::Fortune,
+        pos: (-4, 5),
     },
 ];
 
@@ -544,7 +588,7 @@ static NODES: [SkillNode; 41] = [
 // Edge list (adjacency). Symmetric — if A connects to B, B connects to A.
 // ---------------------------------------------------------------------------
 
-static EDGES: [&[usize]; 41] = [
+static EDGES: [&[usize]; 45] = [
     // 0  Start — connects to first node of each cluster
     &[1, 11, 21, 31],
     // Combat main path
@@ -558,7 +602,7 @@ static EDGES: [&[usize]; 41] = [
     &[6, 8],          // 7
     &[7, 9, 10],      // 8
     &[8],             // 9  Executioner (terminal)
-    &[8],             // 10 extra small (terminal off 8)
+    &[8, 41],         // 10 extra small → Warmaster
     // Scholar main path
     &[0, 12],         // 11
     &[11, 13],        // 12
@@ -570,7 +614,7 @@ static EDGES: [&[usize]; 41] = [
     &[16, 18, 20],    // 17
     &[17, 19],        // 18
     &[18],            // 19 Linguist's Fury (terminal)
-    &[17],            // 20 extra small (terminal off 17)
+    &[17, 42],        // 20 extra small → Flow State
     // Survival main path
     &[0, 22],         // 21
     &[21, 23],        // 22
@@ -582,7 +626,7 @@ static EDGES: [&[usize]; 41] = [
     &[26, 28, 30],    // 27
     &[27, 29],        // 28
     &[28],            // 29 Iron Will (terminal)
-    &[27],            // 30 extra small (terminal off 27)
+    &[27, 43],        // 30 extra small → Arcane Barrier
     // Fortune main path
     &[0, 32],         // 31
     &[31, 33],        // 32
@@ -594,7 +638,12 @@ static EDGES: [&[usize]; 41] = [
     &[36, 38, 40],    // 37
     &[37, 39],        // 38
     &[38],            // 39 Radical Magnet (terminal)
-    &[37],            // 40 extra small (terminal off 37)
+    &[37, 44],        // 40 extra small → Scavenger
+    // Extended notables
+    &[10],            // 41 Warmaster (terminal)
+    &[20],            // 42 Flow State (terminal)
+    &[30],            // 43 Arcane Barrier (terminal)
+    &[40],            // 44 Scavenger (terminal)
 ];
 
 pub static SKILL_TREE: SkillTree = SkillTree {
@@ -725,6 +774,18 @@ impl SkillTreeState {
     pub fn has_radical_magnet(&self) -> bool {
         self.has_notable(|e| matches!(e, SkillEffect::RadicalMagnet))
     }
+    pub fn has_warmaster(&self) -> bool {
+        self.has_notable(|e| matches!(e, SkillEffect::Warmaster))
+    }
+    pub fn has_arcane_barrier(&self) -> bool {
+        self.has_notable(|e| matches!(e, SkillEffect::ArcaneBarrier))
+    }
+    pub fn has_scavenger(&self) -> bool {
+        self.has_notable(|e| matches!(e, SkillEffect::Scavenger))
+    }
+    pub fn has_flow_state(&self) -> bool {
+        self.has_notable(|e| matches!(e, SkillEffect::FlowState))
+    }
 
     // -- Aggregate stat helpers --------------------------------------------
 
@@ -756,6 +817,10 @@ impl SkillTreeState {
         if self.has_berserker() {
             total -= 1;
         }
+        // ArcaneBarrier: gain armor equal to 50% of spell power
+        if self.has_arcane_barrier() {
+            total += self.total_spell_power() / 2;
+        }
         total
     }
 
@@ -773,7 +838,6 @@ impl SkillTreeState {
         })
     }
 
-    #[allow(dead_code)]
     pub fn total_spell_power(&self) -> i32 {
         self.sum_effect(|e| match e {
             SkillEffect::SpellPower(v) => *v,
@@ -937,8 +1001,8 @@ mod tests {
 
     #[test]
     fn tree_has_41_nodes() {
-        assert_eq!(SKILL_TREE.nodes.len(), 41);
-        assert_eq!(SKILL_TREE.edges.len(), 41);
+        assert_eq!(SKILL_TREE.nodes.len(), 45);
+        assert_eq!(SKILL_TREE.edges.len(), 45);
     }
 
     #[test]
@@ -1167,8 +1231,8 @@ mod tests {
         s.allocate(12);
         s.allocate(13);
         s.allocate(14);
-        assert_eq!(s.total_spell_power(), 2); // 1 + 1
-        assert_eq!(s.total_max_focus(), 5);
+        assert_eq!(s.total_spell_power(), 3); // 2 + 1
+        assert_eq!(s.total_max_focus(), 10);
         assert_eq!(s.total_focus_regen(), 1);
     }
 
@@ -1272,9 +1336,9 @@ mod tests {
         // Earn XP from a few encounters
         s.gain_xp(XP_BOSS_KILL);                       // 100 → level 1
         s.gain_xp(XP_ELITE_KILL);                      // 125
-        s.gain_xp(XP_CORRECT_ANSWER + XP_HARD_BONUS);  // 135
-        s.gain_xp(XP_NORMAL_KILL * 10);                 // 235
-        s.gain_xp(XP_BOSS_KILL);                        // 335 → level 2
+        s.gain_xp(XP_CORRECT_ANSWER + XP_HARD_BONUS);  // 145
+        s.gain_xp(XP_NORMAL_KILL * 10);                 // 245
+        s.gain_xp(XP_BOSS_KILL);                        // 345 → level 2
         assert_eq!(s.level, 2);
         assert_eq!(s.skill_points, 2);
 
@@ -1284,8 +1348,8 @@ mod tests {
         assert_eq!(s.total_bonus_damage(), 2);
         assert_eq!(s.skill_points, 0);
 
-        // Earn more XP, reach level 3 (need 600 cumulative, have 335)
-        s.gain_xp(265); // 600
+        // Earn more XP, reach level 3 (need 600 cumulative, have 345)
+        s.gain_xp(255); // 600
         assert_eq!(s.level, 3);
         assert!(s.allocate(3));
 

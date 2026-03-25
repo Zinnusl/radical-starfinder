@@ -1733,5 +1733,129 @@ pub fn apply_player_radical_ability(
                 .retain(|s| !s.is_negative());
             format!("{} — Purified! +3 Focus, debuffs cleared!", ability.name())
         }
+        PlayerRadicalAbility::Galeforce => {
+            let px = battle.units[attacker_idx].x;
+            let py = battle.units[attacker_idx].y;
+            let enemies: Vec<usize> = (1..battle.units.len())
+                .filter(|&i| {
+                    battle.units[i].alive
+                        && battle.units[i].is_enemy()
+                        && (battle.units[i].x - px).abs() + (battle.units[i].y - py).abs() <= 1
+                })
+                .collect();
+            let mut pushed = 0;
+            for ei in enemies {
+                let dx = (battle.units[ei].x - px).signum();
+                let dy = (battle.units[ei].y - py).signum();
+                let nx = battle.units[ei].x + dx;
+                let ny = battle.units[ei].y + dy;
+                if nx >= 0
+                    && ny >= 0
+                    && nx < battle.arena.width as i32
+                    && ny < battle.arena.height as i32
+                    && battle
+                        .arena
+                        .tile(nx, ny)
+                        .map(|t| t.is_walkable())
+                        .unwrap_or(false)
+                    && battle.unit_at(nx, ny).is_none()
+                {
+                    battle.units[ei].x = nx;
+                    battle.units[ei].y = ny;
+                    pushed += 1;
+                }
+            }
+            format!("{} — Gale blast! Pushed {} enemies!", ability.name(), pushed)
+        }
+        PlayerRadicalAbility::QiSurge => {
+            battle.focus = (battle.focus + 5).min(battle.max_focus);
+            battle.units[attacker_idx]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Empowered { amount: 1 }, 2));
+            format!("{} — Qi restored! +5 Focus, +1 power for 2 turns!", ability.name())
+        }
+        PlayerRadicalAbility::Echolocation => {
+            let mut revealed = 0;
+            for i in 1..battle.units.len() {
+                if battle.units[i].alive && battle.units[i].is_enemy() {
+                    battle.units[i]
+                        .statuses
+                        .push(StatusInstance::new(StatusKind::Revealed, 3));
+                    revealed += 1;
+                }
+            }
+            format!("{} — {} enemies revealed for 3 turns!", ability.name(), revealed)
+        }
+        PlayerRadicalAbility::Undertow => {
+            if target_alive {
+                let tx = battle.units[target_idx].x;
+                let ty = battle.units[target_idx].y;
+                battle
+                    .arena
+                    .set_tile(tx, ty, crate::combat::BattleTile::CoolantPool);
+                let px = battle.units[attacker_idx].x;
+                let py = battle.units[attacker_idx].y;
+                let dx = (tx - px).signum();
+                let dy = (ty - py).signum();
+                for _ in 0..2 {
+                    let nx = battle.units[target_idx].x + dx;
+                    let ny = battle.units[target_idx].y + dy;
+                    if nx >= 0
+                        && ny >= 0
+                        && nx < battle.arena.width as i32
+                        && ny < battle.arena.height as i32
+                        && battle
+                            .arena
+                            .tile(nx, ny)
+                            .map(|t| t.is_walkable())
+                            .unwrap_or(false)
+                        && battle.unit_at(nx, ny).is_none()
+                    {
+                        battle.units[target_idx].x = nx;
+                        battle.units[target_idx].y = ny;
+                    } else {
+                        break;
+                    }
+                }
+                format!("{} — Water surges! Target pushed!", ability.name())
+            } else {
+                format!("{} — No target.", ability.name())
+            }
+        }
+        PlayerRadicalAbility::BoneBreaker => {
+            if target_alive {
+                battle.units[target_idx].radical_armor = 0;
+                battle.units[target_idx].fortify_stacks = 0;
+            }
+            let actual = deal_damage(battle, target_idx, 3);
+            format!("{} — Bones shattered! Armor broken, {} damage!", ability.name(), actual)
+        }
+        PlayerRadicalAbility::RamStrike => {
+            if target_alive {
+                battle.units[target_idx].stunned = true;
+            }
+            let actual = deal_damage(battle, target_idx, 2);
+            format!("{} — Ram strike! {} damage + stunned!", ability.name(), actual)
+        }
+        PlayerRadicalAbility::Discern => {
+            if target_alive {
+                battle.units[target_idx].radical_armor = 0;
+                battle.units[target_idx].fortify_stacks = 0;
+                battle.units[target_idx].radical_dodge = false;
+                battle.units[target_idx].radical_counter = false;
+                battle.units[target_idx].thorn_armor_turns = 0;
+                battle.units[target_idx]
+                    .statuses
+                    .retain(|s| s.is_negative());
+            }
+            format!("{} — Target exposed! All buffs removed!", ability.name())
+        }
+        PlayerRadicalAbility::IronForm => {
+            battle.units[attacker_idx].radical_armor += 3;
+            battle.units[attacker_idx]
+                .statuses
+                .push(StatusInstance::new(StatusKind::Rooted, 2));
+            format!("{} — Iron form! +3 armor, rooted!", ability.name())
+        }
     }
 }
