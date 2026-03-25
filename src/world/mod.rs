@@ -7,6 +7,7 @@ pub mod starmap;
 pub mod ship;
 // TODO: create during integration
 pub mod events;
+pub mod dialogue;
 
 pub use fov::compute_fov;
 

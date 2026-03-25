@@ -1853,4 +1853,68 @@ impl super::Renderer {
             )
             .ok();
     }
+
+    pub fn draw_dungeon_dialogue(
+        &self,
+        dialogue: &crate::world::dialogue::DungeonDialogue,
+        cursor: usize,
+    ) {
+        let box_w = 420.0;
+        let box_h = 280.0;
+        let box_x = (self.canvas_w - box_w) / 2.0;
+        let box_y = 40.0;
+
+        // Background
+        self.ctx.set_fill_style_str("rgba(8,6,18,0.97)");
+        self.ctx.fill_rect(box_x, box_y, box_w, box_h);
+        self.ctx.set_stroke_style_str("rgba(100,200,255,0.6)");
+        self.ctx.set_line_width(2.0);
+        self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+        // Title
+        self.ctx.set_fill_style_str("#64c8ff");
+        self.ctx.set_font("bold 16px monospace");
+        self.ctx.set_text_align("left");
+        let _ = self.ctx.fill_text(
+            &format!("\u{26a1} {} \u{2014} {}", dialogue.title, dialogue.chinese_title),
+            box_x + 12.0,
+            box_y + 28.0,
+        );
+
+        // Description (word-wrapped)
+        self.ctx.set_fill_style_str("#c0c0c0");
+        self.ctx.set_font("13px monospace");
+        let lines = word_wrap(dialogue.description, 48);
+        for (i, line) in lines.iter().enumerate() {
+            let _ = self.ctx.fill_text(line, box_x + 12.0, box_y + 54.0 + i as f64 * 18.0);
+        }
+
+        // Choices
+        let choices_start_y = box_y + 54.0 + lines.len() as f64 * 18.0 + 16.0;
+        for (i, choice) in dialogue.choices.iter().enumerate() {
+            let is_selected = i == cursor;
+            let prefix = if is_selected { "\u{25b8} " } else { "  " };
+
+            if is_selected {
+                self.ctx.set_fill_style_str("#ffcc00");
+            } else {
+                self.ctx.set_fill_style_str("#a0a0a0");
+            }
+            self.ctx.set_font("13px monospace");
+            let _ = self.ctx.fill_text(
+                &format!("{}{}", prefix, choice.text),
+                box_x + 12.0,
+                choices_start_y + i as f64 * 36.0,
+            );
+
+            // Chinese hint below choice
+            self.ctx.set_fill_style_str("rgba(100,200,255,0.5)");
+            self.ctx.set_font("11px monospace");
+            let _ = self.ctx.fill_text(
+                &format!("    {}", choice.chinese_hint),
+                box_x + 12.0,
+                choices_start_y + i as f64 * 36.0 + 16.0,
+            );
+        }
+    }
 }

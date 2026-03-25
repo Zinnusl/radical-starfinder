@@ -40,6 +40,7 @@ mod serialization;
 mod shop;
 mod space_combat;
 mod ui_state;
+mod dungeon_events;
 
 pub(crate) use events::*;
 pub use shop::*;
@@ -188,6 +189,10 @@ pub struct GameState {
     pub event_choice_cursor: usize,
     /// Persistent consequence tracking for events
     pub event_memory: EventMemory,
+    /// Current dungeon dialogue index (if in DungeonEvent mode)
+    pub current_dungeon_dialogue: Option<usize>,
+    /// Cursor for dungeon dialogue choice selection
+    pub dungeon_dialogue_cursor: usize,
     /// Player position inside ship
     pub ship_player_x: i32,
     pub ship_player_y: i32,
@@ -834,6 +839,8 @@ pub fn init_game() -> Result<(), JsValue> {
         current_event: None,
         event_choice_cursor: 0,
         event_memory: EventMemory::default(),
+        current_dungeon_dialogue: None,
+        dungeon_dialogue_cursor: 0,
         ship_player_x: 11,
         ship_player_y: 16,
         starmap_cursor: 0,
@@ -1625,6 +1632,44 @@ pub fn init_game() -> Result<(), JsValue> {
                                     s.current_event = None;
                                     s.event_choice_cursor = 0;
                                     s.game_mode = GameMode::Starmap;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    s.render();
+                    return;
+                }
+                GameMode::DungeonEvent => {
+                    event.prevent_default();
+                    if let Some(dlg_idx) = s.current_dungeon_dialogue {
+                        if let Some(dlg) = crate::world::dialogue::ALL_DUNGEON_DIALOGUES.get(dlg_idx) {
+                            let num_choices = dlg.choices.len();
+                            match key.as_str() {
+                                "ArrowUp" | "w" | "W" => {
+                                    if s.dungeon_dialogue_cursor > 0 {
+                                        s.dungeon_dialogue_cursor -= 1;
+                                    }
+                                }
+                                "ArrowDown" | "s" | "S" => {
+                                    if s.dungeon_dialogue_cursor + 1 < num_choices {
+                                        s.dungeon_dialogue_cursor += 1;
+                                    }
+                                }
+                                "Enter" | " " => {
+                                    let choice = &dlg.choices[s.dungeon_dialogue_cursor];
+                                    let outcome = choice.outcome.clone();
+                                    let result = dungeon_events::apply_dungeon_outcome(&mut *s, &outcome);
+                                    s.message = result;
+                                    s.message_timer = 120;
+                                    s.current_dungeon_dialogue = None;
+                                    s.dungeon_dialogue_cursor = 0;
+                                    s.game_mode = GameMode::LocationExploration;
+                                }
+                                "Escape" => {
+                                    s.current_dungeon_dialogue = None;
+                                    s.dungeon_dialogue_cursor = 0;
+                                    s.game_mode = GameMode::LocationExploration;
                                 }
                                 _ => {}
                             }
