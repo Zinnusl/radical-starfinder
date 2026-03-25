@@ -338,10 +338,10 @@ impl GameState {
                     }
                 }
 
-                // Skill tree XP: +5 for correct answer, +5 extra for hard
-                self.player.skill_tree.gain_xp(5);
+                // Skill tree XP: correct answer + extra for hard
+                self.player.skill_tree.gain_xp(crate::skill_tree::XP_CORRECT_ANSWER);
                 if is_hard {
-                    self.player.skill_tree.gain_xp(5);
+                    self.player.skill_tree.gain_xp(crate::skill_tree::XP_HARD_BONUS);
                 }
 
                 // Crucible XP: +1 per correct answer, +3 for hard
@@ -405,6 +405,10 @@ impl GameState {
                     if self.player.has_set_bonus(|b| matches!(b, crate::player::SetBonus::ScholarsTrinity)) {
                         bonus += 2;
                     }
+                    // Affix hard answer bonus
+                    bonus += crate::rarity::total_affix_hard_answer_damage(&self.player.weapon_affixes)
+                        + crate::rarity::total_affix_hard_answer_damage(&self.player.armor_affixes)
+                        + crate::rarity::total_affix_hard_answer_damage(&self.player.charm_affixes);
                     // Crucible hard answer bonus
                     bonus += crate::crucible::aggregate_hard_answer_damage(
                         &[&self.player.weapon_crucible, &self.player.armor_crucible, &self.player.charm_crucible],
@@ -877,7 +881,13 @@ impl GameState {
                     self.add_companion_xp(kill_xp);
 
                     // Skill tree XP on kill
-                    let skill_kill_xp = if e_is_boss { 100 } else if e_is_elite { 25 } else { 10 };
+                    let skill_kill_xp = if e_is_boss {
+                        crate::skill_tree::XP_BOSS_KILL
+                    } else if e_is_elite {
+                        crate::skill_tree::XP_ELITE_KILL
+                    } else {
+                        crate::skill_tree::XP_NORMAL_KILL
+                    };
                     self.player.skill_tree.gain_xp(skill_kill_xp);
 
                     // Crucible XP on kill

@@ -1583,13 +1583,11 @@ impl super::Renderer {
             )
             .ok();
 
-        // XP bar
-        let prev_boundary = level * (level + 1) / 2 * 100;
-        let next_boundary = (level + 1) * (level + 2) / 2 * 100;
-        let level_span = next_boundary - prev_boundary;
-        let level_xp = player.skill_tree.xp.saturating_sub(prev_boundary);
+        // XP bar — use xp_for_next_level() for remaining XP
+        let level_span = (level + 1) * 100;
+        let xp_remaining = player.skill_tree.xp_for_next_level();
         let xp_frac = if level_span > 0 {
-            (level_xp as f64 / level_span as f64).clamp(0.0, 1.0)
+            (1.0 - xp_remaining as f64 / level_span as f64).clamp(0.0, 1.0)
         } else {
             0.0
         };

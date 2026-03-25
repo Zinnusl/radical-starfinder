@@ -52,16 +52,29 @@ impl super::GameState {
         }
 
         // Offer 1 random equipment with rarity
-        let eq_idx = self.rng_next() as usize % EQUIPMENT_POOL.len();
-        let eq = &EQUIPMENT_POOL[eq_idx];
         let luck_bonus = self.player.skill_tree.total_item_rarity_bonus();
         let rarity = crate::rarity::roll_rarity(self.floor_num, luck_bonus, self.rng_next());
-        let affixes = crate::rarity::roll_affixes(rarity, self.rng_next());
-        let display = crate::rarity::rarity_name(eq.name, rarity, &affixes);
-        let rarity_tag = match rarity {
-            ItemRarity::Normal => "".to_string(),
-            _ => format!(" [{}]", rarity.label()),
+        let (eq_idx, display, rarity_tag, affixes) = if rarity == ItemRarity::Unique {
+            // Unique rarity: pick a unique item and match to a base equipment by slot
+            let unique = crate::rarity::roll_unique(self.rng_next());
+            let idx = EQUIPMENT_POOL
+                .iter()
+                .position(|e| e.slot == unique.base_slot)
+                .unwrap_or(0);
+            let tag = format!(" [{}]", rarity.label());
+            (idx, unique.name.to_string(), tag, vec![])
+        } else {
+            let idx = self.rng_next() as usize % EQUIPMENT_POOL.len();
+            let eq = &EQUIPMENT_POOL[idx];
+            let rolled = crate::rarity::roll_affixes(rarity, self.rng_next());
+            let name = crate::rarity::rarity_name(eq.name, rarity, &rolled);
+            let tag = match rarity {
+                ItemRarity::Normal => "".to_string(),
+                _ => format!(" [{}]", rarity.label()),
+            };
+            (idx, name, tag, rolled)
         };
+        let eq = &EQUIPMENT_POOL[eq_idx];
         items.push(ShopItem {
             label: format!("{}{} ({:?})", display, rarity_tag, eq.slot),
             cost: 20 + self.floor_num * 5,

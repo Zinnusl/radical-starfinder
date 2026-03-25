@@ -26,6 +26,7 @@ impl super::GameState {
         self.save_stats();
         self.srs = crate::srs::load_srs();
         self.player = Player::new(0, 0, PlayerClass::Envoy);
+        self.player.skill_tree.reset_run();
         self.floor_num = 0;
         self.run_kills = 0;
         self.run_gold_earned = 0;

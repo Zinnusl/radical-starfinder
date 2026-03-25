@@ -270,6 +270,7 @@ pub fn rarity_name(base_name: &str, rarity: ItemRarity, affixes: &[RolledAffix])
 // Unique equipment
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum UniqueEffect {
     BonusDamage(i32),
@@ -293,7 +294,9 @@ pub enum UniqueEffect {
 pub struct UniqueEquipment {
     pub name: &'static str,
     pub base_slot: EquipSlot,
+    #[allow(dead_code)]
     pub lore: &'static str,
+    #[allow(dead_code)]
     pub effects: &'static [UniqueEffect],
 }
 
@@ -373,6 +376,7 @@ pub static UNIQUE_POOL: &[UniqueEquipment] = &[
 ];
 
 /// Look up a unique equipment definition by name.
+#[allow(dead_code)]
 pub fn find_unique(name: &str) -> Option<&'static UniqueEquipment> {
     UNIQUE_POOL.iter().find(|u| u.name == name)
 }
@@ -407,14 +411,17 @@ pub fn total_affix_crit(affixes: &[RolledAffix]) -> i32 {
     sum_affix(affixes, |e| match e { AffixEffect::CritChance(v) => *v, _ => 0 })
 }
 
+#[allow(dead_code)]
 pub fn total_affix_spell_power(affixes: &[RolledAffix]) -> i32 {
     sum_affix(affixes, |e| match e { AffixEffect::SpellPower(v) => *v, _ => 0 })
 }
 
+#[allow(dead_code)]
 pub fn total_affix_lifesteal(affixes: &[RolledAffix]) -> i32 {
     sum_affix(affixes, |e| match e { AffixEffect::LifeSteal(v) => *v, _ => 0 })
 }
 
+#[allow(dead_code)]
 pub fn total_affix_focus_regen(affixes: &[RolledAffix]) -> i32 {
     sum_affix(affixes, |e| match e { AffixEffect::FocusRegen(v) => *v, _ => 0 })
 }

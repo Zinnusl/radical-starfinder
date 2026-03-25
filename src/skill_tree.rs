@@ -56,6 +56,7 @@ impl Cluster {
         }
     }
 
+    #[allow(dead_code)]
     pub fn name(&self) -> &'static str {
         match self {
             Cluster::Start    => "Start",
@@ -75,6 +76,7 @@ pub struct SkillNode {
     pub is_notable: bool,
     pub cluster: Cluster,
     /// Grid position for rendering (x, y) relative to center.
+    #[allow(dead_code)]
     pub pos: (i32, i32),
 }
 
@@ -771,6 +773,7 @@ impl SkillTreeState {
         })
     }
 
+    #[allow(dead_code)]
     pub fn total_spell_power(&self) -> i32 {
         self.sum_effect(|e| match e {
             SkillEffect::SpellPower(v) => *v,
@@ -778,6 +781,7 @@ impl SkillTreeState {
         })
     }
 
+    #[allow(dead_code)]
     pub fn total_max_focus(&self) -> i32 {
         self.sum_effect(|e| match e {
             SkillEffect::MaxFocus(v) => *v,
@@ -785,6 +789,7 @@ impl SkillTreeState {
         })
     }
 
+    #[allow(dead_code)]
     pub fn total_focus_regen(&self) -> i32 {
         self.sum_effect(|e| match e {
             SkillEffect::FocusRegen(v) => *v,

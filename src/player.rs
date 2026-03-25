@@ -1456,7 +1456,10 @@ impl Player {
         };
         let affix = crate::rarity::total_affix_armor(&self.weapon_affixes)
             + crate::rarity::total_affix_armor(&self.armor_affixes)
-            + crate::rarity::total_affix_armor(&self.charm_affixes);
+            + crate::rarity::total_affix_armor(&self.charm_affixes)
+            + crate::rarity::total_affix_damage_reduction(&self.weapon_affixes)
+            + crate::rarity::total_affix_damage_reduction(&self.armor_affixes)
+            + crate::rarity::total_affix_damage_reduction(&self.charm_affixes);
         let skill = self.skill_tree.total_bonus_armor();
         let crucible = crate::crucible::aggregate_bonus_armor(
             &[&self.weapon_crucible, &self.armor_crucible, &self.charm_crucible],
@@ -1566,6 +1569,7 @@ impl Player {
         (self.max_hp + self.max_hp_bonus()).max(1)
     }
 
+    #[allow(dead_code)]
     pub fn equip(&mut self, equipment: &'static Equipment, state: ItemState) {
         let crucible = CrucibleState::for_equipment(equipment);
         match equipment.slot {

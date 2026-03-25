@@ -148,7 +148,7 @@ impl GameState {
     /// Generate a random item appropriate for the current floor.
     pub(super) fn random_item(&mut self) -> crate::player::Item {
         use crate::player::Item;
-        match self.rng_next() % 32 {
+        match self.rng_next() % 35 {
             0 => Item::MedHypo(4 + self.floor_num),
             1 => Item::ToxinGrenade(2, 3),
             2 => Item::ScannerPulse,
@@ -179,6 +179,9 @@ impl GameState {
             28 => Item::SonicEmitter(2),
             29 => Item::CircuitInk,
             30 => Item::DataCore(5),
+            31 => Item::AdrenalineInjector,
+            32 => Item::GamblersChip,
+            33 => Item::OverchargeCell,
             _ => Item::ThrusterPack,
         }
     }
