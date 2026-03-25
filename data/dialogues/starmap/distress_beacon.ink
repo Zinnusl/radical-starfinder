@@ -1,4 +1,4 @@
-=== DISTRESS_BEACON ===
+=== EVENT_DISTRESS_BEACON ===
 # id: 0
 # title: Distress Beacon
 # chinese_title: 求救信号
