@@ -5,6 +5,9 @@ use web_sys::window;
 use super::*;
 use crate::player::{Player, PlayerClass};
 use crate::radical;
+use crate::skill_tree::SkillTreeState;
+use crate::crucible::CrucibleState;
+use crate::rarity::{ItemRarity, affixes_to_json, affixes_from_json};
 
 pub(crate) fn parse_i32(map: &HashMap<String, String>, key: &str, default: i32) -> i32 {
     map.get(key).and_then(|v| v.parse().ok()).unwrap_or(default)
@@ -156,6 +159,24 @@ impl super::GameState {
 
         // Number of crew
         save.push_str(&format!("crew_count={}\n", self.crew.len()));
+
+        // Skill tree
+        save.push_str(&format!("skill_tree={}\n", self.player.skill_tree.to_json()));
+
+        // Crucible states
+        save.push_str(&format!("weapon_crucible={}\n", self.player.weapon_crucible.to_json()));
+        save.push_str(&format!("armor_crucible={}\n", self.player.armor_crucible.to_json()));
+        save.push_str(&format!("charm_crucible={}\n", self.player.charm_crucible.to_json()));
+
+        // Equipment rarity
+        save.push_str(&format!("weapon_rarity={}\n", self.player.weapon_rarity.to_json()));
+        save.push_str(&format!("armor_rarity={}\n", self.player.armor_rarity.to_json()));
+        save.push_str(&format!("charm_rarity={}\n", self.player.charm_rarity.to_json()));
+
+        // Equipment affixes
+        save.push_str(&format!("weapon_affixes={}\n", affixes_to_json(&self.player.weapon_affixes)));
+        save.push_str(&format!("armor_affixes={}\n", affixes_to_json(&self.player.armor_affixes)));
+        save.push_str(&format!("charm_affixes={}\n", affixes_to_json(&self.player.charm_affixes)));
 
         storage.set_item("radical_starfinder_save", &save).ok();
     }

@@ -103,6 +103,10 @@ pub struct GameState {
     pub inventory_cursor: usize,
     pub inventory_inspect: Option<usize>,
     pub show_spellbook: bool,
+    pub show_skill_tree: bool,
+    pub skill_tree_cursor: usize,
+    pub show_crucible: bool,
+    pub crucible_cursor: usize,
     pub show_help: bool,
     pub show_minimap: bool,
     item_appearance_order: [usize; ITEM_KIND_COUNT],
@@ -521,7 +525,7 @@ impl GameState {
                 }
             }
             Companion::Medic => {
-                if self.player.hp <= self.player.max_hp / 3 {
+                if self.player.hp <= self.player.effective_max_hp() / 3 {
                     let mut shrine_visible = false;
                     for y in 0..h {
                         for x in 0..w {
@@ -731,8 +735,12 @@ pub fn init_game() -> Result<(), JsValue> {
         show_inventory: false,
         inventory_cursor: 0,
         inventory_inspect: None,
-        show_spellbook: false,
-        show_help: false,
+            show_spellbook: false,
+            show_skill_tree: false,
+            skill_tree_cursor: 0,
+            show_crucible: false,
+            crucible_cursor: 0,
+            show_help: false,
         show_minimap: true,
         item_appearance_order,
         identified_items: [false; ITEM_KIND_COUNT],
@@ -1014,6 +1022,47 @@ pub fn init_game() -> Result<(), JsValue> {
                                         s.total_kills = parse_u32(&save_data, "kills", s.total_kills);
                                         s.total_runs = parse_u32(&save_data, "runs", s.total_runs);
                                         s.seed = parse_u64(&save_data, "seed", s.seed);
+
+                                        // Skill tree
+                                        if let Some(st_json) = save_data.get("skill_tree") {
+                                            if let Some(st) = crate::skill_tree::SkillTreeState::from_json(st_json) {
+                                                s.player.skill_tree = st;
+                                            }
+                                        }
+
+                                        // Crucible states
+                                        if let Some(json) = save_data.get("weapon_crucible") {
+                                            s.player.weapon_crucible = crate::crucible::CrucibleState::from_json(json);
+                                        }
+                                        if let Some(json) = save_data.get("armor_crucible") {
+                                            s.player.armor_crucible = crate::crucible::CrucibleState::from_json(json);
+                                        }
+                                        if let Some(json) = save_data.get("charm_crucible") {
+                                            s.player.charm_crucible = crate::crucible::CrucibleState::from_json(json);
+                                        }
+
+                                        // Equipment rarity
+                                        if let Some(json) = save_data.get("weapon_rarity") {
+                                            s.player.weapon_rarity = crate::rarity::ItemRarity::from_json(json);
+                                        }
+                                        if let Some(json) = save_data.get("armor_rarity") {
+                                            s.player.armor_rarity = crate::rarity::ItemRarity::from_json(json);
+                                        }
+                                        if let Some(json) = save_data.get("charm_rarity") {
+                                            s.player.charm_rarity = crate::rarity::ItemRarity::from_json(json);
+                                        }
+
+                                        // Equipment affixes
+                                        if let Some(json) = save_data.get("weapon_affixes") {
+                                            s.player.weapon_affixes = crate::rarity::affixes_from_json(json);
+                                        }
+                                        if let Some(json) = save_data.get("armor_affixes") {
+                                            s.player.armor_affixes = crate::rarity::affixes_from_json(json);
+                                        }
+                                        if let Some(json) = save_data.get("charm_affixes") {
+                                            s.player.charm_affixes = crate::rarity::affixes_from_json(json);
+                                        }
+
                                         s.show_class_select = false;
                                         s.class_selected = true;
                                         s.message = "Welcome back, Commander!".to_string();
@@ -1216,7 +1265,7 @@ pub fn init_game() -> Result<(), JsValue> {
                             // Apply location entry bonuses
                             match current_loc_type {
                                 crate::world::LocationType::SpaceStation => {
-                                    s.player.hp = s.player.max_hp;
+                                    s.player.hp = s.player.effective_max_hp();
                                     // Crew recruitment at space stations
                                     if s.crew.len() < 6 {
                                         let recruit = s.generate_recruit();
@@ -1435,7 +1484,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                                     }
                                                     ShipRoom::Medbay => {
                                                         let heal = 10;
-                                                        s.player.hp = (s.player.hp + heal).min(s.player.max_hp);
+                                                        s.player.hp = (s.player.hp + heal).min(s.player.effective_max_hp());
                                                         s.message = format!("Medbay: Healed {} HP", heal);
                                                         s.message_timer = 60;
                                                     }
@@ -1488,8 +1537,8 @@ pub fn init_game() -> Result<(), JsValue> {
                                                     }
                                                     ShipRoom::CrewQuarters => {
                                                         // Rest: restore full HP (once per visit)
-                                                        if s.player.hp < s.player.max_hp {
-                                                            s.player.hp = s.player.max_hp;
+                                                        if s.player.hp < s.player.effective_max_hp() {
+                                                            s.player.hp = s.player.effective_max_hp();
                                                             s.message = "Crew Quarters: Rested and fully healed!".to_string();
                                                             s.message_timer = 90;
                                                         } else {
@@ -2141,6 +2190,77 @@ pub fn init_game() -> Result<(), JsValue> {
                 return;
             }
 
+            if s.show_skill_tree {
+                event.prevent_default();
+                match key.as_str() {
+                    "Escape" | "t" | "T" => {
+                        s.show_skill_tree = false;
+                    }
+                    "ArrowUp" => {
+                        if s.skill_tree_cursor > 0 {
+                            s.skill_tree_cursor -= 1;
+                        }
+                    }
+                    "ArrowDown" => {
+                        let max = crate::skill_tree::SKILL_TREE.nodes.len().saturating_sub(1);
+                        if s.skill_tree_cursor < max {
+                            s.skill_tree_cursor += 1;
+                        }
+                    }
+                    "Enter" | " " => {
+                        let idx = s.skill_tree_cursor;
+                        if s.player.skill_tree.can_allocate(idx) {
+                            s.player.skill_tree.allocate(idx);
+                        }
+                    }
+                    _ => {}
+                }
+                s.render();
+                return;
+            }
+
+            if s.show_crucible {
+                event.prevent_default();
+                match key.as_str() {
+                    "Escape" | "u" | "U" => {
+                        s.show_crucible = false;
+                    }
+                    "ArrowUp" => {
+                        if s.crucible_cursor > 0 {
+                            s.crucible_cursor -= 1;
+                        }
+                    }
+                    "ArrowDown" => {
+                        if s.crucible_cursor < 2 {
+                            s.crucible_cursor += 1;
+                        }
+                    }
+                    "ArrowLeft" => {
+                        let cruc = match s.crucible_cursor {
+                            0 => &mut s.player.weapon_crucible,
+                            1 => &mut s.player.armor_crucible,
+                            _ => &mut s.player.charm_crucible,
+                        };
+                        if cruc.pending_branch() {
+                            cruc.choose_branch(true);
+                        }
+                    }
+                    "ArrowRight" | "Enter" | " " => {
+                        let cruc = match s.crucible_cursor {
+                            0 => &mut s.player.weapon_crucible,
+                            1 => &mut s.player.armor_crucible,
+                            _ => &mut s.player.charm_crucible,
+                        };
+                        if cruc.pending_branch() {
+                            cruc.choose_branch(false);
+                        }
+                    }
+                    _ => {}
+                }
+                s.render();
+                return;
+            }
+
             if s.show_spellbook {
                 event.prevent_default();
                 match key.as_str() {
@@ -2166,6 +2286,8 @@ pub fn init_game() -> Result<(), JsValue> {
 
             if (key == "i" || key == "I")
                 && !s.show_codex
+                && !s.show_skill_tree
+                && !s.show_crucible
                 && matches!(s.combat, CombatState::Explore | CombatState::GameOver)
             {
                 event.prevent_default();
@@ -2177,10 +2299,40 @@ pub fn init_game() -> Result<(), JsValue> {
             if (key == "b" || key == "B")
                 && !s.show_codex
                 && !s.show_inventory
+                && !s.show_skill_tree
+                && !s.show_crucible
                 && matches!(s.combat, CombatState::Explore | CombatState::GameOver)
             {
                 event.prevent_default();
                 s.show_spellbook = true;
+                s.render();
+                return;
+            }
+
+            if (key == "t" || key == "T")
+                && !s.show_codex
+                && !s.show_inventory
+                && !s.show_spellbook
+                && !s.show_crucible
+                && matches!(s.combat, CombatState::Explore | CombatState::GameOver)
+            {
+                event.prevent_default();
+                s.show_skill_tree = !s.show_skill_tree;
+                s.skill_tree_cursor = 0;
+                s.render();
+                return;
+            }
+
+            if (key == "u" || key == "U")
+                && !s.show_codex
+                && !s.show_inventory
+                && !s.show_spellbook
+                && !s.show_skill_tree
+                && matches!(s.combat, CombatState::Explore | CombatState::GameOver)
+            {
+                event.prevent_default();
+                s.show_crucible = !s.show_crucible;
+                s.crucible_cursor = 0;
                 s.render();
                 return;
             }
@@ -2586,7 +2738,7 @@ pub fn init_game() -> Result<(), JsValue> {
                         s.srs.record(hanzi, correct);
                         s.codex.record(hanzi, pinyin, meaning, correct);
                         if correct {
-                            s.player.hp = (s.player.hp + 1).min(s.player.max_hp);
+                            s.player.hp = (s.player.hp + 1).min(s.player.effective_max_hp());
                             let (sx, sy) = s.tile_to_screen(s.player.x, s.player.y);
                             let gs = &mut *s;
                             gs.particles.spawn_heal(sx, sy, &mut gs.rng_state);
@@ -4296,7 +4448,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                 };
                                 if radical == "心" {
                                     s.player.max_hp += 2;
-                                    s.player.hp = s.player.hp.min(s.player.max_hp);
+                                    s.player.hp = s.player.hp.min(s.player.effective_max_hp());
                                 }
                                 if let Some(ref audio) = s.audio {
                                     audio.play_forge();
@@ -4706,6 +4858,17 @@ pub fn init_game() -> Result<(), JsValue> {
                     s.combat = CombatState::Journal { page: 0 };
                     s.message = "📖 Character Journal".to_string();
                     s.message_timer = 120;
+                    s.render();
+                    return;
+                }
+                "h" | "H" => {
+                    s.player.hubris_mode = !s.player.hubris_mode;
+                    s.message = if s.player.hubris_mode {
+                        "💀 HUBRIS MODE ON — enemies hit 1.5×, drops doubled!".to_string()
+                    } else {
+                        "Hubris mode deactivated.".to_string()
+                    };
+                    s.message_timer = 60;
                     s.render();
                     return;
                 }
