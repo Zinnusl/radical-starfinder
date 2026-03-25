@@ -319,7 +319,8 @@ impl super::Renderer {
     pub(crate) fn draw_help_overlay(&self, combat: &CombatState, listening_mode: ListenMode) {
         let mut lines = vec![
             "Explore: WASD/Arrows move  1-5 use items".to_string(),
-            "I inventory  B spellbook  C codex  V look  O options".to_string(),
+            "I inventory  B spellbook  C codex  T skill tree  U crucible".to_string(),
+            "V look  O options".to_string(),
             format!(
                 "L listening ({})  X skip floor  ? toggle help",
                 listening_mode.label()
