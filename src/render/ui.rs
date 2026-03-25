@@ -1861,9 +1861,14 @@ impl super::Renderer {
         cursor: usize,
     ) {
         let box_w = 420.0;
-        let box_h = 280.0;
         let box_x = (self.canvas_w - box_w) / 2.0;
         let box_y = 40.0;
+
+        // Compute dynamic height based on content
+        let desc_lines = word_wrap(dialogue.description, 48);
+        let desc_h = desc_lines.len() as f64 * 18.0;
+        let choices_h = dialogue.choices.len() as f64 * 36.0;
+        let box_h = (54.0 + desc_h + 16.0 + choices_h + 20.0).min(self.canvas_h - 80.0);
 
         // Background
         self.ctx.set_fill_style_str("rgba(8,6,18,0.97)");
@@ -1885,13 +1890,12 @@ impl super::Renderer {
         // Description (word-wrapped)
         self.ctx.set_fill_style_str("#c0c0c0");
         self.ctx.set_font("13px monospace");
-        let lines = word_wrap(dialogue.description, 48);
-        for (i, line) in lines.iter().enumerate() {
+        for (i, line) in desc_lines.iter().enumerate() {
             let _ = self.ctx.fill_text(line, box_x + 12.0, box_y + 54.0 + i as f64 * 18.0);
         }
 
         // Choices
-        let choices_start_y = box_y + 54.0 + lines.len() as f64 * 18.0 + 16.0;
+        let choices_start_y = box_y + 54.0 + desc_lines.len() as f64 * 18.0 + 16.0;
         for (i, choice) in dialogue.choices.iter().enumerate() {
             let is_selected = i == cursor;
             let prefix = if is_selected { "\u{25b8} " } else { "  " };

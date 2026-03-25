@@ -1656,7 +1656,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                         s.dungeon_dialogue_cursor += 1;
                                     }
                                 }
-                                "Enter" | " " => {
+                                "Enter" | " " if s.dungeon_dialogue_cursor < num_choices => {
                                     let choice = &dlg.choices[s.dungeon_dialogue_cursor];
                                     let outcome = choice.outcome.clone();
                                     let result = dungeon_events::apply_dungeon_outcome(&mut *s, &outcome);

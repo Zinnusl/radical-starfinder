@@ -14,7 +14,7 @@ Another explorer rounds the corner, weapon drawn. Recognition flashes across the
   ~ gain_xp(20)
   "赛" (sài) — competition, race
 * [Offer to buy them out] {requires: gold >= 30}
-  ~ gain_gold(50)
+  ~ lose_gold(30)
   "合" (hé) — to combine, together
 * [Refuse and go your own way]
   ~ gain_xp(10)

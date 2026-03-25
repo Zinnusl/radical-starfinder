@@ -14,7 +14,7 @@ A pilot sits in a grounded shuttle, surrounded by empty nutrient paste tubes and
   ~ gain_radical("口")
   "酒" (jiǔ) — alcohol, wine. The radical "口" relates to mouth/drinking.
 * [Buy the nav data outright] {requires: gold >= 20}
-  ~ gain_gold(40)
+  ~ lose_gold(20)
   "钱" (qián) — money
 * [Ignore the drunkard]
   ~ nothing

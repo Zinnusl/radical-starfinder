@@ -11,7 +11,7 @@ A holographic avatar materializes from a concealed projector — the calling car
   ~ gain_xp(30)
   "图" (tú) — map, diagram, picture
 * [Purchase cache locations] {requires: gold >= 25}
-  ~ gain_gold(45)
+  ~ lose_gold(25)
   "位" (wèi) — position, location
 * [Sell your own survey data]
   ~ gain_gold(15)
