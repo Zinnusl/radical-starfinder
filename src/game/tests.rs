@@ -2,8 +2,8 @@ use super::{
     advance_message_decay, can_be_reshaped_by_seal, combat_prompt_for, combo_tier,
     detect_combo, elite_chain_damage, elite_remaining_hp, enemy_look_text, in_look_range,
     seal_cross_positions, spell_category, tile_look_text, tutorial_exit_blocker_for, ComboTier,
-    Companion, FloorProfile, GameState, ListenMode, RunEvent, RunJournal, TextSpeed,
-    TutorialState,
+    Companion, CompanionBond, EventMemory, FloorProfile, GameState, ListenMode, RunEvent,
+    RunJournal, TextSpeed, TutorialState, COMPANION_COUNT,
 };
 use crate::dungeon::Tile;
 use crate::enemy::Enemy;
@@ -575,4 +575,607 @@ fn gatekeeper_seal_mode_damages_player_on_failure() {
     } else {
         panic!("expected GatekeeperSeal");
     }
+}
+
+// ── detect_combo ────────────────────────────────────────────────────────
+
+#[test]
+fn detect_combo_fire_and_shield_returns_steam_burst() {
+    let result = detect_combo(&SpellEffect::FireAoe(5), &SpellEffect::Shield);
+    assert!(result.is_some());
+    assert_eq!(result.unwrap().0, "Steam Burst");
+}
+
+#[test]
+fn detect_combo_shield_and_fire_returns_steam_burst_bidirectional() {
+    let result = detect_combo(&SpellEffect::Shield, &SpellEffect::FireAoe(5));
+    assert_eq!(result.unwrap().0, "Steam Burst");
+}
+
+#[test]
+fn detect_combo_shield_and_strike_returns_counter_strike() {
+    let result = detect_combo(&SpellEffect::Shield, &SpellEffect::StrongHit(4));
+    assert_eq!(result.unwrap().0, "Counter Strike");
+}
+
+#[test]
+fn detect_combo_heal_and_shield_returns_barrier() {
+    let result = detect_combo(&SpellEffect::Heal(3), &SpellEffect::Shield);
+    assert_eq!(result.unwrap().0, "Barrier");
+}
+
+#[test]
+fn detect_combo_strike_and_fire_returns_flurry() {
+    let result = detect_combo(&SpellEffect::StrongHit(4), &SpellEffect::Ignite);
+    assert_eq!(result.unwrap().0, "Flurry");
+}
+
+#[test]
+fn detect_combo_drain_and_heal_returns_life_surge() {
+    let result = detect_combo(&SpellEffect::Drain(2), &SpellEffect::Heal(3));
+    assert_eq!(result.unwrap().0, "Life Surge");
+}
+
+#[test]
+fn detect_combo_stun_and_strike_returns_crippling_blow() {
+    let result = detect_combo(&SpellEffect::Stun, &SpellEffect::StrongHit(5));
+    assert_eq!(result.unwrap().0, "Crippling Blow");
+}
+
+#[test]
+fn detect_combo_fire_and_drain_returns_immolate() {
+    let result = detect_combo(&SpellEffect::FireAoe(5), &SpellEffect::Drain(3));
+    assert_eq!(result.unwrap().0, "Immolate");
+}
+
+#[test]
+fn detect_combo_fire_and_stun_returns_tempest() {
+    let result = detect_combo(&SpellEffect::FireAoe(5), &SpellEffect::Stun);
+    assert_eq!(result.unwrap().0, "Tempest");
+}
+
+#[test]
+fn detect_combo_heal_and_strike_returns_rally() {
+    let result = detect_combo(&SpellEffect::Heal(4), &SpellEffect::StrongHit(3));
+    assert_eq!(result.unwrap().0, "Rally");
+}
+
+#[test]
+fn detect_combo_drain_and_stun_returns_siphon() {
+    let result = detect_combo(&SpellEffect::Drain(3), &SpellEffect::Stun);
+    assert_eq!(result.unwrap().0, "Siphon");
+}
+
+#[test]
+fn detect_combo_drain_and_shield_returns_fortify() {
+    let result = detect_combo(&SpellEffect::Drain(3), &SpellEffect::Shield);
+    assert_eq!(result.unwrap().0, "Fortify");
+}
+
+#[test]
+fn detect_combo_heal_and_stun_returns_renewal() {
+    let result = detect_combo(&SpellEffect::Heal(4), &SpellEffect::Stun);
+    assert_eq!(result.unwrap().0, "Renewal");
+}
+
+#[test]
+fn detect_combo_same_category_returns_none() {
+    let result = detect_combo(&SpellEffect::FireAoe(5), &SpellEffect::Ignite);
+    assert!(result.is_none());
+}
+
+#[test]
+fn detect_combo_utility_pair_returns_none() {
+    let result = detect_combo(&SpellEffect::Reveal, &SpellEffect::Teleport);
+    assert!(result.is_none());
+}
+
+// ── spell_category ──────────────────────────────────────────────────────
+
+#[test]
+fn spell_category_fire_variants() {
+    assert_eq!(spell_category(&SpellEffect::FireAoe(5)), "fire");
+    assert_eq!(spell_category(&SpellEffect::Cone(3)), "fire");
+    assert_eq!(spell_category(&SpellEffect::Ignite), "fire");
+}
+
+#[test]
+fn spell_category_heal_variants() {
+    assert_eq!(spell_category(&SpellEffect::Heal(3)), "heal");
+    assert_eq!(spell_category(&SpellEffect::FocusRestore(2)), "heal");
+    assert_eq!(spell_category(&SpellEffect::PlantGrowth), "heal");
+    assert_eq!(spell_category(&SpellEffect::Sanctify(3)), "heal");
+}
+
+#[test]
+fn spell_category_strike_variants() {
+    assert_eq!(spell_category(&SpellEffect::StrongHit(4)), "strike");
+    assert_eq!(spell_category(&SpellEffect::ArmorBreak), "strike");
+    assert_eq!(spell_category(&SpellEffect::Pierce(3)), "strike");
+    assert_eq!(spell_category(&SpellEffect::KnockBack(2)), "strike");
+    assert_eq!(spell_category(&SpellEffect::Earthquake(5)), "strike");
+    assert_eq!(spell_category(&SpellEffect::FloodWave(3)), "strike");
+    assert_eq!(spell_category(&SpellEffect::Charge(3)), "strike");
+}
+
+#[test]
+fn spell_category_shield_variants() {
+    assert_eq!(spell_category(&SpellEffect::Shield), "shield");
+    assert_eq!(spell_category(&SpellEffect::Thorns(2)), "shield");
+    assert_eq!(spell_category(&SpellEffect::Wall(3)), "shield");
+    assert_eq!(spell_category(&SpellEffect::SummonBoulder), "shield");
+}
+
+#[test]
+fn spell_category_drain_variants() {
+    assert_eq!(spell_category(&SpellEffect::Drain(3)), "drain");
+    assert_eq!(spell_category(&SpellEffect::Poison(2, 3)), "drain");
+}
+
+#[test]
+fn spell_category_stun_variants() {
+    assert_eq!(spell_category(&SpellEffect::Stun), "stun");
+    assert_eq!(spell_category(&SpellEffect::Slow(2)), "stun");
+    assert_eq!(spell_category(&SpellEffect::FreezeGround(3)), "stun");
+}
+
+#[test]
+fn spell_category_utility_variants() {
+    assert_eq!(spell_category(&SpellEffect::Reveal), "utility");
+    assert_eq!(spell_category(&SpellEffect::Pacify), "utility");
+    assert_eq!(spell_category(&SpellEffect::Teleport), "utility");
+    assert_eq!(spell_category(&SpellEffect::Dash(3)), "utility");
+    assert_eq!(spell_category(&SpellEffect::PullToward), "utility");
+    assert_eq!(spell_category(&SpellEffect::OilSlick), "utility");
+    assert_eq!(spell_category(&SpellEffect::Blink(2)), "utility");
+}
+
+// ── in_look_range ───────────────────────────────────────────────────────
+
+#[test]
+fn in_look_range_same_position_is_in_range() {
+    assert!(in_look_range(5, 5, 5, 5));
+}
+
+#[test]
+fn in_look_range_diagonal_three_is_in_range() {
+    assert!(in_look_range(5, 5, 8, 8));
+}
+
+#[test]
+fn in_look_range_diagonal_four_is_out_of_range() {
+    assert!(!in_look_range(5, 5, 9, 9));
+}
+
+#[test]
+fn in_look_range_negative_direction_works() {
+    assert!(in_look_range(5, 5, 2, 2));
+    assert!(!in_look_range(5, 5, 1, 1));
+}
+
+#[test]
+fn in_look_range_asymmetric_offset_uses_max() {
+    // dx=3, dy=1 → max=3 → in range
+    assert!(in_look_range(5, 5, 8, 6));
+    // dx=4, dy=0 → max=4 → out of range
+    assert!(!in_look_range(5, 5, 9, 5));
+}
+
+// ── elite_chain_damage ──────────────────────────────────────────────────
+
+#[test]
+fn elite_chain_damage_halved_mid_cycle() {
+    assert_eq!(elite_chain_damage(4, 3, false), 2);
+}
+
+#[test]
+fn elite_chain_damage_halved_at_least_one() {
+    assert_eq!(elite_chain_damage(1, 2, false), 1);
+}
+
+#[test]
+fn elite_chain_damage_spike_adds_syllable_bonus() {
+    // base_hit + total_syllables - 1
+    assert_eq!(elite_chain_damage(5, 3, true), 7);
+}
+
+#[test]
+fn elite_chain_damage_single_syllable_cycle_complete() {
+    assert_eq!(elite_chain_damage(3, 1, true), 3);
+}
+
+// ── elite_remaining_hp ──────────────────────────────────────────────────
+
+#[test]
+fn elite_remaining_hp_floors_at_one_mid_cycle() {
+    assert_eq!(elite_remaining_hp(5, 10, false), 1);
+}
+
+#[test]
+fn elite_remaining_hp_no_change_when_damage_less_than_hp_mid_cycle() {
+    assert_eq!(elite_remaining_hp(10, 3, false), 7);
+}
+
+#[test]
+fn elite_remaining_hp_can_go_negative_on_cycle_complete() {
+    assert_eq!(elite_remaining_hp(5, 10, true), -5);
+}
+
+#[test]
+fn elite_remaining_hp_zero_on_exact_kill_cycle_complete() {
+    assert_eq!(elite_remaining_hp(5, 5, true), 0);
+}
+
+// ── advance_message_decay ───────────────────────────────────────────────
+
+#[test]
+fn advance_message_decay_already_zero_returns_true() {
+    let mut timer = 0u8;
+    let mut delay = 0u8;
+    assert!(advance_message_decay(&mut timer, &mut delay, TextSpeed::Normal));
+}
+
+#[test]
+fn advance_message_decay_waits_during_delay() {
+    let mut timer = 5u8;
+    let mut delay = 2u8;
+    let result = advance_message_decay(&mut timer, &mut delay, TextSpeed::Normal);
+    assert!(!result);
+    assert_eq!(delay, 1);
+    assert_eq!(timer, 5); // timer unchanged during delay
+}
+
+#[test]
+fn advance_message_decay_decrements_timer_after_delay() {
+    let mut timer = 2u8;
+    let mut delay = 0u8;
+    let result = advance_message_decay(&mut timer, &mut delay, TextSpeed::Normal);
+    // timer_step for Normal = 1, so timer goes 2→1
+    // timer_delay for Normal = 2, so delay resets to 1
+    assert!(!result);
+    assert_eq!(timer, 1);
+}
+
+#[test]
+fn advance_message_decay_returns_true_when_timer_reaches_zero() {
+    let mut timer = 1u8;
+    let mut delay = 0u8;
+    let result = advance_message_decay(&mut timer, &mut delay, TextSpeed::Normal);
+    assert!(result);
+    assert_eq!(timer, 0);
+}
+
+// ── seal_cross_positions ────────────────────────────────────────────────
+
+#[test]
+fn seal_cross_positions_at_origin() {
+    let positions = seal_cross_positions(0, 0);
+    assert_eq!(positions, [
+        (1, 0), (-1, 0), (2, 0), (-2, 0),
+        (0, 1), (0, -1), (0, 2), (0, -2),
+    ]);
+}
+
+#[test]
+fn seal_cross_positions_returns_eight_positions() {
+    let positions = seal_cross_positions(5, 5);
+    assert_eq!(positions.len(), 8);
+}
+
+// ── tile_allows_enemy_spawn ─────────────────────────────────────────────
+
+#[test]
+fn tile_allows_enemy_spawn_accepts_walkable_tiles() {
+    use crate::dungeon::Tile;
+    assert!(super::tile_allows_enemy_spawn(Tile::MetalFloor));
+    assert!(super::tile_allows_enemy_spawn(Tile::Hallway));
+    assert!(super::tile_allows_enemy_spawn(Tile::Catwalk));
+}
+
+#[test]
+fn tile_allows_enemy_spawn_rejects_special_tiles() {
+    use crate::dungeon::Tile;
+    assert!(!super::tile_allows_enemy_spawn(Tile::Bulkhead));
+    assert!(!super::tile_allows_enemy_spawn(Tile::QuantumForge));
+    assert!(!super::tile_allows_enemy_spawn(Tile::VacuumBreach));
+    assert!(!super::tile_allows_enemy_spawn(Tile::SupplyCrate));
+}
+
+// ── Companion::index ──────────────────────────────────────────────
+
+#[test]
+fn companion_index_assigns_unique_sequential_ids() {
+    assert_eq!(Companion::ScienceOfficer.index(), 0);
+    assert_eq!(Companion::Medic.index(), 1);
+    assert_eq!(Companion::Quartermaster.index(), 2);
+    assert_eq!(Companion::SecurityChief.index(), 3);
+}
+
+#[test]
+fn companion_count_matches_number_of_variants() {
+    assert_eq!(COMPANION_COUNT, 4);
+}
+
+// ── Companion::name ───────────────────────────────────────────────
+
+#[test]
+fn companion_name_returns_human_readable_string() {
+    assert_eq!(Companion::ScienceOfficer.name(), "Science Officer 研");
+    assert_eq!(Companion::Medic.name(), "Medic 医");
+    assert_eq!(Companion::Quartermaster.name(), "Quartermaster 商");
+    assert_eq!(Companion::SecurityChief.name(), "Security Chief 卫");
+}
+
+// ── Companion::icon ───────────────────────────────────────────────
+
+#[test]
+fn companion_icon_returns_distinct_emoji() {
+    assert_eq!(Companion::ScienceOfficer.icon(), "🔬");
+    assert_eq!(Companion::Medic.icon(), "💊");
+    assert_eq!(Companion::Quartermaster.icon(), "📦");
+    assert_eq!(Companion::SecurityChief.icon(), "🛡");
+}
+
+// ── Companion::heal_per_floor (missing Quartermaster coverage) ────
+
+#[test]
+fn quartermaster_has_no_heal() {
+    assert_eq!(Companion::Quartermaster.heal_per_floor(3), 0);
+}
+
+// ── Companion::guard_second_block_chance (non-guard) ──────────────
+
+#[test]
+fn non_guard_has_no_second_block_chance() {
+    assert_eq!(Companion::ScienceOfficer.guard_second_block_chance(3), 0);
+    assert_eq!(Companion::Medic.guard_second_block_chance(3), 0);
+    assert_eq!(Companion::Quartermaster.guard_second_block_chance(3), 0);
+}
+
+// ── CompanionBond::level_for_floors ───────────────────────────────
+
+#[test]
+fn companion_bond_level_progresses_with_floors() {
+    assert_eq!(CompanionBond::level_for_floors(0), 0);
+    assert_eq!(CompanionBond::level_for_floors(4), 0);
+    assert_eq!(CompanionBond::level_for_floors(5), 1);
+    assert_eq!(CompanionBond::level_for_floors(9), 1);
+    assert_eq!(CompanionBond::level_for_floors(10), 2);
+    assert_eq!(CompanionBond::level_for_floors(14), 2);
+    assert_eq!(CompanionBond::level_for_floors(15), 3);
+    assert_eq!(CompanionBond::level_for_floors(100), 3);
+}
+
+#[test]
+fn companion_bond_advance_floor_increments_and_recalculates() {
+    let mut bond = CompanionBond::default();
+    assert_eq!(bond.floors_together, 0);
+    assert_eq!(bond.synergy_level, 0);
+
+    for _ in 0..5 {
+        bond.advance_floor();
+    }
+    assert_eq!(bond.floors_together, 5);
+    assert_eq!(bond.synergy_level, 1);
+}
+
+// ── Companion synergy methods ─────────────────────────────────────
+
+#[test]
+fn synergy_damage_bonus_only_for_officer_and_chief() {
+    assert_eq!(Companion::ScienceOfficer.synergy_damage_bonus(), 1);
+    assert_eq!(Companion::SecurityChief.synergy_damage_bonus(), 1);
+    assert_eq!(Companion::Medic.synergy_damage_bonus(), 0);
+    assert_eq!(Companion::Quartermaster.synergy_damage_bonus(), 0);
+}
+
+#[test]
+fn synergy_gold_pct_only_for_quartermaster() {
+    assert_eq!(Companion::Quartermaster.synergy_gold_pct(), 15);
+    assert_eq!(Companion::ScienceOfficer.synergy_gold_pct(), 0);
+    assert_eq!(Companion::Medic.synergy_gold_pct(), 0);
+    assert_eq!(Companion::SecurityChief.synergy_gold_pct(), 0);
+}
+
+#[test]
+fn synergy_heal_bonus_only_for_medic() {
+    assert_eq!(Companion::Medic.synergy_heal_bonus(), 1);
+    assert_eq!(Companion::ScienceOfficer.synergy_heal_bonus(), 0);
+    assert_eq!(Companion::Quartermaster.synergy_heal_bonus(), 0);
+    assert_eq!(Companion::SecurityChief.synergy_heal_bonus(), 0);
+}
+
+#[test]
+fn combo_ability_name_is_unique_per_companion() {
+    let names = [
+        Companion::ScienceOfficer.combo_ability_name(),
+        Companion::Medic.combo_ability_name(),
+        Companion::Quartermaster.combo_ability_name(),
+        Companion::SecurityChief.combo_ability_name(),
+    ];
+    assert_eq!(names[0], "Nanite Surge");
+    assert_eq!(names[1], "Vital Strike");
+    assert_eq!(names[2], "Supply Drop");
+    assert_eq!(names[3], "Fortified Stance");
+}
+
+#[test]
+fn synergy_callout_returns_valid_flavour_text() {
+    let msg = Companion::ScienceOfficer.synergy_callout(0);
+    assert!(msg.contains("Officer"));
+}
+
+// ── ComboTier::name ───────────────────────────────────────────────
+
+#[test]
+fn combo_tier_name_returns_correct_labels() {
+    assert_eq!(ComboTier::None.name(), "");
+    assert_eq!(ComboTier::Good.name(), "GOOD");
+    assert_eq!(ComboTier::Great.name(), "GREAT");
+    assert_eq!(ComboTier::Excellent.name(), "EXCELLENT");
+    assert_eq!(ComboTier::Perfect.name(), "PERFECT");
+    assert_eq!(ComboTier::Radical.name(), "RADICAL");
+}
+
+// ── EventMemory ───────────────────────────────────────────────────
+
+#[test]
+fn event_memory_records_and_queries_choices() {
+    let mut mem = EventMemory::default();
+    assert!(!mem.has_choice("helped_stowaway"));
+
+    mem.record_choice("helped_stowaway");
+    assert!(mem.has_choice("helped_stowaway"));
+}
+
+#[test]
+fn event_memory_does_not_duplicate_choices() {
+    let mut mem = EventMemory::default();
+    mem.record_choice("raided_pirates");
+    mem.record_choice("raided_pirates");
+
+    assert_eq!(mem.past_choices.len(), 1);
+}
+
+// ── TextSpeed ─────────────────────────────────────────────────────
+
+#[test]
+fn text_speed_previous_clamps_at_slow() {
+    assert_eq!(TextSpeed::Slow.previous(), TextSpeed::Slow);
+    assert_eq!(TextSpeed::Normal.previous(), TextSpeed::Slow);
+    assert_eq!(TextSpeed::Fast.previous(), TextSpeed::Normal);
+}
+
+#[test]
+fn text_speed_next_clamps_at_fast() {
+    assert_eq!(TextSpeed::Slow.next(), TextSpeed::Normal);
+    assert_eq!(TextSpeed::Normal.next(), TextSpeed::Fast);
+    assert_eq!(TextSpeed::Fast.next(), TextSpeed::Fast);
+}
+
+#[test]
+fn text_speed_timer_delay_slower_is_larger() {
+    assert!(TextSpeed::Slow.timer_delay() > TextSpeed::Normal.timer_delay());
+    assert!(TextSpeed::Normal.timer_delay() > TextSpeed::Fast.timer_delay());
+}
+
+#[test]
+fn text_speed_label_returns_display_strings() {
+    assert_eq!(TextSpeed::Slow.label(), "Slow");
+    assert_eq!(TextSpeed::Normal.label(), "Normal");
+    assert_eq!(TextSpeed::Fast.label(), "Fast");
+}
+
+// ── TutorialState::objective_text ─────────────────────────────────
+
+#[test]
+fn tutorial_objective_text_reflects_progress() {
+    let t1 = TutorialState { combat_done: false, forge_done: false };
+    assert!(t1.objective_text().contains("defeat"));
+
+    let t2 = TutorialState { combat_done: true, forge_done: false };
+    assert!(t2.objective_text().contains("forge"));
+
+    let t3 = TutorialState { combat_done: true, forge_done: true };
+    assert!(t3.objective_text().contains("complete"));
+}
+
+#[test]
+fn tutorial_state_is_complete_requires_both_steps() {
+    assert!(!TutorialState { combat_done: false, forge_done: false }.is_complete());
+    assert!(!TutorialState { combat_done: true, forge_done: false }.is_complete());
+    assert!(!TutorialState { combat_done: false, forge_done: true }.is_complete());
+    assert!(TutorialState { combat_done: true, forge_done: true }.is_complete());
+}
+
+// ── pacify_gold_reward edge cases ─────────────────────────────────
+
+#[test]
+fn pacify_gold_reward_minimum_floor_is_four() {
+    assert_eq!(GameState::pacify_gold_reward(0, 0), 4);
+    assert_eq!(GameState::pacify_gold_reward(1, 0), 4);
+}
+
+#[test]
+fn pacify_gold_reward_negative_spell_power_treated_as_zero() {
+    assert_eq!(GameState::pacify_gold_reward(10, -5), GameState::pacify_gold_reward(10, 0));
+}
+
+// ── spell_category covers all terrain spells ──────────────────────
+
+#[test]
+fn spell_category_terrain_spells_have_expected_categories() {
+    assert_eq!(spell_category(&SpellEffect::OilSlick), "utility");
+    assert_eq!(spell_category(&SpellEffect::Ignite), "fire");
+    assert_eq!(spell_category(&SpellEffect::PlantGrowth), "heal");
+    assert_eq!(spell_category(&SpellEffect::Earthquake(5)), "strike");
+    assert_eq!(spell_category(&SpellEffect::FreezeGround(3)), "stun");
+    assert_eq!(spell_category(&SpellEffect::Sanctify(2)), "heal");
+    assert_eq!(spell_category(&SpellEffect::FloodWave(4)), "strike");
+    assert_eq!(spell_category(&SpellEffect::SummonBoulder), "shield");
+    assert_eq!(spell_category(&SpellEffect::Charge(3)), "strike");
+    assert_eq!(spell_category(&SpellEffect::Blink(2)), "utility");
+}
+
+// ── detect_combo ──────────────────────────────────────────────────
+
+#[test]
+fn fire_plus_shield_produces_steam_burst_combo() {
+    let combo = detect_combo(&SpellEffect::FireAoe(3), &SpellEffect::Shield);
+    assert_eq!(combo.as_ref().map(|(name, _)| *name), Some("Steam Burst"));
+}
+
+#[test]
+fn strike_plus_fire_produces_flurry_combo() {
+    let combo = detect_combo(&SpellEffect::StrongHit(5), &SpellEffect::FireAoe(3));
+    assert_eq!(combo.as_ref().map(|(name, _)| *name), Some("Flurry"));
+}
+
+// ── GameSettings default ──────────────────────────────────────────
+
+#[test]
+fn game_settings_default_has_full_volume_and_normal_speed() {
+    let settings = super::GameSettings::default();
+    assert_eq!(settings.music_volume, 100);
+    assert_eq!(settings.sfx_volume, 100);
+    assert!(settings.screen_shake);
+    assert_eq!(settings.text_speed, TextSpeed::Normal);
+}
+
+// ── ListenMode label ──────────────────────────────────────────────
+
+#[test]
+fn listen_mode_label_returns_display_strings() {
+    assert_eq!(ListenMode::Off.label(), "OFF");
+    assert!(ListenMode::ToneOnly.label().contains("Tone"));
+    assert!(ListenMode::FullAudio.label().contains("Audio"));
+}
+
+// ── FloorProfile label ────────────────────────────────────────────
+
+#[test]
+fn floor_profile_normal_has_empty_label() {
+    assert_eq!(FloorProfile::Normal.label(), "");
+}
+
+#[test]
+fn floor_profile_special_labels_are_non_empty() {
+    assert!(!FloorProfile::Famine.label().is_empty());
+    assert!(!FloorProfile::RadicalRich.label().is_empty());
+    assert!(!FloorProfile::Siege.label().is_empty());
+    assert!(!FloorProfile::Drought.label().is_empty());
+}
+
+// ── RunJournal edge cases ─────────────────────────────────────────
+
+#[test]
+fn run_journal_empty_has_max_floor_one() {
+    let j = RunJournal::default();
+    assert_eq!(j.max_floor(), 1);
+}
+
+#[test]
+fn run_journal_empty_floor_line_returns_explored() {
+    let j = RunJournal::default();
+    assert_eq!(j.floor_line(1), "Explored");
 }
