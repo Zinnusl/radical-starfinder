@@ -9,6 +9,7 @@ pub enum GameMode {
     GroundCombat,
     SpaceCombat,
     Event,
+    DungeonEvent,
 }
 
 // ── Subsystem ──────────────────────────────────────────────────────

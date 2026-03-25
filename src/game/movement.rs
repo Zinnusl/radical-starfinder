@@ -732,6 +732,21 @@ impl GameState {
             return;
         }
 
+        // Dungeon dialogue trigger — InfoPanel tiles show a dungeon dialogue
+        if let Tile::InfoPanel(_) = target_tile {
+            let num_dialogues = crate::world::dialogue::ALL_DUNGEON_DIALOGUES.len();
+            if num_dialogues > 0 {
+                let dlg_idx = (self.rng_next() as usize) % num_dialogues;
+                self.current_dungeon_dialogue = Some(dlg_idx);
+                self.dungeon_dialogue_cursor = 0;
+                self.game_mode = GameMode::DungeonEvent;
+                self.player.move_to(nx, ny);
+                let idx = self.level.idx(nx, ny);
+                self.level.tiles[idx] = Tile::MetalFloor;
+                return;
+            }
+        }
+
         // Dragon Gate Portal interaction
         if target_tile == Tile::WarpGatePortal {
             self.message = "🐉 The Dragon Gate pulses with ancient power! You are not yet ready...".to_string();

@@ -60,6 +60,14 @@ impl GameState {
                 }
                 return;
             }
+            GameMode::DungeonEvent => {
+                if let Some(dlg_idx) = self.current_dungeon_dialogue {
+                    if let Some(dlg) = crate::world::dialogue::ALL_DUNGEON_DIALOGUES.get(dlg_idx) {
+                        self.renderer.draw_dungeon_dialogue(dlg, self.dungeon_dialogue_cursor);
+                    }
+                }
+                return;
+            }
             GameMode::LocationExploration | GameMode::GroundCombat => {
                 // Fall through to existing render logic
             }
