@@ -275,7 +275,18 @@ fn parse_ink_file(path: &Path) -> Result<Vec<InkDialogue>, String> {
 }
 
 fn escape_str(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            _ => out.push(ch),
+        }
+    }
+    out
 }
 
 fn format_starmap_outcome(raw: &str) -> String {
@@ -343,6 +354,7 @@ fn format_starmap_outcome(raw: &str) -> String {
     for (cmd, variant) in single_mappings {
         if let Some(inner) = extract_args(s, cmd) {
             let n = inner.trim();
+            n.parse::<i32>().unwrap_or_else(|_| panic!("expected integer argument for {}, got '{}'", cmd, n));
             return format!("super::events::EventOutcome::{}({})", variant, n);
         }
     }
@@ -388,6 +400,7 @@ fn format_dungeon_outcome(raw: &str) -> String {
     for (cmd, variant) in single_mappings {
         if let Some(inner) = extract_args(s, cmd) {
             let n = inner.trim();
+            n.parse::<i32>().unwrap_or_else(|_| panic!("expected integer argument for {}, got '{}'", cmd, n));
             return format!("DungeonOutcome::{}({})", variant, n);
         }
     }
@@ -539,7 +552,7 @@ fn generate_dialogue_data() -> Result<(), String> {
                     starmap_dialogues.push(d);
                 }
             }
-            Err(e) => println!("cargo:warning=ink parse error: {}", e),
+            Err(e) => panic!("ink parse error in {}: {}", f.display(), e),
         }
     }
 
@@ -551,7 +564,7 @@ fn generate_dialogue_data() -> Result<(), String> {
                     dungeon_dialogues.push(d);
                 }
             }
-            Err(e) => println!("cargo:warning=ink parse error: {}", e),
+            Err(e) => panic!("ink parse error in {}: {}", f.display(), e),
         }
     }
 
