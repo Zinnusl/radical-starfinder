@@ -1,6 +1,9 @@
 //! Player state and movement.
 
+use crate::crucible::CrucibleState;
 use crate::radical::Spell;
+use crate::rarity::{ItemRarity, RolledAffix};
+use crate::skill_tree::SkillTreeState;
 use crate::status::StatusInstance;
 
 /// Equipment slot types
@@ -50,6 +53,12 @@ pub enum EquipEffect {
     EnemyIntentReveal,
     /// Percentage chance for double damage
     CriticalStrike(i32),
+    /// Bonus damage when answering a hard hanzi question
+    HardAnswerDamage(i32),
+    /// Temporary armor gained from hard answer
+    HardAnswerArmor(i32),
+    /// Heal HP when answering a hard hanzi question
+    HardAnswerHeal(i32),
 }
 
 impl EquipEffect {
@@ -105,6 +114,15 @@ impl EquipEffect {
             EquipEffect::CriticalStrike(n) => {
                 format!("{}% chance to deal double damage on attacks.", n)
             }
+            EquipEffect::HardAnswerDamage(n) => {
+                format!("+{} bonus damage when you answer a hard hanzi question.", n)
+            }
+            EquipEffect::HardAnswerArmor(n) => {
+                format!("Gain {} temporary armor when you answer a hard hanzi question.", n)
+            }
+            EquipEffect::HardAnswerHeal(n) => {
+                format!("Heal {} HP when you answer a hard hanzi question.", n)
+            }
         }
     }
 }
@@ -122,7 +140,7 @@ impl Equipment {
 
 #[allow(dead_code)]
 pub const MAX_ITEMS: usize = 5;
-pub const ITEM_KIND_COUNT: usize = 32;
+pub const ITEM_KIND_COUNT: usize = 35;
 pub const MYSTERY_ITEM_APPEARANCES: [&str; ITEM_KIND_COUNT] = [
     "Red Canister ⬡",
     "Blue Vial ◆",
@@ -156,6 +174,9 @@ pub const MYSTERY_ITEM_APPEARANCES: [&str; ITEM_KIND_COUNT] = [
     "Coral Syringe ✶",
     "Quantum Cell ✸",
     "Nova Canister ✹",
+    "Prismatic Shard ✵",
+    "Void Capsule ◆",
+    "Pulsing Orb ◉",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -192,6 +213,9 @@ pub enum ItemKind {
     CircuitInk,
     DataCore,
     ThrusterPack,
+    AdrenalineInjector,
+    GamblersChip,
+    OverchargeCell,
 }
 
 /// A recipe for combining two consumable items into a new one.
@@ -322,6 +346,9 @@ impl ItemKind {
             ItemKind::CircuitInk => 29,
             ItemKind::DataCore => 30,
             ItemKind::ThrusterPack => 31,
+            ItemKind::AdrenalineInjector => 32,
+            ItemKind::GamblersChip => 33,
+            ItemKind::OverchargeCell => 34,
         }
     }
 }
@@ -393,6 +420,12 @@ pub enum Item {
     DataCore(i32),
     /// Push all adjacent enemies 2 tiles away
     ThrusterPack,
+    /// Set HP to 5, gain Empowered(3) for 10 turns — high risk high reward
+    AdrenalineInjector,
+    /// 50% double gold from next kill, 50% lose 10 gold
+    GamblersChip,
+    /// Next correct answer deals 3× damage, next wrong answer deals 2× to you
+    OverchargeCell,
 }
 
 impl Item {
@@ -430,6 +463,9 @@ impl Item {
             Item::CircuitInk => ItemKind::CircuitInk,
             Item::DataCore(_) => ItemKind::DataCore,
             Item::ThrusterPack => ItemKind::ThrusterPack,
+            Item::AdrenalineInjector => ItemKind::AdrenalineInjector,
+            Item::GamblersChip => ItemKind::GamblersChip,
+            Item::OverchargeCell => ItemKind::OverchargeCell,
         }
     }
 
@@ -467,6 +503,9 @@ impl Item {
             Item::CircuitInk => "🔧 Circuit Ink",
             Item::DataCore(_) => "💾 Data Core",
             Item::ThrusterPack => "🚀 Thruster Pack",
+            Item::AdrenalineInjector => "💉 Adrenaline Injector",
+            Item::GamblersChip => "🎰 Gambler's Chip",
+            Item::OverchargeCell => "⚡ Overcharge Cell",
         }
     }
 
@@ -505,6 +544,9 @@ impl Item {
             Item::CircuitInk => 25,
             Item::DataCore(_) => 40,
             Item::ThrusterPack => 20,
+            Item::AdrenalineInjector => 35,
+            Item::GamblersChip => 15,
+            Item::OverchargeCell => 30,
         };
         (base * 40) / 100
     }
@@ -544,6 +586,9 @@ impl Item {
             Item::CircuitInk => "Circuit",
             Item::DataCore(_) => "DataCore",
             Item::ThrusterPack => "Thruster",
+            Item::AdrenalineInjector => "Adrenaline",
+            Item::GamblersChip => "Gambler",
+            Item::OverchargeCell => "Overchg",
         }
     }
 
@@ -589,6 +634,9 @@ impl Item {
             Item::CircuitInk => "Conductive nano-ink that empowers your next spell to deal double damage.",
             Item::DataCore(_) => "Emergency backup data core that revives you with HP upon death. Consumed on use.",
             Item::ThrusterPack => "Directional thruster burst that blasts all adjacent enemies away.",
+            Item::AdrenalineInjector => "Military stimulant that drops your HP to 5 but grants Empowered(3) for 10 turns. High risk, high reward.",
+            Item::GamblersChip => "A quantum probability chip: 50% chance to double gold from next kill, 50% chance to lose 10 gold.",
+            Item::OverchargeCell => "Overcharges your next attack: correct answer deals 3× damage, but wrong answer deals 2× damage to you.",
         }
     }
 }
@@ -694,6 +742,22 @@ pub const EQUIPMENT_POOL: &[Equipment] = &[
         slot: EquipSlot::Weapon,
         effect: EquipEffect::CriticalStrike(20),
     },
+    // Scholar's Trinity set pieces
+    Equipment {
+        name: "Lexicon Blade",
+        slot: EquipSlot::Weapon,
+        effect: EquipEffect::HardAnswerDamage(3),
+    },
+    Equipment {
+        name: "Scholar's Aegis",
+        slot: EquipSlot::Armor,
+        effect: EquipEffect::HardAnswerArmor(2),
+    },
+    Equipment {
+        name: "Wisdom Core",
+        slot: EquipSlot::Charm,
+        effect: EquipEffect::HardAnswerHeal(2),
+    },
 ];
 
 // ── Equipment Set Synergies ──────────────────────────────────────────────────
@@ -709,6 +773,8 @@ pub enum SetBonus {
     FirstStrikeDamage(i32),
     /// Heal HP when entering a new floor.
     HealOnFloor(i32),
+    /// Hard answers grant riposte charges + bonus damage
+    ScholarsTrinity,
 }
 
 /// An equipment set: a named combination of effects that grants a bonus.
@@ -726,6 +792,7 @@ impl EquipmentSet {
             SetBonus::PhaseWalk => "Pass through one wall per floor",
             SetBonus::FirstStrikeDamage(_) => "Extra damage on first combat turn",
             SetBonus::HealOnFloor(_) => "Heal HP when entering a new floor",
+            SetBonus::ScholarsTrinity => "Hard answers grant 2 riposte charges + 2 bonus damage",
         }
     }
 }
@@ -770,6 +837,16 @@ pub const EQUIPMENT_SETS: &[EquipmentSet] = &[
             EquipEffect::FocusRegen(0),
         ],
         bonus: SetBonus::PhaseWalk,
+    },
+    // Lexicon Blade (HardAnswerDamage) + Scholar's Aegis (HardAnswerArmor) + Wisdom Core (HardAnswerHeal)
+    EquipmentSet {
+        name: "Scholar's Trinity",
+        required_effects: &[
+            EquipEffect::HardAnswerDamage(0),
+            EquipEffect::HardAnswerArmor(0),
+            EquipEffect::HardAnswerHeal(0),
+        ],
+        bonus: SetBonus::ScholarsTrinity,
     },
 ];
 
@@ -1002,6 +1079,30 @@ pub struct Player {
     pub form_timer: i32,
     /// Whether the PhaseWalk set bonus has been used this floor.
     pub phase_walk_used: bool,
+    // ── Risk/Reward Systems ──────────────────────────────────
+    /// Hubris mode: enemies hit harder but drop more gold and radicals
+    pub hubris_mode: bool,
+    /// Riposte charges: each charge blocks one incoming hit from wrong answer
+    pub riposte_charges: i32,
+    /// Overcharge: next correct answer deals 3× damage, next wrong deals 2× to you
+    pub overcharge_active: bool,
+    /// Temporary armor from hard answer equipment effects
+    pub hard_answer_armor_bonus: i32,
+    /// Gambler's chip: if true, next kill has 50/50 double gold or lose gold
+    pub gamblers_chip_active: bool,
+    // ── Crucible Equipment Trees ─────────────────────────────
+    pub weapon_crucible: CrucibleState,
+    pub armor_crucible: CrucibleState,
+    pub charm_crucible: CrucibleState,
+    // ── Passive Skill Tree ──────────────────────────────────
+    pub skill_tree: SkillTreeState,
+    // ── Item Rarity & Affixes ───────────────────────────────
+    pub weapon_rarity: ItemRarity,
+    pub armor_rarity: ItemRarity,
+    pub charm_rarity: ItemRarity,
+    pub weapon_affixes: Vec<RolledAffix>,
+    pub armor_affixes: Vec<RolledAffix>,
+    pub charm_affixes: Vec<RolledAffix>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -1140,6 +1241,21 @@ impl Player {
             form: PlayerForm::Human,
             form_timer: 0,
             phase_walk_used: false,
+            hubris_mode: false,
+            riposte_charges: 0,
+            overcharge_active: false,
+            hard_answer_armor_bonus: 0,
+            gamblers_chip_active: false,
+            weapon_crucible: CrucibleState::empty(),
+            armor_crucible: CrucibleState::empty(),
+            charm_crucible: CrucibleState::empty(),
+            skill_tree: SkillTreeState::new(),
+            weapon_rarity: ItemRarity::Normal,
+            armor_rarity: ItemRarity::Normal,
+            charm_rarity: ItemRarity::Normal,
+            weapon_affixes: Vec::new(),
+            armor_affixes: Vec::new(),
+            charm_affixes: Vec::new(),
         }
     }
 
@@ -1309,74 +1425,204 @@ impl Player {
         Some(spell)
     }
 
-    /// Get bonus attack damage from equipment
+    /// Get bonus attack damage from equipment, affixes, skill tree, and crucible
     pub fn bonus_damage(&self) -> i32 {
-        match self.weapon {
+        let equip = match self.weapon {
             Some(eq) => match eq.effect {
                 EquipEffect::BonusDamage(d) => d,
                 _ => 0,
             },
             None => 0,
-        }
+        };
+        let affix = crate::rarity::total_affix_damage(&self.weapon_affixes)
+            + crate::rarity::total_affix_damage(&self.armor_affixes)
+            + crate::rarity::total_affix_damage(&self.charm_affixes);
+        let skill = self.skill_tree.total_bonus_damage();
+        let crucible = crate::crucible::aggregate_bonus_damage(
+            &[&self.weapon_crucible, &self.armor_crucible, &self.charm_crucible],
+        );
+        equip + affix + skill + crucible
     }
 
-    /// Get damage reduction from armor
+    /// Get damage reduction from armor, affixes, skill tree, and crucible.
+    /// Berserker keystone reduces armor by 1.
     pub fn damage_reduction(&self) -> i32 {
-        match self.armor {
+        let equip = match self.armor {
             Some(eq) => match eq.effect {
                 EquipEffect::DamageReduction(d) => d,
                 _ => 0,
             },
             None => 0,
-        }
+        };
+        let affix = crate::rarity::total_affix_armor(&self.weapon_affixes)
+            + crate::rarity::total_affix_armor(&self.armor_affixes)
+            + crate::rarity::total_affix_armor(&self.charm_affixes);
+        let skill = self.skill_tree.total_bonus_armor();
+        let crucible = crate::crucible::aggregate_bonus_armor(
+            &[&self.weapon_crucible, &self.armor_crucible, &self.charm_crucible],
+        );
+        let total = equip + affix + skill + crucible;
+        if self.skill_tree.has_berserker() { (total - 1).max(0) } else { total }
     }
 
-    /// Check extra radical drop chance (percentage)
+    /// Check extra radical drop chance (percentage) from equipment, affixes, skill tree, and crucible
     pub fn extra_radical_chance(&self) -> i32 {
-        match self.charm {
+        let equip = match self.charm {
             Some(eq) => match eq.effect {
                 EquipEffect::ExtraRadicalDrop(pct) => pct,
                 _ => 0,
             },
             None => 0,
-        }
+        };
+        let affix = crate::rarity::total_affix_radical_find(&self.weapon_affixes)
+            + crate::rarity::total_affix_radical_find(&self.armor_affixes)
+            + crate::rarity::total_affix_radical_find(&self.charm_affixes);
+        let skill = self.skill_tree.total_radical_find();
+        let crucible = crate::crucible::aggregate_radical_find(
+            &[&self.weapon_crucible, &self.armor_crucible, &self.charm_crucible],
+        );
+        equip + affix + skill + crucible
     }
 
-    /// Get heal-on-kill amount
+    /// Get heal-on-kill amount from equipment and crucible
     pub fn heal_on_kill(&self) -> i32 {
-        match self.charm {
+        let equip = match self.charm {
             Some(eq) => match eq.effect {
                 EquipEffect::HealOnKill(amt) => amt,
                 _ => 0,
             },
             None => 0,
-        }
+        };
+        let crucible = crate::crucible::aggregate_heal_on_kill(
+            &[&self.weapon_crucible, &self.armor_crucible, &self.charm_crucible],
+        );
+        equip + crucible
     }
 
-    /// Get gold bonus
+    /// Get gold bonus from equipment, affixes, skill tree, and crucible
     pub fn gold_bonus(&self) -> i32 {
-        match self.charm {
+        let equip = match self.charm {
             Some(eq) => match eq.effect {
                 EquipEffect::GoldBonus(amt) => amt,
                 _ => 0,
             },
             None => 0,
-        }
+        };
+        let affix = crate::rarity::total_affix_gold_find(&self.weapon_affixes)
+            + crate::rarity::total_affix_gold_find(&self.armor_affixes)
+            + crate::rarity::total_affix_gold_find(&self.charm_affixes);
+        let skill = self.skill_tree.total_gold_find();
+        let crucible = crate::crucible::aggregate_gold_find(
+            &[&self.weapon_crucible, &self.armor_crucible, &self.charm_crucible],
+        );
+        equip + affix + skill + crucible
+    }
+
+    /// Total crit chance from all sources (percentage).
+    pub fn total_crit_chance(&self) -> i32 {
+        let equip = [self.weapon, self.armor, self.charm]
+            .iter()
+            .flatten()
+            .filter_map(|eq| {
+                if let EquipEffect::CriticalStrike(n) = eq.effect { Some(n) } else { None }
+            })
+            .sum::<i32>();
+        let affix = crate::rarity::total_affix_crit(&self.weapon_affixes)
+            + crate::rarity::total_affix_crit(&self.armor_affixes)
+            + crate::rarity::total_affix_crit(&self.charm_affixes);
+        let skill = self.skill_tree.total_crit_chance();
+        let crucible = crate::crucible::aggregate_crit_chance(
+            &[&self.weapon_crucible, &self.armor_crucible, &self.charm_crucible],
+        );
+        equip + affix + skill + crucible
+    }
+
+    /// Total dodge chance from all sources (percentage).
+    pub fn total_dodge_chance(&self) -> i32 {
+        let affix = crate::rarity::total_affix_dodge(&self.weapon_affixes)
+            + crate::rarity::total_affix_dodge(&self.armor_affixes)
+            + crate::rarity::total_affix_dodge(&self.charm_affixes);
+        let skill = self.skill_tree.total_dodge_chance();
+        let crucible = crate::crucible::aggregate_dodge_chance(
+            &[&self.weapon_crucible, &self.armor_crucible, &self.charm_crucible],
+        );
+        affix + skill + crucible
+    }
+
+    /// Max HP bonus from affixes, skill tree, and crucible.
+    pub fn max_hp_bonus(&self) -> i32 {
+        let affix = crate::rarity::total_affix_max_hp(&self.weapon_affixes)
+            + crate::rarity::total_affix_max_hp(&self.armor_affixes)
+            + crate::rarity::total_affix_max_hp(&self.charm_affixes);
+        let skill = self.skill_tree.total_max_hp();
+        let crucible = crate::crucible::aggregate_max_hp(
+            &[&self.weapon_crucible, &self.armor_crucible, &self.charm_crucible],
+        );
+        affix + skill + crucible
+    }
+
+    /// Effective max HP including bonuses from affixes, skill tree, and crucible.
+    pub fn effective_max_hp(&self) -> i32 {
+        (self.max_hp + self.max_hp_bonus()).max(1)
     }
 
     pub fn equip(&mut self, equipment: &'static Equipment, state: ItemState) {
+        let crucible = CrucibleState::for_equipment(equipment);
         match equipment.slot {
             EquipSlot::Weapon => {
                 self.weapon = Some(equipment);
                 self.weapon_state = state;
+                self.weapon_rarity = ItemRarity::Normal;
+                self.weapon_affixes.clear();
+                self.weapon_crucible = crucible;
             }
             EquipSlot::Armor => {
                 self.armor = Some(equipment);
                 self.armor_state = state;
+                self.armor_rarity = ItemRarity::Normal;
+                self.armor_affixes.clear();
+                self.armor_crucible = crucible;
             }
             EquipSlot::Charm => {
                 self.charm = Some(equipment);
                 self.charm_state = state;
+                self.charm_rarity = ItemRarity::Normal;
+                self.charm_affixes.clear();
+                self.charm_crucible = crucible;
+            }
+        }
+    }
+
+    /// Equip with rarity and pre-rolled affixes.
+    pub fn equip_with_rarity(
+        &mut self,
+        equipment: &'static Equipment,
+        state: ItemState,
+        rarity: ItemRarity,
+        affixes: Vec<RolledAffix>,
+    ) {
+        let crucible = CrucibleState::for_equipment(equipment);
+        match equipment.slot {
+            EquipSlot::Weapon => {
+                self.weapon = Some(equipment);
+                self.weapon_state = state;
+                self.weapon_rarity = rarity;
+                self.weapon_affixes = affixes;
+                self.weapon_crucible = crucible;
+            }
+            EquipSlot::Armor => {
+                self.armor = Some(equipment);
+                self.armor_state = state;
+                self.armor_rarity = rarity;
+                self.armor_affixes = affixes;
+                self.armor_crucible = crucible;
+            }
+            EquipSlot::Charm => {
+                self.charm = Some(equipment);
+                self.charm_state = state;
+                self.charm_rarity = rarity;
+                self.charm_affixes = affixes;
+                self.charm_crucible = crucible;
             }
         }
     }

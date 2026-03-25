@@ -3046,6 +3046,25 @@ impl LocationLevel {
                     }
                 }
             }
+            SpecialRoomKind::ChallengeTerminal => {
+                // Central terminal with data wells
+                if self.in_bounds(cx, cy) {
+                    let idx = self.idx(cx, cy);
+                    if self.tiles[idx] == Tile::MetalFloor {
+                        self.tiles[idx] = Tile::DataWell;
+                    }
+                }
+                for &(dx, dy) in &[(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                    let x = cx + dx;
+                    let y = cy + dy;
+                    if self.in_bounds(x, y) {
+                        let idx = self.idx(x, y);
+                        if self.tiles[idx] == Tile::MetalFloor {
+                            self.tiles[idx] = Tile::SupplyCrate;
+                        }
+                    }
+                }
+            }
         }
     }
 }

@@ -259,6 +259,7 @@ pub enum SpecialRoomKind {
     DemonSeal,
     PhoenixNest,
     CalligraphyContest,
+    ChallengeTerminal,
 }
 
 impl SpecialRoomKind {
@@ -338,6 +339,7 @@ impl SpecialRoomKind {
             Self::DemonSeal => "Demon Seal",
             Self::PhoenixNest => "Phoenix Nest",
             Self::CalligraphyContest => "Calligraphy Contest",
+            Self::ChallengeTerminal => "Challenge Terminal",
         }
     }
 
@@ -417,6 +419,7 @@ impl SpecialRoomKind {
             Self::DemonSeal => "A sealed entity offers dark power — but at what cost?",
             Self::PhoenixNest => "A radiant nest of eternal plasma. The phoenix bestows its blessing.",
             Self::CalligraphyContest => "A master calligrapher challenges you. Speed and accuracy earn credits.",
+            Self::ChallengeTerminal => "A hardened terminal issues a brutal hanzi challenge. Great risk, great reward.",
         }
     }
 
@@ -440,6 +443,7 @@ impl SpecialRoomKind {
             Self::MemorialShrine, Self::RefugeeBay,
             Self::GamblingDen, Self::WishingReactor, Self::SalvageRace,
             Self::CalligraphyContest, Self::ProphecyRoom,
+            Self::ChallengeTerminal,
         ]);
 
         // Deck 3+: harder challenges and more rewards

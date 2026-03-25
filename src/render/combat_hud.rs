@@ -107,7 +107,7 @@ impl super::Renderer {
         self.draw_tactical_grid(battle, anim_t, _player, cell, grid_px, grid_x, grid_y, grid_size);
 
         // Right panel, menus, look mode
-        self.draw_tactical_panels(battle, anim_t, cell, grid_px, grid_x, grid_y, grid_size);
+        self.draw_tactical_panels(battle, anim_t, cell, grid_px, grid_x, grid_y, grid_size, _player);
 
         // Banners, messages, typing UI, battle log
         self.draw_tactical_effects(battle, anim_t, cell, grid_px, grid_x, grid_y, grid_size);

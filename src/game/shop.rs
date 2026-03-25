@@ -3,6 +3,7 @@
 use super::*;
 use crate::player::{ItemState, EQUIPMENT_POOL};
 use crate::radical;
+use crate::rarity::{ItemRarity, RolledAffix};
 
 #[derive(Clone, Debug)]
 pub struct ShopItem {
@@ -15,7 +16,7 @@ pub struct ShopItem {
 pub enum ShopItemKind {
     Radical(&'static str),
     HealFull,
-    Equipment(usize), // index into EQUIPMENT_POOL
+    Equipment(usize, ItemRarity, Vec<RolledAffix>), // index into EQUIPMENT_POOL + rarity + affixes
     Consumable(crate::player::Item),
 }
 
@@ -50,13 +51,21 @@ impl super::GameState {
             });
         }
 
-        // Offer 1 random equipment
+        // Offer 1 random equipment with rarity
         let eq_idx = self.rng_next() as usize % EQUIPMENT_POOL.len();
         let eq = &EQUIPMENT_POOL[eq_idx];
+        let luck_bonus = self.player.skill_tree.total_item_rarity_bonus();
+        let rarity = crate::rarity::roll_rarity(self.floor_num, luck_bonus, self.rng_next());
+        let affixes = crate::rarity::roll_affixes(rarity, self.rng_next());
+        let display = crate::rarity::rarity_name(eq.name, rarity, &affixes);
+        let rarity_tag = match rarity {
+            ItemRarity::Normal => "".to_string(),
+            _ => format!(" [{}]", rarity.label()),
+        };
         items.push(ShopItem {
-            label: format!("{} ({:?})", eq.name, eq.slot),
+            label: format!("{}{} ({:?})", display, rarity_tag, eq.slot),
             cost: 20 + self.floor_num * 5,
-            kind: ShopItemKind::Equipment(eq_idx),
+            kind: ShopItemKind::Equipment(eq_idx, rarity, affixes),
         });
 
         // Offer 1 random consumable item
@@ -106,7 +115,7 @@ impl super::GameState {
                     self.player.hp = self.player.max_hp;
                     self.message = "Fully healed!".to_string();
                 }
-                ShopItemKind::Equipment(idx) => {
+                ShopItemKind::Equipment(idx, rarity, affixes) => {
                     let eq = &EQUIPMENT_POOL[*idx];
                     let current_state = self.player.equipment_state(eq.slot);
                     if current_state == ItemState::Cursed {
@@ -120,8 +129,9 @@ impl super::GameState {
                         );
                         self.player.gold += effective_cost; // refund
                     } else {
-                        self.player.equip(eq, ItemState::Normal);
-                        self.message = format!("Equipped {}!", eq.name);
+                        let display = crate::rarity::rarity_name(eq.name, *rarity, affixes);
+                        self.player.equip_with_rarity(eq, ItemState::Normal, *rarity, affixes.clone());
+                        self.message = format!("Equipped {}!", display);
                     }
                 }
                 ShopItemKind::Consumable(consumable) => {
@@ -211,11 +221,12 @@ impl super::GameState {
                         self.player.hp = self.player.max_hp;
                         self.message = "🤫 You sip the healing brew unnoticed!".to_string();
                     }
-                    ShopItemKind::Equipment(idx) => {
+                    ShopItemKind::Equipment(idx, rarity, affixes) => {
                         let eq = &EQUIPMENT_POOL[*idx];
-                        self.player.equip(eq, ItemState::Normal);
+                        let display = crate::rarity::rarity_name(eq.name, *rarity, affixes);
+                        self.player.equip_with_rarity(eq, ItemState::Normal, *rarity, affixes.clone());
                         self.message =
-                            format!("🤫 You slip on the {} when nobody's watching!", eq.name);
+                            format!("🤫 You slip on the {} when nobody's watching!", display);
                     }
                     ShopItemKind::Consumable(consumable) => {
                         if !self.player.add_item(consumable.clone(), ItemState::Normal) {
@@ -316,13 +327,21 @@ impl super::GameState {
                     kind: ShopItemKind::Radical(rad.ch),
                 }
             }
-            ShopItemKind::Equipment(_) => {
+            ShopItemKind::Equipment(..) => {
                 let eq_idx = self.rng_next() as usize % EQUIPMENT_POOL.len();
                 let eq = &EQUIPMENT_POOL[eq_idx];
+                let luck_bonus = self.player.skill_tree.total_item_rarity_bonus();
+                let rarity = crate::rarity::roll_rarity(self.floor_num, luck_bonus, self.rng_next());
+                let affixes = crate::rarity::roll_affixes(rarity, self.rng_next());
+                let display = crate::rarity::rarity_name(eq.name, rarity, &affixes);
+                let rarity_tag = match rarity {
+                    ItemRarity::Normal => "".to_string(),
+                    _ => format!(" [{}]", rarity.label()),
+                };
                 ShopItem {
-                    label: format!("{} ({:?})", eq.name, eq.slot),
+                    label: format!("{}{} ({:?})", display, rarity_tag, eq.slot),
                     cost: 30 + self.floor_num * 6,
-                    kind: ShopItemKind::Equipment(eq_idx),
+                    kind: ShopItemKind::Equipment(eq_idx, rarity, affixes),
                 }
             }
             ShopItemKind::Consumable(_) => {

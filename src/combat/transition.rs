@@ -53,7 +53,7 @@ pub fn enter_combat(
         movement: p_movement,
         stored_movement: 0,
         hp: player.hp,
-        max_hp: player.max_hp,
+        max_hp: player.effective_max_hp(),
         damage: p_damage + set_flat,
         defending: false,
         alive: true,
@@ -357,6 +357,16 @@ pub fn enter_combat(
         event_message_timer: 0,
         phase_walk_available: !player.phase_walk_used
             && player.has_set_bonus(|b| matches!(b, SetBonus::PhaseWalk)),
+        riposte_charges: player.riposte_charges,
+        overcharge_active: player.overcharge_active,
+        hubris_mode: player.hubris_mode,
+        hard_answer_armor_bonus: player.hard_answer_armor_bonus,
+        has_polyglot: player.skill_tree.has_polyglot(),
+        has_linguists_fury: player.skill_tree.has_linguists_fury(),
+        pending_skill_xp: 0,
+        pending_weapon_crucible_xp: 0,
+        pending_armor_crucible_xp: 0,
+        pending_charm_crucible_xp: 0,
     }
 }
 
@@ -827,6 +837,17 @@ pub fn exit_combat(
     if let Some(player_unit) = battle.units.first() {
         player.hp = player_unit.hp.max(0);
     }
+
+    // Sync risk/reward state back to player.
+    player.riposte_charges = battle.riposte_charges;
+    player.overcharge_active = battle.overcharge_active;
+    player.hard_answer_armor_bonus = battle.hard_answer_armor_bonus;
+
+    // Apply accumulated XP.
+    player.skill_tree.gain_xp(battle.pending_skill_xp as u32);
+    player.weapon_crucible.gain_xp(battle.pending_weapon_crucible_xp as u32);
+    player.armor_crucible.gain_xp(battle.pending_armor_crucible_xp as u32);
+    player.charm_crucible.gain_xp(battle.pending_charm_crucible_xp as u32);
 
     let mut killed = Vec::new();
 

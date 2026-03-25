@@ -303,13 +303,17 @@ impl GameState {
                     equip_msg = Some(format!("{} blocked by curse!", eq.name));
                 } else {
                     let state = self.roll_item_state();
-                    self.player.equip(eq, state);
+                    let luck_bonus = self.player.skill_tree.total_item_rarity_bonus();
+                    let rarity = crate::rarity::roll_rarity(self.floor_num, luck_bonus, self.rng_next());
+                    let affixes = crate::rarity::roll_affixes(rarity, self.rng_next());
+                    let display = crate::rarity::rarity_name(eq.name, rarity, &affixes);
+                    self.player.equip_with_rarity(eq, state, rarity, affixes);
                     let prefix = match state {
                         ItemState::Cursed => "💀 ",
                         ItemState::Blessed => "✨ ",
                         ItemState::Normal => "",
                     };
-                    equip_msg = Some(format!("{}{}", prefix, eq.name));
+                    equip_msg = Some(format!("{}{}", prefix, display));
                 }
             }
 

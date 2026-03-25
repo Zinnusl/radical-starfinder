@@ -1184,6 +1184,25 @@ impl GameState {
                 }
                 self.message_timer = 60;
             }
+            crate::player::Item::AdrenalineInjector => {
+                self.player.hp = 5;
+                self.player.statuses.push(crate::status::StatusInstance::new(
+                    crate::status::StatusKind::Empowered { amount: 3 },
+                    10,
+                ));
+                self.message = "💉 Adrenaline surge! HP set to 5, +3 damage for 10 turns!".to_string();
+                self.message_timer = 70;
+            }
+            crate::player::Item::GamblersChip => {
+                self.player.gamblers_chip_active = true;
+                self.message = "🎰 Gambler's Chip activated — next kill is 50/50!".to_string();
+                self.message_timer = 60;
+            }
+            crate::player::Item::OverchargeCell => {
+                self.player.overcharge_active = true;
+                self.message = "⚡ Overcharge! Next correct answer 3× damage, wrong = 2× to you!".to_string();
+                self.message_timer = 70;
+            }
         }
 
         if newly_identified {

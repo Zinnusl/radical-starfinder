@@ -58,6 +58,8 @@ pub enum PlayerStance {
     Mobile,
     /// +1 ability power, +1 ability range, -1 movement, -1 damage.
     Focused,
+    /// +4 damage, -2 armor, wrong answers = enemy attacks twice.
+    Reckless,
 }
 
 impl PlayerStance {
@@ -68,6 +70,7 @@ impl PlayerStance {
             Self::Defensive => -1,
             Self::Mobile => -1,
             Self::Focused => -1,
+            Self::Reckless => 4,
         }
     }
 
@@ -78,6 +81,7 @@ impl PlayerStance {
             Self::Defensive => 2,
             Self::Mobile => 0,
             Self::Focused => 0,
+            Self::Reckless => -2,
         }
     }
 
@@ -88,6 +92,7 @@ impl PlayerStance {
             Self::Defensive => 0,
             Self::Mobile => 2,
             Self::Focused => -1,
+            Self::Reckless => 0,
         }
     }
 
@@ -106,7 +111,7 @@ impl PlayerStance {
     }
 
     pub fn can_cast_spells(&self) -> bool {
-        !matches!(self, Self::Mobile)
+        !matches!(self, Self::Mobile | Self::Reckless)
     }
 
     pub fn name(&self) -> &'static str {
@@ -116,6 +121,7 @@ impl PlayerStance {
             Self::Defensive => "Defensive",
             Self::Mobile => "Mobile",
             Self::Focused => "Focused",
+            Self::Reckless => "Reckless",
         }
     }
 
@@ -126,6 +132,7 @@ impl PlayerStance {
             Self::Defensive => "🛡",
             Self::Mobile => "🏃",
             Self::Focused => "🧘",
+            Self::Reckless => "💀",
         }
     }
 
@@ -136,6 +143,7 @@ impl PlayerStance {
             Self::Defensive => "#4488ff",
             Self::Mobile => "#44cc44",
             Self::Focused => "#bb66ff",
+            Self::Reckless => "#ff2200",
         }
     }
 
@@ -146,6 +154,7 @@ impl PlayerStance {
             Self::Defensive => "+2 armor, -1 dmg",
             Self::Mobile => "+2 move, -1 dmg, no spells",
             Self::Focused => "+1 ability pwr/range, -1 move/dmg",
+            Self::Reckless => "+4 dmg, -2 armor, wrong=2× hit, no spells",
         }
     }
 
@@ -156,7 +165,8 @@ impl PlayerStance {
             Self::Aggressive => Self::Defensive,
             Self::Defensive => Self::Mobile,
             Self::Mobile => Self::Focused,
-            Self::Focused => Self::Balanced,
+            Self::Focused => Self::Reckless,
+            Self::Reckless => Self::Balanced,
         }
     }
 }
@@ -1267,6 +1277,32 @@ pub struct TacticalBattle {
     pub event_message_timer: u16,
     /// PhaseWalk set bonus: player may pass through one impassable tile this battle.
     pub phase_walk_available: bool,
+
+    // ── Risk/Reward state (copied from Player at combat start, synced back on exit) ──
+
+    /// Riposte charges: each blocks one enemy counter-attack on wrong answer.
+    pub riposte_charges: i32,
+    /// Overcharge: next correct answer deals 3× damage; wrong answer takes 2×.
+    pub overcharge_active: bool,
+    /// Hubris mode: wrong-answer counter-attacks deal 1.5× damage.
+    pub hubris_mode: bool,
+    /// Temporary armor from hard-answer equipment bonuses.
+    pub hard_answer_armor_bonus: i32,
+    /// Whether the player has the Polyglot notable (all answers count as hard).
+    pub has_polyglot: bool,
+    /// Whether the player has the Linguist's Fury notable (+0.15× combo multiplier).
+    pub has_linguists_fury: bool,
+
+    // ── XP accumulators (applied to player on exit) ──
+
+    /// Skill tree XP earned during this battle.
+    pub pending_skill_xp: i32,
+    /// Weapon crucible XP earned during this battle.
+    pub pending_weapon_crucible_xp: i32,
+    /// Armor crucible XP earned during this battle.
+    pub pending_armor_crucible_xp: i32,
+    /// Charm crucible XP earned during this battle.
+    pub pending_charm_crucible_xp: i32,
 }
 
 impl TacticalBattle {
@@ -1328,13 +1364,18 @@ impl TacticalBattle {
         } else {
             self.combo_streak
         };
-        match effective_streak {
+        let base = match effective_streak {
             0 => 1.0,
             1..=2 => 1.1,
             3..=4 => 1.2,
             5..=7 => 1.3,
             8..=11 => 1.5,
             _ => 1.75,
+        };
+        if self.has_linguists_fury {
+            f64::min(base + 0.15, 2.0)
+        } else {
+            base
         }
     }
 

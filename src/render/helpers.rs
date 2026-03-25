@@ -6,6 +6,7 @@ use crate::enemy::BossKind;
 use crate::game::ShopItemKind;
 use crate::player::{Item, ItemKind, ItemState};
 use crate::radical;
+use crate::rarity::{ItemRarity, RolledAffix};
 
 pub(super) fn boss_sprite_key(kind: BossKind) -> &'static str {
     match kind {
@@ -66,6 +67,9 @@ pub(super) fn item_sprite_key(item: &Item) -> &'static str {
         ItemKind::CircuitInk => "item_cinnabar_ink",
         ItemKind::DataCore => "item_ancestor_token",
         ItemKind::ThrusterPack => "item_wind_fan",
+        ItemKind::AdrenalineInjector => "item_haste_potion",
+        ItemKind::GamblersChip => "item_gold_ingot",
+        ItemKind::OverchargeCell => "item_thunder_talisman",
     }
 }
 
@@ -154,7 +158,7 @@ pub(super) fn shop_item_sprite_key(kind: &ShopItemKind) -> Option<&'static str> 
     match kind {
         ShopItemKind::Radical(_) => None,
         ShopItemKind::HealFull => Some("item_health_potion"),
-        ShopItemKind::Equipment(idx) => {
+        ShopItemKind::Equipment(idx, ..) => {
             let eq = crate::player::EQUIPMENT_POOL.get(*idx)?;
             equipment_sprite_key(eq.name)
         }
@@ -194,6 +198,8 @@ pub(super) fn equipment_name(
     equipment: Option<&crate::player::Equipment>,
     enchantment: Option<&'static str>,
     state: ItemState,
+    rarity: ItemRarity,
+    affixes: &[RolledAffix],
 ) -> String {
     let prefix = match state {
         ItemState::Cursed => "💀 ",
@@ -201,12 +207,21 @@ pub(super) fn equipment_name(
         ItemState::Normal => "",
     };
     match (equipment, enchantment) {
-        (Some(equipment), Some(enchantment)) => {
-            format!("{}{} +{}", prefix, equipment.name, enchantment)
+        (Some(eq), Some(ench)) => {
+            let name = crate::rarity::rarity_name(eq.name, rarity, affixes);
+            format!("{}{} +{}", prefix, name, ench)
         }
-        (Some(equipment), None) => format!("{}{}", prefix, equipment.name),
+        (Some(eq), None) => {
+            let name = crate::rarity::rarity_name(eq.name, rarity, affixes);
+            format!("{}{}", prefix, name)
+        }
         (None, _) => "None".to_string(),
     }
+}
+
+/// Return the CSS color for the equipment's rarity tier.
+pub(super) fn equipment_rarity_color(rarity: ItemRarity) -> &'static str {
+    rarity.color()
 }
 
 pub(super) fn radical_stack_counts(radicals: &[&'static str]) -> BTreeMap<&'static str, usize> {

@@ -776,14 +776,18 @@ impl GameState {
                 // Great loot: high-tier equipment + gold
                 let equip_idx = 2 + (self.rng_next() as usize % 3); // Dragon Fang Pen or better
                 let equip = &EQUIPMENT_POOL[equip_idx.min(EQUIPMENT_POOL.len() - 1)];
-                self.player.equip(equip, ItemState::Normal);
+                let luck_bonus = self.player.skill_tree.total_item_rarity_bonus();
+                let rarity = crate::rarity::roll_rarity(self.floor_num, luck_bonus, self.rng_next());
+                let affixes = crate::rarity::roll_affixes(rarity, self.rng_next());
+                let display = crate::rarity::rarity_name(equip.name, rarity, &affixes);
+                self.player.equip_with_rarity(equip, ItemState::Normal, rarity, affixes);
                 self.player.gold += 75;
                 // Apply Cursed status for 10 turns (representing floors)
                 self.player.statuses.push(crate::status::StatusInstance::new(
                     crate::status::StatusKind::Cursed,
                     50, // ~10 floors worth of turns
                 ));
-                self.message = format!("💀 You claim {} and 75 gold, but a curse clings to you!", equip.name);
+                self.message = format!("💀 You claim {} and 75 gold, but a curse clings to you!", display);
                 self.message_timer = 120;
                 self.trigger_shake(4);
                 self.flash = Some((100, 0, 150, 0.3));
@@ -841,8 +845,12 @@ impl GameState {
                     1 => {
                         let eq_idx = self.rng_next() as usize % EQUIPMENT_POOL.len();
                         let equip = &EQUIPMENT_POOL[eq_idx];
-                        self.player.equip(equip, ItemState::Normal);
-                        self.message = format!("🪙 You throw {} gold. {} rises from the depths!", cost, equip.name);
+                        let luck_bonus = self.player.skill_tree.total_item_rarity_bonus();
+                        let rarity = crate::rarity::roll_rarity(self.floor_num, luck_bonus, self.rng_next());
+                        let affixes = crate::rarity::roll_affixes(rarity, self.rng_next());
+                        let display = crate::rarity::rarity_name(equip.name, rarity, &affixes);
+                        self.player.equip_with_rarity(equip, ItemState::Normal, rarity, affixes);
+                        self.message = format!("🪙 You throw {} gold. {} rises from the depths!", cost, display);
                     }
                     _ => {
                         let rare_radicals: &[&str] = &["龙", "凤", "鬼", "神", "魂", "仙"];
@@ -850,8 +858,12 @@ impl GameState {
                         self.player.add_radical(r);
                         let eq_idx = self.rng_next() as usize % EQUIPMENT_POOL.len();
                         let equip = &EQUIPMENT_POOL[eq_idx];
-                        self.player.equip(equip, ItemState::Blessed);
-                        self.message = format!("🪙 You throw {} gold. Radical {} and blessed {} rise!", cost, r, equip.name);
+                        let luck_bonus = self.player.skill_tree.total_item_rarity_bonus();
+                        let rarity = crate::rarity::roll_rarity(self.floor_num, luck_bonus, self.rng_next());
+                        let affixes = crate::rarity::roll_affixes(rarity, self.rng_next());
+                        let display = crate::rarity::rarity_name(equip.name, rarity, &affixes);
+                        self.player.equip_with_rarity(equip, ItemState::Blessed, rarity, affixes);
+                        self.message = format!("🪙 You throw {} gold. Radical {} and blessed {} rise!", cost, r, display);
                     }
                 }
                 self.message_timer = 120;
@@ -916,8 +928,12 @@ impl GameState {
                 self.player.gold += 40;
                 let eq_idx = self.rng_next() as usize % EQUIPMENT_POOL.len();
                 let equip = &EQUIPMENT_POOL[eq_idx];
-                self.player.equip(equip, ItemState::Normal);
-                self.message = format!("⚖ Puzzle solved! 40 gold + {}!", equip.name);
+                let luck_bonus = self.player.skill_tree.total_item_rarity_bonus();
+                let rarity = crate::rarity::roll_rarity(self.floor_num, luck_bonus, self.rng_next());
+                let affixes = crate::rarity::roll_affixes(rarity, self.rng_next());
+                let display = crate::rarity::rarity_name(equip.name, rarity, &affixes);
+                self.player.equip_with_rarity(equip, ItemState::Normal, rarity, affixes);
+                self.message = format!("⚖ Puzzle solved! 40 gold + {}!", display);
                 self.message_timer = 100;
                 self.flash = Some((200, 255, 150, 0.2));
                 if let Some(ref audio) = self.audio {
@@ -1102,8 +1118,12 @@ impl GameState {
                 self.level.tiles[idx] = Tile::MetalFloor;
                 // Give a high-tier weapon
                 let high_tier = &EQUIPMENT_POOL[2]; // Dragon Fang Pen (+3 dmg)
-                self.player.equip(high_tier, ItemState::Blessed);
-                self.message = format!("⚔ The ancestor's spirit grants you their blessed {}!", high_tier.name);
+                let luck_bonus = self.player.skill_tree.total_item_rarity_bonus();
+                let rarity = crate::rarity::roll_rarity(self.floor_num, luck_bonus, self.rng_next());
+                let affixes = crate::rarity::roll_affixes(rarity, self.rng_next());
+                let display = crate::rarity::rarity_name(high_tier.name, rarity, &affixes);
+                self.player.equip_with_rarity(high_tier, ItemState::Blessed, rarity, affixes);
+                self.message = format!("⚔ The ancestor's spirit grants you their blessed {}!", display);
                 self.message_timer = 120;
                 self.flash = Some((255, 215, 0, 0.3));
                 if let Some(ref audio) = self.audio {
@@ -1204,6 +1224,43 @@ impl GameState {
                 self.flash = Some((255, 255, 200, 0.2));
                 if let Some(ref audio) = self.audio {
                     audio.play_treasure();
+                }
+            }
+
+            SpecialRoomKind::ChallengeTerminal => {
+                if !matches!(target_tile, Tile::Terminal(_)) { return; }
+                self.mark_room_completed();
+                let idx = self.level.idx(self.player.x, self.player.y);
+                self.level.tiles[idx] = Tile::MetalFloor;
+                // 50/50 harder-than-normal hanzi challenge
+                let success = self.rng_next() % 2 == 0;
+                if success {
+                    self.player.gold += 15;
+                    self.player.hp = (self.player.hp + 5).min(self.player.max_hp);
+                    let rare_radicals: &[&str] = &["龙", "凤", "鬼", "神", "魂", "仙"];
+                    let r = rare_radicals[self.rng_next() as usize % rare_radicals.len()];
+                    self.player.add_radical(r);
+                    self.message = format!(
+                        "🖥 Challenge Terminal conquered! +15 gold, +5 HP, bonus radical {}!",
+                        r
+                    );
+                    self.message_timer = 100;
+                    self.flash = Some((100, 255, 100, 0.3));
+                    if let Some(ref audio) = self.audio {
+                        audio.play_treasure();
+                    }
+                } else {
+                    self.player.hp -= 3;
+                    self.player.statuses.push(crate::status::StatusInstance::new(
+                        crate::status::StatusKind::Weakened,
+                        2,
+                    ));
+                    self.message = "🖥 Challenge Terminal failed! −3 HP, Weakened for 2 turns!".to_string();
+                    self.message_timer = 100;
+                    self.flash = Some((255, 50, 50, 0.3));
+                    if self.player.hp <= 0 {
+                        self.combat = CombatState::GameOver;
+                    }
                 }
             }
 

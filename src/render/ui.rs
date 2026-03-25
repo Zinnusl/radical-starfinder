@@ -2,10 +2,11 @@
 
 use crate::game::{CombatState, ListenMode};
 use crate::player::{active_set_bonuses, Player, ItemState};
+use crate::rarity::ItemRarity;
 
 use super::helpers::{
-    equipment_name, equipment_sprite_key, item_sprite_key, radical_stack_counts,
-    spell_school_color, spell_sprite_key, word_wrap,
+    equipment_name, equipment_rarity_color, equipment_sprite_key, item_sprite_key,
+    radical_stack_counts, spell_school_color, spell_sprite_key, word_wrap,
 };
 
 impl super::Renderer {
@@ -230,14 +231,40 @@ impl super::Renderer {
                 .set_fill_style_str(if selected { "#ffffff" } else { "#aaaaaa" });
             self.ctx.set_font("14px monospace");
             self.ctx.set_text_align("left");
-            let name = match i {
-                0 => equipment_name(player.weapon, player.enchantments[0], player.weapon_state),
-                1 => equipment_name(player.armor, player.enchantments[1], player.armor_state),
-                _ => equipment_name(player.charm, player.enchantments[2], player.charm_state),
+            let (name, rarity) = match i {
+                0 => (
+                    equipment_name(player.weapon, player.enchantments[0], player.weapon_state, player.weapon_rarity, &player.weapon_affixes),
+                    player.weapon_rarity,
+                ),
+                1 => (
+                    equipment_name(player.armor, player.enchantments[1], player.armor_state, player.armor_rarity, &player.armor_affixes),
+                    player.armor_rarity,
+                ),
+                _ => (
+                    equipment_name(player.charm, player.enchantments[2], player.charm_state, player.charm_rarity, &player.charm_affixes),
+                    player.charm_rarity,
+                ),
             };
+            if rarity != ItemRarity::Normal {
+                self.ctx.set_fill_style_str(equipment_rarity_color(rarity));
+            }
             self.ctx
                 .fill_text(&format!("{}: {}", equips[i], name), box_x + 20.0, y)
                 .ok();
+            // Show affix effects below the equipment name
+            let affixes: &[crate::rarity::RolledAffix] = match i {
+                0 => &player.weapon_affixes,
+                1 => &player.armor_affixes,
+                _ => &player.charm_affixes,
+            };
+            if !affixes.is_empty() {
+                self.ctx.set_font("11px monospace");
+                self.ctx.set_fill_style_str(equipment_rarity_color(rarity));
+                let descs: Vec<String> = affixes.iter().map(|a| a.affix.effect.describe()).collect();
+                self.ctx
+                    .fill_text(&format!("  {}", descs.join(", ")), box_x + 20.0, y + 14.0)
+                    .ok();
+            }
             y += 28.0;
         }
 
@@ -570,7 +597,7 @@ impl super::Renderer {
             .fill_text(
                 &format!(
                     "Floor {}   HP {}/{}   Gold {}   Class {}",
-                    floor_num, player.hp, player.max_hp, player.gold, class_name
+                    floor_num, player.hp, player.effective_max_hp(), player.gold, class_name
                 ),
                 box_x + 18.0,
                 box_y + 66.0,
@@ -624,35 +651,48 @@ impl super::Renderer {
             Option<&crate::player::Equipment>,
             Option<&'static str>,
             ItemState,
+            ItemRarity,
+            &[crate::rarity::RolledAffix],
         ); 3] = [
             (
                 "Weapon",
                 player.weapon,
                 player.enchantments[0],
                 player.weapon_state,
+                player.weapon_rarity,
+                &player.weapon_affixes,
             ),
             (
                 "Armor ",
                 player.armor,
                 player.enchantments[1],
                 player.armor_state,
+                player.armor_rarity,
+                &player.armor_affixes,
             ),
             (
                 "Charm ",
                 player.charm,
                 player.enchantments[2],
                 player.charm_state,
+                player.charm_rarity,
+                &player.charm_affixes,
             ),
         ];
-        for (slot_idx, (label, equip, enchant, state)) in equip_slots.iter().enumerate() {
+        for (slot_idx, (label, equip, enchant, state, rarity, affixes)) in equip_slots.iter().enumerate() {
             let selected = inventory_cursor == slot_idx;
             if selected {
                 self.ctx.set_fill_style_str("rgba(255,204,51,0.15)");
                 self.ctx
                     .fill_rect(left_x + 8.0, left_y - 12.0, left_w - 16.0, 16.0);
             }
-            self.ctx
-                .set_fill_style_str(if selected { "#00ccdd" } else { "#dde7ff" });
+            let base_color = if selected { "#00ccdd" } else { "#dde7ff" };
+            let color = if *rarity != ItemRarity::Normal {
+                equipment_rarity_color(*rarity)
+            } else {
+                base_color
+            };
+            self.ctx.set_fill_style_str(color);
             let marker = if selected { "▸" } else { " " };
             self.ctx
                 .fill_text(
@@ -660,7 +700,7 @@ impl super::Renderer {
                         "{} {}: {}",
                         marker,
                         label,
-                        equipment_name(*equip, *enchant, *state)
+                        equipment_name(*equip, *enchant, *state, *rarity, affixes)
                     ),
                     left_x + 12.0,
                     left_y,
@@ -1514,5 +1554,305 @@ impl super::Renderer {
                 let _ = ctx.fill_text(line, 10.0, y);
             }
         }
+    }
+
+    pub fn draw_skill_tree(&self, player: &crate::player::Player, cursor: usize) {
+        let w = self.canvas_w;
+        let h = self.canvas_h;
+
+        // Background overlay
+        self.ctx.set_fill_style_str("rgba(0, 0, 0, 0.92)");
+        self.ctx.fill_rect(0.0, 0.0, w, h);
+
+        // Title
+        self.ctx.set_fill_style_str("#ffcc33");
+        self.ctx.set_font("bold 18px monospace");
+        self.ctx.set_text_align("center");
+        self.ctx.fill_text("⚡ SKILL TREE ⚡", w / 2.0, 30.0).ok();
+
+        // Level + points info
+        self.ctx.set_fill_style_str("#aaccff");
+        self.ctx.set_font("13px monospace");
+        let level = player.skill_tree.level;
+        let points = player.skill_tree.skill_points;
+        self.ctx
+            .fill_text(
+                &format!("Level {} — {} skill points available", level, points),
+                w / 2.0,
+                52.0,
+            )
+            .ok();
+
+        // XP bar
+        let prev_boundary = level * (level + 1) / 2 * 100;
+        let next_boundary = (level + 1) * (level + 2) / 2 * 100;
+        let level_span = next_boundary - prev_boundary;
+        let level_xp = player.skill_tree.xp.saturating_sub(prev_boundary);
+        let xp_frac = if level_span > 0 {
+            (level_xp as f64 / level_span as f64).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let bar_w = 200.0;
+        let bar_x = w / 2.0 - bar_w / 2.0;
+        self.ctx.set_fill_style_str("#222244");
+        self.ctx.fill_rect(bar_x, 58.0, bar_w, 6.0);
+        self.ctx.set_fill_style_str("#6688cc");
+        self.ctx.fill_rect(bar_x, 58.0, bar_w * xp_frac, 6.0);
+
+        // Node list
+        self.ctx.set_text_align("left");
+        let tree = &crate::skill_tree::SKILL_TREE;
+        let nodes = tree.nodes;
+        let start_y = 80.0;
+        let line_h = 18.0;
+
+        // Calculate visible window
+        let max_visible = ((h - start_y - 40.0) / line_h) as usize;
+        let scroll_offset = if cursor >= max_visible {
+            cursor - max_visible + 1
+        } else {
+            0
+        };
+
+        for (i, node) in nodes.iter().enumerate().skip(scroll_offset) {
+            let y = start_y + (i - scroll_offset) as f64 * line_h;
+            if y > h - 40.0 {
+                break;
+            }
+
+            let is_selected = i == cursor;
+            let is_allocated = player.skill_tree.allocated[i];
+            let can_alloc = player.skill_tree.can_allocate(i);
+
+            // Background highlight for selected
+            if is_selected {
+                self.ctx
+                    .set_fill_style_str("rgba(255, 204, 51, 0.15)");
+                self.ctx.fill_rect(20.0, y - 12.0, w - 40.0, line_h);
+            }
+
+            // Status indicator
+            let status = if is_allocated {
+                "●"
+            } else if can_alloc {
+                "○"
+            } else {
+                "·"
+            };
+
+            // Color based on state
+            let color = if is_allocated {
+                "#44ff44"
+            } else if can_alloc && is_selected {
+                "#ffffff"
+            } else if can_alloc {
+                "#aaaaaa"
+            } else {
+                "#555555"
+            };
+
+            // Cluster color indicator
+            let cluster_color = node.cluster.color();
+            self.ctx.set_fill_style_str(cluster_color);
+            self.ctx.set_font(if node.is_notable {
+                "bold 12px monospace"
+            } else {
+                "12px monospace"
+            });
+            self.ctx.fill_text(status, 24.0, y).ok();
+
+            // Node name
+            self.ctx.set_fill_style_str(color);
+            let notable_tag = if node.is_notable { " ★" } else { "" };
+            self.ctx
+                .fill_text(&format!("{}{}", node.name, notable_tag), 40.0, y)
+                .ok();
+
+            // Effect description
+            self.ctx.set_fill_style_str(if is_allocated {
+                "#88cc88"
+            } else {
+                "#777777"
+            });
+            self.ctx.set_font("11px monospace");
+            self.ctx.fill_text(node.description, 220.0, y).ok();
+        }
+
+        // Footer
+        self.ctx.set_fill_style_str("#666688");
+        self.ctx.set_font("11px monospace");
+        self.ctx.set_text_align("center");
+        self.ctx
+            .fill_text(
+                "↑↓ Navigate • Enter: Allocate • T/Esc: Close",
+                w / 2.0,
+                h - 12.0,
+            )
+            .ok();
+    }
+
+    pub fn draw_crucible(&self, player: &crate::player::Player, cursor: usize) {
+        let w = self.canvas_w;
+        let h = self.canvas_h;
+
+        // Background overlay
+        self.ctx.set_fill_style_str("rgba(0, 0, 0, 0.92)");
+        self.ctx.fill_rect(0.0, 0.0, w, h);
+
+        // Title
+        self.ctx.set_fill_style_str("#ff9944");
+        self.ctx.set_font("bold 18px monospace");
+        self.ctx.set_text_align("center");
+        self.ctx
+            .fill_text("⚒ Equipment Crucible ⚒", w / 2.0, 30.0)
+            .ok();
+
+        // Slot data: (label, equipment name, crucible state)
+        let slots: [(&str, Option<&str>, &crate::crucible::CrucibleState); 3] = [
+            (
+                "Weapon",
+                player.weapon.map(|e| e.name),
+                &player.weapon_crucible,
+            ),
+            (
+                "Armor",
+                player.armor.map(|e| e.name),
+                &player.armor_crucible,
+            ),
+            (
+                "Charm",
+                player.charm.map(|e| e.name),
+                &player.charm_crucible,
+            ),
+        ];
+
+        self.ctx.set_text_align("left");
+        let mut y = 60.0;
+
+        for (slot_idx, (label, equip_name, cruc)) in slots.iter().enumerate() {
+            let is_selected = slot_idx == cursor;
+            let tmpl = cruc.template();
+
+            // Slot header highlight
+            if is_selected {
+                self.ctx
+                    .set_fill_style_str("rgba(255, 153, 68, 0.15)");
+                self.ctx.fill_rect(16.0, y - 14.0, w - 32.0, 20.0);
+            }
+
+            // Slot header
+            let header_color = if is_selected { "#ffcc33" } else { "#aaaaaa" };
+            self.ctx.set_fill_style_str(header_color);
+            self.ctx.set_font("bold 14px monospace");
+            let name_str = equip_name.unwrap_or("(empty)");
+            let header = format!(
+                "{}: {} — {} (XP: {})",
+                label,
+                name_str,
+                tmpl.name,
+                cruc.xp
+            );
+            self.ctx.fill_text(&header, 24.0, y).ok();
+            y += 20.0;
+
+            // Node list for this slot
+            for node_idx in 0..5 {
+                let node = &tmpl.nodes[node_idx];
+                let unlocked = cruc.unlocked[node_idx];
+
+                // Tree structure prefix
+                let prefix = match node_idx {
+                    0 | 1 => "├─",
+                    2 => if cruc.branch_chosen.is_some() || cruc.pending_branch() {
+                        "├─"
+                    } else {
+                        "└─"
+                    },
+                    3 => "├← L:",
+                    4 => "└→ R:",
+                    _ => "  ",
+                };
+
+                // Status indicator
+                let status = if unlocked { "●" } else { "·" };
+
+                // Color
+                let color = if unlocked {
+                    "#44ff44"
+                } else if node_idx < 3 {
+                    "#888888"
+                } else {
+                    // Branch nodes
+                    match cruc.branch_chosen {
+                        Some(true) if node_idx == 3 => "#44ff44",
+                        Some(false) if node_idx == 4 => "#44ff44",
+                        _ if cruc.pending_branch() && is_selected => "#ffcc33",
+                        _ => "#555555",
+                    }
+                };
+
+                self.ctx.set_fill_style_str(color);
+                self.ctx.set_font("12px monospace");
+                let line = format!(
+                    "  {} {} {} — {}",
+                    prefix, status, node.name, node.description
+                );
+                self.ctx.fill_text(&line, 32.0, y).ok();
+
+                // XP cost on the right
+                self.ctx.set_fill_style_str("#666688");
+                self.ctx.set_font("11px monospace");
+                self.ctx.set_text_align("right");
+                self.ctx
+                    .fill_text(&format!("{}xp", node.xp_cost), w - 28.0, y)
+                    .ok();
+                self.ctx.set_text_align("left");
+
+                y += 16.0;
+            }
+
+            // Branch choice prompt
+            if cruc.pending_branch() && is_selected {
+                self.ctx.set_fill_style_str("#ffcc33");
+                self.ctx.set_font("bold 12px monospace");
+                self.ctx
+                    .fill_text("  ⚡ Branch ready! ← Left  |  → Right", 32.0, y)
+                    .ok();
+                y += 16.0;
+            } else if let Some(left) = cruc.branch_chosen {
+                let chosen = if left { "Left (node 3)" } else { "Right (node 4)" };
+                self.ctx.set_fill_style_str("#668866");
+                self.ctx.set_font("11px monospace");
+                self.ctx
+                    .fill_text(&format!("  Branch chosen: {}", chosen), 32.0, y)
+                    .ok();
+                y += 16.0;
+            }
+
+            // XP to next
+            if let Some(needed) = cruc.xp_to_next() {
+                self.ctx.set_fill_style_str("#666688");
+                self.ctx.set_font("11px monospace");
+                self.ctx
+                    .fill_text(&format!("  Next unlock in {} XP", needed), 32.0, y)
+                    .ok();
+                y += 16.0;
+            }
+
+            y += 10.0;
+        }
+
+        // Footer
+        self.ctx.set_fill_style_str("#666688");
+        self.ctx.set_font("11px monospace");
+        self.ctx.set_text_align("center");
+        self.ctx
+            .fill_text(
+                "↑↓ Select slot • ←→ Choose branch • U/Esc: Close",
+                w / 2.0,
+                h - 12.0,
+            )
+            .ok();
     }
 }

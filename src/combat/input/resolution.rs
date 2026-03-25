@@ -15,6 +15,21 @@ use crate::vocab;
 
 use super::BattleEvent;
 
+/// Returns `true` when the answered hanzi should count as a "hard" answer,
+/// which qualifies for riposte charges and equipment bonuses.
+fn is_hard_answer_tactical(hanzi: &str, mastery_tier: u8, has_polyglot: bool) -> bool {
+    if has_polyglot {
+        return true;
+    }
+    if hanzi.chars().count() >= 2 {
+        return true;
+    }
+    if mastery_tier <= 1 {
+        return true;
+    }
+    false
+}
+
 fn tile_spell_bonus(battle: &TacticalBattle, unit_idx: usize) -> i32 {
     let tile_bonus = match battle
         .arena
@@ -462,6 +477,43 @@ pub(super) fn resolve_basic_attack(
         battle.last_answer = Some((target_hanzi, true));
         battle.combo_streak += 1;
         battle.audio_events.push(AudioEvent::TypingCorrect);
+
+        // ── Hard answer detection ──
+        let target_mastery = battle.units[target_idx].mastery_tier;
+        let is_hard = is_hard_answer_tactical(target_hanzi, target_mastery, battle.has_polyglot);
+        if is_hard {
+            battle.riposte_charges = (battle.riposte_charges + 1).min(3);
+            for e in &battle.player_equip_effects {
+                match e {
+                    crate::player::EquipEffect::HardAnswerHeal(n) => {
+                        let max_hp = battle.units[0].max_hp;
+                        battle.units[0].hp = (battle.units[0].hp + n).min(max_hp);
+                    }
+                    crate::player::EquipEffect::HardAnswerArmor(n) => {
+                        battle.hard_answer_armor_bonus += n;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let hard_bonus: i32 = if is_hard {
+            battle.player_equip_effects.iter().filter_map(|e| {
+                if let crate::player::EquipEffect::HardAnswerDamage(n) = e { Some(*n) } else { None }
+            }).sum()
+        } else {
+            0
+        };
+
+        // ── XP gains ──
+        battle.pending_skill_xp += 5;
+        if is_hard {
+            battle.pending_skill_xp += 5;
+        }
+        let crucible_xp = if is_hard { 3 } else { 1 };
+        battle.pending_weapon_crucible_xp += crucible_xp;
+        battle.pending_armor_crucible_xp += crucible_xp;
+        battle.pending_charm_crucible_xp += crucible_xp;
+
         let combo = battle.combo_multiplier();
         let flank = flank_bonus(battle, 0, target_idx);
         let base_damage = (battle.units[0].damage + battle.player_stance.damage_mod()).max(1);
@@ -501,7 +553,8 @@ pub(super) fn resolve_basic_attack(
         };
 
         let raw = (base_damage as f64 * combo * (1.0 + flank) * focus_penalty * synergy_bonus * crit_multiplier)
-            .ceil() as i32;
+            .ceil() as i32
+            + hard_bonus;
         // Frozen Edge combo bonus: +1 damage + Slow on next 3 basic attacks
         let frozen_bonus = if battle.frozen_edge_charges > 0 {
             battle.frozen_edge_charges -= 1;
@@ -509,7 +562,15 @@ pub(super) fn resolve_basic_attack(
         } else {
             0
         };
-        let (actual, wuxing_label) = deal_damage_from(battle, 0, target_idx, raw + frozen_bonus);
+        // Overcharge: triple damage on correct answer, then consume.
+        let pre_overcharge = raw + frozen_bonus;
+        let final_dmg = if battle.overcharge_active {
+            battle.overcharge_active = false;
+            pre_overcharge * 3
+        } else {
+            pre_overcharge
+        };
+        let (actual, wuxing_label) = deal_damage_from(battle, 0, target_idx, final_dmg);
         if frozen_bonus > 0 {
             battle.units[target_idx]
                 .statuses
@@ -707,17 +768,50 @@ pub(super) fn resolve_basic_attack(
             }
 
             if battle.units[target_idx].alive {
-                let enemy_dmg = battle.units[target_idx].damage;
-                let actual = deal_damage(battle, 0, enemy_dmg);
-                battle.log_message(format!("Counter-attack! {} damage!", actual));
-
-                if battle.units[0].hp <= 0 {
-                    battle.units[0].alive = false;
-                    battle.phase = TacticalPhase::End {
-                        victory: false,
-                        timer: 60,
+                if battle.riposte_charges > 0 {
+                    battle.riposte_charges -= 1;
+                    battle.log_message("⚡ Riposte! Wrong answer but damage negated!");
+                } else {
+                    let enemy_dmg = battle.units[target_idx].damage;
+                    // Hubris multiplier.
+                    let counter_dmg = if battle.hubris_mode {
+                        (enemy_dmg as f64 * 1.5).round() as i32
+                    } else {
+                        enemy_dmg
                     };
-                    return BattleEvent::None;
+                    // Overcharge penalty: wrong answer takes 2× counter-damage.
+                    let counter_dmg = if battle.overcharge_active {
+                        battle.overcharge_active = false;
+                        counter_dmg * 2
+                    } else {
+                        counter_dmg
+                    };
+                    // Hard-answer armor absorbs damage, then expires.
+                    let counter_dmg = (counter_dmg - battle.hard_answer_armor_bonus).max(0);
+                    if battle.hard_answer_armor_bonus > 0 {
+                        battle.log_message("🛡 Hard-answer armor absorbs some damage!");
+                        battle.hard_answer_armor_bonus = 0;
+                    }
+                    let actual = deal_damage(battle, 0, counter_dmg);
+                    battle.log_message(format!("Counter-attack! {} damage!", actual));
+
+                    // Reckless stance: enemy attacks a second time.
+                    if battle.player_stance == crate::combat::PlayerStance::Reckless {
+                        let actual2 = deal_damage(battle, 0, counter_dmg);
+                        battle.log_message(format!(
+                            "⚠ Reckless penalty! Second hit for {} damage!",
+                            actual2
+                        ));
+                    }
+
+                    if battle.units[0].hp <= 0 {
+                        battle.units[0].alive = false;
+                        battle.phase = TacticalPhase::End {
+                            victory: false,
+                            timer: 60,
+                        };
+                        return BattleEvent::None;
+                    }
                 }
             }
             battle.phase = TacticalPhase::Resolve {

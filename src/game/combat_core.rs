@@ -153,7 +153,7 @@ impl GameState {
                         if let Some(hint) = comp.contextual_hint(
                             &self.enemies[i],
                             self.player.hp,
-                            self.player.max_hp,
+                            self.player.effective_max_hp(),
                             self.guard_used_this_fight,
                             lvl,
                         ) {
@@ -304,6 +304,44 @@ impl GameState {
                     self.srs.record(e_hanzi, true);
                     self.run_correct_answers += 1;
                 }
+
+                // ── Hard Answer Riposte & Bonuses ──
+                let is_hard = self.is_hard_answer(e_hanzi);
+                if is_hard {
+                    // Grant riposte charge (block next wrong answer)
+                    self.player.riposte_charges = (self.player.riposte_charges + 1).min(3);
+
+                    // Hard answer equipment bonuses
+                    for eq in [self.player.weapon, self.player.armor, self.player.charm].iter().flatten() {
+                        match eq.effect {
+                            EquipEffect::HardAnswerHeal(n) => {
+                                self.player.hp = (self.player.hp + n).min(self.player.effective_max_hp());
+                            }
+                            EquipEffect::HardAnswerArmor(n) => {
+                                self.player.hard_answer_armor_bonus += n;
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    // Scholar's Trinity set bonus: +2 riposte charges + 2 bonus damage
+                    if self.player.has_set_bonus(|b| matches!(b, crate::player::SetBonus::ScholarsTrinity)) {
+                        self.player.riposte_charges = (self.player.riposte_charges + 2).min(5);
+                    }
+                }
+
+                // Skill tree XP: +5 for correct answer, +5 extra for hard
+                self.player.skill_tree.gain_xp(5);
+                if is_hard {
+                    self.player.skill_tree.gain_xp(5);
+                }
+
+                // Crucible XP: +1 per correct answer, +3 for hard
+                let crucible_xp: u32 = if is_hard { 3 } else { 1 };
+                self.player.weapon_crucible.gain_xp(crucible_xp);
+                self.player.armor_crucible.gain_xp(crucible_xp);
+                self.player.charm_crucible.gain_xp(crucible_xp);
+
                 // Hit with bonus damage from equipment + room modifiers
                 let cursed_bonus = if self.current_room_modifier() == Some(RoomModifier::Irradiated) {
                     1
@@ -348,6 +386,27 @@ impl GameState {
                     0
                 };
 
+                let hard_answer_bonus = if is_hard {
+                    let mut bonus = 0i32;
+                    for eq in [self.player.weapon, self.player.armor, self.player.charm].iter().flatten() {
+                        if let EquipEffect::HardAnswerDamage(n) = eq.effect {
+                            bonus += n;
+                        }
+                    }
+                    // Scholar's Trinity set bonus extra damage
+                    if self.player.has_set_bonus(|b| matches!(b, crate::player::SetBonus::ScholarsTrinity)) {
+                        bonus += 2;
+                    }
+                    // Crucible hard answer bonus
+                    bonus += crate::crucible::aggregate_hard_answer_damage(
+                        &[&self.player.weapon_crucible, &self.player.armor_crucible, &self.player.charm_crucible],
+                    );
+                    bonus
+                } else {
+                    0
+                };
+
+                let berserker_bonus = if self.player.skill_tree.has_berserker() { 3 } else { 0 };
                 let hit_dmg = 2
                     + self.player.bonus_damage()
                     + self.player.enchant_bonus_damage()
@@ -359,7 +418,9 @@ impl GameState {
                     + iron_bonus
                     + tactical_insight
                     + security_bonus
-                    + synergy_dmg;
+                    + synergy_dmg
+                    + hard_answer_bonus
+                    + berserker_bonus;
 
                 self.answer_streak += 1;
                 if self.answer_streak > self.run_journal.max_combo {
@@ -383,7 +444,26 @@ impl GameState {
                 } else {
                     hit_dmg
                 };
+                // Executioner: +50% damage to enemies below 30% HP
+                let hit_dmg = if self.player.skill_tree.has_executioner() {
+                    let e_hp = self.enemies[enemy_idx].hp;
+                    let e_max_hp = self.enemies[enemy_idx].max_hp;
+                    if e_hp * 100 < e_max_hp * 30 {
+                        (hit_dmg as f64 * 1.5).ceil() as i32
+                    } else {
+                        hit_dmg
+                    }
+                } else {
+                    hit_dmg
+                };
                 let hit_dmg = hit_dmg.max(1);
+                // Overcharge cell: triple damage on next correct answer
+                let hit_dmg = if self.player.overcharge_active {
+                    self.player.overcharge_active = false;
+                    hit_dmg * 3
+                } else {
+                    hit_dmg
+                };
 
                 if self.answer_streak == 5 || self.answer_streak == 10 {
                     let (sx, sy) = self.tile_to_screen(self.player.x, self.player.y);
@@ -497,6 +577,13 @@ impl GameState {
                     self.flash = Some((255, 255, 255, 0.3));
                     // Rewards
                     let mut gold_gain = e_gold;
+                    if self.player.hubris_mode {
+                        gold_gain *= 2;
+                    }
+                    // MidasTouch: gold drops doubled
+                    if self.player.skill_tree.has_midas_touch() {
+                        gold_gain *= 2;
+                    }
                     if self.player.get_piety(Faction::MilitaryAlliance) >= 10
                         && self.player.get_piety(Faction::AncientOrder) >= 10
                     {
@@ -531,6 +618,21 @@ impl GameState {
                     if self.current_location_type == Some(crate::world::LocationType::AsteroidBase) {
                         gold_gain *= 2;
                     }
+                    // Gambler's Chip: 50/50 double gold or lose 10
+                    if self.player.gamblers_chip_active {
+                        self.player.gamblers_chip_active = false;
+                        if self.rng_next() % 2 == 0 {
+                            let before = gold_gain;
+                            gold_gain *= 2;
+                            self.message = format!("🎰 Jackpot! {} doubled to {}!", before, gold_gain);
+                            self.message_timer = 80;
+                        } else {
+                            let loss = 10.min(self.player.gold);
+                            self.player.gold -= loss;
+                            self.message = format!("🎰 Bad luck! Lost {} gold!", loss);
+                            self.message_timer = 80;
+                        }
+                    }
                     self.player.gold += gold_gain;
 
                     // Listening mode bonus gold
@@ -547,7 +649,8 @@ impl GameState {
                     let available = radical::radicals_for_floor(self.floor_num);
                     let rad_roll = self.rng_next() % 100;
                     let rad_chance = self.floor_profile.radical_drop_chance();
-                    let dropped = if rad_roll < rad_chance {
+                    let force_drop = self.player.skill_tree.has_radical_magnet();
+                    let dropped = if force_drop || rad_roll < rad_chance {
                         let drop_idx = self.rng_next() as usize % available.len();
                         let ch = available[drop_idx].ch;
                         self.player.add_radical(ch);
@@ -588,7 +691,7 @@ impl GameState {
                         heal += 1;
                     }
                     if heal > 0 {
-                        self.player.hp = (self.player.hp + heal).min(self.player.max_hp);
+                        self.player.hp = (self.player.hp + heal).min(self.player.effective_max_hp());
                     }
 
                     // Random equipment drop (5% chance, higher for bosses)
@@ -611,21 +714,31 @@ impl GameState {
                             }
                         } else {
                             let state = self.roll_item_state();
-                            self.player.equip(eq, state);
+                            let luck_bonus = self.player.skill_tree.total_item_rarity_bonus();
+                            let rarity = crate::rarity::roll_rarity(self.floor_num, luck_bonus, self.rng_next());
+                            let affixes = crate::rarity::roll_affixes(rarity, self.rng_next());
+                            let display = crate::rarity::rarity_name(eq.name, rarity, &affixes);
+                            self.player.equip_with_rarity(eq, state, rarity, affixes);
                             let prefix = match state {
                                 ItemState::Cursed => "💀 ",
                                 ItemState::Blessed => "✨ ",
                                 ItemState::Normal => "",
                             };
+                            let rarity_tag = match rarity {
+                                crate::rarity::ItemRarity::Normal => "",
+                                crate::rarity::ItemRarity::Magic  => " [Magic]",
+                                crate::rarity::ItemRarity::Rare   => " [Rare]",
+                                crate::rarity::ItemRarity::Unique => " [Unique]",
+                            };
                             if let Some(rad) = dropped {
                                 self.message = format!(
-                                    "Defeated {}! +{}g [{}] + {}{}!",
-                                    e_hanzi, e_gold, rad, prefix, eq.name
+                                    "Defeated {}! +{}g [{}] + {}{}{}!",
+                                    e_hanzi, e_gold, rad, prefix, display, rarity_tag
                                 );
                             } else {
                                 self.message = format!(
-                                    "Defeated {}! +{}g + {}{}!",
-                                    e_hanzi, e_gold, prefix, eq.name
+                                    "Defeated {}! +{}g + {}{}{}!",
+                                    e_hanzi, e_gold, prefix, display, rarity_tag
                                 );
                             }
                         }
@@ -692,6 +805,16 @@ impl GameState {
                     };
                     self.add_companion_xp(kill_xp);
 
+                    // Skill tree XP on kill
+                    let skill_kill_xp = if e_is_boss { 100 } else if e_is_elite { 25 } else { 10 };
+                    self.player.skill_tree.gain_xp(skill_kill_xp);
+
+                    // Crucible XP on kill
+                    let crucible_kill_xp: u32 = if e_is_boss { 10 } else { 2 };
+                    self.player.weapon_crucible.gain_xp(crucible_kill_xp);
+                    self.player.armor_crucible.gain_xp(crucible_kill_xp);
+                    self.player.charm_crucible.gain_xp(crucible_kill_xp);
+
                     // Synergy level 3 combo abilities on kill
                     if self.companion_synergy_level() >= 3 {
                         match self.companion {
@@ -699,7 +822,7 @@ impl GameState {
                                 // Vital Strike: heal on kill (20% chance)
                                 if self.rng_next() % 100 < 20 {
                                     let heal = 3;
-                                    self.player.hp = (self.player.hp + heal).min(self.player.max_hp);
+                                    self.player.hp = (self.player.hp + heal).min(self.player.effective_max_hp());
                                     self.message.push_str(&format!(
                                         "\n{} +{} HP!",
                                         Companion::Medic.combo_ability_message(),
@@ -710,7 +833,7 @@ impl GameState {
                             Some(Companion::ScienceOfficer) => {
                                 // Nanite Surge: heal 2 + reveal enemies (15% chance)
                                 if self.rng_next() % 100 < 15 {
-                                    self.player.hp = (self.player.hp + 2).min(self.player.max_hp);
+                                    self.player.hp = (self.player.hp + 2).min(self.player.effective_max_hp());
                                     for e in self.enemies.iter_mut() {
                                         if e.is_alive() {
                                             e.alert = true;
@@ -863,6 +986,20 @@ impl GameState {
                         )
                     };
                     self.message_timer = if e_is_elite { 70 } else { 60 };
+                } else if self.player.riposte_charges > 0 {
+                    self.player.riposte_charges -= 1;
+                    self.message = if e_is_elite {
+                        format!(
+                            "✗ Wrong chain! Needed \"{}\" — ⚡ Riposte! ({} charges left)",
+                            expected_pinyin, self.player.riposte_charges
+                        )
+                    } else {
+                        format!(
+                            "Wrong! (was \"{}\") — ⚡ Riposte negates the hit! ({} left)",
+                            expected_pinyin, self.player.riposte_charges
+                        )
+                    };
+                    self.message_timer = if e_is_elite { 70 } else { 60 };
                 } else {
                     let mut evaded = false;
                     if self.player.get_piety(Faction::FreeTraders) >= 10 {
@@ -914,6 +1051,29 @@ impl GameState {
                             self.player.defense_bonus = 0;
                         }
                         let e_damage = (e_damage - def_bonus).max(0);
+                        // IronWill: -1 damage taken from all sources (min 1)
+                        let e_damage = if self.player.skill_tree.has_iron_will() {
+                            (e_damage - 1).max(1)
+                        } else {
+                            e_damage
+                        };
+                        let e_damage = if self.player.hubris_mode {
+                            (e_damage as f64 * 1.5).round() as i32
+                        } else {
+                            e_damage
+                        };
+                        // Overcharge penalty: wrong answer while overcharged = 2× damage
+                        let e_damage = if self.player.overcharge_active {
+                            self.player.overcharge_active = false;
+                            e_damage * 2
+                        } else {
+                            e_damage
+                        };
+                        // Hard answer armor bonus reduction
+                        let e_damage = (e_damage - self.player.hard_answer_armor_bonus).max(0);
+                        if self.player.hard_answer_armor_bonus > 0 {
+                            self.player.hard_answer_armor_bonus = 0;
+                        }
                         self.player.hp -= e_damage;
 
                         if self.enemies[enemy_idx].radical_multiply {
@@ -971,7 +1131,7 @@ impl GameState {
                     }
                 }
 
-                if self.player.hp <= 0 && !self.try_phoenix_revive() {
+                if self.player.hp <= 0 && !self.try_phoenix_revive() && !self.try_undying_revive() {
                     self.player.hp = 0;
                     self.run_journal
                         .log(RunEvent::DiedTo(e_hanzi.to_string(), self.floor_num));
@@ -987,6 +1147,41 @@ impl GameState {
             }
             self.typing.clear();
         }
+    }
+
+    fn try_undying_revive(&mut self) -> bool {
+        if !self.player.skill_tree.has_undying() {
+            return false;
+        }
+        if self.player.skill_tree.undying_used {
+            return false;
+        }
+        self.player.skill_tree.undying_used = true;
+        self.player.hp = 5;
+        self.message = "💀 Undying! You refuse to die — revived with 5 HP!".to_string();
+        self.message_timer = 120;
+        if let Some(ref audio) = self.audio {
+            audio.play_heal();
+        }
+        true
+    }
+
+    /// Check if a hanzi answer qualifies as "hard" for bonus mechanics.
+    fn is_hard_answer(&self, hanzi: &str) -> bool {
+        // Multi-character word
+        if hanzi.chars().count() >= 2 {
+            return true;
+        }
+        // Low mastery (unfamiliar)
+        let mastery = self.srs.mastery_tier(hanzi);
+        if mastery <= 1 {
+            return true;
+        }
+        // Polyglot notable from skill tree
+        if self.player.skill_tree.has_polyglot() {
+            return true;
+        }
+        false
     }
 
     /// Apply a radical action triggered by an enemy on a wrong answer.
@@ -1055,7 +1250,7 @@ impl GameState {
                 format!("{} — Roots bind you!", action.name())
             }
             RadicalAction::HarvestReaping => {
-                let threshold = (self.player.max_hp as f32 * 0.4) as i32;
+                let threshold = (self.player.effective_max_hp() as f32 * 0.4) as i32;
                 let dmg = if self.player.hp < threshold { 3 } else { 1 };
                 self.player.hp -= dmg;
                 format!("{} — Reaped! (-{} HP)", action.name(), dmg)
@@ -1148,7 +1343,7 @@ impl GameState {
                 format!("{} — An echo strikes for {} damage!", action.name(), dmg)
             }
             RadicalAction::PreciseExecution => {
-                let threshold = (self.player.max_hp as f32 * 0.25) as i32;
+                let threshold = (self.player.effective_max_hp() as f32 * 0.25) as i32;
                 let dmg = if self.player.hp < threshold { 4 } else { 1 };
                 self.player.hp -= dmg;
                 format!("{} — Executed! (-{} HP)", action.name(), dmg)

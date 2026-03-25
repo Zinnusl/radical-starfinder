@@ -149,6 +149,10 @@ impl GameState {
                 self.crafting_first,
                 self.crafting_cursor,
             );
+        } else if self.show_skill_tree {
+            self.renderer.draw_skill_tree(&self.player, self.skill_tree_cursor);
+        } else if self.show_crucible {
+            self.renderer.draw_crucible(&self.player, self.crucible_cursor);
         } else if self.show_spellbook {
             self.renderer.draw_spellbook(&self.player);
         } else if self.show_codex {

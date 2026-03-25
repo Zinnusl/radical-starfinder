@@ -1033,6 +1033,20 @@ fn use_item_in_combat(
             }
             format!("Signal Jammer confuses {} enemies for {} turns!", count, turns)
         }
+        Item::AdrenalineInjector => {
+            let unit = &mut battle.units[0];
+            unit.hp = 5.min(unit.max_hp);
+            unit.statuses.push(StatusInstance::new(StatusKind::Empowered { amount: 3 }, 10));
+            battle.audio_events.push(AudioEvent::Heal);
+            "💉 Adrenaline rush! HP set to 5, Empowered(3) for 10 turns!".to_string()
+        }
+        Item::GamblersChip => {
+            "🎰 Gambler's Chip has no effect in tactical combat.".to_string()
+        }
+        Item::OverchargeCell => {
+            battle.units[0].statuses.push(StatusInstance::new(StatusKind::Empowered { amount: 3 }, 1));
+            "⚡ Overcharged! Next correct answer deals 3× damage!".to_string()
+        }
     };
     battle.log_message(&msg);
     battle.available_items.remove(menu_idx);

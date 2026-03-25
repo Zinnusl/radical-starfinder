@@ -4,6 +4,7 @@ use crate::combat::{
     TacticalBattle, TacticalPhase,
     TargetMode, TypingAction, Weather,
 };
+use crate::player::Player;
 
 use super::super::{COL_HP_BG, hp_gradient_color};
 
@@ -18,6 +19,7 @@ impl super::super::Renderer {
         grid_x: f64,
         grid_y: f64,
         _grid_size: f64,
+        player: &Player,
     ) {
         // Right panel: info area
         let panel_x = grid_x + grid_px + 16.0;
@@ -175,6 +177,36 @@ impl super::super::Renderer {
                     status_x = panel_x;
                 }
             }
+            py += 14.0;
+        }
+
+        // ─ Riposte / Hubris / Overcharge indicators ─
+        if player.riposte_charges > 0 {
+            self.ctx.set_fill_style_str("#ffdd44");
+            self.ctx.set_font("10px monospace");
+            self.ctx
+                .fill_text(
+                    &format!("\u{26A1} Riposte: {}", player.riposte_charges),
+                    panel_x,
+                    py + 10.0,
+                )
+                .ok();
+            py += 14.0;
+        }
+        if player.hubris_mode {
+            self.ctx.set_fill_style_str("#ff4444");
+            self.ctx.set_font("bold 10px monospace");
+            self.ctx
+                .fill_text("\u{1F480} HUBRIS", panel_x, py + 10.0)
+                .ok();
+            py += 14.0;
+        }
+        if player.overcharge_active {
+            self.ctx.set_fill_style_str("#ff8800");
+            self.ctx.set_font("bold 10px monospace");
+            self.ctx
+                .fill_text("\u{26A1} OVERCHARGED", panel_x, py + 10.0)
+                .ok();
             py += 14.0;
         }
 

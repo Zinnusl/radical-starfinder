@@ -110,6 +110,16 @@ pub fn make_test_battle(units: Vec<BattleUnit>) -> TacticalBattle {
         event_message_timer: 0,
         pending_impacts: Vec::new(),
         phase_walk_available: false,
+        riposte_charges: 0,
+        overcharge_active: false,
+        hubris_mode: false,
+        hard_answer_armor_bonus: 0,
+        has_polyglot: false,
+        has_linguists_fury: false,
+        pending_skill_xp: 0,
+        pending_weapon_crucible_xp: 0,
+        pending_armor_crucible_xp: 0,
+        pending_charm_crucible_xp: 0,
     }
 }
 

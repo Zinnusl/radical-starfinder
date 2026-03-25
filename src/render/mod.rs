@@ -591,7 +591,7 @@ impl Renderer {
         let bar_y = 12.0;
         let bar_w = 160.0;
         let bar_h = 16.0;
-        let hp_frac = (player.hp as f64 / player.max_hp as f64).clamp(0.0, 1.0);
+        let hp_frac = (player.hp as f64 / player.effective_max_hp() as f64).clamp(0.0, 1.0);
 
         self.ctx.set_fill_style_str(COL_HP_BG);
         self.ctx.fill_rect(bar_x, bar_y, bar_w, bar_h);
@@ -606,7 +606,7 @@ impl Renderer {
         self.ctx.set_text_align("left");
         self.ctx
             .fill_text(
-                &format!("HP {}/{}", player.hp, player.max_hp),
+                &format!("HP {}/{}", player.hp, player.effective_max_hp()),
                 bar_x + 4.0,
                 bar_y + 12.0,
             )
@@ -624,6 +624,48 @@ impl Renderer {
                     .ok();
                 sx += 44.0;
             }
+        }
+
+        // Skill tree level + XP bar (below HP bar)
+        {
+            let lvl_y = bar_y + bar_h + 4.0;
+            self.ctx.set_fill_style_str("#aaccff");
+            self.ctx.set_font("10px monospace");
+            self.ctx.set_text_align("left");
+            let lvl = player.skill_tree.level;
+            let total_xp = player.skill_tree.xp;
+            // cumulative XP for level n = n*(n+1)/2 * 100
+            let prev_boundary = lvl * (lvl + 1) / 2 * 100;
+            let next_boundary = (lvl + 1) * (lvl + 2) / 2 * 100;
+            let level_span = next_boundary - prev_boundary;
+            let level_xp = total_xp.saturating_sub(prev_boundary);
+            let xp_frac = if level_span > 0 {
+                (level_xp as f64 / level_span as f64).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let xp_bar_w = 80.0;
+            let xp_bar_h = 5.0;
+            self.ctx
+                .fill_text(
+                    &format!("Level {}", lvl),
+                    bar_x,
+                    lvl_y + 8.0,
+                )
+                .ok();
+            self.ctx.set_fill_style_str("#222244");
+            self.ctx.fill_rect(bar_x + 60.0, lvl_y + 2.0, xp_bar_w, xp_bar_h);
+            self.ctx.set_fill_style_str("#6688cc");
+            self.ctx.fill_rect(bar_x + 60.0, lvl_y + 2.0, xp_bar_w * xp_frac, xp_bar_h);
+            self.ctx.set_fill_style_str("#8899bb");
+            self.ctx.set_font("9px monospace");
+            self.ctx
+                .fill_text(
+                    &format!("{}/{} XP", level_xp, level_span),
+                    bar_x + 60.0 + xp_bar_w + 4.0,
+                    lvl_y + 8.0,
+                )
+                .ok();
         }
 
         // Floor indicator + gold (top-right)
@@ -681,9 +723,9 @@ impl Renderer {
             let ench = player.enchantments[0]
                 .map(|e| format!(" [{}]", e))
                 .unwrap_or_default();
-            self.ctx.set_fill_style_str("#ff8866");
+            self.ctx.set_fill_style_str(player.weapon_rarity.color());
             self.ctx
-                .fill_text(&format!("⚔ {}{}", w.name, ench), self.canvas_w - 12.0, eq_y)
+                .fill_text(&format!("\u{2694} {}{}", w.name, ench), self.canvas_w - 12.0, eq_y)
                 .ok();
             eq_y += 14.0;
         }
@@ -691,9 +733,9 @@ impl Renderer {
             let ench = player.enchantments[1]
                 .map(|e| format!(" [{}]", e))
                 .unwrap_or_default();
-            self.ctx.set_fill_style_str("#6688ff");
+            self.ctx.set_fill_style_str(player.armor_rarity.color());
             self.ctx
-                .fill_text(&format!("🛡 {}{}", a.name, ench), self.canvas_w - 12.0, eq_y)
+                .fill_text(&format!("\u{1F6E1} {}{}", a.name, ench), self.canvas_w - 12.0, eq_y)
                 .ok();
             eq_y += 14.0;
         }
@@ -701,9 +743,9 @@ impl Renderer {
             let ench = player.enchantments[2]
                 .map(|e| format!(" [{}]", e))
                 .unwrap_or_default();
-            self.ctx.set_fill_style_str("#88ddaa");
+            self.ctx.set_fill_style_str(player.charm_rarity.color());
             self.ctx
-                .fill_text(&format!("✧ {}{}", c.name, ench), self.canvas_w - 12.0, eq_y)
+                .fill_text(&format!("\u{2727} {}{}", c.name, ench), self.canvas_w - 12.0, eq_y)
                 .ok();
             eq_y += 14.0;
         }
