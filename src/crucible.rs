@@ -35,6 +35,7 @@ pub enum CrucibleEffect {
     MovementBonus(i32),
     // On-hit procs
     BurnOnHit { damage: i32, turns: i32 },
+    #[allow(dead_code)]
     PoisonOnHit { damage: i32, turns: i32 },
     // On-kill procs
     ShieldOnKill,
@@ -55,6 +56,7 @@ pub enum CrucibleEffect {
 }
 
 impl CrucibleEffect {
+    #[allow(dead_code)]
     pub fn short_label(&self) -> &'static str {
         match self {
             Self::BonusDamage(_) => "+Dmg",
@@ -103,6 +105,7 @@ pub struct CrucibleNode {
 pub struct CrucibleTemplate {
     pub name: &'static str,
     /// Flavor label: "Attachment", "Plating", "Firmware", "Resonance"
+    #[allow(dead_code)]
     pub flavor: &'static str,
     pub nodes: [CrucibleNode; 5],
 }
@@ -461,8 +464,10 @@ pub struct CrucibleState {
     /// `Some(false)` = node 4.
     pub branch_chosen: Option<bool>,
     /// Whether emergency repair has fired this fight.
+    #[allow(dead_code)]
     pub emergency_used: bool,
     /// Kinetic absorber stored damage.
+    #[allow(dead_code)]
     pub kinetic_stored: i32,
 }
 
@@ -526,6 +531,7 @@ impl CrucibleState {
     }
 
     /// Number of unlocked nodes.
+    #[allow(dead_code)]
     pub fn unlocked_count(&self) -> usize {
         self.unlocked.iter().filter(|&&u| u).count()
     }
@@ -556,6 +562,7 @@ impl CrucibleState {
     }
 
     /// Reset per-fight state (emergency repair, kinetic absorber).
+    #[allow(dead_code)]
     pub fn reset_fight(&mut self) {
         self.emergency_used = false;
         self.kinetic_stored = 0;
@@ -663,6 +670,7 @@ pub fn aggregate_crit_chance(states: &[&CrucibleState]) -> i32 {
     }).sum()
 }
 
+#[allow(dead_code)]
 pub fn aggregate_spell_power(states: &[&CrucibleState]) -> i32 {
     states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
         CrucibleEffect::SpellPower(n) => Some(n),
@@ -691,6 +699,7 @@ pub fn aggregate_radical_find(states: &[&CrucibleState]) -> i32 {
     }).sum()
 }
 
+#[allow(dead_code)]
 pub fn aggregate_focus_regen(states: &[&CrucibleState]) -> i32 {
     states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
         CrucibleEffect::FocusRegen(n) => Some(n),
@@ -740,6 +749,7 @@ pub fn aggregate_double_strike(states: &[&CrucibleState]) -> i32 {
     }).sum()
 }
 
+#[allow(dead_code)]
 pub fn aggregate_movement_bonus(states: &[&CrucibleState]) -> i32 {
     states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
         CrucibleEffect::MovementBonus(n) => Some(n),
@@ -747,6 +757,7 @@ pub fn aggregate_movement_bonus(states: &[&CrucibleState]) -> i32 {
     }).sum()
 }
 
+#[allow(dead_code)]
 pub fn aggregate_focus_on_kill(states: &[&CrucibleState]) -> i32 {
     states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
         CrucibleEffect::FocusOnKill(n) => Some(n),
@@ -755,6 +766,7 @@ pub fn aggregate_focus_on_kill(states: &[&CrucibleState]) -> i32 {
 }
 
 /// Check if any crucible has a specific flag-type effect.
+#[allow(dead_code)]
 pub fn has_effect(states: &[&CrucibleState], check: fn(&CrucibleEffect) -> bool) -> bool {
     states.iter().flat_map(|s| s.active_effects()).any(|e| check(&e))
 }
@@ -771,14 +783,17 @@ pub fn has_shield_on_kill(states: &[&CrucibleState]) -> bool {
     has_effect(states, |e| matches!(e, CrucibleEffect::ShieldOnKill))
 }
 
+#[allow(dead_code)]
 pub fn has_neural_sync(states: &[&CrucibleState]) -> bool {
     has_effect(states, |e| matches!(e, CrucibleEffect::NeuralSync))
 }
 
+#[allow(dead_code)]
 pub fn has_temporal_flux(states: &[&CrucibleState]) -> bool {
     has_effect(states, |e| matches!(e, CrucibleEffect::TemporalFlux))
 }
 
+#[allow(dead_code)]
 pub fn has_kinetic_absorber(states: &[&CrucibleState]) -> bool {
     has_effect(states, |e| matches!(e, CrucibleEffect::KineticAbsorber))
 }
@@ -792,6 +807,7 @@ pub fn burn_on_hit(states: &[&CrucibleState]) -> Option<(i32, i32)> {
 }
 
 /// Get poison-on-hit params if any crucible has it.
+#[allow(dead_code)]
 pub fn poison_on_hit(states: &[&CrucibleState]) -> Option<(i32, i32)> {
     states.iter().flat_map(|s| s.active_effects()).find_map(|e| match e {
         CrucibleEffect::PoisonOnHit { damage, turns } => Some((damage, turns)),

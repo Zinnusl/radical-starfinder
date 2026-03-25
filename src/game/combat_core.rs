@@ -328,6 +328,14 @@ impl GameState {
                     if self.player.has_set_bonus(|b| matches!(b, crate::player::SetBonus::ScholarsTrinity)) {
                         self.player.riposte_charges = (self.player.riposte_charges + 2).min(5);
                     }
+
+                    // Crucible: hard answer heal
+                    let crucible_hard_heal = crate::crucible::aggregate_hard_answer_heal(
+                        &[&self.player.weapon_crucible, &self.player.armor_crucible, &self.player.charm_crucible],
+                    );
+                    if crucible_hard_heal > 0 {
+                        self.player.hp = (self.player.hp + crucible_hard_heal).min(self.player.effective_max_hp());
+                    }
                 }
 
                 // Skill tree XP: +5 for correct answer, +5 extra for hard
@@ -497,6 +505,18 @@ impl GameState {
                             3,
                         ));
                 }
+                // Crucible: burn on hit
+                {
+                    let crucible_states = [&self.player.weapon_crucible, &self.player.armor_crucible, &self.player.charm_crucible];
+                    if let Some((burn_dmg, burn_turns)) = crate::crucible::burn_on_hit(&crucible_states) {
+                        self.enemies[enemy_idx]
+                            .statuses
+                            .push(status::StatusInstance::new(
+                                status::StatusKind::Burn { damage: burn_dmg },
+                                burn_turns,
+                            ));
+                    }
+                }
                 // Attacking from Invisible breaks cloak and applies Revealed
                 if status::has_invisible(&self.player.statuses) {
                     self.player
@@ -557,12 +577,43 @@ impl GameState {
 
                     let armor = self.enemies[enemy_idx].radical_armor;
                     if armor > 0 {
+                        // Crucible: armor pierce reduces effective armor
+                        let crucible_states = [&self.player.weapon_crucible, &self.player.armor_crucible, &self.player.charm_crucible];
+                        let pierce = crate::crucible::aggregate_armor_pierce(&crucible_states);
+                        let effective_armor = (armor - pierce).max(0);
                         self.enemies[enemy_idx].radical_armor = 0;
-                        dealt_dmg = (dealt_dmg - armor).max(1);
+                        dealt_dmg = (dealt_dmg - effective_armor).max(1);
                     }
 
                     self.enemies[enemy_idx].hp -= dealt_dmg;
                 }
+
+                // Crucible: double strike — chance to deal the same damage again
+                {
+                    let crucible_states = [&self.player.weapon_crucible, &self.player.armor_crucible, &self.player.charm_crucible];
+                    let double_strike_chance = crate::crucible::aggregate_double_strike(&crucible_states);
+                    if double_strike_chance > 0 && (self.rng_next() % 100) < double_strike_chance as u64 {
+                        self.enemies[enemy_idx].hp -= dealt_dmg;
+                        self.message = format!("⚡ Double Strike! {} extra damage!", dealt_dmg);
+                        self.message_timer = 50;
+                    }
+                }
+
+                // Crucible: lifesteal — heal player for lifesteal amount after dealing damage
+                {
+                    let crucible_states = [&self.player.weapon_crucible, &self.player.armor_crucible, &self.player.charm_crucible];
+                    let lifesteal = crate::crucible::aggregate_lifesteal(&crucible_states);
+                    if lifesteal > 0 {
+                        let max_hp = self.player.effective_max_hp();
+                        let old_hp = self.player.hp;
+                        self.player.hp = (self.player.hp + lifesteal).min(max_hp);
+                        let healed = self.player.hp - old_hp;
+                        if healed > 0 {
+                            self.message.push_str(&format!(" 🩸 Lifesteal +{} HP!", healed));
+                        }
+                    }
+                }
+
                 if self.enemies[enemy_idx].hp <= 0 {
                     self.total_kills += 1;
                     self.run_kills += 1;
@@ -697,8 +748,21 @@ impl GameState {
                     if self.player.get_piety(Faction::Consortium) >= 10 {
                         heal += 1;
                     }
+                    // Crucible: heal on kill
+                    {
+                        let crucible_states = [&self.player.weapon_crucible, &self.player.armor_crucible, &self.player.charm_crucible];
+                        heal += crate::crucible::aggregate_heal_on_kill(&crucible_states);
+                    }
                     if heal > 0 {
                         self.player.hp = (self.player.hp + heal).min(self.player.effective_max_hp());
+                    }
+
+                    // Crucible: shield on kill
+                    {
+                        let crucible_states = [&self.player.weapon_crucible, &self.player.armor_crucible, &self.player.charm_crucible];
+                        if crate::crucible::has_shield_on_kill(&crucible_states) {
+                            self.player.shield = true;
+                        }
                     }
 
                     // Random equipment drop (5% chance, higher for bosses)
@@ -916,6 +980,18 @@ impl GameState {
                         };
                         self.message_timer = 40;
                     }
+
+                    // Crucible: overcharge proc — 15% chance to activate overcharge on non-kill
+                    {
+                        let crucible_states = [&self.player.weapon_crucible, &self.player.armor_crucible, &self.player.charm_crucible];
+                        if !self.player.overcharge_active
+                            && crate::crucible::has_overcharge_proc(&crucible_states)
+                            && (self.rng_next() % 100) < 15
+                        {
+                            self.player.overcharge_active = true;
+                            self.message.push_str(" ⚡ Overcharge primed!");
+                        }
+                    }
                 }
             } else {
                 // Miss — enemy counter-attacks
@@ -929,7 +1005,15 @@ impl GameState {
                 self.srs.record(e_hanzi, false);
                 self.codex.record(e_hanzi, e_pinyin, e_meaning, false);
                 self.run_wrong_answers += 1;
-                self.answer_streak = 0;
+                // Crucible: combo extender — halve streak instead of resetting
+                {
+                    let crucible_states = [&self.player.weapon_crucible, &self.player.armor_crucible, &self.player.charm_crucible];
+                    if crate::crucible::has_combo_extender(&crucible_states) && self.answer_streak > 0 {
+                        self.answer_streak /= 2;
+                    } else {
+                        self.answer_streak = 0;
+                    }
+                }
                 self.achievements.record_miss();
 
                 let mut thief_stole = None;
@@ -1061,7 +1145,15 @@ impl GameState {
                                 "Wrong! (was \"{}\") — Dodged the attack!",
                                 expected_pinyin
                             );
-                            self.answer_streak = 0;
+                            // Crucible: combo extender applies to dodged wrong answers too
+                            {
+                                let crucible_states = [&self.player.weapon_crucible, &self.player.armor_crucible, &self.player.charm_crucible];
+                                if crate::crucible::has_combo_extender(&crucible_states) && self.answer_streak > 0 {
+                                    self.answer_streak /= 2;
+                                } else {
+                                    self.answer_streak = 0;
+                                }
+                            }
                             self.message_timer = 60;
                         } else {
                         // Apply defense_bonus from ToneDefense reward
@@ -1148,6 +1240,28 @@ impl GameState {
                     if !action_msgs.is_empty() {
                         self.message.push_str(" ");
                         self.message.push_str(&action_msgs.join(" "));
+                    }
+                }
+
+                // Crucible: emergency repair — auto-heal when HP drops to 25% or below
+                {
+                    let max_hp = self.player.effective_max_hp();
+                    let threshold = max_hp / 4;
+                    if self.player.hp > 0 && self.player.hp <= threshold {
+                        let any_used = self.player.weapon_crucible.emergency_used
+                            && self.player.armor_crucible.emergency_used
+                            && self.player.charm_crucible.emergency_used;
+                        if !any_used {
+                            let crucible_states = [&self.player.weapon_crucible, &self.player.armor_crucible, &self.player.charm_crucible];
+                            let repair = crate::crucible::emergency_repair_amount(&crucible_states);
+                            if repair > 0 {
+                                self.player.hp = (self.player.hp + repair).min(max_hp);
+                                self.player.weapon_crucible.emergency_used = true;
+                                self.player.armor_crucible.emergency_used = true;
+                                self.player.charm_crucible.emergency_used = true;
+                                self.message.push_str(&format!(" 🔧 Emergency Repair +{} HP!", repair));
+                            }
+                        }
                     }
                 }
 
