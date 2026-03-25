@@ -5,9 +5,7 @@ use web_sys::window;
 use super::*;
 use crate::player::{Player, PlayerClass};
 use crate::radical;
-use crate::skill_tree::SkillTreeState;
-use crate::crucible::CrucibleState;
-use crate::rarity::{ItemRarity, affixes_to_json, affixes_from_json};
+use crate::rarity::affixes_to_json;
 
 pub(crate) fn parse_i32(map: &HashMap<String, String>, key: &str, default: i32) -> i32 {
     map.get(key).and_then(|v| v.parse().ok()).unwrap_or(default)

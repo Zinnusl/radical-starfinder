@@ -4757,7 +4757,7 @@ pub fn init_game() -> Result<(), JsValue> {
 
             // Exploration movement + item usage
             // Toggle codex with 'c'
-            if key == "c" || key == "C" {
+            if (key == "c" || key == "C") && !s.show_inventory && !s.show_spellbook && !s.show_skill_tree && !s.show_crucible {
                 s.show_codex = !s.show_codex;
                 s.render();
                 return;

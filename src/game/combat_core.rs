@@ -464,6 +464,13 @@ impl GameState {
                 } else {
                     hit_dmg
                 };
+                // Critical strike: percentage chance to deal double damage
+                let crit = self.player.total_crit_chance();
+                let (hit_dmg, is_crit) = if crit > 0 && (self.rng_next() % 100) < crit as u64 {
+                    (hit_dmg * 2, true)
+                } else {
+                    (hit_dmg, false)
+                };
 
                 if self.answer_streak == 5 || self.answer_streak == 10 {
                     let (sx, sy) = self.tile_to_screen(self.player.x, self.player.y);
@@ -893,7 +900,8 @@ impl GameState {
                         let tier = combo_tier(self.answer_streak);
                         self.message = if tier != ComboTier::None {
                             format!(
-                                "Hit for {}! {} HP left 🔥 {}! ×{}",
+                                "{}Hit for {}! {} HP left 🔥 {}! ×{}",
+                                if is_crit { "💥CRIT! " } else { "" },
                                 dealt_dmg,
                                 self.enemies[enemy_idx].hp,
                                 tier.name(),
@@ -901,7 +909,8 @@ impl GameState {
                             )
                         } else {
                             format!(
-                                "Hit for {}! {} HP left",
+                                "{}Hit for {}! {} HP left",
+                                if is_crit { "💥CRIT! " } else { "" },
                                 dealt_dmg, self.enemies[enemy_idx].hp
                             )
                         };
@@ -1045,6 +1054,16 @@ impl GameState {
                         };
                         self.message_timer = if e_is_elite { 70 } else { 60 };
                     } else {
+                        // Dodge: percentage chance to avoid all damage
+                        let dodge = self.player.total_dodge_chance();
+                        if dodge > 0 && (self.rng_next() % 100) < dodge as u64 {
+                            self.message = format!(
+                                "Wrong! (was \"{}\") — Dodged the attack!",
+                                expected_pinyin
+                            );
+                            self.answer_streak = 0;
+                            self.message_timer = 60;
+                        } else {
                         // Apply defense_bonus from ToneDefense reward
                         let def_bonus = self.player.defense_bonus;
                         if def_bonus > 0 {
@@ -1102,6 +1121,7 @@ impl GameState {
                             )
                         };
                         self.message_timer = if e_is_elite { 70 } else { 60 };
+                        } // close dodge else
                     }
                 }
 
