@@ -16,6 +16,8 @@ fn main() {
     println!("cargo:rerun-if-changed=data/cedict_ts.u8");
     println!("cargo:rerun-if-changed=data/ids.txt");
     println!("cargo:rerun-if-changed=data/unique_chars.txt");
+    println!("cargo:rerun-if-changed=data/dialogues/starmap");
+    println!("cargo:rerun-if-changed=data/dialogues/exploration");
 
     if let Err(err) = generate_vocab_data() {
         println!("cargo:warning=build.rs vocab generation warning: {}", err);
@@ -38,6 +40,639 @@ fn main() {
             );
         }
     }
+
+    if let Err(err) = generate_dialogue_data() {
+        println!(
+            "cargo:warning=build.rs dialogue generation warning: {}",
+            err
+        );
+        if let Ok(out_dir) = env::var("OUT_DIR") {
+            let out_path = Path::new(&out_dir).join("dialogue_data.rs");
+            let _ = fs::write(
+                out_path,
+                concat!(
+                    "pub static ALL_STARMAP_EVENTS: &[super::events::SpaceEvent] = &[];\n",
+                    "pub static ALL_DUNGEON_DIALOGUES: &[DungeonDialogue] = &[];\n",
+                ),
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ink dialogue parser
+// ---------------------------------------------------------------------------
+
+#[derive(Debug)]
+struct InkChoice {
+    text: String,
+    chinese_hint: String,
+    outcome: String,
+    requires: Option<String>,
+}
+
+#[derive(Debug)]
+struct InkDialogue {
+    id: usize,
+    title: String,
+    chinese_title: String,
+    description: String,
+    category: String,
+    mode: String,
+    choices: Vec<InkChoice>,
+}
+
+fn collect_ink_files(dir: &str) -> Vec<std::path::PathBuf> {
+    let dir_path = Path::new(dir);
+    if !dir_path.is_dir() {
+        return Vec::new();
+    }
+    let mut files: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(entries) = fs::read_dir(dir_path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map_or(false, |e| e == "ink") {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    files
+}
+
+fn parse_ink_file(path: &Path) -> Result<Vec<InkDialogue>, String> {
+    let content = fs::read_to_string(path)
+        .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+
+    let mut dialogues: Vec<InkDialogue> = Vec::new();
+    let mut current: Option<InkDialogue> = None;
+    let mut in_description = false;
+    let mut desc_buf = String::new();
+    let mut choices: Vec<InkChoice> = Vec::new();
+    // Partial choice being built
+    let mut cur_choice_text: Option<String> = None;
+    let mut cur_choice_requires: Option<String> = None;
+    let mut cur_choice_outcome: Option<String> = None;
+
+    let flush_choice = |choices: &mut Vec<InkChoice>,
+                        text: &mut Option<String>,
+                        requires: &mut Option<String>,
+                        outcome: &mut Option<String>,
+                        hint: &str| {
+        if let Some(t) = text.take() {
+            choices.push(InkChoice {
+                text: t,
+                chinese_hint: hint.to_string(),
+                outcome: outcome.take().unwrap_or_else(|| "nothing".to_string()),
+                requires: requires.take(),
+            });
+        } else {
+            *requires = None;
+            *outcome = None;
+        }
+    };
+
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
+
+        // === EVENT_NAME === starts a new dialogue
+        if line.starts_with("===") && line.ends_with("===") {
+            // Flush previous choice (with empty hint)
+            flush_choice(
+                &mut choices,
+                &mut cur_choice_text,
+                &mut cur_choice_requires,
+                &mut cur_choice_outcome,
+                "",
+            );
+            // Flush previous dialogue
+            if let Some(mut d) = current.take() {
+                d.description = desc_buf.trim().to_string();
+                d.choices = std::mem::take(&mut choices);
+                dialogues.push(d);
+            }
+            desc_buf.clear();
+            in_description = false;
+            current = Some(InkDialogue {
+                id: 0,
+                title: String::new(),
+                chinese_title: String::new(),
+                description: String::new(),
+                category: String::new(),
+                mode: String::new(),
+                choices: Vec::new(),
+            });
+            continue;
+        }
+
+        // Skip if no dialogue started yet
+        if current.is_none() {
+            continue;
+        }
+
+        // Metadata lines
+        if line.starts_with("# ") {
+            let meta = &line[2..];
+            if let Some((key, val)) = meta.split_once(':') {
+                let key = key.trim();
+                let val = val.trim();
+                let d = current.as_mut().unwrap();
+                match key {
+                    "id" => d.id = val.parse().unwrap_or(0),
+                    "title" => d.title = val.to_string(),
+                    "chinese_title" => d.chinese_title = val.to_string(),
+                    "category" => d.category = val.to_string(),
+                    "mode" => d.mode = val.to_string(),
+                    _ => {}
+                }
+            }
+            continue;
+        }
+
+        // Choice line: * [text] {requires: ...}
+        if line.starts_with("* [") {
+            // Flush previous choice (with empty hint since we haven't seen the hint line yet)
+            flush_choice(
+                &mut choices,
+                &mut cur_choice_text,
+                &mut cur_choice_requires,
+                &mut cur_choice_outcome,
+                "",
+            );
+
+            in_description = false;
+
+            // Parse choice text and optional requirement
+            let after_star = &line[2..]; // "[text] {requires: ...}" or "[text]"
+            if let Some(bracket_end) = after_star.find(']') {
+                cur_choice_text = Some(after_star[1..bracket_end].trim().to_string());
+
+                let rest = after_star[bracket_end + 1..].trim();
+                if rest.starts_with('{') {
+                    if let Some(brace_end) = rest.find('}') {
+                        let req_str = rest[1..brace_end].trim();
+                        if let Some(req_val) = req_str.strip_prefix("requires:") {
+                            cur_choice_requires = Some(req_val.trim().to_string());
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+
+        // Outcome line: ~ outcome(args)
+        if line.starts_with("~ ") {
+            in_description = false;
+            cur_choice_outcome = Some(line[2..].trim().to_string());
+            continue;
+        }
+
+        // If we have a pending choice with an outcome, the next non-empty line is the chinese hint
+        if cur_choice_text.is_some() && cur_choice_outcome.is_some() && !line.is_empty() {
+            let hint = line.to_string();
+            flush_choice(
+                &mut choices,
+                &mut cur_choice_text,
+                &mut cur_choice_requires,
+                &mut cur_choice_outcome,
+                &hint,
+            );
+            continue;
+        }
+
+        // Description text (between metadata and first choice)
+        if current.as_ref().map_or(false, |d| !d.category.is_empty()) && cur_choice_text.is_none()
+        {
+            if !line.is_empty() || !desc_buf.is_empty() {
+                in_description = true;
+            }
+            if in_description {
+                if !desc_buf.is_empty() {
+                    desc_buf.push(' ');
+                }
+                desc_buf.push_str(line);
+            }
+        }
+    }
+
+    // Flush last choice
+    flush_choice(
+        &mut choices,
+        &mut cur_choice_text,
+        &mut cur_choice_requires,
+        &mut cur_choice_outcome,
+        "",
+    );
+
+    // Flush last dialogue
+    if let Some(mut d) = current.take() {
+        d.description = desc_buf.trim().to_string();
+        d.choices = std::mem::take(&mut choices);
+        dialogues.push(d);
+    }
+
+    Ok(dialogues)
+}
+
+fn escape_str(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn format_starmap_outcome(raw: &str) -> String {
+    let s = raw.trim();
+    // Match outcome command and arguments
+    if s == "nothing" {
+        return "super::events::EventOutcome::Nothing".to_string();
+    }
+    if s == "gain_crew_member" {
+        return "super::events::EventOutcome::GainCrewMember".to_string();
+    }
+    if s == "lose_crew_member" {
+        return "super::events::EventOutcome::LoseCrewMember".to_string();
+    }
+
+    // Two-arg forms: fuel_and_credits(N, M), hull_and_fuel(N, M), combat_reward(N, M)
+    if let Some(inner) = extract_args(s, "fuel_and_credits") {
+        if let Some((a, b)) = split_two_args(&inner) {
+            return format!("super::events::EventOutcome::FuelAndCredits({}, {})", a, b);
+        }
+    }
+    if let Some(inner) = extract_args(s, "hull_and_fuel") {
+        if let Some((a, b)) = split_two_args(&inner) {
+            return format!("super::events::EventOutcome::HullAndFuel({}, {})", a, b);
+        }
+    }
+    if let Some(inner) = extract_args(s, "combat_reward") {
+        if let Some((a, b)) = split_two_args(&inner) {
+            return format!("super::events::EventOutcome::CombatReward({}, {})", a, b);
+        }
+    }
+
+    // String-arg forms
+    if let Some(inner) = extract_args(s, "gain_radical") {
+        let cleaned = inner.trim().trim_matches('"');
+        return format!(
+            "super::events::EventOutcome::GainRadical(\"{}\")",
+            escape_str(cleaned)
+        );
+    }
+    if let Some(inner) = extract_args(s, "gain_item") {
+        let cleaned = inner.trim().trim_matches('"');
+        return format!(
+            "super::events::EventOutcome::GainItem(\"{}\")",
+            escape_str(cleaned)
+        );
+    }
+
+    // Single numeric arg forms
+    let single_mappings: &[(&str, &str)] = &[
+        ("gain_fuel", "GainFuel"),
+        ("lose_fuel", "LoseFuel"),
+        ("gain_credits", "GainCredits"),
+        ("lose_credits", "LoseCredits"),
+        ("gain_hull", "GainHull"),
+        ("lose_hull", "LoseHull"),
+        ("heal_crew", "HealCrew"),
+        ("damage_crew", "DamageCrew"),
+        ("repair_ship", "RepairShip"),
+        ("gain_scrap", "GainScrap"),
+        ("shield_damage", "ShieldDamage"),
+        ("start_combat", "StartCombat"),
+    ];
+
+    for (cmd, variant) in single_mappings {
+        if let Some(inner) = extract_args(s, cmd) {
+            let n = inner.trim();
+            return format!("super::events::EventOutcome::{}({})", variant, n);
+        }
+    }
+
+    // Fallback
+    format!("super::events::EventOutcome::Nothing /* unrecognised: {} */", escape_str(s))
+}
+
+fn format_dungeon_outcome(raw: &str) -> String {
+    let s = raw.trim();
+    if s == "nothing" {
+        return "DungeonOutcome::Nothing".to_string();
+    }
+    if s == "gain_equipment" {
+        return "DungeonOutcome::GainEquipment".to_string();
+    }
+    if s == "start_fight" {
+        return "DungeonOutcome::StartFight".to_string();
+    }
+    if s == "gain_crew_member" {
+        return "DungeonOutcome::GainCrewMember".to_string();
+    }
+
+    if let Some(inner) = extract_args(s, "gain_radical") {
+        let cleaned = inner.trim().trim_matches('"');
+        return format!("DungeonOutcome::GainRadical(\"{}\")", escape_str(cleaned));
+    }
+    if let Some(inner) = extract_args(s, "gain_item") {
+        let cleaned = inner.trim().trim_matches('"');
+        return format!("DungeonOutcome::GainItem(\"{}\")", escape_str(cleaned));
+    }
+
+    let single_mappings: &[(&str, &str)] = &[
+        ("heal", "Heal"),
+        ("damage", "Damage"),
+        ("gain_gold", "GainGold"),
+        ("lose_gold", "LoseGold"),
+        ("gain_xp", "GainXp"),
+        ("gain_credits", "GainCredits"),
+        ("lose_credits", "LoseCredits"),
+    ];
+
+    for (cmd, variant) in single_mappings {
+        if let Some(inner) = extract_args(s, cmd) {
+            let n = inner.trim();
+            return format!("DungeonOutcome::{}({})", variant, n);
+        }
+    }
+
+    format!("DungeonOutcome::Nothing /* unrecognised: {} */", escape_str(s))
+}
+
+fn format_starmap_requirement(raw: &str) -> String {
+    let s = raw.trim();
+    // fuel >= N
+    if let Some(rest) = s.strip_prefix("fuel") {
+        let rest = rest.trim().strip_prefix(">=").unwrap_or(rest.trim());
+        let n = rest.trim();
+        return format!("Some(super::events::EventRequirement::HasFuel({}))", n);
+    }
+    // credits >= N
+    if let Some(rest) = s.strip_prefix("credits") {
+        let rest = rest.trim().strip_prefix(">=").unwrap_or(rest.trim());
+        let n = rest.trim();
+        return format!("Some(super::events::EventRequirement::HasCredits({}))", n);
+    }
+    // crew_role == N
+    if let Some(rest) = s.strip_prefix("crew_role") {
+        let rest = rest.trim().strip_prefix("==").unwrap_or(rest.trim());
+        let n = rest.trim();
+        return format!("Some(super::events::EventRequirement::HasCrewRole({}))", n);
+    }
+    // class == N
+    if let Some(rest) = s.strip_prefix("class") {
+        let rest = rest.trim().strip_prefix("==").unwrap_or(rest.trim());
+        let n = rest.trim();
+        return format!("Some(super::events::EventRequirement::HasClass({}))", n);
+    }
+    // radical == "X"
+    if let Some(rest) = s.strip_prefix("radical") {
+        let rest = rest.trim().strip_prefix("==").unwrap_or(rest.trim());
+        let cleaned = rest.trim().trim_matches('"');
+        return format!(
+            "Some(super::events::EventRequirement::HasRadical(\"{}\"))",
+            escape_str(cleaned)
+        );
+    }
+    "None".to_string()
+}
+
+fn format_dungeon_requirement(raw: &str) -> String {
+    let s = raw.trim();
+    if let Some(rest) = s.strip_prefix("gold") {
+        let rest = rest.trim().strip_prefix(">=").unwrap_or(rest.trim());
+        let n = rest.trim();
+        return format!("Some(DungeonRequirement::HasGold({}))", n);
+    }
+    if let Some(rest) = s.strip_prefix("hp") {
+        let rest = rest.trim().strip_prefix(">=").unwrap_or(rest.trim());
+        let n = rest.trim();
+        return format!("Some(DungeonRequirement::HasHp({}))", n);
+    }
+    if let Some(rest) = s.strip_prefix("class") {
+        let rest = rest.trim().strip_prefix("==").unwrap_or(rest.trim());
+        let n = rest.trim();
+        return format!("Some(DungeonRequirement::HasClass({}))", n);
+    }
+    if let Some(rest) = s.strip_prefix("radical") {
+        let rest = rest.trim().strip_prefix("==").unwrap_or(rest.trim());
+        let cleaned = rest.trim().trim_matches('"');
+        return format!(
+            "Some(DungeonRequirement::HasRadical(\"{}\"))",
+            escape_str(cleaned)
+        );
+    }
+    "None".to_string()
+}
+
+fn extract_args(s: &str, prefix: &str) -> Option<String> {
+    let s = s.trim();
+    if !s.starts_with(prefix) {
+        return None;
+    }
+    let rest = &s[prefix.len()..];
+    let rest = rest.trim();
+    if rest.starts_with('(') {
+        if let Some(end) = rest.find(')') {
+            return Some(rest[1..end].to_string());
+        }
+    }
+    None
+}
+
+fn split_two_args(s: &str) -> Option<(String, String)> {
+    let parts: Vec<&str> = s.splitn(2, ',').collect();
+    if parts.len() == 2 {
+        Some((parts[0].trim().to_string(), parts[1].trim().to_string()))
+    } else {
+        None
+    }
+}
+
+fn format_starmap_category(cat: &str) -> String {
+    let variant = match cat.trim() {
+        "DistressSignal" => "DistressSignal",
+        "PirateEncounter" => "PirateEncounter",
+        "Trading" => "Trading",
+        "Discovery" => "Discovery",
+        "AnomalyEncounter" => "AnomalyEncounter",
+        "CrewEvent" => "CrewEvent",
+        "AlienContact" => "AlienContact",
+        "HazardEvent" => "HazardEvent",
+        "AncientRuins" => "AncientRuins",
+        "LanguageChallenge" => "LanguageChallenge",
+        other => other,
+    };
+    format!("super::events::EventCategory::{}", variant)
+}
+
+fn format_dungeon_category(cat: &str) -> String {
+    let variant = match cat.trim() {
+        "Discovery" => "Discovery",
+        "Trader" => "Trader",
+        "Alien" => "Alien",
+        "Hazard" => "Hazard",
+        "Crew" => "Crew",
+        "Puzzle" => "Puzzle",
+        "Lore" => "Lore",
+        "Shrine" => "Shrine",
+        "Wreckage" => "Wreckage",
+        "Terminal" => "Terminal",
+        "Creature" => "Creature",
+        "Anomaly" => "Anomaly",
+        other => other,
+    };
+    format!("DungeonCategory::{}", variant)
+}
+
+fn generate_dialogue_data() -> Result<(), String> {
+    let out_dir = env::var("OUT_DIR").map_err(|e| format!("OUT_DIR not set: {e}"))?;
+    let out_path = Path::new(&out_dir).join("dialogue_data.rs");
+
+    let starmap_files = collect_ink_files("data/dialogues/starmap");
+    let exploration_files = collect_ink_files("data/dialogues/exploration");
+
+    let mut starmap_dialogues: Vec<InkDialogue> = Vec::new();
+    let mut dungeon_dialogues: Vec<InkDialogue> = Vec::new();
+
+    for f in &starmap_files {
+        println!("cargo:rerun-if-changed={}", f.display());
+        match parse_ink_file(f) {
+            Ok(ds) => {
+                for d in ds {
+                    starmap_dialogues.push(d);
+                }
+            }
+            Err(e) => println!("cargo:warning=ink parse error: {}", e),
+        }
+    }
+
+    for f in &exploration_files {
+        println!("cargo:rerun-if-changed={}", f.display());
+        match parse_ink_file(f) {
+            Ok(ds) => {
+                for d in ds {
+                    dungeon_dialogues.push(d);
+                }
+            }
+            Err(e) => println!("cargo:warning=ink parse error: {}", e),
+        }
+    }
+
+    // Assign sequential IDs
+    for (i, d) in starmap_dialogues.iter_mut().enumerate() {
+        d.id = i;
+    }
+    for (i, d) in dungeon_dialogues.iter_mut().enumerate() {
+        d.id = i;
+    }
+
+    let mut out = String::new();
+    out.push_str("// Auto-generated by build.rs from data/dialogues/**/*.ink\n");
+    out.push_str("// Do not edit manually.\n\n");
+
+    // ── Starmap events ──────────────────────────────────────────────────
+
+    // Emit choice arrays first
+    for (idx, d) in starmap_dialogues.iter().enumerate() {
+        out.push_str(&format!(
+            "static STARMAP_CHOICES_{}: &[super::events::EventChoice] = &[\n",
+            idx
+        ));
+        for c in &d.choices {
+            let outcome = format_starmap_outcome(&c.outcome);
+            let requires = match &c.requires {
+                Some(r) => format_starmap_requirement(r),
+                None => "None".to_string(),
+            };
+            out.push_str(&format!(
+                "    super::events::EventChoice {{\n\
+                 \x20       text: \"{}\",\n\
+                 \x20       chinese_hint: \"{}\",\n\
+                 \x20       outcome: {},\n\
+                 \x20       requires: {},\n\
+                 \x20   }},\n",
+                escape_str(&c.text),
+                escape_str(&c.chinese_hint),
+                outcome,
+                requires,
+            ));
+        }
+        out.push_str("];\n\n");
+    }
+
+    // Emit the array
+    out.push_str(&format!(
+        "pub static ALL_STARMAP_EVENTS: &[super::events::SpaceEvent] = &[\n"
+    ));
+    for (idx, d) in starmap_dialogues.iter().enumerate() {
+        out.push_str(&format!(
+            "    super::events::SpaceEvent {{\n\
+             \x20       id: {},\n\
+             \x20       title: \"{}\",\n\
+             \x20       chinese_title: \"{}\",\n\
+             \x20       description: \"{}\",\n\
+             \x20       choices: STARMAP_CHOICES_{},\n\
+             \x20       category: {},\n\
+             \x20   }},\n",
+            d.id,
+            escape_str(&d.title),
+            escape_str(&d.chinese_title),
+            escape_str(&d.description),
+            idx,
+            format_starmap_category(&d.category),
+        ));
+    }
+    out.push_str("];\n\n");
+
+    // ── Dungeon dialogues ───────────────────────────────────────────────
+
+    for (idx, d) in dungeon_dialogues.iter().enumerate() {
+        out.push_str(&format!(
+            "static DUNGEON_CHOICES_{}: &[DungeonChoice] = &[\n",
+            idx
+        ));
+        for c in &d.choices {
+            let outcome = format_dungeon_outcome(&c.outcome);
+            let requires = match &c.requires {
+                Some(r) => format_dungeon_requirement(r),
+                None => "None".to_string(),
+            };
+            out.push_str(&format!(
+                "    DungeonChoice {{\n\
+                 \x20       text: \"{}\",\n\
+                 \x20       chinese_hint: \"{}\",\n\
+                 \x20       outcome: {},\n\
+                 \x20       requires: {},\n\
+                 \x20   }},\n",
+                escape_str(&c.text),
+                escape_str(&c.chinese_hint),
+                outcome,
+                requires,
+            ));
+        }
+        out.push_str("];\n\n");
+    }
+
+    out.push_str("pub static ALL_DUNGEON_DIALOGUES: &[DungeonDialogue] = &[\n");
+    for (idx, d) in dungeon_dialogues.iter().enumerate() {
+        out.push_str(&format!(
+            "    DungeonDialogue {{\n\
+             \x20       id: {},\n\
+             \x20       title: \"{}\",\n\
+             \x20       chinese_title: \"{}\",\n\
+             \x20       description: \"{}\",\n\
+             \x20       choices: DUNGEON_CHOICES_{},\n\
+             \x20       category: {},\n\
+             \x20   }},\n",
+            d.id,
+            escape_str(&d.title),
+            escape_str(&d.chinese_title),
+            escape_str(&d.description),
+            idx,
+            format_dungeon_category(&d.category),
+        ));
+    }
+    out.push_str("];\n");
+
+    fs::write(&out_path, out).map_err(|e| format!("failed to write dialogue_data.rs: {e}"))?;
+    Ok(())
 }
 
 fn generate_vocab_data() -> Result<(), String> {
