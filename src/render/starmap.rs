@@ -10,6 +10,7 @@ use crate::world::ship::{ShipLayout, ShipRoom, ShipTile, get_room_at};
 use crate::world::events::SpaceEvent;
 
 use super::COL_PLAYER;
+use super::helpers::word_wrap;
 
 impl super::Renderer {
     #[allow(dead_code)]
@@ -1577,13 +1578,21 @@ impl super::Renderer {
         event: &SpaceEvent,
         cursor: usize,
     ) {
+        let box_x = 50.0;
+        let box_y = 50.0;
+        let box_w = self.canvas_w - 100.0;
+        let box_h = self.canvas_h - 100.0;
+        let inner_w = box_w - 60.0;
+        // 16px monospace ≈ 9.6px per char
+        let max_chars = (inner_w / 9.6) as usize;
+
         // Overlay background
         self.ctx.set_fill_style_str("rgba(0, 0, 0, 0.9)");
-        self.ctx.fill_rect(50.0, 50.0, self.canvas_w - 100.0, self.canvas_h - 100.0);
+        self.ctx.fill_rect(box_x, box_y, box_w, box_h);
         
         self.ctx.set_stroke_style_str("#00ccdd");
         self.ctx.set_line_width(2.0);
-        self.ctx.stroke_rect(50.0, 50.0, self.canvas_w - 100.0, self.canvas_h - 100.0);
+        self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
         
         // Title
         self.ctx.set_font("bold 24px serif");
@@ -1595,24 +1604,44 @@ impl super::Renderer {
         self.ctx.set_fill_style_str("#cccccc");
         self.ctx.fill_text(event.chinese_title, self.canvas_w / 2.0, 130.0).ok();
         
-        // Description (simple wrap)
+        // Description (word-wrapped)
         self.ctx.set_font("16px monospace");
         self.ctx.set_fill_style_str("#aaaaaa");
         self.ctx.set_text_align("left");
-        self.ctx.fill_text(event.description, 80.0, 180.0).ok();
-        
+        let desc_lines = word_wrap(event.description, max_chars);
+        let mut y = 180.0;
+        for line in &desc_lines {
+            self.ctx.fill_text(line, 80.0, y).ok();
+            y += 22.0;
+        }
+
+        // Pre-wrap choices
+        let choice_lines: Vec<Vec<String>> = event.choices.iter()
+            .map(|c| word_wrap(&format!("{}. {}", 0, c.text), max_chars.saturating_sub(3)))
+            .collect();
+
         // Choices
-        let start_y = 300.0;
-        for (i, choice) in event.choices.iter().enumerate() {
-            let y = start_y + i as f64 * 40.0;
+        let start_y = y + 40.0;
+        let mut cy = start_y;
+        for (i, _choice) in event.choices.iter().enumerate() {
             if i == cursor {
+                let choice_h = choice_lines[i].len() as f64 * 20.0 + 4.0;
                 self.ctx.set_fill_style_str("#004455");
-                self.ctx.fill_rect(70.0, y - 20.0, self.canvas_w - 140.0, 30.0);
+                self.ctx.fill_rect(70.0, cy - 18.0, inner_w + 20.0, choice_h);
                 self.ctx.set_fill_style_str("#ffffff");
             } else {
                 self.ctx.set_fill_style_str("#888888");
             }
-            self.ctx.fill_text(&format!("{}. {}", i+1, choice.text), 80.0, y).ok();
+            for (j, line) in choice_lines[i].iter().enumerate() {
+                let text = if j == 0 {
+                    format!("{}. {}", i + 1, &line[line.find(". ").map(|p| p + 2).unwrap_or(0)..])
+                } else {
+                    format!("   {}", line)
+                };
+                self.ctx.fill_text(&text, 80.0, cy).ok();
+                cy += 20.0;
+            }
+            cy += 12.0;
         }
     }
 }

@@ -42,7 +42,6 @@ mod space_combat;
 mod ui_state;
 mod dungeon_events;
 
-pub(crate) use events::*;
 pub use shop::*;
 pub use space_combat::*;
 use serialization::{parse_i32, parse_u32, parse_u64};
@@ -1620,7 +1619,22 @@ pub fn init_game() -> Result<(), JsValue> {
                                     let choice = &ev.choices[choice_idx];
                                     let outcome = choice.outcome.clone();
                                     let eid = ev.id;
-                                    let result = apply_event_outcome(&mut *s, &outcome);
+                                    let (result, side_effect) = {
+                                        let gs = &mut *s;
+                                        events::apply_event_outcome(
+                                            &mut gs.player, &mut gs.ship, &mut gs.crew, &outcome
+                                        )
+                                    };
+                                    match side_effect {
+                                        events::EventSideEffect::StartCombat { difficulty } => {
+                                            s.game_mode = GameMode::LocationExploration;
+                                            s.combat = CombatState::Explore;
+                                            for _ in 0..difficulty {
+                                                s.spawn_enemies();
+                                            }
+                                        }
+                                        events::EventSideEffect::None => {}
+                                    }
                                     record_event_consequence(&mut s.event_memory, eid, choice_idx);
                                     s.message = result;
                                     s.message_timer = 120;
@@ -1659,7 +1673,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                 "Enter" | " " if s.dungeon_dialogue_cursor < num_choices => {
                                     let choice = &dlg.choices[s.dungeon_dialogue_cursor];
                                     let outcome = choice.outcome.clone();
-                                    let result = dungeon_events::apply_dungeon_outcome(&mut *s, &outcome);
+                                    let result = dungeon_events::apply_dungeon_outcome(&mut s.player, &outcome);
                                     s.message = result;
                                     s.message_timer = 120;
                                     s.current_dungeon_dialogue = None;

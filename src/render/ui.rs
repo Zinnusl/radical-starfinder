@@ -1860,15 +1860,31 @@ impl super::Renderer {
         dialogue: &crate::world::dialogue::DungeonDialogue,
         cursor: usize,
     ) {
-        let box_w = 420.0;
+        let box_w = 520.0_f64.min(self.canvas_w - 40.0);
         let box_x = (self.canvas_w - box_w) / 2.0;
         let box_y = 40.0;
+        let inner_w = box_w - 24.0;
+        // 13px monospace ≈ 7.8px per char
+        let max_chars = (inner_w / 7.8) as usize;
+        // 16px bold monospace ≈ 9.6px per char
+        let title_max = (inner_w / 9.6) as usize;
 
-        // Compute dynamic height based on content
-        let desc_lines = word_wrap(dialogue.description, 48);
+        let title_text = format!("\u{26a1} {} \u{2014} {}", dialogue.title, dialogue.chinese_title);
+        let title_lines = word_wrap(&title_text, title_max);
+        let desc_lines = word_wrap(dialogue.description, max_chars);
+
+        // Pre-wrap all choice texts so we can compute total height
+        let choice_lines: Vec<Vec<String>> = dialogue.choices.iter()
+            .map(|c| word_wrap(&c.text, max_chars.saturating_sub(2)))
+            .collect();
+
+        let title_h = title_lines.len() as f64 * 20.0;
         let desc_h = desc_lines.len() as f64 * 18.0;
-        let choices_h = dialogue.choices.len() as f64 * 36.0;
-        let box_h = (54.0 + desc_h + 16.0 + choices_h + 20.0).min(self.canvas_h - 80.0);
+        let choices_h: f64 = choice_lines.iter()
+            .map(|lines| lines.len() as f64 * 16.0 + 20.0) // text lines + hint + gap
+            .sum();
+        let box_h = (20.0 + title_h + 8.0 + desc_h + 16.0 + choices_h + 12.0)
+            .min(self.canvas_h - 80.0);
 
         // Background
         self.ctx.set_fill_style_str("rgba(8,6,18,0.97)");
@@ -1877,25 +1893,27 @@ impl super::Renderer {
         self.ctx.set_line_width(2.0);
         self.ctx.stroke_rect(box_x, box_y, box_w, box_h);
 
-        // Title
+        // Title (word-wrapped)
         self.ctx.set_fill_style_str("#64c8ff");
         self.ctx.set_font("bold 16px monospace");
         self.ctx.set_text_align("left");
-        let _ = self.ctx.fill_text(
-            &format!("\u{26a1} {} \u{2014} {}", dialogue.title, dialogue.chinese_title),
-            box_x + 12.0,
-            box_y + 28.0,
-        );
+        let mut y = box_y + 24.0;
+        for line in &title_lines {
+            let _ = self.ctx.fill_text(line, box_x + 12.0, y);
+            y += 20.0;
+        }
+        y += 8.0;
 
         // Description (word-wrapped)
         self.ctx.set_fill_style_str("#c0c0c0");
         self.ctx.set_font("13px monospace");
-        for (i, line) in desc_lines.iter().enumerate() {
-            let _ = self.ctx.fill_text(line, box_x + 12.0, box_y + 54.0 + i as f64 * 18.0);
+        for line in &desc_lines {
+            let _ = self.ctx.fill_text(line, box_x + 12.0, y);
+            y += 18.0;
         }
+        y += 16.0;
 
-        // Choices
-        let choices_start_y = box_y + 54.0 + desc_lines.len() as f64 * 18.0 + 16.0;
+        // Choices (each choice word-wrapped, with hint below)
         for (i, choice) in dialogue.choices.iter().enumerate() {
             let is_selected = i == cursor;
             let prefix = if is_selected { "\u{25b8} " } else { "  " };
@@ -1906,11 +1924,15 @@ impl super::Renderer {
                 self.ctx.set_fill_style_str("#a0a0a0");
             }
             self.ctx.set_font("13px monospace");
-            let _ = self.ctx.fill_text(
-                &format!("{}{}", prefix, choice.text),
-                box_x + 12.0,
-                choices_start_y + i as f64 * 36.0,
-            );
+            for (j, line) in choice_lines[i].iter().enumerate() {
+                let pfx = if j == 0 { prefix } else { "  " };
+                let _ = self.ctx.fill_text(
+                    &format!("{}{}", pfx, line),
+                    box_x + 12.0,
+                    y,
+                );
+                y += 16.0;
+            }
 
             // Chinese hint below choice
             self.ctx.set_fill_style_str("rgba(100,200,255,0.5)");
@@ -1918,8 +1940,9 @@ impl super::Renderer {
             let _ = self.ctx.fill_text(
                 &format!("    {}", choice.chinese_hint),
                 box_x + 12.0,
-                choices_start_y + i as f64 * 36.0 + 16.0,
+                y,
             );
+            y += 20.0;
         }
     }
 }
