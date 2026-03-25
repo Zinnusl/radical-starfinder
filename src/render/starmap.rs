@@ -1577,6 +1577,9 @@ impl super::Renderer {
         &self,
         event: &SpaceEvent,
         cursor: usize,
+        player: &crate::player::Player,
+        ship: &crate::player::Ship,
+        crew: &[crate::player::CrewMember],
     ) {
         let box_x = 50.0;
         let box_y = 50.0;
@@ -1623,14 +1626,25 @@ impl super::Renderer {
         // Choices
         let start_y = y + 40.0;
         let mut cy = start_y;
-        for (i, _choice) in event.choices.iter().enumerate() {
+        for (i, choice) in event.choices.iter().enumerate() {
+            let meets_req = crate::game::events::meets_event_requirement(player, ship, crew, &choice.requires);
             if i == cursor {
                 let choice_h = choice_lines[i].len() as f64 * 20.0 + 4.0;
-                self.ctx.set_fill_style_str("#004455");
+                if meets_req {
+                    self.ctx.set_fill_style_str("#004455");
+                } else {
+                    self.ctx.set_fill_style_str("#330011");
+                }
                 self.ctx.fill_rect(70.0, cy - 18.0, inner_w + 20.0, choice_h);
-                self.ctx.set_fill_style_str("#ffffff");
-            } else {
+                if meets_req {
+                    self.ctx.set_fill_style_str("#ffffff");
+                } else {
+                    self.ctx.set_fill_style_str("#aa4444");
+                }
+            } else if meets_req {
                 self.ctx.set_fill_style_str("#888888");
+            } else {
+                self.ctx.set_fill_style_str("#553333");
             }
             for (j, line) in choice_lines[i].iter().enumerate() {
                 let text = if j == 0 {

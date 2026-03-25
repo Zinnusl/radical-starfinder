@@ -55,7 +55,7 @@ impl GameState {
             GameMode::Event => {
                 if let Some(event_idx) = self.current_event {
                     if let Some(event) = ALL_EVENTS.get(event_idx) {
-                        self.renderer.draw_event(event, self.event_choice_cursor);
+                        self.renderer.draw_event(event, self.event_choice_cursor, &self.player, &self.ship, &self.crew);
                     }
                 }
                 return;
@@ -63,7 +63,7 @@ impl GameState {
             GameMode::DungeonEvent => {
                 if let Some(dlg_idx) = self.current_dungeon_dialogue {
                     if let Some(dlg) = crate::world::dialogue::ALL_DUNGEON_DIALOGUES.get(dlg_idx) {
-                        self.renderer.draw_dungeon_dialogue(dlg, self.dungeon_dialogue_cursor);
+                        self.renderer.draw_dungeon_dialogue(dlg, self.dungeon_dialogue_cursor, &self.player);
                     }
                 }
                 return;

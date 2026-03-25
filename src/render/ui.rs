@@ -597,7 +597,7 @@ impl super::Renderer {
         self.ctx
             .fill_text(
                 &format!(
-                    "Floor {}   HP {}/{}   Gold {}   Class {}",
+                    "Floor {}   HP {}/{}   Credits {}   Class {}",
                     floor_num, player.hp, player.effective_max_hp(), player.gold, class_name
                 ),
                 box_x + 18.0,
@@ -1859,6 +1859,7 @@ impl super::Renderer {
         &self,
         dialogue: &crate::world::dialogue::DungeonDialogue,
         cursor: usize,
+        player: &crate::player::Player,
     ) {
         let box_w = 520.0_f64.min(self.canvas_w - 40.0);
         let box_x = (self.canvas_w - box_w) / 2.0;
@@ -1916,9 +1917,12 @@ impl super::Renderer {
         // Choices (each choice word-wrapped, with hint below)
         for (i, choice) in dialogue.choices.iter().enumerate() {
             let is_selected = i == cursor;
+            let meets_req = crate::game::dungeon_events::meets_dungeon_requirement(player, &choice.requires);
             let prefix = if is_selected { "\u{25b8} " } else { "  " };
 
-            if is_selected {
+            if !meets_req {
+                self.ctx.set_fill_style_str("#553333");
+            } else if is_selected {
                 self.ctx.set_fill_style_str("#ffcc00");
             } else {
                 self.ctx.set_fill_style_str("#a0a0a0");

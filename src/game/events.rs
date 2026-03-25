@@ -1,12 +1,43 @@
 //! Space event outcome processing.
 
 use crate::player::{CrewMember, CrewRole, Item, ItemState, Player, Ship};
-use crate::world::events::EventOutcome;
+use crate::world::events::{EventOutcome, EventRequirement};
 
 /// Side effects that the caller must handle after applying an event outcome.
 pub(crate) enum EventSideEffect {
     None,
     StartCombat { difficulty: i32 },
+}
+
+/// Check whether the player/ship/crew meet a starmap event choice requirement.
+pub(crate) fn meets_event_requirement(
+    player: &Player,
+    ship: &Ship,
+    crew: &[CrewMember],
+    req: &Option<EventRequirement>,
+) -> bool {
+    match req {
+        None | Some(EventRequirement::None) => true,
+        Some(EventRequirement::HasCredits(n)) => player.gold >= *n,
+        Some(EventRequirement::HasFuel(n)) => ship.fuel >= *n,
+        Some(EventRequirement::HasCrewRole(role_id)) => {
+            let role = match role_id {
+                0 => CrewRole::ScienceOfficer,
+                1 => CrewRole::Medic,
+                2 => CrewRole::Quartermaster,
+                3 => CrewRole::SecurityChief,
+                _ => return false,
+            };
+            crew.iter().any(|c| c.role == role)
+        }
+        Some(EventRequirement::HasRadical(r)) => player.radicals.contains(r),
+        Some(EventRequirement::HasClass(class_id)) => {
+            let class = crate::player::PlayerClass::all();
+            class.get(*class_id as usize).map_or(false, |c| {
+                std::mem::discriminant(&player.class) == std::mem::discriminant(c)
+            })
+        }
+    }
 }
 
 pub(crate) fn apply_event_outcome(
@@ -507,5 +538,116 @@ mod tests {
         let mut c = test_crew();
         let (msg, _) = apply_event_outcome(&mut p, &mut s, &mut c, &EventOutcome::Nothing);
         assert_eq!(msg, "Nothing happened.");
+    }
+
+    // --- Requirement checks ---
+
+    #[test]
+    fn requirement_none_always_met() {
+        let p = test_player();
+        let s = test_ship();
+        let c = test_crew();
+        assert!(meets_event_requirement(&p, &s, &c, &None));
+        assert!(meets_event_requirement(&p, &s, &c, &Some(EventRequirement::None)));
+    }
+
+    #[test]
+    fn requirement_has_credits_met_when_enough() {
+        let mut p = test_player();
+        p.gold = 30;
+        let s = test_ship();
+        let c = test_crew();
+        assert!(meets_event_requirement(&p, &s, &c, &Some(EventRequirement::HasCredits(30))));
+        assert!(meets_event_requirement(&p, &s, &c, &Some(EventRequirement::HasCredits(1))));
+    }
+
+    #[test]
+    fn requirement_has_credits_unmet_when_insufficient() {
+        let mut p = test_player();
+        p.gold = 5;
+        let s = test_ship();
+        let c = test_crew();
+        assert!(!meets_event_requirement(&p, &s, &c, &Some(EventRequirement::HasCredits(10))));
+    }
+
+    #[test]
+    fn requirement_has_fuel_met_when_enough() {
+        let p = test_player();
+        let mut s = test_ship();
+        s.fuel = 50;
+        let c = test_crew();
+        assert!(meets_event_requirement(&p, &s, &c, &Some(EventRequirement::HasFuel(50))));
+    }
+
+    #[test]
+    fn requirement_has_fuel_unmet_when_low() {
+        let p = test_player();
+        let mut s = test_ship();
+        s.fuel = 2;
+        let c = test_crew();
+        assert!(!meets_event_requirement(&p, &s, &c, &Some(EventRequirement::HasFuel(5))));
+    }
+
+    #[test]
+    fn requirement_has_crew_role_met_when_present() {
+        let p = test_player();
+        let s = test_ship();
+        let c = vec![CrewMember {
+            name: "Doc".to_string(),
+            role: CrewRole::Medic,
+            hp: 10, max_hp: 10,
+            level: 1, xp: 0,
+            morale: 50, skill: 1,
+        }];
+        assert!(meets_event_requirement(&p, &s, &c, &Some(EventRequirement::HasCrewRole(1))));
+    }
+
+    #[test]
+    fn requirement_has_crew_role_unmet_when_absent() {
+        let p = test_player();
+        let s = test_ship();
+        let c = test_crew(); // has Pilot, not Medic
+        assert!(!meets_event_requirement(&p, &s, &c, &Some(EventRequirement::HasCrewRole(1))));
+    }
+
+    #[test]
+    fn requirement_has_radical_met_when_collected() {
+        let mut p = test_player();
+        p.radicals.push("水");
+        let s = test_ship();
+        let c = test_crew();
+        assert!(meets_event_requirement(&p, &s, &c, &Some(EventRequirement::HasRadical("水"))));
+    }
+
+    #[test]
+    fn requirement_has_radical_unmet_when_missing() {
+        let p = test_player();
+        let s = test_ship();
+        let c = test_crew();
+        assert!(!meets_event_requirement(&p, &s, &c, &Some(EventRequirement::HasRadical("水"))));
+    }
+
+    #[test]
+    fn requirement_has_class_met_when_matching() {
+        let p = test_player(); // Envoy = index 0
+        let s = test_ship();
+        let c = test_crew();
+        assert!(meets_event_requirement(&p, &s, &c, &Some(EventRequirement::HasClass(0))));
+    }
+
+    #[test]
+    fn requirement_has_class_unmet_when_wrong() {
+        let p = test_player(); // Envoy = index 0
+        let s = test_ship();
+        let c = test_crew();
+        assert!(!meets_event_requirement(&p, &s, &c, &Some(EventRequirement::HasClass(5))));
+    }
+
+    #[test]
+    fn requirement_invalid_crew_role_always_unmet() {
+        let p = test_player();
+        let s = test_ship();
+        let c = test_crew();
+        assert!(!meets_event_requirement(&p, &s, &c, &Some(EventRequirement::HasCrewRole(99))));
     }
 }

@@ -1,7 +1,23 @@
 //! Dungeon dialogue outcome application.
 
 use crate::player::Player;
-use crate::world::dialogue::DungeonOutcome;
+use crate::world::dialogue::{DungeonOutcome, DungeonRequirement};
+
+/// Check whether the player meets a dungeon dialogue choice requirement.
+pub(crate) fn meets_dungeon_requirement(player: &Player, req: &Option<DungeonRequirement>) -> bool {
+    match req {
+        None | Some(DungeonRequirement::None) => true,
+        Some(DungeonRequirement::HasGold(n)) => player.gold >= *n,
+        Some(DungeonRequirement::HasHp(n)) => player.hp >= *n,
+        Some(DungeonRequirement::HasRadical(r)) => player.radicals.contains(r),
+        Some(DungeonRequirement::HasClass(class_id)) => {
+            let class = crate::player::PlayerClass::all();
+            class.get(*class_id as usize).map_or(false, |c| {
+                std::mem::discriminant(&player.class) == std::mem::discriminant(c)
+            })
+        }
+    }
+}
 
 pub(crate) fn apply_dungeon_outcome(player: &mut Player, outcome: &DungeonOutcome) -> String {
     match outcome {
@@ -189,5 +205,75 @@ mod tests {
         let mut p = test_player();
         let msg = apply_dungeon_outcome(&mut p, &DungeonOutcome::GainCrewMember);
         assert_eq!(msg, "A new crew member joins you!");
+    }
+
+    // --- Requirement checks ---
+
+    #[test]
+    fn requirement_none_always_met() {
+        let p = test_player();
+        assert!(meets_dungeon_requirement(&p, &None));
+        assert!(meets_dungeon_requirement(&p, &Some(DungeonRequirement::None)));
+    }
+
+    #[test]
+    fn requirement_has_gold_met_when_enough() {
+        let mut p = test_player();
+        p.gold = 30;
+        assert!(meets_dungeon_requirement(&p, &Some(DungeonRequirement::HasGold(30))));
+        assert!(meets_dungeon_requirement(&p, &Some(DungeonRequirement::HasGold(1))));
+    }
+
+    #[test]
+    fn requirement_has_gold_unmet_when_insufficient() {
+        let mut p = test_player();
+        p.gold = 5;
+        assert!(!meets_dungeon_requirement(&p, &Some(DungeonRequirement::HasGold(10))));
+    }
+
+    #[test]
+    fn requirement_has_gold_unmet_at_zero() {
+        let mut p = test_player();
+        p.gold = 0;
+        assert!(!meets_dungeon_requirement(&p, &Some(DungeonRequirement::HasGold(1))));
+    }
+
+    #[test]
+    fn requirement_has_hp_met_when_enough() {
+        let mut p = test_player();
+        p.hp = 10;
+        assert!(meets_dungeon_requirement(&p, &Some(DungeonRequirement::HasHp(10))));
+    }
+
+    #[test]
+    fn requirement_has_hp_unmet_when_low() {
+        let mut p = test_player();
+        p.hp = 2;
+        assert!(!meets_dungeon_requirement(&p, &Some(DungeonRequirement::HasHp(5))));
+    }
+
+    #[test]
+    fn requirement_has_radical_met_when_collected() {
+        let mut p = test_player();
+        p.radicals.push("火");
+        assert!(meets_dungeon_requirement(&p, &Some(DungeonRequirement::HasRadical("火"))));
+    }
+
+    #[test]
+    fn requirement_has_radical_unmet_when_missing() {
+        let p = test_player();
+        assert!(!meets_dungeon_requirement(&p, &Some(DungeonRequirement::HasRadical("火"))));
+    }
+
+    #[test]
+    fn requirement_has_class_met_when_matching() {
+        let p = test_player(); // Envoy = index 0
+        assert!(meets_dungeon_requirement(&p, &Some(DungeonRequirement::HasClass(0))));
+    }
+
+    #[test]
+    fn requirement_has_class_unmet_when_wrong() {
+        let p = test_player(); // Envoy = index 0
+        assert!(!meets_dungeon_requirement(&p, &Some(DungeonRequirement::HasClass(5))));
     }
 }

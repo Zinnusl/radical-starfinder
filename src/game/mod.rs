@@ -34,13 +34,13 @@ pub(super) const ENEMIES_PER_ROOM: i32 = 1;
 pub(super) const LOOK_RANGE: i32 = 3;
 
 mod console;
-mod events;
+pub(crate) mod events;
 mod input;
 mod serialization;
 mod shop;
 mod space_combat;
 mod ui_state;
-mod dungeon_events;
+pub(crate) mod dungeon_events;
 
 pub use shop::*;
 pub use space_combat::*;
@@ -1617,30 +1617,33 @@ pub fn init_game() -> Result<(), JsValue> {
                                 "Enter" | " " => {
                                     let choice_idx = s.event_choice_cursor;
                                     let choice = &ev.choices[choice_idx];
-                                    let outcome = choice.outcome.clone();
-                                    let eid = ev.id;
-                                    let (result, side_effect) = {
-                                        let gs = &mut *s;
-                                        events::apply_event_outcome(
+                                    let gs = &mut *s;
+                                    if !events::meets_event_requirement(&gs.player, &gs.ship, &gs.crew, &choice.requires) {
+                                        gs.message = "You don't meet the requirements.".to_string();
+                                        gs.message_timer = 90;
+                                    } else {
+                                        let outcome = choice.outcome.clone();
+                                        let eid = ev.id;
+                                        let (result, side_effect) = events::apply_event_outcome(
                                             &mut gs.player, &mut gs.ship, &mut gs.crew, &outcome
-                                        )
-                                    };
-                                    match side_effect {
-                                        events::EventSideEffect::StartCombat { difficulty } => {
-                                            s.game_mode = GameMode::LocationExploration;
-                                            s.combat = CombatState::Explore;
-                                            for _ in 0..difficulty {
-                                                s.spawn_enemies();
+                                        );
+                                        match side_effect {
+                                            events::EventSideEffect::StartCombat { difficulty } => {
+                                                gs.game_mode = GameMode::LocationExploration;
+                                                gs.combat = CombatState::Explore;
+                                                for _ in 0..difficulty {
+                                                    gs.spawn_enemies();
+                                                }
                                             }
+                                            events::EventSideEffect::None => {}
                                         }
-                                        events::EventSideEffect::None => {}
+                                        record_event_consequence(&mut gs.event_memory, eid, choice_idx);
+                                        gs.message = result;
+                                        gs.message_timer = 120;
+                                        gs.current_event = None;
+                                        gs.event_choice_cursor = 0;
+                                        gs.game_mode = GameMode::Starmap;
                                     }
-                                    record_event_consequence(&mut s.event_memory, eid, choice_idx);
-                                    s.message = result;
-                                    s.message_timer = 120;
-                                    s.current_event = None;
-                                    s.event_choice_cursor = 0;
-                                    s.game_mode = GameMode::Starmap;
                                 }
                                 "Escape" => {
                                     s.current_event = None;
@@ -1672,13 +1675,18 @@ pub fn init_game() -> Result<(), JsValue> {
                                 }
                                 "Enter" | " " if s.dungeon_dialogue_cursor < num_choices => {
                                     let choice = &dlg.choices[s.dungeon_dialogue_cursor];
-                                    let outcome = choice.outcome.clone();
-                                    let result = dungeon_events::apply_dungeon_outcome(&mut s.player, &outcome);
-                                    s.message = result;
-                                    s.message_timer = 120;
-                                    s.current_dungeon_dialogue = None;
-                                    s.dungeon_dialogue_cursor = 0;
-                                    s.game_mode = GameMode::LocationExploration;
+                                    if dungeon_events::meets_dungeon_requirement(&s.player, &choice.requires) {
+                                        let outcome = choice.outcome.clone();
+                                        let result = dungeon_events::apply_dungeon_outcome(&mut s.player, &outcome);
+                                        s.message = result;
+                                        s.message_timer = 120;
+                                        s.current_dungeon_dialogue = None;
+                                        s.dungeon_dialogue_cursor = 0;
+                                        s.game_mode = GameMode::LocationExploration;
+                                    } else {
+                                        s.message = "You don't meet the requirements.".to_string();
+                                        s.message_timer = 90;
+                                    }
                                 }
                                 "Escape" => {
                                     s.current_dungeon_dialogue = None;
