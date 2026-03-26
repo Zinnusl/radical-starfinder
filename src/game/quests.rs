@@ -3,7 +3,7 @@
 use super::*;
 
 /// Archetype for NPC questgivers.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum QuestGiverArchetype {
     Admiral,
     Scientist,
@@ -30,7 +30,33 @@ struct NarrativeQuestDef {
 
 /// 12 hand-crafted narrative quests, 3 per archetype, forming chains.
 /// Chain IDs are assigned at runtime starting from `NARRATIVE_CHAIN_ID_BASE`.
-const NARRATIVE_CHAIN_ID_BASE: u32 = 10_000;
+pub(super) const NARRATIVE_CHAIN_ID_BASE: u32 = 10_000;
+
+/// Calculate narrative quest gold reward based on base, floor, and scaling.
+pub(crate) fn narrative_quest_gold(base_gold: i32, gold_per_floor: i32, floor: i32) -> i32 {
+    base_gold + floor * gold_per_floor
+}
+
+/// Return the number of narrative quest definitions.
+pub(crate) fn narrative_quest_count() -> usize {
+    NARRATIVE_QUESTS.len()
+}
+
+/// Build a quest goal from the narrative quest at the given index.
+/// Returns None if index is out of bounds.
+pub(crate) fn narrative_goal_for(index: usize, floor: i32) -> Option<QuestGoal> {
+    NARRATIVE_QUESTS.get(index).map(|def| (def.goal_factory)(floor))
+}
+
+/// Extract tone digit from a pinyin string (last char if it's 1-4).
+pub(crate) fn extract_tone(pinyin: &str) -> u8 {
+    pinyin
+        .chars()
+        .last()
+        .and_then(|c| c.to_digit(10))
+        .map(|d| d as u8)
+        .unwrap_or(5)
+}
 
 static NARRATIVE_QUESTS: &[NarrativeQuestDef] = &[
     // ── Admiral Zhao — Military Operations ────────────────────

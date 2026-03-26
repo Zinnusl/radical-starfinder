@@ -2,6 +2,120 @@
 
 use super::*;
 
+/// Calculate accuracy percentage from correct/wrong answer counts.
+pub(crate) fn calculate_accuracy(correct: u32, wrong: u32) -> u32 {
+    if correct + wrong > 0 {
+        (correct as f64 / (correct + wrong) as f64 * 100.0) as u32
+    } else {
+        0
+    }
+}
+
+/// Format a run summary string from individual stats.
+pub(crate) fn format_run_summary(
+    floor: i32,
+    kills: u32,
+    bosses: u32,
+    gold: i32,
+    correct: u32,
+    wrong: u32,
+    spells: u32,
+) -> String {
+    let accuracy = calculate_accuracy(correct, wrong);
+    format!(
+        "☠ You died on floor {}!  ⚔ {} kills | 🏆 {} bosses | 💰 {} gold | ✅ {}% accuracy ({}/{}) | 🔨 {} spells forged  — Press R to restart",
+        floor, kills, bosses, gold, accuracy, correct, correct + wrong, spells,
+    )
+}
+
+/// Calculate piety gain for an offering based on deity and item kind.
+pub(crate) fn offering_piety_gain(deity: Faction, kind: ItemKind) -> i32 {
+    match (deity, kind) {
+        (Faction::Consortium, ItemKind::MedHypo) => 5,
+        (Faction::Consortium, _) => 1,
+        (Faction::FreeTraders, ItemKind::StimPack | ItemKind::PersonalTeleporter) => 5,
+        (Faction::Technocracy, ItemKind::ScannerPulse) => 5,
+        (Faction::MilitaryAlliance, ItemKind::EMPGrenade | ItemKind::ToxinGrenade) => 5,
+        (Faction::AncientOrder, _) => 2,
+        _ => 1,
+    }
+}
+
+/// Calculate gold gain from a kill, applying piety and location multipliers.
+pub(crate) fn calculate_kill_gold(
+    base_gold: i32,
+    piety_military: i32,
+    piety_ancient: i32,
+    gold_multiplier: f64,
+    is_asteroid_base: bool,
+    is_mining_colony: bool,
+) -> i32 {
+    let mut gold = base_gold;
+    if piety_military >= 10 && piety_ancient >= 10 {
+        gold *= 2;
+    }
+    if piety_ancient >= 10 {
+        gold += 3;
+    }
+    gold = (gold as f64 * gold_multiplier) as i32;
+    gold = gold.max(1);
+    if is_asteroid_base || is_mining_colony {
+        gold = (gold as f64 * 1.5) as i32;
+    }
+    if is_asteroid_base {
+        gold *= 2;
+    }
+    gold
+}
+
+/// Determine the listen-mode gold bonus for a non-elite kill.
+pub(crate) fn listen_bonus_gold(mode: ListenMode, is_elite: bool) -> i32 {
+    if is_elite {
+        return 0;
+    }
+    match mode {
+        ListenMode::ToneOnly => 3,
+        ListenMode::FullAudio => 5,
+        ListenMode::Off => 0,
+    }
+}
+
+/// Calculate equipment drop chance (percentage, 0-100).
+pub(crate) fn equipment_drop_chance(is_boss: bool) -> u64 {
+    if is_boss { 60 } else { 5 }
+}
+
+/// Calculate item drop chance (percentage, 0-100).
+pub(crate) fn item_drop_chance(is_boss: bool, is_elite: bool, has_scavenger: bool) -> u64 {
+    if has_scavenger {
+        100
+    } else if is_boss {
+        40
+    } else if is_elite {
+        15
+    } else {
+        4
+    }
+}
+
+/// Calculate healing on kill with piety bonus.
+pub(crate) fn heal_on_kill(base_heal: i32, piety_consortium: i32, current_hp: i32, max_hp: i32) -> i32 {
+    let mut heal = base_heal;
+    if piety_consortium >= 10 {
+        heal += 1;
+    }
+    if heal > 0 {
+        (current_hp + heal).min(max_hp)
+    } else {
+        current_hp
+    }
+}
+
+/// Calculate boss sentence challenge reward.
+pub(crate) fn sentence_challenge_reward(floor: i32) -> i32 {
+    15 + floor * 2
+}
+
 impl GameState {
     pub(super) fn perform_offering(&mut self, altar: AltarKind, idx: usize) {
         if idx >= self.player.items.len() {
@@ -11,16 +125,7 @@ impl GameState {
         let _item_state = self.player.item_states.remove(idx);
         let deity = altar.deity();
 
-        // Basic offering logic
-        let piety_gain = match (deity, item.kind()) {
-            (Faction::Consortium, ItemKind::MedHypo) => 5,
-            (Faction::Consortium, _) => 1,
-            (Faction::FreeTraders, ItemKind::StimPack | ItemKind::PersonalTeleporter) => 5,
-            (Faction::Technocracy, ItemKind::ScannerPulse) => 5,
-            (Faction::MilitaryAlliance, ItemKind::EMPGrenade | ItemKind::ToxinGrenade) => 5,
-            (Faction::AncientOrder, _) => 2,
-            _ => 1,
-        };
+        let piety_gain = offering_piety_gain(deity, item.kind());
 
         self.player.add_piety(deity, piety_gain);
         let bonus_text = self.player.faction_bonus(deity);
@@ -218,37 +323,18 @@ impl GameState {
             self.particles.spawn_kill(sx, sy, &mut self.rng_state);
             self.flash = Some((255, 255, 255, 0.3));
 
-            let mut gold_gain = e_gold_base;
-            if self.player.get_piety(Faction::MilitaryAlliance) >= 10 && self.player.get_piety(Faction::AncientOrder) >= 10
-            {
-                gold_gain *= 2;
-            }
-            if self.player.get_piety(Faction::AncientOrder) >= 10 {
-                gold_gain += 3;
-            }
-            gold_gain = (gold_gain as f64 * self.floor_profile.gold_multiplier()) as i32;
-            gold_gain = gold_gain.max(1);
-            // Location gold bonus
-            if self.current_location_type == Some(crate::world::LocationType::AsteroidBase)
-                || self.current_location_type == Some(crate::world::LocationType::MiningColony)
-            {
-                gold_gain = (gold_gain as f64 * 1.5) as i32;
-            }
-            if self.current_location_type == Some(crate::world::LocationType::AsteroidBase) {
-                gold_gain *= 2;
-            }
+            let gold_gain = calculate_kill_gold(
+                e_gold_base,
+                self.player.get_piety(Faction::MilitaryAlliance),
+                self.player.get_piety(Faction::AncientOrder),
+                self.floor_profile.gold_multiplier(),
+                self.current_location_type == Some(crate::world::LocationType::AsteroidBase),
+                self.current_location_type == Some(crate::world::LocationType::MiningColony),
+            );
             self.player.gold += gold_gain;
             total_gold_gained += gold_gain;
 
-            let listen_bonus = if !e_is_elite {
-                match self.listening_mode {
-                    ListenMode::ToneOnly => 3,
-                    ListenMode::FullAudio => 5,
-                    ListenMode::Off => 0,
-                }
-            } else {
-                0
-            };
+            let listen_bonus = listen_bonus_gold(self.listening_mode, e_is_elite);
             self.player.gold += listen_bonus;
             total_gold_gained += listen_bonus;
 
@@ -286,15 +372,14 @@ impl GameState {
                 self.player.add_radical(available[bonus_idx].ch);
             }
 
-            let mut heal = self.player.heal_on_kill();
-            if self.player.get_piety(Faction::Consortium) >= 10 {
-                heal += 1;
-            }
-            if heal > 0 {
-                self.player.hp = (self.player.hp + heal).min(self.player.max_hp);
-            }
+            self.player.hp = heal_on_kill(
+                self.player.heal_on_kill(),
+                self.player.get_piety(Faction::Consortium),
+                self.player.hp,
+                self.player.max_hp,
+            );
 
-            let equip_chance: u64 = if e_is_boss { 60 } else { 5 };
+            let equip_chance = equipment_drop_chance(e_is_boss);
             if (self.rng_next() % 100) < equip_chance {
                 let eq_idx = self.rng_next() as usize % EQUIPMENT_POOL.len();
                 let eq = &EQUIPMENT_POOL[eq_idx];
@@ -317,15 +402,7 @@ impl GameState {
                 }
             }
 
-            let item_chance: u64 = if self.player.skill_tree.has_scavenger() {
-                100
-            } else if e_is_boss {
-                40
-            } else if e_is_elite {
-                15
-            } else {
-                4
-            };
+            let item_chance = item_drop_chance(e_is_boss, e_is_elite, self.player.skill_tree.has_scavenger());
             if (self.rng_next() % 100) < item_chance {
                 let drop_item = if e_is_boss && (self.rng_next() % 5) == 0 {
                     crate::player::Item::Revitalizer(self.player.max_hp / 2)
@@ -381,7 +458,7 @@ impl GameState {
                 && self.enemies[ei].boss_kind != Some(BossKind::AncientGuardian)
                 && self.enemies[ei].boss_kind != Some(BossKind::PirateCaptain)
             {
-                let base_reward = 15 + self.floor_num * 2;
+                let base_reward = sentence_challenge_reward(self.floor_num);
                 sentence_challenge = Some((
                     SentenceChallengeMode::BonusGold { reward: base_reward },
                     "Boss Phase 2! Arrange the words in correct order. ←→ to select, Enter to pick.".to_string(),
@@ -462,22 +539,13 @@ impl GameState {
     }
 
     pub(super) fn run_summary(&self) -> String {
-        let accuracy = if self.run_correct_answers + self.run_wrong_answers > 0 {
-            (self.run_correct_answers as f64
-                / (self.run_correct_answers + self.run_wrong_answers) as f64
-                * 100.0) as u32
-        } else {
-            0
-        };
-        format!(
-            "☠ You died on floor {}!  ⚔ {} kills | 🏆 {} bosses | 💰 {} gold | ✅ {}% accuracy ({}/{}) | 🔨 {} spells forged  — Press R to restart",
+        format_run_summary(
             self.floor_num,
             self.run_kills,
             self.run_bosses_killed,
             self.run_gold_earned,
-            accuracy,
             self.run_correct_answers,
-            self.run_correct_answers + self.run_wrong_answers,
+            self.run_wrong_answers,
             self.run_spells_forged,
         )
     }

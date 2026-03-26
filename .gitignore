@@ -6,3 +6,5 @@ Cargo.lock
 *.swo
 
 libskill_tree.rlib
+cov_baseline.json
+cov_final.json

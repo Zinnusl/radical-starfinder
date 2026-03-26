@@ -941,4 +941,791 @@ fn pick_weather(floor: i32, biome: ArenaBiome) -> Weather {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::combat::test_helpers::*;
+    use crate::player::PlayerClass;
+    use crate::vocab::SentenceEntry;
 
+    fn make_basic_player() -> Player {
+        Player::new(0, 0, PlayerClass::Soldier)
+    }
+
+    fn make_basic_enemy() -> Enemy {
+        Enemy {
+            x: 3,
+            y: 1,
+            hanzi: "火",
+            pinyin: "huo3",
+            meaning: "fire",
+            hp: 10,
+            max_hp: 10,
+            damage: 3,
+            alert: true,
+            is_boss: false,
+            is_elite: false,
+            gold_value: 5,
+            stunned: false,
+            statuses: Vec::new(),
+            boss_kind: None,
+            phase_triggered: false,
+            summon_cooldown: 0,
+            resisted_spell: None,
+            elite_chain: 0,
+            components: Vec::new(),
+            ai: AiBehavior::Chase,
+            radical_armor: 0,
+            radical_dodge: false,
+            radical_multiply: false,
+        }
+    }
+
+    fn make_boss_enemy() -> Enemy {
+        let mut e = make_basic_enemy();
+        e.is_boss = true;
+        e.hp = 30;
+        e.max_hp = 30;
+        e.damage = 8;
+        e
+    }
+
+    fn make_elite_enemy() -> Enemy {
+        let mut e = make_basic_enemy();
+        e.is_elite = true;
+        e.hp = 15;
+        e.max_hp = 15;
+        e.damage = 5;
+        e
+    }
+
+    fn make_multi_char_enemy() -> Enemy {
+        Enemy {
+            x: 3,
+            y: 1,
+            hanzi: "朋友",
+            pinyin: "peng2you3",
+            meaning: "friend",
+            hp: 12,
+            max_hp: 12,
+            damage: 4,
+            alert: true,
+            is_boss: false,
+            is_elite: false,
+            gold_value: 8,
+            stunned: false,
+            statuses: Vec::new(),
+            boss_kind: None,
+            phase_triggered: false,
+            summon_cooldown: 0,
+            resisted_spell: None,
+            elite_chain: 0,
+            components: Vec::new(),
+            ai: AiBehavior::Chase,
+            radical_armor: 0,
+            radical_dodge: false,
+            radical_multiply: false,
+        }
+    }
+
+    // ── enter_combat tests ──────────────────────────────────────
+
+    #[test]
+    fn enter_combat_returns_battle_with_player_unit() {
+        let player = make_basic_player();
+        let enemies = vec![make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(&player, &enemies, &[0], 1, None, &srs, None);
+
+        assert!(battle.units.len() >= 2, "should have player + at least 1 enemy");
+        assert_eq!(battle.units[0].kind, UnitKind::Player);
+        assert!(battle.units[0].alive);
+        assert_eq!(battle.units[0].hp, player.hp);
+    }
+
+    #[test]
+    fn enter_combat_player_positioned_at_bottom_center() {
+        let player = make_basic_player();
+        let enemies = vec![make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(&player, &enemies, &[0], 1, None, &srs, None);
+        let arena_size = battle.arena.width;
+
+        let expected_x = (arena_size / 2) as i32;
+        let expected_y = (arena_size - 2) as i32;
+        assert_eq!(battle.units[0].x, expected_x);
+        assert_eq!(battle.units[0].y, expected_y);
+    }
+
+    #[test]
+    fn enter_combat_places_enemy_units() {
+        let player = make_basic_player();
+        let enemies = vec![make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(&player, &enemies, &[0], 1, None, &srs, None);
+
+        let enemy_units: Vec<_> = battle
+            .units
+            .iter()
+            .filter(|u| matches!(u.kind, UnitKind::Enemy(_)))
+            .collect();
+        assert_eq!(enemy_units.len(), 1);
+        assert!(enemy_units[0].alive);
+    }
+
+    #[test]
+    fn enter_combat_turn_queue_contains_all_units() {
+        let player = make_basic_player();
+        let enemies = vec![make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(&player, &enemies, &[0], 1, None, &srs, None);
+
+        assert_eq!(battle.turn_queue.len(), battle.units.len());
+    }
+
+    #[test]
+    fn enter_combat_boss_sets_is_boss_battle() {
+        let player = make_basic_player();
+        let enemies = vec![make_boss_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(&player, &enemies, &[0], 1, None, &srs, None);
+
+        assert!(battle.is_boss_battle);
+    }
+
+    #[test]
+    fn enter_combat_non_boss_clears_is_boss_battle() {
+        let player = make_basic_player();
+        let enemies = vec![make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(&player, &enemies, &[0], 1, None, &srs, None);
+
+        assert!(!battle.is_boss_battle);
+    }
+
+    #[test]
+    fn enter_combat_boss_creates_larger_arena() {
+        let player = make_basic_player();
+        let normal_enemy = make_basic_enemy();
+        let boss_enemy = make_boss_enemy();
+        let srs = SrsTracker::new();
+
+        let normal_battle = enter_combat(&player, &[normal_enemy], &[0], 1, None, &srs, None);
+        let boss_battle = enter_combat(&player, &[boss_enemy], &[0], 1, None, &srs, None);
+
+        assert!(boss_battle.arena.width > normal_battle.arena.width);
+    }
+
+    #[test]
+    fn enter_combat_with_companion_adds_companion_unit() {
+        let player = make_basic_player();
+        let enemies = vec![make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(
+            &player,
+            &enemies,
+            &[0],
+            1,
+            None,
+            &srs,
+            Some(Companion::SecurityChief),
+        );
+
+        let companion_units: Vec<_> = battle
+            .units
+            .iter()
+            .filter(|u| u.kind == UnitKind::Companion)
+            .collect();
+        assert_eq!(companion_units.len(), 1);
+        assert_eq!(companion_units[0].hp, 8);
+        assert_eq!(companion_units[0].damage, 2);
+    }
+
+    #[test]
+    fn enter_combat_medic_companion_has_correct_stats() {
+        let player = make_basic_player();
+        let enemies = vec![make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(
+            &player,
+            &enemies,
+            &[0],
+            1,
+            None,
+            &srs,
+            Some(Companion::Medic),
+        );
+
+        let comp = battle
+            .units
+            .iter()
+            .find(|u| u.kind == UnitKind::Companion)
+            .unwrap();
+        assert_eq!(comp.hp, 6);
+        assert_eq!(comp.damage, 1);
+    }
+
+    #[test]
+    fn enter_combat_companion_placed_left_of_player() {
+        let player = make_basic_player();
+        let enemies = vec![make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(
+            &player,
+            &enemies,
+            &[0],
+            1,
+            None,
+            &srs,
+            Some(Companion::SecurityChief),
+        );
+
+        let player_unit = &battle.units[0];
+        let comp_unit = battle
+            .units
+            .iter()
+            .find(|u| u.kind == UnitKind::Companion)
+            .unwrap();
+        assert_eq!(comp_unit.x, player_unit.x - 1);
+        assert_eq!(comp_unit.y, player_unit.y);
+    }
+
+    #[test]
+    fn enter_combat_multi_char_enemy_splits_into_units() {
+        let player = make_basic_player();
+        let enemies = vec![make_multi_char_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(&player, &enemies, &[0], 1, None, &srs, None);
+
+        let enemy_units: Vec<_> = battle
+            .units
+            .iter()
+            .filter(|u| matches!(u.kind, UnitKind::Enemy(0)))
+            .collect();
+        assert_eq!(enemy_units.len(), 2, "朋友 should split into 2 units");
+        assert!(enemy_units.iter().all(|u| u.word_group == Some(0)));
+        assert_eq!(enemy_units[0].word_group_order, 0);
+        assert_eq!(enemy_units[1].word_group_order, 1);
+    }
+
+    #[test]
+    fn enter_combat_multi_char_distributes_hp() {
+        let player = make_basic_player();
+        let enemies = vec![make_multi_char_enemy()]; // hp=12, 2 chars
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(&player, &enemies, &[0], 1, None, &srs, None);
+
+        let enemy_units: Vec<_> = battle
+            .units
+            .iter()
+            .filter(|u| matches!(u.kind, UnitKind::Enemy(_)))
+            .collect();
+        let total_hp: i32 = enemy_units.iter().map(|u| u.hp).sum();
+        assert_eq!(total_hp, 12, "total HP should equal original enemy HP");
+    }
+
+    #[test]
+    fn enter_combat_room_modifier_changes_biome() {
+        let player = make_basic_player();
+        let enemies = vec![make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(
+            &player,
+            &enemies,
+            &[0],
+            1,
+            Some(RoomModifier::Hydroponics),
+            &srs,
+            None,
+        );
+
+        assert_eq!(battle.arena.biome, ArenaBiome::Hydroponics);
+    }
+
+    #[test]
+    fn enter_combat_multiple_enemies() {
+        let player = make_basic_player();
+        let enemies = vec![make_basic_enemy(), make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(&player, &enemies, &[0, 1], 1, None, &srs, None);
+
+        let enemy_count = battle
+            .units
+            .iter()
+            .filter(|u| matches!(u.kind, UnitKind::Enemy(_)))
+            .count();
+        assert_eq!(enemy_count, 2);
+    }
+
+    #[test]
+    fn enter_combat_weather_normal_on_low_floor() {
+        let player = make_basic_player();
+        let enemies = vec![make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(&player, &enemies, &[0], 1, None, &srs, None);
+
+        assert_eq!(battle.weather, Weather::Normal);
+    }
+
+    #[test]
+    fn enter_combat_arena_has_cover_barriers() {
+        let player = make_basic_player();
+        let enemies = vec![make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(&player, &enemies, &[0], 5, None, &srs, None);
+        let arena = &battle.arena;
+
+        let barrier_count = (0..arena.width)
+            .flat_map(|x| (0..arena.height).map(move |y| (x as i32, y as i32)))
+            .filter(|&(x, y)| arena.tile(x, y) == Some(BattleTile::CoverBarrier))
+            .count();
+        assert!(barrier_count > 0, "arena should have cover barriers");
+    }
+
+    #[test]
+    fn enter_combat_preserves_player_hp() {
+        let mut player = make_basic_player();
+        player.hp = 7;
+        let enemies = vec![make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(&player, &enemies, &[0], 1, None, &srs, None);
+
+        assert_eq!(battle.units[0].hp, 7);
+    }
+
+    #[test]
+    fn enter_combat_log_starts_with_battle_begins() {
+        let player = make_basic_player();
+        let enemies = vec![make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(&player, &enemies, &[0], 1, None, &srs, None);
+
+        assert_eq!(battle.log, vec!["Battle begins!"]);
+    }
+
+    // ── exit_combat tests ──────────────────────────────────────
+
+    #[test]
+    fn exit_combat_syncs_player_hp() {
+        let mut player = make_basic_player();
+        player.hp = 10;
+        let mut enemies = vec![make_basic_enemy()];
+        let mut battle = make_test_battle(vec![
+            make_test_unit(UnitKind::Player, 4, 5),
+            make_test_unit(UnitKind::Enemy(0), 4, 1),
+        ]);
+        battle.units[0].hp = 5;
+
+        exit_combat(&battle, &mut player, &mut enemies);
+
+        assert_eq!(player.hp, 5);
+    }
+
+    #[test]
+    fn exit_combat_returns_killed_enemy_indices() {
+        let mut player = make_basic_player();
+        let mut enemies = vec![make_basic_enemy(), make_basic_enemy()];
+        enemies[0].hp = 5;
+        enemies[1].hp = 5;
+        let mut battle = make_test_battle(vec![
+            make_test_unit(UnitKind::Player, 4, 5),
+            make_test_unit(UnitKind::Enemy(0), 3, 1),
+            make_test_unit(UnitKind::Enemy(1), 5, 1),
+        ]);
+        battle.units[1].hp = 0; // enemy 0 killed
+        battle.units[2].hp = 3; // enemy 1 alive
+
+        let killed = exit_combat(&battle, &mut player, &mut enemies);
+
+        assert!(killed.contains(&0));
+        assert!(!killed.contains(&1));
+    }
+
+    #[test]
+    fn exit_combat_preserves_alive_enemy_hp() {
+        let mut player = make_basic_player();
+        let mut enemies = vec![make_basic_enemy()];
+        enemies[0].hp = 10;
+        let mut battle = make_test_battle(vec![
+            make_test_unit(UnitKind::Player, 4, 5),
+            make_test_unit(UnitKind::Enemy(0), 4, 1),
+        ]);
+        battle.units[1].hp = 7;
+
+        exit_combat(&battle, &mut player, &mut enemies);
+
+        assert_eq!(enemies[0].hp, 7);
+    }
+
+    #[test]
+    fn exit_combat_dead_enemy_has_zero_hp() {
+        let mut player = make_basic_player();
+        let mut enemies = vec![make_basic_enemy()];
+        enemies[0].hp = 10;
+        let mut battle = make_test_battle(vec![
+            make_test_unit(UnitKind::Player, 4, 5),
+            make_test_unit(UnitKind::Enemy(0), 4, 1),
+        ]);
+        battle.units[1].hp = -2;
+
+        let killed = exit_combat(&battle, &mut player, &mut enemies);
+
+        assert_eq!(enemies[0].hp, 0);
+        assert!(killed.contains(&0));
+    }
+
+    #[test]
+    fn exit_combat_aggregates_split_unit_hp() {
+        let mut player = make_basic_player();
+        let mut enemies = vec![make_multi_char_enemy()];
+        enemies[0].hp = 12;
+        let mut battle = make_test_battle(vec![
+            make_test_unit(UnitKind::Player, 4, 5),
+            make_test_unit(UnitKind::Enemy(0), 3, 1),
+            make_test_unit(UnitKind::Enemy(0), 5, 1),
+        ]);
+        battle.units[1].hp = 3;
+        battle.units[2].hp = 4;
+
+        exit_combat(&battle, &mut player, &mut enemies);
+
+        assert_eq!(enemies[0].hp, 7);
+    }
+
+    #[test]
+    fn exit_combat_split_units_all_dead_kills_enemy() {
+        let mut player = make_basic_player();
+        let mut enemies = vec![make_multi_char_enemy()];
+        enemies[0].hp = 12;
+        let mut battle = make_test_battle(vec![
+            make_test_unit(UnitKind::Player, 4, 5),
+            make_test_unit(UnitKind::Enemy(0), 3, 1),
+            make_test_unit(UnitKind::Enemy(0), 5, 1),
+        ]);
+        battle.units[1].hp = 0;
+        battle.units[2].hp = -1;
+
+        let killed = exit_combat(&battle, &mut player, &mut enemies);
+
+        assert!(killed.contains(&0));
+        assert_eq!(enemies[0].hp, 0);
+    }
+
+    #[test]
+    fn exit_combat_syncs_riposte_charges() {
+        let mut player = make_basic_player();
+        player.riposte_charges = 0;
+        let mut enemies = vec![make_basic_enemy()];
+        let mut battle = make_test_battle(vec![
+            make_test_unit(UnitKind::Player, 4, 5),
+            make_test_unit(UnitKind::Enemy(0), 4, 1),
+        ]);
+        battle.riposte_charges = 3;
+
+        exit_combat(&battle, &mut player, &mut enemies);
+
+        assert_eq!(player.riposte_charges, 3);
+    }
+
+    #[test]
+    fn exit_combat_syncs_overcharge_state() {
+        let mut player = make_basic_player();
+        player.overcharge_active = false;
+        let mut enemies = vec![make_basic_enemy()];
+        let mut battle = make_test_battle(vec![
+            make_test_unit(UnitKind::Player, 4, 5),
+            make_test_unit(UnitKind::Enemy(0), 4, 1),
+        ]);
+        battle.overcharge_active = true;
+
+        exit_combat(&battle, &mut player, &mut enemies);
+
+        assert!(player.overcharge_active);
+    }
+
+    #[test]
+    fn exit_combat_clamps_negative_player_hp_to_zero() {
+        let mut player = make_basic_player();
+        let mut enemies = vec![make_basic_enemy()];
+        let mut battle = make_test_battle(vec![
+            make_test_unit(UnitKind::Player, 4, 5),
+            make_test_unit(UnitKind::Enemy(0), 4, 1),
+        ]);
+        battle.units[0].hp = -5;
+
+        exit_combat(&battle, &mut player, &mut enemies);
+
+        assert_eq!(player.hp, 0);
+    }
+
+    #[test]
+    fn exit_combat_no_enemies_returns_empty_killed() {
+        let mut player = make_basic_player();
+        let mut enemies: Vec<Enemy> = Vec::new();
+        let battle = make_test_battle(vec![
+            make_test_unit(UnitKind::Player, 4, 5),
+        ]);
+
+        let killed = exit_combat(&battle, &mut player, &mut enemies);
+
+        assert!(killed.is_empty());
+    }
+
+    // ── enemies_from_sentence tests ─────────────────────────────
+
+    #[test]
+    fn enemies_from_sentence_creates_one_per_character() {
+        let sentence = SentenceEntry {
+            hanzi: "你好",
+            pinyin: "ni3 hao3",
+            meaning: "hello",
+            hsk: 1,
+        };
+
+        let enemies = enemies_from_sentence(&sentence, 3);
+
+        assert_eq!(enemies.len(), 2);
+    }
+
+    #[test]
+    fn enemies_from_sentence_hp_scales_with_floor() {
+        let sentence = SentenceEntry {
+            hanzi: "大",
+            pinyin: "da4",
+            meaning: "big",
+            hsk: 1,
+        };
+
+        let floor_1 = enemies_from_sentence(&sentence, 1);
+        let floor_9 = enemies_from_sentence(&sentence, 9);
+
+        assert_eq!(floor_1[0].hp, 1 + 1 / 3); // 1
+        assert_eq!(floor_9[0].hp, 1 + 9 / 3); // 4
+        assert!(floor_9[0].hp > floor_1[0].hp);
+    }
+
+    #[test]
+    fn enemies_from_sentence_damage_scales_with_floor() {
+        let sentence = SentenceEntry {
+            hanzi: "大",
+            pinyin: "da4",
+            meaning: "big",
+            hsk: 1,
+        };
+
+        let enemies = enemies_from_sentence(&sentence, 8);
+
+        assert_eq!(enemies[0].damage, 1 + 8 / 4);
+    }
+
+    #[test]
+    fn enemies_from_sentence_gold_scales_with_floor() {
+        let sentence = SentenceEntry {
+            hanzi: "大",
+            pinyin: "da4",
+            meaning: "big",
+            hsk: 1,
+        };
+
+        let enemies = enemies_from_sentence(&sentence, 5);
+
+        assert_eq!(enemies[0].gold_value, 2 + 5);
+    }
+
+    #[test]
+    fn enemies_from_sentence_preserves_meaning() {
+        let sentence = SentenceEntry {
+            hanzi: "你好",
+            pinyin: "ni3 hao3",
+            meaning: "hello",
+            hsk: 1,
+        };
+
+        let enemies = enemies_from_sentence(&sentence, 1);
+
+        assert!(enemies.iter().all(|e| e.meaning == "hello"));
+    }
+
+    #[test]
+    fn enemies_from_sentence_enemies_are_not_bosses_or_elites() {
+        let sentence = SentenceEntry {
+            hanzi: "你好",
+            pinyin: "ni3 hao3",
+            meaning: "hello",
+            hsk: 1,
+        };
+
+        let enemies = enemies_from_sentence(&sentence, 1);
+
+        assert!(enemies.iter().all(|e| !e.is_boss && !e.is_elite));
+    }
+
+    #[test]
+    fn enemies_from_sentence_positions_sequentially() {
+        let sentence = SentenceEntry {
+            hanzi: "你好吗",
+            pinyin: "ni3 hao3 ma5",
+            meaning: "how are you",
+            hsk: 1,
+        };
+
+        let enemies = enemies_from_sentence(&sentence, 1);
+
+        assert_eq!(enemies[0].x, 0);
+        assert_eq!(enemies[1].x, 1);
+        assert_eq!(enemies[2].x, 2);
+    }
+
+    // ── pick_weather tests ──────────────────────────────────────
+
+    #[test]
+    fn pick_weather_returns_normal_on_low_floors() {
+        for floor in 0..5 {
+            let weather = pick_weather(floor, ArenaBiome::StationInterior);
+            assert_eq!(weather, Weather::Normal);
+        }
+    }
+
+    #[test]
+    fn pick_weather_can_return_non_normal_on_high_floors() {
+        let mut found_non_normal = false;
+        for floor in 5..20 {
+            for biome in [
+                ArenaBiome::StationInterior,
+                ArenaBiome::DerelictShip,
+                ArenaBiome::AlienRuins,
+                ArenaBiome::CryoBay,
+                ArenaBiome::ReactorRoom,
+            ] {
+                if pick_weather(floor, biome) != Weather::Normal {
+                    found_non_normal = true;
+                    break;
+                }
+            }
+        }
+        assert!(found_non_normal);
+    }
+
+    // ── apply_mastery_debuffs tests (tested indirectly) ─────────
+
+    #[test]
+    fn mastery_tier_3_reduces_enemy_stats() {
+        let mut unit = make_test_unit(UnitKind::Enemy(0), 0, 0);
+        unit.hp = 10;
+        unit.max_hp = 10;
+        unit.damage = 10;
+        unit.mastery_tier = 3;
+
+        apply_mastery_debuffs(&mut unit);
+
+        // 10 * 0.7 = 7, ceil = 7
+        assert_eq!(unit.hp, 7);
+        assert_eq!(unit.max_hp, 7);
+        assert_eq!(unit.damage, 7);
+    }
+
+    #[test]
+    fn mastery_tier_2_reduces_enemy_stats_less() {
+        let mut unit = make_test_unit(UnitKind::Enemy(0), 0, 0);
+        unit.hp = 10;
+        unit.max_hp = 10;
+        unit.damage = 10;
+        unit.mastery_tier = 2;
+
+        apply_mastery_debuffs(&mut unit);
+
+        // 10 * 0.85 = 8.5, ceil = 9
+        assert_eq!(unit.hp, 9);
+        assert_eq!(unit.max_hp, 9);
+        assert_eq!(unit.damage, 9);
+    }
+
+    #[test]
+    fn mastery_tier_0_does_not_change_stats() {
+        let mut unit = make_test_unit(UnitKind::Enemy(0), 0, 0);
+        unit.hp = 10;
+        unit.max_hp = 10;
+        unit.damage = 5;
+        unit.mastery_tier = 0;
+
+        apply_mastery_debuffs(&mut unit);
+
+        assert_eq!(unit.hp, 10);
+        assert_eq!(unit.max_hp, 10);
+        assert_eq!(unit.damage, 5);
+    }
+
+    #[test]
+    fn mastery_debuffs_enforce_minimum_one() {
+        let mut unit = make_test_unit(UnitKind::Enemy(0), 0, 0);
+        unit.hp = 1;
+        unit.max_hp = 1;
+        unit.damage = 1;
+        unit.mastery_tier = 3;
+
+        apply_mastery_debuffs(&mut unit);
+
+        assert_eq!(unit.hp, 1);
+        assert_eq!(unit.max_hp, 1);
+        assert_eq!(unit.damage, 1);
+    }
+
+    // ── derive_wuxing_element tests ─────────────────────────────
+
+    #[test]
+    fn derive_wuxing_element_returns_none_for_empty_components() {
+        let enemy = make_basic_enemy();
+
+        let element = derive_wuxing_element(&enemy);
+
+        assert!(element.is_none());
+    }
+
+    // ── generate_arena tests (via enter_combat) ─────────────────
+
+    #[test]
+    fn arena_dimensions_match_encounter_size() {
+        let player = make_basic_player();
+        let enemies = vec![make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(&player, &enemies, &[0], 1, None, &srs, None);
+        let expected_size = arena_size_for_encounter(false, false);
+
+        assert_eq!(battle.arena.width, expected_size);
+        assert_eq!(battle.arena.height, expected_size);
+    }
+
+    #[test]
+    fn arena_for_elite_is_larger_than_normal() {
+        let expected_normal = arena_size_for_encounter(false, false);
+        let expected_elite = arena_size_for_encounter(true, false);
+
+        assert!(expected_elite > expected_normal);
+    }
+
+    #[test]
+    fn arena_for_boss_is_largest() {
+        let expected_elite = arena_size_for_encounter(true, false);
+        let expected_boss = arena_size_for_encounter(false, true);
+
+        assert!(expected_boss > expected_elite);
+    }
+}

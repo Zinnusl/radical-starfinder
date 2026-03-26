@@ -1729,4 +1729,393 @@ fn execute_arena_event(
     messages
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::combat::test_helpers::{make_test_battle, make_test_unit};
+    use crate::combat::{BattleTile, TacticalPhase, UnitKind};
 
+    // ── tick_battle: phase handling ──────────────────────────────────
+
+    #[test]
+    fn tick_command_phase_returns_none() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::Command;
+
+        let event = tick_battle(&mut battle);
+
+        assert!(matches!(event, BattleEvent::None));
+    }
+
+    #[test]
+    fn tick_resolve_timer_decrements() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::Resolve {
+            message: "test".to_string(),
+            timer: 5,
+            end_turn: false,
+        };
+
+        tick_battle(&mut battle);
+
+        match &battle.phase {
+            TacticalPhase::Resolve { timer, .. } => assert_eq!(*timer, 4),
+            _ => panic!("Expected Resolve phase"),
+        }
+    }
+
+    #[test]
+    fn tick_resolve_no_end_turn_goes_to_command() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::Resolve {
+            message: "test".to_string(),
+            timer: 0,
+            end_turn: false,
+        };
+
+        tick_battle(&mut battle);
+
+        assert!(matches!(battle.phase, TacticalPhase::Command));
+    }
+
+    #[test]
+    fn tick_end_phase_timer_decrements() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::End {
+            victory: true,
+            timer: 10,
+        };
+
+        tick_battle(&mut battle);
+
+        match &battle.phase {
+            TacticalPhase::End { timer, .. } => assert_eq!(*timer, 9),
+            _ => panic!("Expected End phase"),
+        }
+    }
+
+    #[test]
+    fn tick_end_phase_timer_stops_at_zero() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::End {
+            victory: true,
+            timer: 0,
+        };
+
+        let event = tick_battle(&mut battle);
+
+        assert!(matches!(event, BattleEvent::None));
+        match &battle.phase {
+            TacticalPhase::End { timer, .. } => assert_eq!(*timer, 0),
+            _ => panic!("Expected End phase"),
+        }
+    }
+
+    #[test]
+    fn tick_environment_tick_timer_decrements() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::EnvironmentTick { timer: 5 };
+
+        tick_battle(&mut battle);
+
+        match &battle.phase {
+            TacticalPhase::EnvironmentTick { timer } => assert_eq!(*timer, 4),
+            _ => panic!("Expected EnvironmentTick phase"),
+        }
+    }
+
+    #[test]
+    fn tick_event_message_timer_decrements() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::Command;
+        battle.event_message = Some("test".to_string());
+        battle.event_message_timer = 3;
+
+        tick_battle(&mut battle);
+
+        assert_eq!(battle.event_message_timer, 2);
+        assert!(battle.event_message.is_some());
+    }
+
+    #[test]
+    fn tick_event_message_clears_at_zero() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::Command;
+        battle.event_message = Some("test".to_string());
+        battle.event_message_timer = 1;
+
+        tick_battle(&mut battle);
+
+        assert_eq!(battle.event_message_timer, 0);
+        assert!(battle.event_message.is_none());
+    }
+
+    #[test]
+    fn tick_combo_message_timer_decrements() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::Command;
+        battle.combo_message = Some("combo!".to_string());
+        battle.combo_message_timer = 3;
+
+        tick_battle(&mut battle);
+
+        assert_eq!(battle.combo_message_timer, 2);
+    }
+
+    #[test]
+    fn tick_combo_message_clears_at_zero() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::Command;
+        battle.combo_message = Some("combo!".to_string());
+        battle.combo_message_timer = 1;
+
+        tick_battle(&mut battle);
+
+        assert_eq!(battle.combo_message_timer, 0);
+        assert!(battle.combo_message.is_none());
+    }
+
+    #[test]
+    fn tick_calculates_intents_when_not_calculated() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::Command;
+        battle.intents_calculated = false;
+
+        tick_battle(&mut battle);
+
+        assert!(battle.intents_calculated);
+    }
+
+    #[test]
+    fn tick_look_phase_returns_none() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::Look {
+            cursor_x: 3,
+            cursor_y: 3,
+        };
+
+        let event = tick_battle(&mut battle);
+
+        assert!(matches!(event, BattleEvent::None));
+    }
+
+    // ── push_boulder ─────────────────────────────────────────────────
+
+    #[test]
+    fn push_boulder_moves_crate_to_walkable_tile() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut battle = make_test_battle(vec![player]);
+        battle.arena.set_tile(3, 3, BattleTile::CargoCrate);
+
+        let msgs = push_boulder(&mut battle, 3, 3, 1, 0);
+
+        assert_eq!(battle.arena.tile(3, 3), Some(BattleTile::MetalFloor));
+        assert_eq!(battle.arena.tile(4, 3), Some(BattleTile::CargoCrate));
+        assert!(msgs.iter().any(|m| m.contains("slides")));
+    }
+
+    #[test]
+    fn push_boulder_crushes_unit_for_three_damage() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 4, 3);
+        enemy.hp = 10;
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::CargoCrate);
+
+        let msgs = push_boulder(&mut battle, 3, 3, 1, 0);
+
+        assert_eq!(battle.units[1].hp, 7);
+        assert_eq!(battle.arena.tile(4, 3), Some(BattleTile::CargoCrate));
+        assert!(msgs.iter().any(|m| m.contains("crushed")));
+    }
+
+    #[test]
+    fn push_boulder_into_fuel_canister_explodes() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut battle = make_test_battle(vec![player]);
+        battle.arena.set_tile(3, 3, BattleTile::CargoCrate);
+        battle.arena.set_tile(4, 3, BattleTile::FuelCanister);
+
+        let msgs = push_boulder(&mut battle, 3, 3, 1, 0);
+
+        assert_eq!(battle.arena.tile(3, 3), Some(BattleTile::MetalFloor));
+        assert_eq!(battle.arena.tile(4, 3), Some(BattleTile::BlastMark));
+        assert!(msgs.iter().any(|m| m.contains("fuel canister")));
+    }
+
+    #[test]
+    fn push_boulder_chain_pushes_two_crates() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut battle = make_test_battle(vec![player]);
+        battle.arena.set_tile(3, 3, BattleTile::CargoCrate);
+        battle.arena.set_tile(4, 3, BattleTile::CargoCrate);
+
+        let msgs = push_boulder(&mut battle, 3, 3, 1, 0);
+
+        assert_eq!(battle.arena.tile(3, 3), Some(BattleTile::MetalFloor));
+        assert_eq!(battle.arena.tile(4, 3), Some(BattleTile::CargoCrate));
+        assert_eq!(battle.arena.tile(5, 3), Some(BattleTile::CargoCrate));
+        assert!(msgs.iter().any(|m| m.contains("chain")));
+    }
+
+    #[test]
+    fn push_boulder_into_wall_thuds() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut battle = make_test_battle(vec![player]);
+        battle.arena.set_tile(3, 3, BattleTile::CargoCrate);
+        battle.arena.set_tile(4, 3, BattleTile::CoverBarrier);
+
+        let msgs = push_boulder(&mut battle, 3, 3, 1, 0);
+
+        assert_eq!(battle.arena.tile(3, 3), Some(BattleTile::CargoCrate));
+        assert!(msgs.iter().any(|m| m.contains("thuds")));
+    }
+
+    #[test]
+    fn push_boulder_on_non_crate_returns_empty() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut battle = make_test_battle(vec![player]);
+
+        let msgs = push_boulder(&mut battle, 3, 3, 1, 0);
+
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn push_boulder_out_of_bounds_returns_empty() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut battle = make_test_battle(vec![player]);
+        battle.arena.set_tile(6, 3, BattleTile::CargoCrate);
+
+        let msgs = push_boulder(&mut battle, 6, 3, 1, 0);
+
+        // Destination (7,3) is out of bounds for 7x7 arena
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn push_boulder_chain_jams_when_destination_blocked() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut battle = make_test_battle(vec![player]);
+        battle.arena.set_tile(3, 3, BattleTile::CargoCrate);
+        battle.arena.set_tile(4, 3, BattleTile::CargoCrate);
+        battle.arena.set_tile(5, 3, BattleTile::CoverBarrier);
+
+        let msgs = push_boulder(&mut battle, 3, 3, 1, 0);
+
+        // Second crate can't move, so first can't either
+        assert_eq!(battle.arena.tile(3, 3), Some(BattleTile::CargoCrate));
+        assert_eq!(battle.arena.tile(4, 3), Some(BattleTile::CargoCrate));
+        assert!(msgs.iter().any(|m| m.contains("jammed")));
+    }
+
+    // ── tick_arena_events ────────────────────────────────────────────
+
+    #[test]
+    fn arena_events_timer_decrements() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena_event_timer = 5;
+
+        tick_arena_events(&mut battle);
+
+        assert_eq!(battle.arena_event_timer, 4);
+    }
+
+    #[test]
+    fn arena_events_previews_at_timer_two() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena_event_timer = 2;
+
+        let msgs = tick_arena_events(&mut battle);
+
+        assert_eq!(battle.arena_event_timer, 1);
+        assert!(battle.pending_event.is_some());
+        assert!(msgs.iter().any(|m| m.contains("incoming")));
+    }
+
+    #[test]
+    fn arena_events_fires_when_timer_one() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena_event_timer = 1;
+        battle.pending_event = Some(ArenaEvent::MediGas);
+
+        let msgs = tick_arena_events(&mut battle);
+
+        assert!(battle.pending_event.is_none());
+        assert!(battle.event_message.is_some());
+        assert!(battle.arena_event_timer >= 2);
+        assert!(!msgs.is_empty());
+    }
+
+    #[test]
+    fn arena_events_no_pending_returns_empty() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena_event_timer = 1;
+        battle.pending_event = None;
+
+        let msgs = tick_arena_events(&mut battle);
+
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn arena_events_boss_resets_timer_to_two() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.is_boss_battle = true;
+        battle.arena_event_timer = 1;
+        battle.pending_event = Some(ArenaEvent::MediGas);
+
+        tick_arena_events(&mut battle);
+
+        assert_eq!(battle.arena_event_timer, 2);
+    }
+
+    #[test]
+    fn arena_events_medi_gas_heals_units() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        enemy.hp = 5;
+        enemy.max_hp = 10;
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena_event_timer = 1;
+        battle.pending_event = Some(ArenaEvent::MediGas);
+
+        tick_arena_events(&mut battle);
+
+        assert!(battle.units[1].hp > 5);
+    }
+}

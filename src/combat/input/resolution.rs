@@ -1871,3 +1871,579 @@ pub(super) fn resolve_elite_chain(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::combat::test_helpers::*;
+    use crate::combat::{BattleTile, UnitKind, Weather, WuxingElement};
+    use crate::radical::SpellEffect;
+
+    // ── spell_effect_element ──────────────────────────────────────────
+
+    #[test]
+    fn spell_effect_element_fire_aoe_returns_fire() {
+        let result = spell_effect_element(&SpellEffect::FireAoe(5));
+        assert_eq!(result, Some(WuxingElement::Fire));
+    }
+
+    #[test]
+    fn spell_effect_element_cone_returns_fire() {
+        let result = spell_effect_element(&SpellEffect::Cone(3));
+        assert_eq!(result, Some(WuxingElement::Fire));
+    }
+
+    #[test]
+    fn spell_effect_element_ignite_returns_fire() {
+        let result = spell_effect_element(&SpellEffect::Ignite);
+        assert_eq!(result, Some(WuxingElement::Fire));
+    }
+
+    #[test]
+    fn spell_effect_element_slow_returns_water() {
+        let result = spell_effect_element(&SpellEffect::Slow(2));
+        assert_eq!(result, Some(WuxingElement::Water));
+    }
+
+    #[test]
+    fn spell_effect_element_freeze_ground_returns_water() {
+        let result = spell_effect_element(&SpellEffect::FreezeGround(4));
+        assert_eq!(result, Some(WuxingElement::Water));
+    }
+
+    #[test]
+    fn spell_effect_element_flood_wave_returns_water() {
+        let result = spell_effect_element(&SpellEffect::FloodWave(3));
+        assert_eq!(result, Some(WuxingElement::Water));
+    }
+
+    #[test]
+    fn spell_effect_element_strong_hit_returns_metal() {
+        let result = spell_effect_element(&SpellEffect::StrongHit(5));
+        assert_eq!(result, Some(WuxingElement::Metal));
+    }
+
+    #[test]
+    fn spell_effect_element_armor_break_returns_metal() {
+        let result = spell_effect_element(&SpellEffect::ArmorBreak);
+        assert_eq!(result, Some(WuxingElement::Metal));
+    }
+
+    #[test]
+    fn spell_effect_element_pierce_returns_metal() {
+        let result = spell_effect_element(&SpellEffect::Pierce(2));
+        assert_eq!(result, Some(WuxingElement::Metal));
+    }
+
+    #[test]
+    fn spell_effect_element_knockback_returns_metal() {
+        let result = spell_effect_element(&SpellEffect::KnockBack(3));
+        assert_eq!(result, Some(WuxingElement::Metal));
+    }
+
+    #[test]
+    fn spell_effect_element_charge_returns_metal() {
+        let result = spell_effect_element(&SpellEffect::Charge(4));
+        assert_eq!(result, Some(WuxingElement::Metal));
+    }
+
+    #[test]
+    fn spell_effect_element_stun_returns_metal() {
+        let result = spell_effect_element(&SpellEffect::Stun);
+        assert_eq!(result, Some(WuxingElement::Metal));
+    }
+
+    #[test]
+    fn spell_effect_element_poison_returns_wood() {
+        let result = spell_effect_element(&SpellEffect::Poison(2, 3));
+        assert_eq!(result, Some(WuxingElement::Wood));
+    }
+
+    #[test]
+    fn spell_effect_element_thorns_returns_wood() {
+        let result = spell_effect_element(&SpellEffect::Thorns(2));
+        assert_eq!(result, Some(WuxingElement::Wood));
+    }
+
+    #[test]
+    fn spell_effect_element_plant_growth_returns_wood() {
+        let result = spell_effect_element(&SpellEffect::PlantGrowth);
+        assert_eq!(result, Some(WuxingElement::Wood));
+    }
+
+    #[test]
+    fn spell_effect_element_oil_slick_returns_wood() {
+        let result = spell_effect_element(&SpellEffect::OilSlick);
+        assert_eq!(result, Some(WuxingElement::Wood));
+    }
+
+    #[test]
+    fn spell_effect_element_heal_returns_wood() {
+        let result = spell_effect_element(&SpellEffect::Heal(5));
+        assert_eq!(result, Some(WuxingElement::Wood));
+    }
+
+    #[test]
+    fn spell_effect_element_drain_returns_wood() {
+        let result = spell_effect_element(&SpellEffect::Drain(3));
+        assert_eq!(result, Some(WuxingElement::Wood));
+    }
+
+    #[test]
+    fn spell_effect_element_earthquake_returns_earth() {
+        let result = spell_effect_element(&SpellEffect::Earthquake(4));
+        assert_eq!(result, Some(WuxingElement::Earth));
+    }
+
+    #[test]
+    fn spell_effect_element_wall_returns_earth() {
+        let result = spell_effect_element(&SpellEffect::Wall(3));
+        assert_eq!(result, Some(WuxingElement::Earth));
+    }
+
+    #[test]
+    fn spell_effect_element_summon_boulder_returns_earth() {
+        let result = spell_effect_element(&SpellEffect::SummonBoulder);
+        assert_eq!(result, Some(WuxingElement::Earth));
+    }
+
+    #[test]
+    fn spell_effect_element_shield_returns_earth() {
+        let result = spell_effect_element(&SpellEffect::Shield);
+        assert_eq!(result, Some(WuxingElement::Earth));
+    }
+
+    #[test]
+    fn spell_effect_element_teleport_returns_none() {
+        let result = spell_effect_element(&SpellEffect::Teleport);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn spell_effect_element_reveal_returns_none() {
+        let result = spell_effect_element(&SpellEffect::Reveal);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn spell_effect_element_pacify_returns_none() {
+        let result = spell_effect_element(&SpellEffect::Pacify);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn spell_effect_element_focus_restore_returns_none() {
+        let result = spell_effect_element(&SpellEffect::FocusRestore(5));
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn spell_effect_element_pull_toward_returns_none() {
+        let result = spell_effect_element(&SpellEffect::PullToward);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn spell_effect_element_blink_returns_none() {
+        let result = spell_effect_element(&SpellEffect::Blink(2));
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn spell_effect_element_dash_returns_none() {
+        let result = spell_effect_element(&SpellEffect::Dash(3));
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn spell_effect_element_sanctify_returns_none() {
+        let result = spell_effect_element(&SpellEffect::Sanctify(2));
+        assert_eq!(result, None);
+    }
+
+    // ── spell_combo_name ──────────────────────────────────────────────
+
+    #[test]
+    fn spell_combo_water_fire_returns_steam_burst() {
+        let result = spell_combo_name(WuxingElement::Water, WuxingElement::Fire);
+        assert_eq!(result, Some("Steam Burst"));
+    }
+
+    #[test]
+    fn spell_combo_water_earth_returns_avalanche() {
+        let result = spell_combo_name(WuxingElement::Water, WuxingElement::Earth);
+        assert_eq!(result, Some("Avalanche"));
+    }
+
+    #[test]
+    fn spell_combo_fire_fire_returns_inferno() {
+        let result = spell_combo_name(WuxingElement::Fire, WuxingElement::Fire);
+        assert_eq!(result, Some("Inferno"));
+    }
+
+    #[test]
+    fn spell_combo_wood_fire_returns_toxic_cloud() {
+        let result = spell_combo_name(WuxingElement::Wood, WuxingElement::Fire);
+        assert_eq!(result, Some("Toxic Cloud"));
+    }
+
+    #[test]
+    fn spell_combo_fire_metal_returns_tempering() {
+        let result = spell_combo_name(WuxingElement::Fire, WuxingElement::Metal);
+        assert_eq!(result, Some("Tempering"));
+    }
+
+    #[test]
+    fn spell_combo_metal_water_returns_lightning_storm() {
+        let result = spell_combo_name(WuxingElement::Metal, WuxingElement::Water);
+        assert_eq!(result, Some("Lightning Storm"));
+    }
+
+    #[test]
+    fn spell_combo_earth_earth_returns_petrify() {
+        let result = spell_combo_name(WuxingElement::Earth, WuxingElement::Earth);
+        assert_eq!(result, Some("Petrify"));
+    }
+
+    #[test]
+    fn spell_combo_wood_water_returns_overgrowth() {
+        let result = spell_combo_name(WuxingElement::Wood, WuxingElement::Water);
+        assert_eq!(result, Some("Overgrowth"));
+    }
+
+    #[test]
+    fn spell_combo_metal_earth_returns_shatter() {
+        let result = spell_combo_name(WuxingElement::Metal, WuxingElement::Earth);
+        assert_eq!(result, Some("Shatter"));
+    }
+
+    #[test]
+    fn spell_combo_wood_earth_returns_entangle() {
+        let result = spell_combo_name(WuxingElement::Wood, WuxingElement::Earth);
+        assert_eq!(result, Some("Entangle"));
+    }
+
+    #[test]
+    fn spell_combo_fire_wood_returns_purifying_flame() {
+        let result = spell_combo_name(WuxingElement::Fire, WuxingElement::Wood);
+        assert_eq!(result, Some("Purifying Flame"));
+    }
+
+    #[test]
+    fn spell_combo_water_metal_returns_frozen_edge() {
+        let result = spell_combo_name(WuxingElement::Water, WuxingElement::Metal);
+        assert_eq!(result, Some("Frozen Edge"));
+    }
+
+    #[test]
+    fn spell_combo_water_water_returns_none() {
+        let result = spell_combo_name(WuxingElement::Water, WuxingElement::Water);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn spell_combo_metal_metal_returns_none() {
+        let result = spell_combo_name(WuxingElement::Metal, WuxingElement::Metal);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn spell_combo_earth_fire_returns_none() {
+        let result = spell_combo_name(WuxingElement::Earth, WuxingElement::Fire);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn spell_combo_wood_wood_returns_none() {
+        let result = spell_combo_name(WuxingElement::Wood, WuxingElement::Wood);
+        assert_eq!(result, None);
+    }
+
+    // ── is_hard_answer_tactical ───────────────────────────────────────
+
+    #[test]
+    fn hard_answer_polyglot_always_hard() {
+        let result = is_hard_answer_tactical("火", 5, true);
+        assert!(result);
+    }
+
+    #[test]
+    fn hard_answer_polyglot_overrides_high_mastery() {
+        let result = is_hard_answer_tactical("火", 10, true);
+        assert!(result);
+    }
+
+    #[test]
+    fn hard_answer_multi_char_is_hard() {
+        let result = is_hard_answer_tactical("大学", 5, false);
+        assert!(result);
+    }
+
+    #[test]
+    fn hard_answer_three_char_is_hard() {
+        let result = is_hard_answer_tactical("图书馆", 5, false);
+        assert!(result);
+    }
+
+    #[test]
+    fn hard_answer_tier_zero_single_char_is_hard() {
+        let result = is_hard_answer_tactical("火", 0, false);
+        assert!(result);
+    }
+
+    #[test]
+    fn hard_answer_tier_one_single_char_is_hard() {
+        let result = is_hard_answer_tactical("水", 1, false);
+        assert!(result);
+    }
+
+    #[test]
+    fn hard_answer_tier_two_single_char_is_not_hard() {
+        let result = is_hard_answer_tactical("火", 2, false);
+        assert!(!result);
+    }
+
+    #[test]
+    fn hard_answer_tier_three_single_char_is_not_hard() {
+        let result = is_hard_answer_tactical("水", 3, false);
+        assert!(!result);
+    }
+
+    #[test]
+    fn hard_answer_high_mastery_single_char_is_not_hard() {
+        let result = is_hard_answer_tactical("木", 10, false);
+        assert!(!result);
+    }
+
+    // ── tile_spell_bonus ──────────────────────────────────────────────
+
+    #[test]
+    fn tile_spell_bonus_normal_tile_normal_weather_is_zero() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let battle = make_test_battle(vec![player]);
+
+        let result = tile_spell_bonus(&battle, 0);
+
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn tile_spell_bonus_oil_slick_normal_weather_is_one() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.arena.set_tile(3, 3, BattleTile::OilSlick);
+
+        let result = tile_spell_bonus(&battle, 0);
+
+        assert_eq!(result, 1);
+    }
+
+    #[test]
+    fn tile_spell_bonus_oil_slick_energy_flux_is_three() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.arena.set_tile(3, 3, BattleTile::OilSlick);
+        battle.weather = Weather::EnergyFlux;
+
+        let result = tile_spell_bonus(&battle, 0);
+
+        assert_eq!(result, 3); // 2 (oil+flux tile) + 1 (flux weather)
+    }
+
+    #[test]
+    fn tile_spell_bonus_holo_trap_normal_weather_is_two() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.arena.set_tile(3, 3, BattleTile::HoloTrap);
+
+        let result = tile_spell_bonus(&battle, 0);
+
+        assert_eq!(result, 2);
+    }
+
+    #[test]
+    fn tile_spell_bonus_normal_tile_energy_flux_is_one() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.weather = Weather::EnergyFlux;
+
+        let result = tile_spell_bonus(&battle, 0);
+
+        assert_eq!(result, 1);
+    }
+
+    #[test]
+    fn tile_spell_bonus_normal_tile_debris_storm_is_zero() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.weather = Weather::DebrisStorm;
+
+        let result = tile_spell_bonus(&battle, 0);
+
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn tile_spell_bonus_holo_trap_energy_flux_is_three() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.arena.set_tile(3, 3, BattleTile::HoloTrap);
+        battle.weather = Weather::EnergyFlux;
+
+        let result = tile_spell_bonus(&battle, 0);
+
+        assert_eq!(result, 3); // 2 (holo) + 1 (flux weather)
+    }
+
+    // ── spell_effect_school ───────────────────────────────────────────
+
+    #[test]
+    fn spell_school_fire_aoe_is_fire() {
+        assert_eq!(spell_effect_school(&SpellEffect::FireAoe(3)), "fire");
+    }
+
+    #[test]
+    fn spell_school_cone_is_fire() {
+        assert_eq!(spell_effect_school(&SpellEffect::Cone(2)), "fire");
+    }
+
+    #[test]
+    fn spell_school_ignite_is_fire() {
+        assert_eq!(spell_effect_school(&SpellEffect::Ignite), "fire");
+    }
+
+    #[test]
+    fn spell_school_stun_is_lightning() {
+        assert_eq!(spell_effect_school(&SpellEffect::Stun), "lightning");
+    }
+
+    #[test]
+    fn spell_school_drain_is_drain() {
+        assert_eq!(spell_effect_school(&SpellEffect::Drain(2)), "drain");
+    }
+
+    #[test]
+    fn spell_school_strong_hit_is_force() {
+        assert_eq!(spell_effect_school(&SpellEffect::StrongHit(5)), "force");
+    }
+
+    #[test]
+    fn spell_school_armor_break_is_force() {
+        assert_eq!(spell_effect_school(&SpellEffect::ArmorBreak), "force");
+    }
+
+    #[test]
+    fn spell_school_pierce_is_force() {
+        assert_eq!(spell_effect_school(&SpellEffect::Pierce(3)), "force");
+    }
+
+    #[test]
+    fn spell_school_knockback_is_force() {
+        assert_eq!(spell_effect_school(&SpellEffect::KnockBack(2)), "force");
+    }
+
+    #[test]
+    fn spell_school_charge_is_force() {
+        assert_eq!(spell_effect_school(&SpellEffect::Charge(4)), "force");
+    }
+
+    #[test]
+    fn spell_school_earthquake_is_force() {
+        assert_eq!(spell_effect_school(&SpellEffect::Earthquake(3)), "force");
+    }
+
+    #[test]
+    fn spell_school_heal_is_heal() {
+        assert_eq!(spell_effect_school(&SpellEffect::Heal(5)), "heal");
+    }
+
+    #[test]
+    fn spell_school_plant_growth_is_heal() {
+        assert_eq!(spell_effect_school(&SpellEffect::PlantGrowth), "heal");
+    }
+
+    #[test]
+    fn spell_school_sanctify_is_heal() {
+        assert_eq!(spell_effect_school(&SpellEffect::Sanctify(3)), "heal");
+    }
+
+    #[test]
+    fn spell_school_wall_is_shield() {
+        assert_eq!(spell_effect_school(&SpellEffect::Wall(2)), "shield");
+    }
+
+    #[test]
+    fn spell_school_shield_is_shield() {
+        assert_eq!(spell_effect_school(&SpellEffect::Shield), "shield");
+    }
+
+    #[test]
+    fn spell_school_summon_boulder_is_shield() {
+        assert_eq!(spell_effect_school(&SpellEffect::SummonBoulder), "shield");
+    }
+
+    #[test]
+    fn spell_school_reveal_is_reveal() {
+        assert_eq!(spell_effect_school(&SpellEffect::Reveal), "reveal");
+    }
+
+    #[test]
+    fn spell_school_pacify_is_pacify() {
+        assert_eq!(spell_effect_school(&SpellEffect::Pacify), "pacify");
+    }
+
+    #[test]
+    fn spell_school_slow_is_ice() {
+        assert_eq!(spell_effect_school(&SpellEffect::Slow(3)), "ice");
+    }
+
+    #[test]
+    fn spell_school_freeze_ground_is_ice() {
+        assert_eq!(spell_effect_school(&SpellEffect::FreezeGround(2)), "ice");
+    }
+
+    #[test]
+    fn spell_school_flood_wave_is_ice() {
+        assert_eq!(spell_effect_school(&SpellEffect::FloodWave(4)), "ice");
+    }
+
+    #[test]
+    fn spell_school_teleport_is_wind() {
+        assert_eq!(spell_effect_school(&SpellEffect::Teleport), "wind");
+    }
+
+    #[test]
+    fn spell_school_dash_is_wind() {
+        assert_eq!(spell_effect_school(&SpellEffect::Dash(3)), "wind");
+    }
+
+    #[test]
+    fn spell_school_pull_toward_is_wind() {
+        assert_eq!(spell_effect_school(&SpellEffect::PullToward), "wind");
+    }
+
+    #[test]
+    fn spell_school_blink_is_wind() {
+        assert_eq!(spell_effect_school(&SpellEffect::Blink(2)), "wind");
+    }
+
+    #[test]
+    fn spell_school_poison_is_poison() {
+        assert_eq!(spell_effect_school(&SpellEffect::Poison(1, 3)), "poison");
+    }
+
+    #[test]
+    fn spell_school_thorns_is_poison() {
+        assert_eq!(spell_effect_school(&SpellEffect::Thorns(2)), "poison");
+    }
+
+    #[test]
+    fn spell_school_oil_slick_is_poison() {
+        assert_eq!(spell_effect_school(&SpellEffect::OilSlick), "poison");
+    }
+
+    #[test]
+    fn spell_school_focus_restore_is_focus() {
+        assert_eq!(spell_effect_school(&SpellEffect::FocusRestore(5)), "focus");
+    }
+}
+

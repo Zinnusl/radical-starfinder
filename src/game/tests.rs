@@ -5,6 +5,16 @@ use super::{
     Companion, CompanionBond, EventMemory, FloorProfile, GameState, ListenMode, RunEvent,
     RunJournal, TextSpeed, TutorialState, COMPANION_COUNT,
 };
+use super::victory::{
+    calculate_accuracy, format_run_summary, offering_piety_gain, calculate_kill_gold,
+    listen_bonus_gold, equipment_drop_chance, item_drop_chance, heal_on_kill,
+    sentence_challenge_reward,
+};
+use super::quests::{
+    narrative_quest_gold, narrative_quest_count, narrative_goal_for, extract_tone,
+    QuestGiverArchetype, NARRATIVE_CHAIN_ID_BASE,
+};
+use super::{Quest, QuestGoal, ItemKind, Faction};
 use crate::dungeon::Tile;
 use crate::enemy::Enemy;
 use crate::player::ITEM_KIND_COUNT;
@@ -1178,4 +1188,556 @@ fn run_journal_empty_has_max_floor_one() {
 fn run_journal_empty_floor_line_returns_explored() {
     let j = RunJournal::default();
     assert_eq!(j.floor_line(1), "Explored");
+}
+
+// ── victory.rs: calculate_accuracy tests ─────────────────────
+
+#[test]
+fn accuracy_with_all_correct() {
+    assert_eq!(calculate_accuracy(10, 0), 100);
+}
+
+#[test]
+fn accuracy_with_all_wrong() {
+    assert_eq!(calculate_accuracy(0, 10), 0);
+}
+
+#[test]
+fn accuracy_with_no_answers() {
+    assert_eq!(calculate_accuracy(0, 0), 0);
+}
+
+#[test]
+fn accuracy_fifty_percent() {
+    assert_eq!(calculate_accuracy(5, 5), 50);
+}
+
+#[test]
+fn accuracy_rounds_down() {
+    // 1/3 = 33.33...% → 33
+    assert_eq!(calculate_accuracy(1, 2), 33);
+}
+
+// ── victory.rs: format_run_summary tests ─────────────────────
+
+#[test]
+fn run_summary_contains_floor_number() {
+    let s = format_run_summary(7, 10, 2, 500, 8, 2, 3);
+    assert!(s.contains("floor 7"));
+}
+
+#[test]
+fn run_summary_contains_kill_count() {
+    let s = format_run_summary(1, 42, 0, 100, 0, 0, 0);
+    assert!(s.contains("42 kills"));
+}
+
+#[test]
+fn run_summary_contains_boss_count() {
+    let s = format_run_summary(1, 0, 5, 100, 0, 0, 0);
+    assert!(s.contains("5 bosses"));
+}
+
+#[test]
+fn run_summary_contains_gold() {
+    let s = format_run_summary(1, 0, 0, 999, 0, 0, 0);
+    assert!(s.contains("999 gold"));
+}
+
+#[test]
+fn run_summary_contains_spells_forged() {
+    let s = format_run_summary(1, 0, 0, 0, 0, 0, 12);
+    assert!(s.contains("12 spells forged"));
+}
+
+#[test]
+fn run_summary_zero_answers_shows_zero_accuracy() {
+    let s = format_run_summary(1, 0, 0, 0, 0, 0, 0);
+    assert!(s.contains("0% accuracy"));
+}
+
+#[test]
+fn run_summary_shows_correct_fraction() {
+    let s = format_run_summary(1, 0, 0, 0, 7, 3, 0);
+    assert!(s.contains("(7/10)"));
+}
+
+// ── victory.rs: offering_piety_gain tests ────────────────────
+
+#[test]
+fn offering_med_hypo_to_consortium_gives_five() {
+    assert_eq!(offering_piety_gain(Faction::Consortium, ItemKind::MedHypo), 5);
+}
+
+#[test]
+fn offering_generic_item_to_consortium_gives_one() {
+    assert_eq!(offering_piety_gain(Faction::Consortium, ItemKind::StimPack), 1);
+}
+
+#[test]
+fn offering_to_ancient_order_gives_two() {
+    assert_eq!(offering_piety_gain(Faction::AncientOrder, ItemKind::MedHypo), 2);
+    assert_eq!(offering_piety_gain(Faction::AncientOrder, ItemKind::StimPack), 2);
+}
+
+#[test]
+fn offering_stim_pack_to_free_traders_gives_five() {
+    assert_eq!(offering_piety_gain(Faction::FreeTraders, ItemKind::StimPack), 5);
+}
+
+#[test]
+fn offering_scanner_to_technocracy_gives_five() {
+    assert_eq!(offering_piety_gain(Faction::Technocracy, ItemKind::ScannerPulse), 5);
+}
+
+#[test]
+fn offering_emp_to_military_gives_five() {
+    assert_eq!(offering_piety_gain(Faction::MilitaryAlliance, ItemKind::EMPGrenade), 5);
+}
+
+#[test]
+fn offering_toxin_to_military_gives_five() {
+    assert_eq!(offering_piety_gain(Faction::MilitaryAlliance, ItemKind::ToxinGrenade), 5);
+}
+
+#[test]
+fn offering_generic_to_free_traders_gives_one() {
+    assert_eq!(offering_piety_gain(Faction::FreeTraders, ItemKind::MedHypo), 1);
+}
+
+// ── victory.rs: calculate_kill_gold tests ────────────────────
+
+#[test]
+fn kill_gold_basic_no_modifiers() {
+    let gold = calculate_kill_gold(10, 0, 0, 1.0, false, false);
+    assert_eq!(gold, 10);
+}
+
+#[test]
+fn kill_gold_dual_piety_doubles() {
+    let gold = calculate_kill_gold(10, 10, 10, 1.0, false, false);
+    // 10 * 2 = 20, then +3 for ancient = 23
+    assert_eq!(gold, 23);
+}
+
+#[test]
+fn kill_gold_ancient_piety_only_adds_three() {
+    let gold = calculate_kill_gold(10, 0, 10, 1.0, false, false);
+    assert_eq!(gold, 13);
+}
+
+#[test]
+fn kill_gold_minimum_is_one() {
+    let gold = calculate_kill_gold(0, 0, 0, 0.1, false, false);
+    assert_eq!(gold, 1);
+}
+
+#[test]
+fn kill_gold_asteroid_base_triples() {
+    // asteroid base: *1.5, then *2 = *3 total
+    let gold = calculate_kill_gold(10, 0, 0, 1.0, true, false);
+    assert_eq!(gold, 30);
+}
+
+#[test]
+fn kill_gold_mining_colony_1_5x() {
+    let gold = calculate_kill_gold(10, 0, 0, 1.0, false, true);
+    assert_eq!(gold, 15);
+}
+
+#[test]
+fn kill_gold_multiplier_applies() {
+    let gold = calculate_kill_gold(10, 0, 0, 2.0, false, false);
+    assert_eq!(gold, 20);
+}
+
+// ── victory.rs: listen_bonus_gold tests ──────────────────────
+
+#[test]
+fn listen_bonus_off_gives_zero() {
+    assert_eq!(listen_bonus_gold(ListenMode::Off, false), 0);
+}
+
+#[test]
+fn listen_bonus_tone_only_gives_three() {
+    assert_eq!(listen_bonus_gold(ListenMode::ToneOnly, false), 3);
+}
+
+#[test]
+fn listen_bonus_full_audio_gives_five() {
+    assert_eq!(listen_bonus_gold(ListenMode::FullAudio, false), 5);
+}
+
+#[test]
+fn listen_bonus_elite_always_zero() {
+    assert_eq!(listen_bonus_gold(ListenMode::FullAudio, true), 0);
+    assert_eq!(listen_bonus_gold(ListenMode::ToneOnly, true), 0);
+}
+
+// ── victory.rs: equipment_drop_chance tests ──────────────────
+
+#[test]
+fn equipment_drop_boss_is_sixty() {
+    assert_eq!(equipment_drop_chance(true), 60);
+}
+
+#[test]
+fn equipment_drop_normal_is_five() {
+    assert_eq!(equipment_drop_chance(false), 5);
+}
+
+// ── victory.rs: item_drop_chance tests ───────────────────────
+
+#[test]
+fn item_drop_scavenger_is_guaranteed() {
+    assert_eq!(item_drop_chance(false, false, true), 100);
+}
+
+#[test]
+fn item_drop_boss_is_forty() {
+    assert_eq!(item_drop_chance(true, false, false), 40);
+}
+
+#[test]
+fn item_drop_elite_is_fifteen() {
+    assert_eq!(item_drop_chance(false, true, false), 15);
+}
+
+#[test]
+fn item_drop_normal_is_four() {
+    assert_eq!(item_drop_chance(false, false, false), 4);
+}
+
+#[test]
+fn item_drop_scavenger_overrides_boss() {
+    assert_eq!(item_drop_chance(true, true, true), 100);
+}
+
+// ── victory.rs: heal_on_kill tests ───────────────────────────
+
+#[test]
+fn heal_on_kill_no_heal_returns_current() {
+    assert_eq!(heal_on_kill(0, 0, 5, 10), 5);
+}
+
+#[test]
+fn heal_on_kill_basic_heal() {
+    assert_eq!(heal_on_kill(2, 0, 5, 10), 7);
+}
+
+#[test]
+fn heal_on_kill_with_piety_bonus() {
+    // base 2 + 1 piety = 3 heal
+    assert_eq!(heal_on_kill(2, 10, 5, 10), 8);
+}
+
+#[test]
+fn heal_on_kill_capped_at_max_hp() {
+    assert_eq!(heal_on_kill(5, 0, 8, 10), 10);
+}
+
+#[test]
+fn heal_on_kill_piety_below_threshold_no_bonus() {
+    assert_eq!(heal_on_kill(2, 9, 5, 10), 7);
+}
+
+// ── victory.rs: sentence_challenge_reward tests ──────────────
+
+#[test]
+fn sentence_challenge_reward_floor_five() {
+    assert_eq!(sentence_challenge_reward(5), 25);
+}
+
+#[test]
+fn sentence_challenge_reward_floor_ten() {
+    assert_eq!(sentence_challenge_reward(10), 35);
+}
+
+// ── quests.rs: narrative_quest_gold tests ────────────────────
+
+#[test]
+fn narrative_quest_gold_floor_zero() {
+    assert_eq!(narrative_quest_gold(35, 4, 0), 35);
+}
+
+#[test]
+fn narrative_quest_gold_scales_with_floor() {
+    assert_eq!(narrative_quest_gold(35, 4, 5), 55);
+}
+
+#[test]
+fn narrative_quest_gold_high_floor() {
+    assert_eq!(narrative_quest_gold(70, 5, 10), 120);
+}
+
+// ── quests.rs: narrative_quest_count tests ───────────────────
+
+#[test]
+fn narrative_quest_count_is_twelve() {
+    assert_eq!(narrative_quest_count(), 12);
+}
+
+// ── quests.rs: narrative_goal_for tests ──────────────────────
+
+#[test]
+fn narrative_goal_admiral_first_is_kill_enemies() {
+    let goal = narrative_goal_for(0, 10).unwrap();
+    match goal {
+        QuestGoal::KillEnemies(current, target) => {
+            assert_eq!(current, 0);
+            assert_eq!(target, 5 + 10 / 2); // 10
+        }
+        _ => panic!("expected KillEnemies"),
+    }
+}
+
+#[test]
+fn narrative_goal_admiral_second_is_reach_floor() {
+    let goal = narrative_goal_for(1, 3).unwrap();
+    match goal {
+        QuestGoal::ReachFloor(target) => assert_eq!(target, 6),
+        _ => panic!("expected ReachFloor"),
+    }
+}
+
+#[test]
+fn narrative_goal_scientist_first_is_collect_radicals() {
+    let goal = narrative_goal_for(3, 6).unwrap();
+    match goal {
+        QuestGoal::CollectRadicals(current, target) => {
+            assert_eq!(current, 0);
+            assert_eq!(target, 4 + 6 / 3); // 6
+        }
+        _ => panic!("expected CollectRadicals"),
+    }
+}
+
+#[test]
+fn narrative_goal_out_of_bounds_returns_none() {
+    assert!(narrative_goal_for(99, 1).is_none());
+}
+
+#[test]
+fn narrative_goal_scales_with_floor() {
+    let goal_low = narrative_goal_for(0, 2).unwrap();
+    let goal_high = narrative_goal_for(0, 20).unwrap();
+    let target_low = match goal_low {
+        QuestGoal::KillEnemies(_, t) => t,
+        _ => panic!("expected KillEnemies"),
+    };
+    let target_high = match goal_high {
+        QuestGoal::KillEnemies(_, t) => t,
+        _ => panic!("expected KillEnemies"),
+    };
+    assert!(target_high > target_low);
+}
+
+// ── quests.rs: extract_tone tests ───────────────────────────
+
+#[test]
+fn extract_tone_from_standard_pinyin() {
+    assert_eq!(extract_tone("hao3"), 3);
+}
+
+#[test]
+fn extract_tone_from_tone_one() {
+    assert_eq!(extract_tone("ma1"), 1);
+}
+
+#[test]
+fn extract_tone_from_tone_four() {
+    assert_eq!(extract_tone("shi4"), 4);
+}
+
+#[test]
+fn extract_tone_no_tone_digit_returns_five() {
+    assert_eq!(extract_tone("hello"), 5);
+}
+
+#[test]
+fn extract_tone_empty_string_returns_five() {
+    assert_eq!(extract_tone(""), 5);
+}
+
+// ── quests.rs: Quest struct tests ───────────────────────────
+
+#[test]
+fn quest_procedural_is_not_narrative() {
+    let q = Quest::procedural(
+        "Test quest".to_string(),
+        QuestGoal::KillEnemies(0, 5),
+        50,
+        0,
+        0,
+    );
+    assert!(!q.is_narrative());
+}
+
+#[test]
+fn quest_procedural_not_chain_when_id_zero() {
+    let q = Quest::procedural(
+        "Test quest".to_string(),
+        QuestGoal::KillEnemies(0, 5),
+        50,
+        0,
+        0,
+    );
+    assert!(!q.is_chain());
+}
+
+#[test]
+fn quest_is_chain_when_id_nonzero() {
+    let q = Quest::procedural(
+        "Test quest".to_string(),
+        QuestGoal::KillEnemies(0, 5),
+        50,
+        1,
+        100,
+    );
+    assert!(q.is_chain());
+}
+
+#[test]
+fn quest_check_complete_kill_enemies_met() {
+    let mut q = Quest::procedural(
+        "Test".to_string(),
+        QuestGoal::KillEnemies(5, 5),
+        50,
+        0,
+        0,
+    );
+    assert!(q.check_complete());
+    assert!(q.completed);
+}
+
+#[test]
+fn quest_check_complete_kill_enemies_not_met() {
+    let mut q = Quest::procedural(
+        "Test".to_string(),
+        QuestGoal::KillEnemies(3, 5),
+        50,
+        0,
+        0,
+    );
+    assert!(!q.check_complete());
+    assert!(!q.completed);
+}
+
+#[test]
+fn quest_check_complete_collect_radicals_met() {
+    let mut q = Quest::procedural(
+        "Test".to_string(),
+        QuestGoal::CollectRadicals(10, 5),
+        50,
+        0,
+        0,
+    );
+    assert!(q.check_complete());
+}
+
+#[test]
+fn quest_check_complete_forge_never_auto_completes() {
+    let mut q = Quest::procedural(
+        "Test".to_string(),
+        QuestGoal::ForgeCharacter("好"),
+        50,
+        0,
+        0,
+    );
+    assert!(!q.check_complete());
+}
+
+#[test]
+fn quest_check_complete_reach_floor_never_auto_completes() {
+    let mut q = Quest::procedural(
+        "Test".to_string(),
+        QuestGoal::ReachFloor(5),
+        50,
+        0,
+        0,
+    );
+    assert!(!q.check_complete());
+}
+
+#[test]
+fn quest_check_complete_already_completed_returns_false() {
+    let mut q = Quest::procedural(
+        "Test".to_string(),
+        QuestGoal::KillEnemies(5, 5),
+        50,
+        0,
+        0,
+    );
+    q.completed = true;
+    assert!(!q.check_complete());
+}
+
+#[test]
+fn quest_check_complete_exceeds_target() {
+    let mut q = Quest::procedural(
+        "Test".to_string(),
+        QuestGoal::KillEnemies(8, 5),
+        50,
+        0,
+        0,
+    );
+    assert!(q.check_complete());
+}
+
+#[test]
+fn narrative_chain_id_base_is_ten_thousand() {
+    assert_eq!(NARRATIVE_CHAIN_ID_BASE, 10_000);
+}
+
+// ── quests.rs: all goal factories produce valid goals ────────
+
+#[test]
+fn all_narrative_goal_factories_produce_goals_at_floor_one() {
+    let count = narrative_quest_count();
+    for i in 0..count {
+        let goal = narrative_goal_for(i, 1);
+        assert!(goal.is_some(), "goal factory {} returned None at floor 1", i);
+    }
+}
+
+#[test]
+fn all_narrative_goal_factories_produce_goals_at_floor_ten() {
+    let count = narrative_quest_count();
+    for i in 0..count {
+        let goal = narrative_goal_for(i, 10);
+        assert!(goal.is_some(), "goal factory {} returned None at floor 10", i);
+    }
+}
+
+#[test]
+fn narrative_kill_quests_have_positive_targets() {
+    let count = narrative_quest_count();
+    for i in 0..count {
+        if let Some(QuestGoal::KillEnemies(current, target)) = narrative_goal_for(i, 1) {
+            assert_eq!(current, 0, "kill quest {} should start at 0", i);
+            assert!(target > 0, "kill quest {} should have positive target", i);
+        }
+    }
+}
+
+#[test]
+fn narrative_collect_quests_have_positive_targets() {
+    let count = narrative_quest_count();
+    for i in 0..count {
+        if let Some(QuestGoal::CollectRadicals(current, target)) = narrative_goal_for(i, 1) {
+            assert_eq!(current, 0, "collect quest {} should start at 0", i);
+            assert!(target > 0, "collect quest {} should have positive target", i);
+        }
+    }
+}
+
+#[test]
+fn narrative_reach_floor_quests_exceed_current_floor() {
+    let floor = 5;
+    let count = narrative_quest_count();
+    for i in 0..count {
+        if let Some(QuestGoal::ReachFloor(target)) = narrative_goal_for(i, floor) {
+            assert!(target > floor, "reach floor quest {} should exceed current floor", i);
+        }
+    }
 }
