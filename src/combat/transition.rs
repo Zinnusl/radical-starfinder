@@ -1728,4 +1728,377 @@ mod tests {
 
         assert!(expected_boss > expected_elite);
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    // NEW: apply_mastery_debuffs tests
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn apply_mastery_debuffs_tier_3_reduces_stats() {
+        let mut unit = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        unit.hp = 10;
+        unit.max_hp = 10;
+        unit.damage = 10;
+        unit.mastery_tier = 3;
+
+        apply_mastery_debuffs(&mut unit);
+
+        // 10 * 0.7 = 7.0 → ceil = 7
+        assert_eq!(unit.hp, 7);
+        assert_eq!(unit.max_hp, 7);
+        assert_eq!(unit.damage, 7);
+    }
+
+    #[test]
+    fn apply_mastery_debuffs_tier_2_reduces_stats() {
+        let mut unit = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        unit.hp = 10;
+        unit.max_hp = 10;
+        unit.damage = 10;
+        unit.mastery_tier = 2;
+
+        apply_mastery_debuffs(&mut unit);
+
+        // 10 * 0.85 = 8.5 → ceil = 9
+        assert_eq!(unit.hp, 9);
+        assert_eq!(unit.max_hp, 9);
+        assert_eq!(unit.damage, 9);
+    }
+
+    #[test]
+    fn apply_mastery_debuffs_tier_1_no_change() {
+        let mut unit = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        unit.hp = 10;
+        unit.max_hp = 10;
+        unit.damage = 5;
+        unit.mastery_tier = 1;
+
+        apply_mastery_debuffs(&mut unit);
+
+        assert_eq!(unit.hp, 10);
+        assert_eq!(unit.max_hp, 10);
+        assert_eq!(unit.damage, 5);
+    }
+
+    #[test]
+    fn apply_mastery_debuffs_tier_0_no_change() {
+        let mut unit = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        unit.hp = 10;
+        unit.max_hp = 10;
+        unit.damage = 5;
+        unit.mastery_tier = 0;
+
+        apply_mastery_debuffs(&mut unit);
+
+        assert_eq!(unit.hp, 10);
+        assert_eq!(unit.max_hp, 10);
+        assert_eq!(unit.damage, 5);
+    }
+
+    #[test]
+    fn apply_mastery_debuffs_clamps_to_one() {
+        let mut unit = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        unit.hp = 1;
+        unit.max_hp = 1;
+        unit.damage = 1;
+        unit.mastery_tier = 3;
+
+        apply_mastery_debuffs(&mut unit);
+
+        // 1 * 0.7 = 0.7 → ceil = 1, then clamped to max(1)
+        assert_eq!(unit.hp, 1);
+        assert_eq!(unit.max_hp, 1);
+        assert_eq!(unit.damage, 1);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // NEW: pick_weather tests
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn pick_weather_returns_normal_below_floor_5() {
+        assert_eq!(pick_weather(1, ArenaBiome::StationInterior), Weather::Normal);
+        assert_eq!(pick_weather(4, ArenaBiome::AlienRuins), Weather::Normal);
+    }
+
+    #[test]
+    fn pick_weather_can_return_non_normal_at_floor_5_plus() {
+        // Test that at least one biome/floor combo gives something other than Normal
+        let mut found_non_normal = false;
+        for floor in 5..=20 {
+            for biome in [
+                ArenaBiome::StationInterior,
+                ArenaBiome::AlienRuins,
+                ArenaBiome::DerelictShip,
+                ArenaBiome::IrradiatedZone,
+                ArenaBiome::Hydroponics,
+                ArenaBiome::CryoBay,
+                ArenaBiome::ReactorRoom,
+            ] {
+                if pick_weather(floor, biome) != Weather::Normal {
+                    found_non_normal = true;
+                    break;
+                }
+            }
+            if found_non_normal {
+                break;
+            }
+        }
+        assert!(found_non_normal, "some floor/biome combo should yield non-Normal weather");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // NEW: compute_deployment_tiles tests
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn compute_deployment_tiles_covers_bottom_rows() {
+        let arena = TacticalArena::new(7, 7, ArenaBiome::StationInterior);
+        let units = vec![make_test_unit(UnitKind::Player, 3, 5)];
+
+        let tiles = compute_deployment_tiles(&arena, &units);
+
+        // Should include tiles in the bottom 3 rows (y=4,5,6)
+        assert!(!tiles.is_empty());
+        for &(_, y) in &tiles {
+            assert!(y >= 4);
+        }
+    }
+
+    #[test]
+    fn compute_deployment_tiles_excludes_enemy_positions() {
+        let arena = TacticalArena::new(7, 7, ArenaBiome::StationInterior);
+        let player = make_test_unit(UnitKind::Player, 3, 5);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 2, 5);
+        let units = vec![player, enemy];
+
+        let tiles = compute_deployment_tiles(&arena, &units);
+
+        // enemy at (2,5) should be excluded
+        assert!(!tiles.contains(&(2, 5)));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // NEW: derive_wuxing_element tests
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn derive_wuxing_element_no_components_returns_none() {
+        let enemy = make_basic_enemy();
+
+        let elem = derive_wuxing_element(&enemy);
+
+        assert!(elem.is_none());
+    }
+
+    #[test]
+    fn derive_wuxing_element_with_fire_radical() {
+        let mut enemy = make_basic_enemy();
+        enemy.components = vec!["火"];
+
+        let elem = derive_wuxing_element(&enemy);
+
+        assert_eq!(elem, Some(WuxingElement::Fire));
+    }
+
+    #[test]
+    fn derive_wuxing_element_with_water_radical() {
+        let mut enemy = make_basic_enemy();
+        enemy.components = vec!["水"];
+
+        let elem = derive_wuxing_element(&enemy);
+
+        assert_eq!(elem, Some(WuxingElement::Water));
+    }
+
+    #[test]
+    fn derive_wuxing_element_with_unknown_radical_returns_none() {
+        let mut enemy = make_basic_enemy();
+        enemy.components = vec!["口"];
+
+        let elem = derive_wuxing_element(&enemy);
+
+        // 口 is not a wuxing element radical
+        assert!(elem.is_none());
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // NEW: exit_combat edge cases
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn exit_combat_syncs_hard_answer_armor_bonus() {
+        let mut player = make_basic_player();
+        player.hard_answer_armor_bonus = 0;
+        let mut enemies = vec![make_basic_enemy()];
+        let mut battle = make_test_battle(vec![
+            make_test_unit(UnitKind::Player, 4, 5),
+            make_test_unit(UnitKind::Enemy(0), 4, 1),
+        ]);
+        battle.hard_answer_armor_bonus = 5;
+
+        exit_combat(&battle, &mut player, &mut enemies);
+
+        assert_eq!(player.hard_answer_armor_bonus, 5);
+    }
+
+    #[test]
+    fn exit_combat_syncs_skill_xp() {
+        let mut player = make_basic_player();
+        let initial_xp = player.skill_tree.xp;
+        let mut enemies = vec![make_basic_enemy()];
+        let mut battle = make_test_battle(vec![
+            make_test_unit(UnitKind::Player, 4, 5),
+            make_test_unit(UnitKind::Enemy(0), 4, 1),
+        ]);
+        battle.pending_skill_xp = 50;
+
+        exit_combat(&battle, &mut player, &mut enemies);
+
+        assert!(player.skill_tree.xp >= initial_xp + 50);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // NEW: enemies_from_sentence edge cases
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn enemies_from_sentence_single_char() {
+        let sentence = SentenceEntry {
+            hanzi: "人",
+            pinyin: "ren2",
+            meaning: "person",
+            hsk: 1,
+        };
+
+        let enemies = enemies_from_sentence(&sentence, 1);
+
+        assert_eq!(enemies.len(), 1);
+        assert_eq!(enemies[0].hanzi, "人");
+    }
+
+    #[test]
+    fn enemies_from_sentence_all_enemies_alive() {
+        let sentence = SentenceEntry {
+            hanzi: "你好吗",
+            pinyin: "ni3 hao3 ma5",
+            meaning: "how are you",
+            hsk: 1,
+        };
+
+        let enemies = enemies_from_sentence(&sentence, 3);
+
+        assert_eq!(enemies.len(), 3);
+        for e in &enemies {
+            assert!(e.hp > 0);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // NEW: generate_arena tests (via enter_combat)
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn enter_combat_deep_floor_has_more_obstacles() {
+        let player = make_basic_player();
+        let enemies = vec![make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle_floor_1 = enter_combat(&player, &enemies, &[0], 1, None, &srs, None);
+        let battle_floor_10 = enter_combat(&player, &enemies, &[0], 10, None, &srs, None);
+
+        let count_obstacles = |battle: &TacticalBattle| {
+            (0..battle.arena.width)
+                .flat_map(|x| (0..battle.arena.height).map(move |y| (x as i32, y as i32)))
+                .filter(|&(x, y)| {
+                    let tile = battle.arena.tile(x, y);
+                    tile != Some(BattleTile::MetalFloor) && tile.is_some()
+                })
+                .count()
+        };
+
+        assert!(count_obstacles(&battle_floor_10) > count_obstacles(&battle_floor_1));
+    }
+
+    #[test]
+    fn enter_combat_with_elite_uses_larger_arena() {
+        let player = make_basic_player();
+        let enemies = vec![make_basic_enemy(), make_elite_enemy()];
+        let normal_enemies = vec![make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let normal_battle = enter_combat(&player, &normal_enemies, &[0], 1, None, &srs, None);
+        let elite_battle = enter_combat(&player, &enemies, &[0, 1], 1, None, &srs, None);
+
+        assert!(elite_battle.arena.width >= normal_battle.arena.width);
+    }
+
+    #[test]
+    fn enter_combat_science_officer_companion() {
+        let player = make_basic_player();
+        let enemies = vec![make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(
+            &player,
+            &enemies,
+            &[0],
+            1,
+            None,
+            &srs,
+            Some(Companion::ScienceOfficer),
+        );
+
+        let comp = battle
+            .units
+            .iter()
+            .find(|u| u.kind == UnitKind::Companion)
+            .unwrap();
+        assert_eq!(comp.hp, 5);
+        assert_eq!(comp.damage, 1);
+    }
+
+    #[test]
+    fn enter_combat_quartermaster_companion() {
+        let player = make_basic_player();
+        let enemies = vec![make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let battle = enter_combat(
+            &player,
+            &enemies,
+            &[0],
+            1,
+            None,
+            &srs,
+            Some(Companion::Quartermaster),
+        );
+
+        let comp = battle
+            .units
+            .iter()
+            .find(|u| u.kind == UnitKind::Companion)
+            .unwrap();
+        assert_eq!(comp.hp, 5);
+        assert_eq!(comp.damage, 1);
+    }
+
+    #[test]
+    fn enter_combat_various_biomes() {
+        let player = make_basic_player();
+        let enemies = vec![make_basic_enemy()];
+        let srs = SrsTracker::new();
+
+        let modifiers = [
+            (Some(RoomModifier::PoweredDown), ArenaBiome::DerelictShip),
+            (Some(RoomModifier::HighTech), ArenaBiome::AlienRuins),
+            (Some(RoomModifier::Irradiated), ArenaBiome::IrradiatedZone),
+            (Some(RoomModifier::Cryogenic), ArenaBiome::CryoBay),
+            (Some(RoomModifier::OverheatedReactor), ArenaBiome::ReactorRoom),
+        ];
+        for (modifier, expected_biome) in modifiers {
+            let battle = enter_combat(&player, &enemies, &[0], 1, modifier, &srs, None);
+            assert_eq!(battle.arena.biome, expected_biome);
+        }
+    }
 }
