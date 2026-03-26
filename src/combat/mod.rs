@@ -1395,3 +1395,989 @@ impl TacticalBattle {
 
 #[cfg(test)]
 pub mod test_helpers;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::test_helpers::{make_test_unit, make_test_battle};
+
+    // ── PlayerStance damage_mod ─────────────────────────────────────────────
+
+    #[test]
+    fn balanced_has_no_damage_mod() {
+        assert_eq!(PlayerStance::Balanced.damage_mod(), 0);
+    }
+
+    #[test]
+    fn aggressive_adds_two_damage() {
+        assert_eq!(PlayerStance::Aggressive.damage_mod(), 2);
+    }
+
+    #[test]
+    fn defensive_reduces_damage_by_one() {
+        assert_eq!(PlayerStance::Defensive.damage_mod(), -1);
+    }
+
+    #[test]
+    fn mobile_reduces_damage_by_one() {
+        assert_eq!(PlayerStance::Mobile.damage_mod(), -1);
+    }
+
+    #[test]
+    fn focused_has_no_damage_mod() {
+        assert_eq!(PlayerStance::Focused.damage_mod(), 0);
+    }
+
+    #[test]
+    fn reckless_adds_four_damage() {
+        assert_eq!(PlayerStance::Reckless.damage_mod(), 4);
+    }
+
+    // ── PlayerStance armor_mod ──────────────────────────────────────────────
+
+    #[test]
+    fn balanced_has_no_armor_mod() {
+        assert_eq!(PlayerStance::Balanced.armor_mod(), 0);
+    }
+
+    #[test]
+    fn aggressive_reduces_armor_by_one() {
+        assert_eq!(PlayerStance::Aggressive.armor_mod(), -1);
+    }
+
+    #[test]
+    fn defensive_adds_two_armor() {
+        assert_eq!(PlayerStance::Defensive.armor_mod(), 2);
+    }
+
+    #[test]
+    fn reckless_reduces_armor_by_two() {
+        assert_eq!(PlayerStance::Reckless.armor_mod(), -2);
+    }
+
+    // ── PlayerStance movement_mod ───────────────────────────────────────────
+
+    #[test]
+    fn balanced_has_no_movement_mod() {
+        assert_eq!(PlayerStance::Balanced.movement_mod(), 0);
+    }
+
+    #[test]
+    fn aggressive_reduces_movement_by_one() {
+        assert_eq!(PlayerStance::Aggressive.movement_mod(), -1);
+    }
+
+    #[test]
+    fn mobile_adds_two_movement() {
+        assert_eq!(PlayerStance::Mobile.movement_mod(), 2);
+    }
+
+    #[test]
+    fn focused_reduces_movement_by_one() {
+        assert_eq!(PlayerStance::Focused.movement_mod(), -1);
+    }
+
+    // ── PlayerStance spell modifiers ────────────────────────────────────────
+
+    #[test]
+    fn focused_grants_spell_power() {
+        assert_eq!(PlayerStance::Focused.spell_power_mod(), 2);
+    }
+
+    #[test]
+    fn non_focused_stances_grant_no_spell_power() {
+        assert_eq!(PlayerStance::Balanced.spell_power_mod(), 0);
+        assert_eq!(PlayerStance::Aggressive.spell_power_mod(), 0);
+        assert_eq!(PlayerStance::Reckless.spell_power_mod(), 0);
+    }
+
+    #[test]
+    fn focused_grants_spell_range() {
+        assert_eq!(PlayerStance::Focused.spell_range_mod(), 1);
+    }
+
+    #[test]
+    fn non_focused_stances_grant_no_spell_range() {
+        assert_eq!(PlayerStance::Mobile.spell_range_mod(), 0);
+    }
+
+    // ── PlayerStance can_cast_spells ────────────────────────────────────────
+
+    #[test]
+    fn mobile_cannot_cast_spells() {
+        assert!(!PlayerStance::Mobile.can_cast_spells());
+    }
+
+    #[test]
+    fn balanced_can_cast_spells() {
+        assert!(PlayerStance::Balanced.can_cast_spells());
+    }
+
+    #[test]
+    fn aggressive_can_cast_spells() {
+        assert!(PlayerStance::Aggressive.can_cast_spells());
+    }
+
+    #[test]
+    fn focused_can_cast_spells() {
+        assert!(PlayerStance::Focused.can_cast_spells());
+    }
+
+    // ── PlayerStance name / icon / color / description ──────────────────────
+
+    #[test]
+    fn stance_name_non_empty() {
+        assert_eq!(PlayerStance::Balanced.name(), "Balanced");
+        assert_eq!(PlayerStance::Reckless.name(), "Reckless");
+    }
+
+    #[test]
+    fn stance_icon_non_empty() {
+        assert!(!PlayerStance::Balanced.icon().is_empty());
+        assert!(!PlayerStance::Reckless.icon().is_empty());
+    }
+
+    #[test]
+    fn stance_color_is_hex() {
+        assert!(PlayerStance::Balanced.color().starts_with('#'));
+        assert!(PlayerStance::Reckless.color().starts_with('#'));
+    }
+
+    #[test]
+    fn stance_description_non_empty() {
+        assert!(!PlayerStance::Balanced.description().is_empty());
+        assert!(!PlayerStance::Reckless.description().is_empty());
+    }
+
+    // ── PlayerStance::next cycles through all ───────────────────────────────
+
+    #[test]
+    fn stance_next_cycles_through_all_six() {
+        let start = PlayerStance::Balanced;
+        let s1 = start.next();
+        assert_eq!(s1, PlayerStance::Aggressive);
+        let s2 = s1.next();
+        assert_eq!(s2, PlayerStance::Defensive);
+        let s3 = s2.next();
+        assert_eq!(s3, PlayerStance::Mobile);
+        let s4 = s3.next();
+        assert_eq!(s4, PlayerStance::Focused);
+        let s5 = s4.next();
+        assert_eq!(s5, PlayerStance::Reckless);
+        let s6 = s5.next();
+        assert_eq!(s6, PlayerStance::Balanced);
+    }
+
+    // ── Direction ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn direction_dx_east_is_positive() {
+        assert_eq!(Direction::East.dx(), 1);
+    }
+
+    #[test]
+    fn direction_dx_west_is_negative() {
+        assert_eq!(Direction::West.dx(), -1);
+    }
+
+    #[test]
+    fn direction_dx_north_south_is_zero() {
+        assert_eq!(Direction::North.dx(), 0);
+        assert_eq!(Direction::South.dx(), 0);
+    }
+
+    #[test]
+    fn direction_dy_north_is_negative() {
+        assert_eq!(Direction::North.dy(), -1);
+    }
+
+    #[test]
+    fn direction_dy_south_is_positive() {
+        assert_eq!(Direction::South.dy(), 1);
+    }
+
+    #[test]
+    fn direction_dy_east_west_is_zero() {
+        assert_eq!(Direction::East.dy(), 0);
+        assert_eq!(Direction::West.dy(), 0);
+    }
+
+    #[test]
+    fn direction_opposite_reverses() {
+        assert_eq!(Direction::North.opposite(), Direction::South);
+        assert_eq!(Direction::South.opposite(), Direction::North);
+        assert_eq!(Direction::East.opposite(), Direction::West);
+        assert_eq!(Direction::West.opposite(), Direction::East);
+    }
+
+    #[test]
+    fn direction_opposite_is_involution() {
+        assert_eq!(Direction::North.opposite().opposite(), Direction::North);
+        assert_eq!(Direction::East.opposite().opposite(), Direction::East);
+    }
+
+    #[test]
+    fn direction_rotate_cw_cycles_clockwise() {
+        assert_eq!(Direction::North.rotate_cw(), Direction::East);
+        assert_eq!(Direction::East.rotate_cw(), Direction::South);
+        assert_eq!(Direction::South.rotate_cw(), Direction::West);
+        assert_eq!(Direction::West.rotate_cw(), Direction::North);
+    }
+
+    #[test]
+    fn direction_rotate_cw_four_times_returns_to_start() {
+        let d = Direction::North;
+        assert_eq!(d.rotate_cw().rotate_cw().rotate_cw().rotate_cw(), d);
+    }
+
+    #[test]
+    fn direction_from_delta_east() {
+        assert_eq!(Direction::from_delta(3, 0), Some(Direction::East));
+    }
+
+    #[test]
+    fn direction_from_delta_west() {
+        assert_eq!(Direction::from_delta(-5, 0), Some(Direction::West));
+    }
+
+    #[test]
+    fn direction_from_delta_north() {
+        assert_eq!(Direction::from_delta(0, -4), Some(Direction::North));
+    }
+
+    #[test]
+    fn direction_from_delta_south() {
+        assert_eq!(Direction::from_delta(0, 7), Some(Direction::South));
+    }
+
+    #[test]
+    fn direction_from_delta_zero_returns_none() {
+        assert_eq!(Direction::from_delta(0, 0), None);
+    }
+
+    #[test]
+    fn direction_from_delta_prefers_x_when_equal() {
+        // abs(dx) >= abs(dy), dx > 0 → East
+        assert_eq!(Direction::from_delta(3, 3), Some(Direction::East));
+    }
+
+    #[test]
+    fn direction_from_delta_diagonal_favors_larger_axis() {
+        // abs(dx)=1 < abs(dy)=5 → South
+        assert_eq!(Direction::from_delta(1, 5), Some(Direction::South));
+    }
+
+    // ── arena_size_for_encounter ────────────────────────────────────────────
+
+    #[test]
+    fn arena_size_normal_encounter() {
+        assert_eq!(arena_size_for_encounter(false, false), 9);
+    }
+
+    #[test]
+    fn arena_size_elite_encounter() {
+        assert_eq!(arena_size_for_encounter(true, false), 11);
+    }
+
+    #[test]
+    fn arena_size_boss_encounter() {
+        assert_eq!(arena_size_for_encounter(false, true), 13);
+    }
+
+    #[test]
+    fn arena_size_boss_overrides_elite() {
+        assert_eq!(arena_size_for_encounter(true, true), 13);
+    }
+
+    // ── TacticalArena ───────────────────────────────────────────────────────
+
+    #[test]
+    fn tactical_arena_new_fills_with_metal_floor() {
+        let arena = TacticalArena::new(5, 5, ArenaBiome::StationInterior);
+        assert_eq!(arena.tiles.len(), 25);
+        assert!(arena.tiles.iter().all(|t| *t == BattleTile::MetalFloor));
+    }
+
+    #[test]
+    fn tactical_arena_idx_valid() {
+        let arena = TacticalArena::new(9, 9, ArenaBiome::StationInterior);
+        assert_eq!(arena.idx(0, 0), Some(0));
+        assert_eq!(arena.idx(8, 8), Some(80));
+    }
+
+    #[test]
+    fn tactical_arena_idx_out_of_bounds() {
+        let arena = TacticalArena::new(9, 9, ArenaBiome::StationInterior);
+        assert_eq!(arena.idx(-1, 0), None);
+        assert_eq!(arena.idx(0, -1), None);
+        assert_eq!(arena.idx(9, 0), None);
+        assert_eq!(arena.idx(0, 9), None);
+    }
+
+    #[test]
+    fn tactical_arena_tile_returns_correct_tile() {
+        let arena = TacticalArena::new(5, 5, ArenaBiome::StationInterior);
+        assert_eq!(arena.tile(0, 0), Some(BattleTile::MetalFloor));
+    }
+
+    #[test]
+    fn tactical_arena_tile_out_of_bounds_returns_none() {
+        let arena = TacticalArena::new(5, 5, ArenaBiome::StationInterior);
+        assert_eq!(arena.tile(-1, 0), None);
+        assert_eq!(arena.tile(5, 5), None);
+    }
+
+    #[test]
+    fn tactical_arena_set_tile_changes_tile() {
+        let mut arena = TacticalArena::new(5, 5, ArenaBiome::StationInterior);
+        arena.set_tile(2, 3, BattleTile::CoverBarrier);
+        assert_eq!(arena.tile(2, 3), Some(BattleTile::CoverBarrier));
+    }
+
+    #[test]
+    fn tactical_arena_set_tile_out_of_bounds_is_safe() {
+        let mut arena = TacticalArena::new(5, 5, ArenaBiome::StationInterior);
+        arena.set_tile(-1, 0, BattleTile::PlasmaPool); // should not panic
+    }
+
+    #[test]
+    fn tactical_arena_in_bounds() {
+        let arena = TacticalArena::new(5, 5, ArenaBiome::StationInterior);
+        assert!(arena.in_bounds(0, 0));
+        assert!(arena.in_bounds(4, 4));
+        assert!(!arena.in_bounds(5, 0));
+        assert!(!arena.in_bounds(-1, 0));
+    }
+
+    // ── Steam / VentSteam ───────────────────────────────────────────────────
+
+    #[test]
+    fn set_steam_places_vent_steam_tile() {
+        let mut arena = TacticalArena::new(5, 5, ArenaBiome::StationInterior);
+        arena.set_steam(1, 1, 3);
+        assert_eq!(arena.tile(1, 1), Some(BattleTile::VentSteam));
+        assert_eq!(arena.steam_timers[arena.idx(1, 1).unwrap()], 3);
+    }
+
+    #[test]
+    fn tick_steam_decrements_timer() {
+        let mut arena = TacticalArena::new(5, 5, ArenaBiome::StationInterior);
+        arena.set_steam(1, 1, 2);
+
+        arena.tick_steam();
+        assert_eq!(arena.tile(1, 1), Some(BattleTile::VentSteam));
+        assert_eq!(arena.steam_timers[arena.idx(1, 1).unwrap()], 1);
+    }
+
+    #[test]
+    fn tick_steam_clears_tile_when_timer_reaches_zero() {
+        let mut arena = TacticalArena::new(5, 5, ArenaBiome::StationInterior);
+        arena.set_steam(1, 1, 1);
+
+        arena.tick_steam();
+        assert_eq!(arena.tile(1, 1), Some(BattleTile::MetalFloor));
+    }
+
+    // ── Holy / ShieldZone ───────────────────────────────────────────────────
+
+    #[test]
+    fn set_holy_places_shield_zone() {
+        let mut arena = TacticalArena::new(5, 5, ArenaBiome::StationInterior);
+        arena.set_holy(2, 2, 3);
+        assert_eq!(arena.tile(2, 2), Some(BattleTile::ShieldZone));
+    }
+
+    #[test]
+    fn tick_holy_clears_shield_zone_when_expired() {
+        let mut arena = TacticalArena::new(5, 5, ArenaBiome::StationInterior);
+        arena.set_holy(2, 2, 1);
+
+        arena.tick_holy();
+        assert_eq!(arena.tile(2, 2), Some(BattleTile::MetalFloor));
+    }
+
+    // ── Energy Vent Cycling ─────────────────────────────────────────────────
+
+    #[test]
+    fn energy_vent_cycles_through_three_phases() {
+        let mut arena = TacticalArena::new(5, 5, ArenaBiome::StationInterior);
+        arena.set_energy_vent(2, 2, 1);
+        assert_eq!(arena.tile(2, 2), Some(BattleTile::EnergyVentDormant));
+
+        // Dormant timer=1 → tick → Charging
+        let (charging, _, _) = arena.tick_energy_vents();
+        assert!(charging);
+        assert_eq!(arena.tile(2, 2), Some(BattleTile::EnergyVentCharging));
+
+        // Charging timer=1 → tick → Active
+        let (_, active, _) = arena.tick_energy_vents();
+        assert!(active);
+        assert_eq!(arena.tile(2, 2), Some(BattleTile::EnergyVentActive));
+
+        // Active timer=1 → tick → Dormant
+        let (_, _, dormant) = arena.tick_energy_vents();
+        assert!(dormant);
+        assert_eq!(arena.tile(2, 2), Some(BattleTile::EnergyVentDormant));
+    }
+
+    #[test]
+    fn energy_vent_dormant_stays_dormant_when_timer_high() {
+        let mut arena = TacticalArena::new(5, 5, ArenaBiome::StationInterior);
+        arena.set_energy_vent(1, 1, 3);
+
+        let (charging, _, _) = arena.tick_energy_vents();
+        assert!(!charging);
+        assert_eq!(arena.tile(1, 1), Some(BattleTile::EnergyVentDormant));
+    }
+
+    // ── BattleTile ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn metal_floor_is_walkable() {
+        assert!(BattleTile::MetalFloor.is_walkable());
+    }
+
+    #[test]
+    fn cover_barrier_is_not_walkable() {
+        assert!(!BattleTile::CoverBarrier.is_walkable());
+    }
+
+    #[test]
+    fn pipe_tangle_is_not_walkable() {
+        assert!(!BattleTile::PipeTangle.is_walkable());
+    }
+
+    #[test]
+    fn cargo_crate_is_not_walkable() {
+        assert!(!BattleTile::CargoCrate.is_walkable());
+    }
+
+    #[test]
+    fn breached_floor_is_not_walkable() {
+        assert!(!BattleTile::BreachedFloor.is_walkable());
+    }
+
+    #[test]
+    fn coolant_pool_is_walkable() {
+        assert!(BattleTile::CoolantPool.is_walkable());
+    }
+
+    #[test]
+    fn plasma_pool_is_walkable() {
+        assert!(BattleTile::PlasmaPool.is_walkable());
+    }
+
+    #[test]
+    fn cover_barrier_blocks_los() {
+        assert!(BattleTile::CoverBarrier.blocks_los());
+    }
+
+    #[test]
+    fn vent_steam_blocks_los() {
+        assert!(BattleTile::VentSteam.blocks_los());
+    }
+
+    #[test]
+    fn metal_floor_does_not_block_los() {
+        assert!(!BattleTile::MetalFloor.blocks_los());
+    }
+
+    #[test]
+    fn coolant_pool_has_extra_move_cost() {
+        assert_eq!(BattleTile::CoolantPool.extra_move_cost(), 1);
+    }
+
+    #[test]
+    fn plasma_pool_has_extra_move_cost() {
+        assert_eq!(BattleTile::PlasmaPool.extra_move_cost(), 1);
+    }
+
+    #[test]
+    fn debris_has_extra_move_cost() {
+        assert_eq!(BattleTile::Debris.extra_move_cost(), 1);
+    }
+
+    #[test]
+    fn metal_floor_has_zero_extra_move_cost() {
+        assert_eq!(BattleTile::MetalFloor.extra_move_cost(), 0);
+    }
+
+    #[test]
+    fn conveyor_tiles_have_extra_move_cost() {
+        assert_eq!(BattleTile::ConveyorN.extra_move_cost(), 1);
+        assert_eq!(BattleTile::ConveyorS.extra_move_cost(), 1);
+        assert_eq!(BattleTile::ConveyorE.extra_move_cost(), 1);
+        assert_eq!(BattleTile::ConveyorW.extra_move_cost(), 1);
+    }
+
+    #[test]
+    fn battle_tile_description_non_empty() {
+        assert!(!BattleTile::MetalFloor.description().is_empty());
+        assert!(!BattleTile::PlasmaPool.description().is_empty());
+        assert!(!BattleTile::EnergyVentActive.description().is_empty());
+    }
+
+    #[test]
+    fn battle_tile_name_non_empty() {
+        assert!(!BattleTile::MetalFloor.name().is_empty());
+        assert!(!BattleTile::GravityWell.name().is_empty());
+    }
+
+    #[test]
+    fn mine_tile_hidden_looks_like_metal_floor() {
+        assert_eq!(BattleTile::MineTile.name(), "Metal Floor");
+    }
+
+    #[test]
+    fn battle_tile_special_effects_for_hazards() {
+        assert!(BattleTile::PlasmaPool.special_effects().is_some());
+        assert!(BattleTile::BlastMark.special_effects().is_some());
+        assert!(BattleTile::ElectrifiedWire.special_effects().is_some());
+    }
+
+    #[test]
+    fn battle_tile_special_effects_none_for_plain_tiles() {
+        assert!(BattleTile::MetalFloor.special_effects().is_none());
+        assert!(BattleTile::CoverBarrier.special_effects().is_none());
+    }
+
+    // ── Weather ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn weather_name_normal() {
+        assert_eq!(Weather::Normal.name(), "Normal");
+    }
+
+    #[test]
+    fn weather_name_non_empty_for_all_variants() {
+        assert!(!Weather::CoolantLeak.name().is_empty());
+        assert!(!Weather::SmokeScreen.name().is_empty());
+        assert!(!Weather::DebrisStorm.name().is_empty());
+        assert!(!Weather::EnergyFlux.name().is_empty());
+    }
+
+    // ── WuxingElement ───────────────────────────────────────────────────────
+
+    #[test]
+    fn wuxing_from_radical_water() {
+        assert_eq!(WuxingElement::from_radical("水"), Some(WuxingElement::Water));
+        assert_eq!(WuxingElement::from_radical("雨"), Some(WuxingElement::Water));
+    }
+
+    #[test]
+    fn wuxing_from_radical_fire() {
+        assert_eq!(WuxingElement::from_radical("火"), Some(WuxingElement::Fire));
+    }
+
+    #[test]
+    fn wuxing_from_radical_metal() {
+        assert_eq!(WuxingElement::from_radical("金"), Some(WuxingElement::Metal));
+        assert_eq!(WuxingElement::from_radical("刀"), Some(WuxingElement::Metal));
+    }
+
+    #[test]
+    fn wuxing_from_radical_wood() {
+        assert_eq!(WuxingElement::from_radical("木"), Some(WuxingElement::Wood));
+        assert_eq!(WuxingElement::from_radical("竹"), Some(WuxingElement::Wood));
+    }
+
+    #[test]
+    fn wuxing_from_radical_earth() {
+        assert_eq!(WuxingElement::from_radical("土"), Some(WuxingElement::Earth));
+        assert_eq!(WuxingElement::from_radical("石"), Some(WuxingElement::Earth));
+        assert_eq!(WuxingElement::from_radical("山"), Some(WuxingElement::Earth));
+    }
+
+    #[test]
+    fn wuxing_from_unknown_radical_returns_none() {
+        assert_eq!(WuxingElement::from_radical("人"), None);
+        assert_eq!(WuxingElement::from_radical("xyz"), None);
+    }
+
+    #[test]
+    fn wuxing_water_beats_fire() {
+        assert!(WuxingElement::Water.beats(WuxingElement::Fire));
+    }
+
+    #[test]
+    fn wuxing_fire_beats_metal() {
+        assert!(WuxingElement::Fire.beats(WuxingElement::Metal));
+    }
+
+    #[test]
+    fn wuxing_metal_beats_wood() {
+        assert!(WuxingElement::Metal.beats(WuxingElement::Wood));
+    }
+
+    #[test]
+    fn wuxing_wood_beats_earth() {
+        assert!(WuxingElement::Wood.beats(WuxingElement::Earth));
+    }
+
+    #[test]
+    fn wuxing_earth_beats_water() {
+        assert!(WuxingElement::Earth.beats(WuxingElement::Water));
+    }
+
+    #[test]
+    fn wuxing_same_element_does_not_beat_self() {
+        assert!(!WuxingElement::Fire.beats(WuxingElement::Fire));
+    }
+
+    #[test]
+    fn wuxing_multiplier_advantage() {
+        let m = WuxingElement::multiplier(Some(WuxingElement::Water), Some(WuxingElement::Fire));
+        assert!((m - 1.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn wuxing_multiplier_disadvantage() {
+        let m = WuxingElement::multiplier(Some(WuxingElement::Fire), Some(WuxingElement::Water));
+        assert!((m - 0.75).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn wuxing_multiplier_neutral() {
+        let m = WuxingElement::multiplier(Some(WuxingElement::Fire), Some(WuxingElement::Fire));
+        assert!((m - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn wuxing_multiplier_none_attacker() {
+        let m = WuxingElement::multiplier(None, Some(WuxingElement::Fire));
+        assert!((m - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn wuxing_multiplier_both_none() {
+        let m = WuxingElement::multiplier(None, None);
+        assert!((m - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn wuxing_label_non_empty() {
+        assert!(!WuxingElement::Water.label().is_empty());
+        assert!(WuxingElement::Fire.label().contains("Fire"));
+    }
+
+    // ── ArenaEvent ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn arena_event_name_non_empty() {
+        assert_eq!(ArenaEvent::CoolantFlood.name(), "Coolant Flood");
+        assert_eq!(ArenaEvent::MediGas.name(), "Medi-Gas");
+    }
+
+    #[test]
+    fn arena_event_danger_level_damaging() {
+        assert_eq!(ArenaEvent::ArcDischarge.danger_level(), "damaging");
+        assert_eq!(ArenaEvent::PlasmaLeak.danger_level(), "damaging");
+        assert_eq!(ArenaEvent::ReactorBlowout.danger_level(), "damaging");
+    }
+
+    #[test]
+    fn arena_event_danger_level_beneficial() {
+        assert_eq!(ArenaEvent::MediGas.danger_level(), "beneficial");
+        assert_eq!(ArenaEvent::SystemGlitch.danger_level(), "beneficial");
+    }
+
+    #[test]
+    fn arena_event_danger_level_environmental() {
+        assert_eq!(ArenaEvent::CoolantFlood.danger_level(), "environmental");
+        assert_eq!(ArenaEvent::HullBreach.danger_level(), "environmental");
+        assert_eq!(ArenaEvent::VentBlast.danger_level(), "environmental");
+    }
+
+    // ── EnemyIntent ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn enemy_intent_label_attack() {
+        assert_eq!(EnemyIntent::Attack.label(), "Attacking");
+    }
+
+    #[test]
+    fn enemy_intent_label_idle() {
+        assert_eq!(EnemyIntent::Idle.label(), "Idle");
+    }
+
+    #[test]
+    fn enemy_intent_label_radical_ability() {
+        let intent = EnemyIntent::RadicalAbility { name: "Fireball" };
+        assert_eq!(intent.label(), "Fireball");
+    }
+
+    // ── TacticalBattle ──────────────────────────────────────────────────────
+
+    #[test]
+    fn all_enemies_dead_true_when_no_enemies() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let battle = make_test_battle(vec![player]);
+        assert!(battle.all_enemies_dead());
+    }
+
+    #[test]
+    fn all_enemies_dead_false_when_enemy_alive() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 2, 2);
+        let battle = make_test_battle(vec![player, enemy]);
+        assert!(!battle.all_enemies_dead());
+    }
+
+    #[test]
+    fn all_enemies_dead_true_when_all_killed() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 2, 2);
+        enemy.alive = false;
+        let battle = make_test_battle(vec![player, enemy]);
+        assert!(battle.all_enemies_dead());
+    }
+
+    #[test]
+    fn player_dead_when_not_alive() {
+        let mut player = make_test_unit(UnitKind::Player, 0, 0);
+        player.alive = false;
+        let battle = make_test_battle(vec![player]);
+        assert!(battle.player_dead());
+    }
+
+    #[test]
+    fn player_dead_false_when_alive() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let battle = make_test_battle(vec![player]);
+        assert!(!battle.player_dead());
+    }
+
+    #[test]
+    fn unit_at_finds_alive_unit() {
+        let player = make_test_unit(UnitKind::Player, 3, 4);
+        let battle = make_test_battle(vec![player]);
+        assert_eq!(battle.unit_at(3, 4), Some(0));
+    }
+
+    #[test]
+    fn unit_at_returns_none_for_empty_tile() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let battle = make_test_battle(vec![player]);
+        assert_eq!(battle.unit_at(5, 5), None);
+    }
+
+    #[test]
+    fn unit_at_ignores_dead_units() {
+        let mut player = make_test_unit(UnitKind::Player, 3, 4);
+        player.alive = false;
+        let battle = make_test_battle(vec![player]);
+        assert_eq!(battle.unit_at(3, 4), None);
+    }
+
+    #[test]
+    fn adjacent_enemies_finds_cardinal_neighbors() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let e1 = make_test_unit(UnitKind::Enemy(0), 4, 3); // right
+        let e2 = make_test_unit(UnitKind::Enemy(1), 3, 4); // below
+        let battle = make_test_battle(vec![player, e1, e2]);
+        let adj = battle.adjacent_enemies(3, 3);
+        assert_eq!(adj.len(), 2);
+        assert!(adj.contains(&1));
+        assert!(adj.contains(&2));
+    }
+
+    #[test]
+    fn adjacent_enemies_excludes_diagonal() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 4, 4); // diagonal
+        let battle = make_test_battle(vec![player, enemy]);
+        let adj = battle.adjacent_enemies(3, 3);
+        assert!(adj.is_empty());
+    }
+
+    // ── Combo multiplier ────────────────────────────────────────────────────
+
+    #[test]
+    fn combo_multiplier_base_is_one() {
+        let battle = make_test_battle(vec![make_test_unit(UnitKind::Player, 0, 0)]);
+        assert!((battle.combo_multiplier() - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn combo_multiplier_increases_with_streak() {
+        let mut battle = make_test_battle(vec![make_test_unit(UnitKind::Player, 0, 0)]);
+        battle.combo_streak = 3;
+        assert!(battle.combo_multiplier() > 1.0);
+        assert!((battle.combo_multiplier() - 1.2).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn combo_multiplier_max_tier_at_12_plus() {
+        let mut battle = make_test_battle(vec![make_test_unit(UnitKind::Player, 0, 0)]);
+        battle.combo_streak = 15;
+        assert!((battle.combo_multiplier() - 1.75).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn combo_tier_name_empty_at_zero() {
+        let battle = make_test_battle(vec![make_test_unit(UnitKind::Player, 0, 0)]);
+        assert_eq!(battle.combo_tier_name(), "");
+    }
+
+    #[test]
+    fn combo_tier_name_radical_at_high_streak() {
+        let mut battle = make_test_battle(vec![make_test_unit(UnitKind::Player, 0, 0)]);
+        battle.combo_streak = 12;
+        assert_eq!(battle.combo_tier_name(), "RADICAL!");
+    }
+
+    // ── BattleUnit ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn battle_unit_is_player() {
+        let unit = make_test_unit(UnitKind::Player, 0, 0);
+        assert!(unit.is_player());
+        assert!(!unit.is_enemy());
+        assert!(!unit.is_companion());
+    }
+
+    #[test]
+    fn battle_unit_is_enemy() {
+        let unit = make_test_unit(UnitKind::Enemy(0), 0, 0);
+        assert!(unit.is_enemy());
+        assert!(!unit.is_player());
+    }
+
+    #[test]
+    fn battle_unit_is_companion() {
+        let unit = make_test_unit(UnitKind::Companion, 0, 0);
+        assert!(unit.is_companion());
+        assert!(!unit.is_player());
+    }
+
+    #[test]
+    fn battle_unit_effective_movement_includes_stored() {
+        let mut unit = make_test_unit(UnitKind::Player, 0, 0);
+        unit.movement = 3;
+        unit.stored_movement = 2;
+        assert_eq!(unit.effective_movement(), 5);
+    }
+
+    #[test]
+    fn battle_unit_effective_movement_halved_when_slowed() {
+        let mut unit = make_test_unit(UnitKind::Player, 0, 0);
+        unit.movement = 4;
+        unit.stored_movement = 0;
+        unit.statuses.push(crate::status::StatusInstance {
+            kind: crate::status::StatusKind::Slow,
+            turns_left: 2,
+            fresh: false,
+        });
+        // 4/2 = 2
+        assert_eq!(unit.effective_movement(), 2);
+    }
+
+    #[test]
+    fn battle_unit_effective_movement_at_least_one_when_slowed() {
+        let mut unit = make_test_unit(UnitKind::Player, 0, 0);
+        unit.movement = 1;
+        unit.stored_movement = 0;
+        unit.statuses.push(crate::status::StatusInstance {
+            kind: crate::status::StatusKind::Slow,
+            turns_left: 2,
+            fresh: false,
+        });
+        // 1/2 = 0, but max(1) kicks in
+        assert_eq!(unit.effective_movement(), 1);
+    }
+
+    // ── Log management ──────────────────────────────────────────────────────
+
+    #[test]
+    fn log_message_adds_entry() {
+        let mut battle = make_test_battle(vec![make_test_unit(UnitKind::Player, 0, 0)]);
+        battle.log_message("Test message");
+        assert_eq!(battle.log.len(), 1);
+        assert_eq!(battle.log[0], "Test message");
+    }
+
+    #[test]
+    fn log_message_caps_at_50_entries() {
+        let mut battle = make_test_battle(vec![make_test_unit(UnitKind::Player, 0, 0)]);
+        for i in 0..55 {
+            battle.log_message(format!("msg {}", i));
+        }
+        assert_eq!(battle.log.len(), 50);
+    }
+
+    // ── Projectile ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn projectile_current_pos_at_start() {
+        let p = Projectile {
+            from_x: 0.0,
+            from_y: 0.0,
+            to_x: 10,
+            to_y: 0,
+            progress: 0.0,
+            speed: Projectile::SPEED_NORMAL,
+            arc_height: 0.0,
+            effect: ProjectileEffect::Damage(3),
+            owner_idx: 0,
+            glyph: "*",
+            color: "#fff",
+            done: false,
+        };
+        let (x, y) = p.current_pos();
+        assert!((x - 0.0).abs() < f64::EPSILON);
+        assert!((y - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn projectile_current_pos_at_end() {
+        let p = Projectile {
+            from_x: 0.0,
+            from_y: 0.0,
+            to_x: 10,
+            to_y: 0,
+            progress: 1.0,
+            speed: Projectile::SPEED_NORMAL,
+            arc_height: 0.0,
+            effect: ProjectileEffect::Damage(3),
+            owner_idx: 0,
+            glyph: "*",
+            color: "#fff",
+            done: false,
+        };
+        let (x, y) = p.current_pos();
+        assert!((x - 10.0).abs() < f64::EPSILON);
+        assert!((y - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn projectile_arc_height_affects_y_at_midpoint() {
+        let p = Projectile {
+            from_x: 0.0,
+            from_y: 0.0,
+            to_x: 10,
+            to_y: 0,
+            progress: 0.5,
+            speed: Projectile::SPEED_NORMAL,
+            arc_height: 2.0,
+            effect: ProjectileEffect::Damage(3),
+            owner_idx: 0,
+            glyph: "*",
+            color: "#fff",
+            done: false,
+        };
+        let (_, y) = p.current_pos();
+        // Arc peaks at midpoint: -4 * 2.0 * 0.5 * (0.5 - 1.0) = -4*2*0.5*(-0.5) = 2.0
+        // y_base = 0, so y = 0 - 2.0 = -2.0
+        assert!((y - (-2.0)).abs() < f64::EPSILON);
+    }
+
+    // ── EquipmentSet bonus descriptions ─────────────────────────────────────
+
+    #[test]
+    fn equipment_set_bonus_description_non_empty() {
+        use crate::player::EQUIPMENT_SETS;
+        for set in EQUIPMENT_SETS {
+            assert!(!set.bonus_description().is_empty(), "Empty description for set: {}", set.name);
+        }
+    }
+}
