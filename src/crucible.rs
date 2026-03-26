@@ -1,20 +1,11 @@
-//! Crucible skill trees for equipment — inspired by POE 1's Crucible league.
+//! Crucible skill trees for equipment — dynamically generated per-item trees.
 //!
-//! Each piece of equipment develops a small passive tree as the player uses it.
-//! Weapon trees are flavored as "Attachments", armor as "Plating", modules as
-//! "Firmware", and alien artifacts as "Resonance Patterns".
-//!
-//! Tree layout (5 nodes each):
-//! ```text
-//!   [0] ─── [1] ─── [2]  (linear trunk, auto-unlock)
-//!                     ├── [3]  (left branch — player chooses)
-//!                     └── [4]  (right branch — mutually exclusive)
-//! ```
-//!
-//! Equipment gains XP from correct answers while equipped.
-//! Trunk nodes auto-unlock; branch nodes require a choice at a Forge workbench.
+//! Each piece of equipment develops a unique passive tree as the player uses it.
+//! Trees are procedurally generated based on equipment slot, rarity, and a seed.
+//! Nodes are unlocked by spending accumulated XP.
 
 use crate::player::EquipSlot;
+use crate::rarity::ItemRarity;
 
 // ── Effect Enum ──────────────────────────────────────────────────────────────
 
@@ -89,476 +80,677 @@ impl CrucibleEffect {
     }
 }
 
-// ── Node / Template ──────────────────────────────────────────────────────────
+// ── Effect Serialization ─────────────────────────────────────────────────────
 
-/// A single node in a crucible tree.
-#[derive(Clone, Copy, Debug)]
-pub struct CrucibleNode {
-    pub name: &'static str,
-    pub description: &'static str,
+impl CrucibleEffect {
+    pub fn effect_to_tag(&self) -> String {
+        match self {
+            Self::BonusDamage(n) => format!("BonusDamage:{}", n),
+            Self::BonusArmor(n) => format!("BonusArmor:{}", n),
+            Self::MaxHp(n) => format!("MaxHp:{}", n),
+            Self::CritChance(n) => format!("CritChance:{}", n),
+            Self::LifeSteal(n) => format!("LifeSteal:{}", n),
+            Self::SpellPower(n) => format!("SpellPower:{}", n),
+            Self::FocusRegen(n) => format!("FocusRegen:{}", n),
+            Self::GoldFind(n) => format!("GoldFind:{}", n),
+            Self::RadicalFind(n) => format!("RadicalFind:{}", n),
+            Self::DodgeChance(n) => format!("DodgeChance:{}", n),
+            Self::MovementBonus(n) => format!("MovementBonus:{}", n),
+            Self::BurnOnHit { damage, turns } => format!("BurnOnHit:{},{}", damage, turns),
+            Self::PoisonOnHit { damage, turns } => format!("PoisonOnHit:{},{}", damage, turns),
+            Self::ShieldOnKill => "ShieldOnKill".to_string(),
+            Self::HealOnKill(n) => format!("HealOnKill:{}", n),
+            Self::FocusOnKill(n) => format!("FocusOnKill:{}", n),
+            Self::HardAnswerDamage(n) => format!("HardAnswerDamage:{}", n),
+            Self::HardAnswerHeal(n) => format!("HardAnswerHeal:{}", n),
+            Self::ComboExtender => "ComboExtender".to_string(),
+            Self::DoubleStrike(n) => format!("DoubleStrike:{}", n),
+            Self::ArmorPierce(n) => format!("ArmorPierce:{}", n),
+            Self::OverchargeProc => "OverchargeProc".to_string(),
+            Self::EmergencyRepair(n) => format!("EmergencyRepair:{}", n),
+            Self::KineticAbsorber => "KineticAbsorber".to_string(),
+            Self::NeuralSync => "NeuralSync".to_string(),
+            Self::TemporalFlux => "TemporalFlux".to_string(),
+        }
+    }
+
+    pub fn effect_from_tag(tag: &str) -> CrucibleEffect {
+        let (name, vals) = match tag.find(':') {
+            Some(pos) => (&tag[..pos], &tag[pos + 1..]),
+            None => (tag, ""),
+        };
+        let parse_i32 = |s: &str| -> i32 { s.trim().parse().unwrap_or(0) };
+        match name {
+            "BonusDamage" => CrucibleEffect::BonusDamage(parse_i32(vals)),
+            "BonusArmor" => CrucibleEffect::BonusArmor(parse_i32(vals)),
+            "MaxHp" => CrucibleEffect::MaxHp(parse_i32(vals)),
+            "CritChance" => CrucibleEffect::CritChance(parse_i32(vals)),
+            "LifeSteal" => CrucibleEffect::LifeSteal(parse_i32(vals)),
+            "SpellPower" => CrucibleEffect::SpellPower(parse_i32(vals)),
+            "FocusRegen" => CrucibleEffect::FocusRegen(parse_i32(vals)),
+            "GoldFind" => CrucibleEffect::GoldFind(parse_i32(vals)),
+            "RadicalFind" => CrucibleEffect::RadicalFind(parse_i32(vals)),
+            "DodgeChance" => CrucibleEffect::DodgeChance(parse_i32(vals)),
+            "MovementBonus" => CrucibleEffect::MovementBonus(parse_i32(vals)),
+            "BurnOnHit" => {
+                let parts: Vec<&str> = vals.split(',').collect();
+                if parts.len() >= 2 {
+                    CrucibleEffect::BurnOnHit {
+                        damage: parse_i32(parts[0]),
+                        turns: parse_i32(parts[1]),
+                    }
+                } else {
+                    CrucibleEffect::BurnOnHit { damage: 1, turns: 3 }
+                }
+            }
+            "PoisonOnHit" => {
+                let parts: Vec<&str> = vals.split(',').collect();
+                if parts.len() >= 2 {
+                    CrucibleEffect::PoisonOnHit {
+                        damage: parse_i32(parts[0]),
+                        turns: parse_i32(parts[1]),
+                    }
+                } else {
+                    CrucibleEffect::PoisonOnHit { damage: 1, turns: 3 }
+                }
+            }
+            "ShieldOnKill" => CrucibleEffect::ShieldOnKill,
+            "HealOnKill" => CrucibleEffect::HealOnKill(parse_i32(vals)),
+            "FocusOnKill" => CrucibleEffect::FocusOnKill(parse_i32(vals)),
+            "HardAnswerDamage" => CrucibleEffect::HardAnswerDamage(parse_i32(vals)),
+            "HardAnswerHeal" => CrucibleEffect::HardAnswerHeal(parse_i32(vals)),
+            "ComboExtender" => CrucibleEffect::ComboExtender,
+            "DoubleStrike" => CrucibleEffect::DoubleStrike(parse_i32(vals)),
+            "ArmorPierce" => CrucibleEffect::ArmorPierce(parse_i32(vals)),
+            "OverchargeProc" => CrucibleEffect::OverchargeProc,
+            "EmergencyRepair" => CrucibleEffect::EmergencyRepair(parse_i32(vals)),
+            "KineticAbsorber" => CrucibleEffect::KineticAbsorber,
+            "NeuralSync" => CrucibleEffect::NeuralSync,
+            "TemporalFlux" => CrucibleEffect::TemporalFlux,
+            _ => CrucibleEffect::BonusDamage(0),
+        }
+    }
+}
+
+/// Standalone alias for `CrucibleEffect::effect_to_tag`.
+pub fn effect_tag(e: &CrucibleEffect) -> String {
+    e.effect_to_tag()
+}
+
+/// Standalone alias for `CrucibleEffect::effect_from_tag`.
+pub fn effect_from_tag(tag: &str) -> CrucibleEffect {
+    CrucibleEffect::effect_from_tag(tag)
+}
+
+// ── Dynamic Node ─────────────────────────────────────────────────────────────
+
+/// A dynamically generated crucible node with owned data.
+#[derive(Clone, Debug)]
+pub struct CrucibleNodeDyn {
+    pub name: String,
+    pub description: String,
     pub effect: CrucibleEffect,
-    /// Cumulative XP required to unlock this node.
     pub xp_cost: u32,
+    /// Position for rendering in tree view (world-space).
+    pub pos: (f64, f64),
 }
 
-/// A 5-node tree template.
-pub struct CrucibleTemplate {
-    pub name: &'static str,
-    /// Flavor label: "Attachment", "Plating", "Firmware", "Resonance"
-    #[allow(dead_code)]
-    pub flavor: &'static str,
-    pub nodes: [CrucibleNode; 5],
+// ── PRNG ─────────────────────────────────────────────────────────────────────
+
+fn splitmix(seed: u64) -> (u64, u64) {
+    let s = seed.wrapping_add(0x9e3779b97f4a7c15);
+    let mut z = s;
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d049bb133111eb);
+    z = z ^ (z >> 31);
+    (z, s)
 }
 
-// ── Static Templates ─────────────────────────────────────────────────────────
+// ── Name Pools ───────────────────────────────────────────────────────────────
 
-/// 9 templates: indices 0–2 for weapons, 3–5 for armor, 6–8 for charms.
-pub static CRUCIBLE_TEMPLATES: &[CrucibleTemplate] = &[
-    // ─── Weapon 0: Assault Configuration ─────────────────────────────────────
-    CrucibleTemplate {
-        name: "Assault Configuration",
-        flavor: "Attachment",
-        nodes: [
-            CrucibleNode {
-                name: "Calibrated Barrel",
-                description: "+1 damage on all attacks",
-                effect: CrucibleEffect::BonusDamage(1),
-                xp_cost: 5,
-            },
-            CrucibleNode {
-                name: "Accelerator Coil",
-                description: "10% critical hit chance",
-                effect: CrucibleEffect::CritChance(10),
-                xp_cost: 15,
-            },
-            CrucibleNode {
-                name: "Overcharge Port",
-                description: "15% chance for +50% damage",
-                effect: CrucibleEffect::OverchargeProc,
-                xp_cost: 30,
-            },
-            CrucibleNode {
-                name: "Incendiary Rounds",
-                description: "Attacks burn enemies (1 dmg/turn, 3 turns)",
-                effect: CrucibleEffect::BurnOnHit { damage: 1, turns: 3 },
-                xp_cost: 50,
-            },
-            CrucibleNode {
-                name: "Armor-Piercing Tips",
-                description: "Attacks ignore 2 points of enemy armor",
-                effect: CrucibleEffect::ArmorPierce(2),
-                xp_cost: 50,
-            },
-        ],
-    },
-    // ─── Weapon 1: Precision Configuration ───────────────────────────────────
-    CrucibleTemplate {
-        name: "Precision Configuration",
-        flavor: "Attachment",
-        nodes: [
-            CrucibleNode {
-                name: "Tactical Scope",
-                description: "+1 spell power",
-                effect: CrucibleEffect::SpellPower(1),
-                xp_cost: 5,
-            },
-            CrucibleNode {
-                name: "Stabilizer Mod",
-                description: "+1 focus regen per turn",
-                effect: CrucibleEffect::FocusRegen(1),
-                xp_cost: 15,
-            },
-            CrucibleNode {
-                name: "Neural Interface",
-                description: "+2 bonus damage on hard answers",
-                effect: CrucibleEffect::HardAnswerDamage(2),
-                xp_cost: 30,
-            },
-            CrucibleNode {
-                name: "Double-Tap Module",
-                description: "10% chance to strike twice",
-                effect: CrucibleEffect::DoubleStrike(10),
-                xp_cost: 50,
-            },
-            CrucibleNode {
-                name: "Momentum Cache",
-                description: "Wrong answers only halve combo instead of resetting",
-                effect: CrucibleEffect::ComboExtender,
-                xp_cost: 50,
-            },
-        ],
-    },
-    // ─── Weapon 2: Sustain Configuration ─────────────────────────────────────
-    CrucibleTemplate {
-        name: "Sustain Configuration",
-        flavor: "Attachment",
-        nodes: [
-            CrucibleNode {
-                name: "Vampiric Edge",
-                description: "Heal 1 HP per kill",
-                effect: CrucibleEffect::HealOnKill(1),
-                xp_cost: 5,
-            },
-            CrucibleNode {
-                name: "Bio-Feedback Loop",
-                description: "+1 lifesteal on attacks",
-                effect: CrucibleEffect::LifeSteal(1),
-                xp_cost: 15,
-            },
-            CrucibleNode {
-                name: "Nano-Recovery Shell",
-                description: "+3 max HP",
-                effect: CrucibleEffect::MaxHp(3),
-                xp_cost: 30,
-            },
-            CrucibleNode {
-                name: "Emergency Repair Protocol",
-                description: "Auto-heal 3 HP once per fight when below 25%",
-                effect: CrucibleEffect::EmergencyRepair(3),
-                xp_cost: 50,
-            },
-            CrucibleNode {
-                name: "Kill Shield",
-                description: "Gain a shield after each kill",
-                effect: CrucibleEffect::ShieldOnKill,
-                xp_cost: 50,
-            },
-        ],
-    },
-    // ─── Armor 0: Bulwark Plating ────────────────────────────────────────────
-    CrucibleTemplate {
-        name: "Bulwark Plating",
-        flavor: "Plating",
-        nodes: [
-            CrucibleNode {
-                name: "Reinforced Layer",
-                description: "+1 armor",
-                effect: CrucibleEffect::BonusArmor(1),
-                xp_cost: 5,
-            },
-            CrucibleNode {
-                name: "Impact Absorber",
-                description: "+3 max HP",
-                effect: CrucibleEffect::MaxHp(3),
-                xp_cost: 15,
-            },
-            CrucibleNode {
-                name: "Hardened Core",
-                description: "5% dodge chance",
-                effect: CrucibleEffect::DodgeChance(5),
-                xp_cost: 30,
-            },
-            CrucibleNode {
-                name: "Kinetic Battery",
-                description: "Store 50% damage taken, add to next attack",
-                effect: CrucibleEffect::KineticAbsorber,
-                xp_cost: 50,
-            },
-            CrucibleNode {
-                name: "Emergency Vent",
-                description: "Auto-heal 4 HP once per fight when below 25%",
-                effect: CrucibleEffect::EmergencyRepair(4),
-                xp_cost: 50,
-            },
-        ],
-    },
-    // ─── Armor 1: Reactive Weave ─────────────────────────────────────────────
-    CrucibleTemplate {
-        name: "Reactive Weave",
-        flavor: "Plating",
-        nodes: [
-            CrucibleNode {
-                name: "Shock Mesh",
-                description: "Attackers are burned (1 dmg/turn, 2 turns)",
-                effect: CrucibleEffect::BurnOnHit { damage: 1, turns: 2 },
-                xp_cost: 5,
-            },
-            CrucibleNode {
-                name: "Counter Pulse",
-                description: "+2 bonus damage",
-                effect: CrucibleEffect::BonusDamage(2),
-                xp_cost: 15,
-            },
-            CrucibleNode {
-                name: "Adaptive Layer",
-                description: "5% dodge chance",
-                effect: CrucibleEffect::DodgeChance(5),
-                xp_cost: 30,
-            },
-            CrucibleNode {
-                name: "Temporal Shift",
-                description: "10% chance for bonus action after kill",
-                effect: CrucibleEffect::TemporalFlux,
-                xp_cost: 50,
-            },
-            CrucibleNode {
-                name: "Scholar's Mend",
-                description: "Heal 2 HP on hard answers",
-                effect: CrucibleEffect::HardAnswerHeal(2),
-                xp_cost: 50,
-            },
-        ],
-    },
-    // ─── Armor 2: Mobility Frame ─────────────────────────────────────────────
-    CrucibleTemplate {
-        name: "Mobility Frame",
-        flavor: "Plating",
-        nodes: [
-            CrucibleNode {
-                name: "Servo Assist",
-                description: "+1 movement in combat",
-                effect: CrucibleEffect::MovementBonus(1),
-                xp_cost: 5,
-            },
-            CrucibleNode {
-                name: "Reflex Boost",
-                description: "5% dodge chance",
-                effect: CrucibleEffect::DodgeChance(5),
-                xp_cost: 15,
-            },
-            CrucibleNode {
-                name: "Neural Accelerator",
-                description: "+1 focus regen per turn",
-                effect: CrucibleEffect::FocusRegen(1),
-                xp_cost: 30,
-            },
-            CrucibleNode {
-                name: "Flow State",
-                description: "Wrong answers only halve combo instead of resetting",
-                effect: CrucibleEffect::ComboExtender,
-                xp_cost: 50,
-            },
-            CrucibleNode {
-                name: "Scholar's Edge",
-                description: "+2 bonus damage on hard answers",
-                effect: CrucibleEffect::HardAnswerDamage(2),
-                xp_cost: 50,
-            },
-        ],
-    },
-    // ─── Module 0: Combat Firmware ───────────────────────────────────────────
-    CrucibleTemplate {
-        name: "Combat Firmware",
-        flavor: "Firmware",
-        nodes: [
-            CrucibleNode {
-                name: "Power Optimizer",
-                description: "+1 spell power",
-                effect: CrucibleEffect::SpellPower(1),
-                xp_cost: 5,
-            },
-            CrucibleNode {
-                name: "Focus Capacitor",
-                description: "+1 focus regen per turn",
-                effect: CrucibleEffect::FocusRegen(1),
-                xp_cost: 15,
-            },
-            CrucibleNode {
-                name: "Resonance Amp",
-                description: "10% critical hit chance",
-                effect: CrucibleEffect::CritChance(10),
-                xp_cost: 30,
-            },
-            CrucibleNode {
-                name: "Neural Sync",
-                description: "SRS records correct answers twice (learn faster)",
-                effect: CrucibleEffect::NeuralSync,
-                xp_cost: 50,
-            },
-            CrucibleNode {
-                name: "Surge Capacitor",
-                description: "15% chance for +50% damage",
-                effect: CrucibleEffect::OverchargeProc,
-                xp_cost: 50,
-            },
-        ],
-    },
-    // ─── Module 1: Salvage Firmware ──────────────────────────────────────────
-    CrucibleTemplate {
-        name: "Salvage Firmware",
-        flavor: "Firmware",
-        nodes: [
-            CrucibleNode {
-                name: "Loot Scanner",
-                description: "+15% gold from kills",
-                effect: CrucibleEffect::GoldFind(15),
-                xp_cost: 5,
-            },
-            CrucibleNode {
-                name: "Radical Detector",
-                description: "+15% radical drop chance",
-                effect: CrucibleEffect::RadicalFind(15),
-                xp_cost: 15,
-            },
-            CrucibleNode {
-                name: "Economy Core",
-                description: "Heal 2 HP per kill",
-                effect: CrucibleEffect::HealOnKill(2),
-                xp_cost: 30,
-            },
-            CrucibleNode {
-                name: "Double-Tap Circuit",
-                description: "10% chance to strike twice",
-                effect: CrucibleEffect::DoubleStrike(10),
-                xp_cost: 50,
-            },
-            CrucibleNode {
-                name: "Focus Siphon",
-                description: "Restore 3 focus per kill",
-                effect: CrucibleEffect::FocusOnKill(3),
-                xp_cost: 50,
-            },
-        ],
-    },
-    // ─── Module 2: Survival Firmware ─────────────────────────────────────────
-    CrucibleTemplate {
-        name: "Survival Firmware",
-        flavor: "Firmware",
-        nodes: [
-            CrucibleNode {
-                name: "Shield Capacitor",
-                description: "+1 armor",
-                effect: CrucibleEffect::BonusArmor(1),
-                xp_cost: 5,
-            },
-            CrucibleNode {
-                name: "Repair Nanites",
-                description: "+3 max HP",
-                effect: CrucibleEffect::MaxHp(3),
-                xp_cost: 15,
-            },
-            CrucibleNode {
-                name: "Defense Matrix",
-                description: "Heal 1 HP on hard answers",
-                effect: CrucibleEffect::HardAnswerHeal(1),
-                xp_cost: 30,
-            },
-            CrucibleNode {
-                name: "Last Stand Protocol",
-                description: "Auto-heal 3 HP once per fight when below 25%",
-                effect: CrucibleEffect::EmergencyRepair(3),
-                xp_cost: 50,
-            },
-            CrucibleNode {
-                name: "Victory Shield",
-                description: "Gain a shield after each kill",
-                effect: CrucibleEffect::ShieldOnKill,
-                xp_cost: 50,
-            },
-        ],
-    },
+const WEAPON_PREFIXES: &[&str] = &[
+    "Calibrated", "Overcharged", "Kinetic", "Plasma", "Focused",
+    "Lethal", "Precision", "Assault", "Vampiric", "Piercing",
 ];
+const WEAPON_SUFFIXES: &[&str] = &["Core", "Module", "Circuit", "Array", "Chamber"];
+
+const ARMOR_PREFIXES: &[&str] = &[
+    "Reinforced", "Reactive", "Hardened", "Adaptive", "Kinetic",
+    "Nano", "Ablative", "Emergency",
+];
+const ARMOR_SUFFIXES: &[&str] = &["Layer", "Plating", "Shell", "Matrix", "Weave"];
+
+const CHARM_PREFIXES: &[&str] = &[
+    "Quantum", "Neural", "Resonance", "Salvage", "Discovery",
+    "Focus", "Temporal", "Harmonic",
+];
+const CHARM_SUFFIXES: &[&str] = &["Link", "Chip", "Crystal", "Node", "Relay"];
+
+fn name_pools(slot: EquipSlot) -> (&'static [&'static str], &'static [&'static str]) {
+    match slot {
+        EquipSlot::Weapon => (WEAPON_PREFIXES, WEAPON_SUFFIXES),
+        EquipSlot::Armor => (ARMOR_PREFIXES, ARMOR_SUFFIXES),
+        EquipSlot::Charm => (CHARM_PREFIXES, CHARM_SUFFIXES),
+    }
+}
+
+fn gen_name(prefixes: &[&str], suffixes: &[&str], seed: u64) -> String {
+    let (r1, s2) = splitmix(seed);
+    let prefix = prefixes[(r1 as usize) % prefixes.len()];
+    let (r2, _) = splitmix(s2);
+    let suffix = suffixes[(r2 as usize) % suffixes.len()];
+    format!("{} {}", prefix, suffix)
+}
+
+// ── Effect Generation ────────────────────────────────────────────────────────
+
+const WEAPON_POOL_SIZE: usize = 10;
+const ARMOR_POOL_SIZE: usize = 8;
+const CHARM_POOL_SIZE: usize = 9;
+
+fn pool_size(slot: EquipSlot) -> usize {
+    match slot {
+        EquipSlot::Weapon => WEAPON_POOL_SIZE,
+        EquipSlot::Armor => ARMOR_POOL_SIZE,
+        EquipSlot::Charm => CHARM_POOL_SIZE,
+    }
+}
+
+/// Create an effect from the slot-specific pool, using seed for value randomization.
+fn generate_effect(slot: EquipSlot, index: usize, seed: u64) -> CrucibleEffect {
+    let v = 1 + (seed % 3) as i32;
+    let pct = 5 + (seed % 11) as i32;
+    match slot {
+        EquipSlot::Weapon => match index % WEAPON_POOL_SIZE {
+            0 => CrucibleEffect::BonusDamage(v),
+            1 => CrucibleEffect::CritChance(pct),
+            2 => CrucibleEffect::LifeSteal(v),
+            3 => CrucibleEffect::SpellPower(v),
+            4 => CrucibleEffect::DoubleStrike(pct),
+            5 => CrucibleEffect::ArmorPierce(v),
+            6 => CrucibleEffect::OverchargeProc,
+            7 => CrucibleEffect::BurnOnHit { damage: v, turns: 2 + (seed % 2) as i32 },
+            8 => CrucibleEffect::HardAnswerDamage(v),
+            _ => CrucibleEffect::ComboExtender,
+        },
+        EquipSlot::Armor => match index % ARMOR_POOL_SIZE {
+            0 => CrucibleEffect::BonusArmor(v),
+            1 => CrucibleEffect::MaxHp(2 + (seed % 4) as i32),
+            2 => CrucibleEffect::DodgeChance(pct),
+            3 => CrucibleEffect::MovementBonus(v),
+            4 => CrucibleEffect::EmergencyRepair(2 + (seed % 3) as i32),
+            5 => CrucibleEffect::KineticAbsorber,
+            6 => CrucibleEffect::ShieldOnKill,
+            _ => CrucibleEffect::HardAnswerHeal(v),
+        },
+        EquipSlot::Charm => match index % CHARM_POOL_SIZE {
+            0 => CrucibleEffect::GoldFind(10 + (seed % 11) as i32),
+            1 => CrucibleEffect::RadicalFind(10 + (seed % 11) as i32),
+            2 => CrucibleEffect::FocusRegen(v),
+            3 => CrucibleEffect::SpellPower(v),
+            4 => CrucibleEffect::NeuralSync,
+            5 => CrucibleEffect::TemporalFlux,
+            6 => CrucibleEffect::FocusOnKill(v),
+            7 => CrucibleEffect::HealOnKill(v),
+            _ => CrucibleEffect::HardAnswerDamage(v),
+        },
+    }
+}
+
+fn effect_description(effect: &CrucibleEffect) -> String {
+    match effect {
+        CrucibleEffect::BonusDamage(n) => format!("+{} damage on all attacks", n),
+        CrucibleEffect::BonusArmor(n) => format!("+{} armor", n),
+        CrucibleEffect::MaxHp(n) => format!("+{} max HP", n),
+        CrucibleEffect::CritChance(n) => format!("{}% critical hit chance", n),
+        CrucibleEffect::LifeSteal(n) => format!("+{} lifesteal on attacks", n),
+        CrucibleEffect::SpellPower(n) => format!("+{} spell power", n),
+        CrucibleEffect::FocusRegen(n) => format!("+{} focus regen per turn", n),
+        CrucibleEffect::GoldFind(n) => format!("+{}% gold find", n),
+        CrucibleEffect::RadicalFind(n) => format!("+{}% radical find", n),
+        CrucibleEffect::DodgeChance(n) => format!("{}% dodge chance", n),
+        CrucibleEffect::MovementBonus(n) => format!("+{} movement speed", n),
+        CrucibleEffect::BurnOnHit { damage, turns } =>
+            format!("Burn ({} dmg/turn, {} turns)", damage, turns),
+        CrucibleEffect::PoisonOnHit { damage, turns } =>
+            format!("Poison ({} dmg/turn, {} turns)", damage, turns),
+        CrucibleEffect::ShieldOnKill => "Gain a shield after each kill".to_string(),
+        CrucibleEffect::HealOnKill(n) => format!("Heal {} HP per kill", n),
+        CrucibleEffect::FocusOnKill(n) => format!("+{} focus on kill", n),
+        CrucibleEffect::HardAnswerDamage(n) => format!("+{} damage on hard answers", n),
+        CrucibleEffect::HardAnswerHeal(n) => format!("+{} heal on hard answers", n),
+        CrucibleEffect::ComboExtender => "Wrong answers only halve combo".to_string(),
+        CrucibleEffect::DoubleStrike(n) => format!("{}% chance to strike twice", n),
+        CrucibleEffect::ArmorPierce(n) => format!("Ignore {} enemy armor", n),
+        CrucibleEffect::OverchargeProc => "15% chance for +50% damage".to_string(),
+        CrucibleEffect::EmergencyRepair(n) =>
+            format!("Auto-heal {} HP once per fight below 25%", n),
+        CrucibleEffect::KineticAbsorber =>
+            "Store 50% damage taken, add to next attack".to_string(),
+        CrucibleEffect::NeuralSync => "+50% SRS accuracy recording".to_string(),
+        CrucibleEffect::TemporalFlux => "10% chance for bonus action after kill".to_string(),
+    }
+}
+
+// ── Ring Costs ───────────────────────────────────────────────────────────────
+
+const RING_COSTS: [u32; 5] = [0, 10, 25, 50, 80];
+
+fn ring_cost(ring: usize) -> u32 {
+    if ring < RING_COSTS.len() { RING_COSTS[ring] } else { 80 }
+}
+
+// ── JSON Helpers ─────────────────────────────────────────────────────────────
+
+fn json_push_escaped(out: &mut String, value: &str) {
+    for c in value.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            _ => out.push(c),
+        }
+    }
+}
+
+fn extract_u32(s: &str, key: &str) -> Option<u32> {
+    let needle = format!("\"{}\":", key);
+    let start = s.find(&needle)? + needle.len();
+    let rest = &s[start..];
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
+    rest[..end].parse().ok()
+}
+
+fn extract_string(s: &str, key: &str) -> String {
+    let needle = format!("\"{}\":\"", key);
+    let start = match s.find(&needle) {
+        Some(pos) => pos + needle.len(),
+        None => return String::new(),
+    };
+    let rest = &s[start..];
+    let bytes = rest.as_bytes();
+    let mut end = 0;
+    let mut escape = false;
+    while end < bytes.len() {
+        if escape {
+            escape = false;
+            end += 1;
+            continue;
+        }
+        match bytes[end] {
+            b'\\' => {
+                escape = true;
+                end += 1;
+            }
+            b'"' => break,
+            _ => {
+                end += 1;
+            }
+        }
+    }
+    rest[..end].replace("\\\"", "\"").replace("\\\\", "\\")
+}
+
+fn extract_u32_array(s: &str, key: &str) -> Vec<u32> {
+    let needle = format!("\"{}\":[", key);
+    let start = match s.find(&needle) {
+        Some(pos) => pos + needle.len(),
+        None => return vec![],
+    };
+    let end = match s[start..].find(']') {
+        Some(pos) => start + pos,
+        None => return vec![],
+    };
+    let slice = &s[start..end];
+    if slice.trim().is_empty() {
+        return vec![];
+    }
+    slice
+        .split(',')
+        .filter_map(|tok| tok.trim().parse::<u32>().ok())
+        .collect()
+}
+
+fn extract_f64_array(s: &str, key: &str) -> Vec<f64> {
+    let needle = format!("\"{}\":[", key);
+    let start = match s.find(&needle) {
+        Some(pos) => pos + needle.len(),
+        None => return vec![],
+    };
+    let end = match s[start..].find(']') {
+        Some(pos) => start + pos,
+        None => return vec![],
+    };
+    let slice = &s[start..end];
+    if slice.trim().is_empty() {
+        return vec![];
+    }
+    slice
+        .split(',')
+        .filter_map(|tok| tok.trim().parse::<f64>().ok())
+        .collect()
+}
+
+fn extract_string_array(s: &str, key: &str) -> Vec<String> {
+    let needle = format!("\"{}\":[", key);
+    let start = match s.find(&needle) {
+        Some(pos) => pos + needle.len(),
+        None => return vec![],
+    };
+    let bytes = s.as_bytes();
+    let mut depth: i32 = 1;
+    let mut pos = start;
+    let mut in_str = false;
+    let mut esc = false;
+    while pos < bytes.len() && depth > 0 {
+        if esc {
+            esc = false;
+            pos += 1;
+            continue;
+        }
+        match bytes[pos] {
+            b'\\' if in_str => {
+                esc = true;
+            }
+            b'"' => {
+                in_str = !in_str;
+            }
+            b'[' if !in_str => {
+                depth += 1;
+            }
+            b']' if !in_str => {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+            _ => {}
+        }
+        pos += 1;
+    }
+    let end = pos;
+    let inner = &s[start..end];
+    let mut result = vec![];
+    let mut p = 0;
+    let ibytes = inner.as_bytes();
+    while p < ibytes.len() {
+        match inner[p..].find('"') {
+            Some(q) => p += q + 1,
+            None => break,
+        }
+        let mut ep = p;
+        let mut esc2 = false;
+        while ep < ibytes.len() {
+            if esc2 {
+                esc2 = false;
+                ep += 1;
+                continue;
+            }
+            match ibytes[ep] {
+                b'\\' => {
+                    esc2 = true;
+                    ep += 1;
+                }
+                b'"' => break,
+                _ => {
+                    ep += 1;
+                }
+            }
+        }
+        let raw = &inner[p..ep];
+        let val = raw.replace("\\\"", "\"").replace("\\\\", "\\");
+        result.push(val);
+        p = ep + 1;
+    }
+    result
+}
 
 // ── Runtime State ────────────────────────────────────────────────────────────
 
-/// Per-equipment crucible tree state.
 #[derive(Clone, Debug)]
 pub struct CrucibleState {
-    /// Index into `CRUCIBLE_TEMPLATES`.
-    pub tree_idx: usize,
+    /// The nodes in this item's crucible tree.
+    pub nodes: Vec<CrucibleNodeDyn>,
+    /// Adjacency list: edges[i] lists indices of nodes connected to node i.
+    pub edges: Vec<Vec<usize>>,
+    /// Which nodes are allocated (unlocked).
+    pub allocated: Vec<bool>,
     /// Accumulated XP on this equipment piece.
     pub xp: u32,
-    /// Which of the 5 nodes are unlocked.
-    pub unlocked: [bool; 5],
-    /// Branch choice: `None` = not chosen yet, `Some(true)` = node 3,
-    /// `Some(false)` = node 4.
-    pub branch_chosen: Option<bool>,
-    /// Whether emergency repair has fired this fight.
-    #[allow(dead_code)]
+    /// Per-fight state.
     pub emergency_used: bool,
-    /// Kinetic absorber stored damage.
-    #[allow(dead_code)]
     pub kinetic_stored: i32,
 }
 
 impl CrucibleState {
-    pub fn new(tree_idx: usize) -> Self {
+    /// An empty/inactive state (no tree, no nodes).
+    pub fn empty() -> Self {
         Self {
-            tree_idx: tree_idx.min(CRUCIBLE_TEMPLATES.len() - 1),
+            nodes: vec![],
+            edges: vec![],
+            allocated: vec![],
             xp: 0,
-            unlocked: [false; 5],
-            branch_chosen: None,
             emergency_used: false,
             kinetic_stored: 0,
         }
     }
 
-    /// An empty/inactive state (no tree assigned).
-    pub fn empty() -> Self {
-        Self::new(0)
+    /// Procedurally generate a crucible tree for a given slot, rarity, and seed.
+    pub fn generate(slot: EquipSlot, rarity: ItemRarity, seed: u64) -> Self {
+        let (count_min, count_max) = match rarity {
+            ItemRarity::Normal => (3, 5),
+            ItemRarity::Magic => (6, 9),
+            ItemRarity::Rare => (10, 14),
+            ItemRarity::Unique => (15, 20),
+        };
+
+        let (r, mut s) = splitmix(seed);
+        let count = count_min + (r as usize % (count_max - count_min + 1));
+
+        let ps = pool_size(slot);
+        let (prefixes, suffixes) = name_pools(slot);
+
+        let mut nodes = Vec::with_capacity(count);
+        let mut edges: Vec<Vec<usize>> = Vec::with_capacity(count);
+        let mut allocated = Vec::with_capacity(count);
+        let mut rings: Vec<usize> = Vec::with_capacity(count);
+
+        // Node 0: root at (0,0), ring 0, pre-allocated
+        let (r_e, ns) = splitmix(s);
+        s = ns;
+        let eidx = (r_e as usize) % ps;
+        let (r2, ns) = splitmix(s);
+        s = ns;
+        let effect = generate_effect(slot, eidx, r2);
+        let (r3, ns) = splitmix(s);
+        s = ns;
+        let name = gen_name(prefixes, suffixes, r3);
+
+        nodes.push(CrucibleNodeDyn {
+            name,
+            description: effect_description(&effect),
+            effect,
+            xp_cost: 0,
+            pos: (0.0, 0.0),
+        });
+        edges.push(vec![]);
+        allocated.push(true);
+        rings.push(0);
+
+        let mut current_ring: usize = 0;
+        let tau = std::f64::consts::TAU;
+
+        while nodes.len() < count {
+            let ring_nodes: Vec<usize> = (0..nodes.len())
+                .filter(|&i| rings[i] == current_ring)
+                .collect();
+            if ring_nodes.is_empty() {
+                break;
+            }
+
+            let next_ring = current_ring + 1;
+            let cost = ring_cost(next_ring);
+            let radius = next_ring as f64;
+
+            if current_ring == 0 {
+                // Ring 1: distribute children evenly around center
+                let remaining = count - nodes.len();
+                let (rc, ns) = splitmix(s);
+                s = ns;
+                let num_children = (1 + (rc as usize % 3)).min(remaining);
+
+                let angle_step = tau / num_children as f64;
+                let (r_rot, ns) = splitmix(s);
+                s = ns;
+                let base_angle = (r_rot % 1000) as f64 / 1000.0 * tau;
+
+                for c in 0..num_children {
+                    let child_idx = nodes.len();
+                    let angle = base_angle + c as f64 * angle_step;
+                    let px = angle.cos() * radius;
+                    let py = angle.sin() * radius;
+
+                    let (re, ns) = splitmix(s);
+                    s = ns;
+                    let ei = (re as usize) % ps;
+                    let (rv, ns) = splitmix(s);
+                    s = ns;
+                    let eff = generate_effect(slot, ei, rv);
+                    let (rn, ns) = splitmix(s);
+                    s = ns;
+                    let nm = gen_name(prefixes, suffixes, rn);
+
+                    nodes.push(CrucibleNodeDyn {
+                        name: nm,
+                        description: effect_description(&eff),
+                        effect: eff,
+                        xp_cost: cost,
+                        pos: (px, py),
+                    });
+                    edges.push(vec![0]);
+                    edges[0].push(child_idx);
+                    allocated.push(false);
+                    rings.push(next_ring);
+                }
+            } else {
+                // Ring N+1: add children to each node in current ring
+                for &parent in &ring_nodes {
+                    if nodes.len() >= count {
+                        break;
+                    }
+                    let remaining = count - nodes.len();
+                    let (rc, ns) = splitmix(s);
+                    s = ns;
+                    let num_children = (1 + (rc as usize % 2)).min(remaining);
+
+                    let (ppx, ppy) = nodes[parent].pos;
+                    let parent_angle = ppy.atan2(ppx);
+                    let fan_spread = (std::f64::consts::PI
+                        / (1u32 << current_ring.min(30) as u32) as f64)
+                        .max(0.3);
+
+                    for c in 0..num_children {
+                        let child_idx = nodes.len();
+                        let offset = if num_children == 1 {
+                            0.0
+                        } else {
+                            (c as f64 / (num_children - 1) as f64 - 0.5) * fan_spread
+                        };
+                        let angle = parent_angle + offset;
+                        let px = angle.cos() * radius;
+                        let py = angle.sin() * radius;
+
+                        let (re, ns) = splitmix(s);
+                        s = ns;
+                        let ei = (re as usize) % ps;
+                        let (rv, ns) = splitmix(s);
+                        s = ns;
+                        let eff = generate_effect(slot, ei, rv);
+                        let (rn, ns) = splitmix(s);
+                        s = ns;
+                        let nm = gen_name(prefixes, suffixes, rn);
+
+                        nodes.push(CrucibleNodeDyn {
+                            name: nm,
+                            description: effect_description(&eff),
+                            effect: eff,
+                            xp_cost: cost,
+                            pos: (px, py),
+                        });
+                        edges.push(vec![parent]);
+                        edges[parent].push(child_idx);
+                        allocated.push(false);
+                        rings.push(next_ring);
+                    }
+                }
+            }
+            current_ring = next_ring;
+        }
+
+        CrucibleState {
+            nodes,
+            edges,
+            allocated,
+            xp: 0,
+            emergency_used: false,
+            kinetic_stored: 0,
+        }
     }
 
-    /// Create a crucible state for a specific equipment piece.
+    /// Create a crucible state for a specific equipment piece (defaults to Normal rarity).
     pub fn for_equipment(equipment: &crate::player::Equipment) -> Self {
-        let idx = tree_for_equipment(equipment.slot, equipment.name);
-        Self::new(idx)
+        let hash = equipment
+            .name
+            .bytes()
+            .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
+        Self::generate(equipment.slot, ItemRarity::Normal, hash)
     }
 
-    pub fn template(&self) -> &'static CrucibleTemplate {
-        &CRUCIBLE_TEMPLATES[self.tree_idx]
+    /// True if node `idx` can be allocated: exists, not yet allocated,
+    /// player has enough XP, and at least one neighbor is already allocated.
+    pub fn can_allocate(&self, idx: usize) -> bool {
+        if idx >= self.nodes.len() {
+            return false;
+        }
+        if self.allocated[idx] {
+            return false;
+        }
+        if self.xp < self.nodes[idx].xp_cost {
+            return false;
+        }
+        self.edges[idx].iter().any(|&j| self.allocated[j])
     }
 
-    /// Add XP and auto-unlock linear trunk nodes (0, 1, 2).
+    /// Spend XP and allocate the node. Returns true on success.
+    pub fn allocate(&mut self, idx: usize) -> bool {
+        if !self.can_allocate(idx) {
+            return false;
+        }
+        self.xp -= self.nodes[idx].xp_cost;
+        self.allocated[idx] = true;
+        true
+    }
+
+    /// Add XP to the pool (no auto-unlock).
     pub fn gain_xp(&mut self, amount: u32) {
         self.xp += amount;
-        let t = self.template();
-        for i in 0..3 {
-            if !self.unlocked[i] && self.xp >= t.nodes[i].xp_cost {
-                self.unlocked[i] = true;
-            }
-        }
-        // Branch nodes require explicit choice — don't auto-unlock.
     }
 
-    /// True if the branch is available but not yet chosen.
-    pub fn pending_branch(&self) -> bool {
-        self.unlocked[2]
-            && self.branch_chosen.is_none()
-            && self.xp >= self.template().nodes[3].xp_cost
-    }
-
-    /// Choose left (node 3) or right (node 4) branch. Irreversible.
-    pub fn choose_branch(&mut self, left: bool) {
-        if self.branch_chosen.is_some() {
-            return;
-        }
-        self.branch_chosen = Some(left);
-        if left {
-            self.unlocked[3] = true;
-        } else {
-            self.unlocked[4] = true;
-        }
-    }
-
-    /// Number of unlocked nodes.
-    #[allow(dead_code)]
-    pub fn unlocked_count(&self) -> usize {
-        self.unlocked.iter().filter(|&&u| u).count()
-    }
-
-    /// XP needed for the next locked trunk node, or the branch if trunk is done.
-    pub fn xp_to_next(&self) -> Option<u32> {
-        let t = self.template();
-        for i in 0..3 {
-            if !self.unlocked[i] {
-                return Some(t.nodes[i].xp_cost.saturating_sub(self.xp));
-            }
-        }
-        if self.branch_chosen.is_none() && self.xp < t.nodes[3].xp_cost {
-            return Some(t.nodes[3].xp_cost.saturating_sub(self.xp));
-        }
-        None // fully unlocked
-    }
-
-    /// Collect all active effects from unlocked nodes.
+    /// Collect all active effects from allocated nodes.
     pub fn active_effects(&self) -> Vec<CrucibleEffect> {
-        let t = self.template();
-        self.unlocked
+        self.allocated
             .iter()
             .enumerate()
-            .filter(|(_, &u)| u)
-            .map(|(i, _)| t.nodes[i].effect)
+            .filter(|(_, &a)| a)
+            .map(|(i, _)| self.nodes[i].effect)
             .collect()
+    }
+
+    /// Number of allocated nodes.
+    #[allow(dead_code)]
+    pub fn unlocked_count(&self) -> usize {
+        self.allocated.iter().filter(|&&a| a).count()
     }
 
     /// Reset per-fight state (emergency repair, kinetic absorber).
@@ -568,207 +760,432 @@ impl CrucibleState {
         self.kinetic_stored = 0;
     }
 
-    /// Serialize to a compact JSON string for localStorage.
-    pub fn to_json(&self) -> String {
-        let mut s = String::from("{\"t\":");
-        s.push_str(&self.tree_idx.to_string());
-        s.push_str(",\"x\":");
-        s.push_str(&self.xp.to_string());
-        s.push_str(",\"u\":[");
-        for (i, &u) in self.unlocked.iter().enumerate() {
-            if i > 0 { s.push(','); }
-            s.push(if u { '1' } else { '0' });
-        }
-        s.push_str("],\"b\":");
-        match self.branch_chosen {
-            None => s.push_str("null"),
-            Some(true) => s.push_str("true"),
-            Some(false) => s.push_str("false"),
-        }
-        s.push('}');
-        s
-    }
-
-    /// Deserialize from JSON string.
-    pub fn from_json(json: &str) -> Self {
-        let mut state = Self::empty();
-        if let Some(t_pos) = json.find("\"t\":") {
-            let rest = &json[t_pos + 4..];
-            let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
-            state.tree_idx = rest[..end].parse().unwrap_or(0);
-            if state.tree_idx >= CRUCIBLE_TEMPLATES.len() {
-                state.tree_idx = 0;
+    /// XP needed for the cheapest allocatable (adjacent) node, or `None` if
+    /// no node is currently allocatable.
+    pub fn xp_to_next(&self) -> Option<u32> {
+        let mut cheapest: Option<u32> = None;
+        for i in 0..self.nodes.len() {
+            if self.allocated[i] {
+                continue;
+            }
+            let adjacent = self.edges[i].iter().any(|&j| self.allocated[j]);
+            if !adjacent {
+                continue;
+            }
+            let needed = self.nodes[i].xp_cost.saturating_sub(self.xp);
+            match cheapest {
+                None => cheapest = Some(needed),
+                Some(prev) if needed < prev => cheapest = Some(needed),
+                _ => {}
             }
         }
-        if let Some(x_pos) = json.find("\"x\":") {
-            let rest = &json[x_pos + 4..];
-            let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
-            state.xp = rest[..end].parse().unwrap_or(0);
+        cheapest
+    }
+
+    /// Legacy method — always returns false in the dynamic tree system.
+    pub fn pending_branch(&self) -> bool {
+        false
+    }
+
+    /// Legacy method — no-op in the dynamic tree system.
+    pub fn choose_branch(&mut self, _left: bool) {}
+
+    /// Serialize to a JSON string for localStorage.
+    pub fn to_json(&self) -> String {
+        let nc = self.nodes.len();
+        let mut out = String::from("{\"nc\":");
+        out.push_str(&nc.to_string());
+
+        // Node names
+        out.push_str(",\"nm\":[");
+        for (i, node) in self.nodes.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push('"');
+            json_push_escaped(&mut out, &node.name);
+            out.push('"');
         }
-        if let Some(u_pos) = json.find("\"u\":[") {
-            let rest = &json[u_pos + 5..];
-            if let Some(end) = rest.find(']') {
-                let nums: Vec<&str> = rest[..end].split(',').collect();
-                for (i, n) in nums.iter().enumerate().take(5) {
-                    state.unlocked[i] = n.trim() == "1" || n.trim() == "true";
+        out.push(']');
+
+        // Descriptions
+        out.push_str(",\"ds\":[");
+        for (i, node) in self.nodes.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push('"');
+            json_push_escaped(&mut out, &node.description);
+            out.push('"');
+        }
+        out.push(']');
+
+        // Effect tags
+        out.push_str(",\"fx\":[");
+        for (i, node) in self.nodes.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push('"');
+            out.push_str(&node.effect.effect_to_tag());
+            out.push('"');
+        }
+        out.push(']');
+
+        // XP costs
+        out.push_str(",\"xc\":[");
+        for (i, node) in self.nodes.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push_str(&node.xp_cost.to_string());
+        }
+        out.push(']');
+
+        // Positions X
+        out.push_str(",\"px\":[");
+        for (i, node) in self.nodes.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push_str(&format!("{:.2}", node.pos.0));
+        }
+        out.push(']');
+
+        // Positions Y
+        out.push_str(",\"py\":[");
+        for (i, node) in self.nodes.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push_str(&format!("{:.2}", node.pos.1));
+        }
+        out.push(']');
+
+        // Edges as semicolon-separated adjacency lists
+        out.push_str(",\"eg\":\"");
+        for (i, neighbors) in self.edges.iter().enumerate() {
+            if i > 0 {
+                out.push(';');
+            }
+            for (j, &n) in neighbors.iter().enumerate() {
+                if j > 0 {
+                    out.push(',');
+                }
+                out.push_str(&n.to_string());
+            }
+        }
+        out.push('"');
+
+        // Allocated flags
+        out.push_str(",\"al\":[");
+        for (i, &a) in self.allocated.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push(if a { '1' } else { '0' });
+        }
+        out.push(']');
+
+        // XP balance
+        out.push_str(",\"xp\":");
+        out.push_str(&self.xp.to_string());
+
+        out.push('}');
+        out
+    }
+
+    /// Deserialize from JSON string. Returns `empty()` on any parse failure.
+    pub fn from_json(json: &str) -> Self {
+        let nc = match extract_u32(json, "nc") {
+            Some(n) => n as usize,
+            None => return Self::empty(),
+        };
+        if nc == 0 {
+            return Self::empty();
+        }
+
+        let names = extract_string_array(json, "nm");
+        let descs = extract_string_array(json, "ds");
+        let fxs = extract_string_array(json, "fx");
+        let xcs = extract_u32_array(json, "xc");
+        let pxs = extract_f64_array(json, "px");
+        let pys = extract_f64_array(json, "py");
+        let edges_str = extract_string(json, "eg");
+        let als = extract_u32_array(json, "al");
+        let xp = extract_u32(json, "xp").unwrap_or(0);
+
+        if names.len() != nc
+            || descs.len() != nc
+            || fxs.len() != nc
+            || xcs.len() != nc
+            || pxs.len() != nc
+            || pys.len() != nc
+            || als.len() != nc
+        {
+            return Self::empty();
+        }
+
+        let mut nodes = Vec::with_capacity(nc);
+        for i in 0..nc {
+            nodes.push(CrucibleNodeDyn {
+                name: names[i].clone(),
+                description: descs[i].clone(),
+                effect: CrucibleEffect::effect_from_tag(&fxs[i]),
+                xp_cost: xcs[i],
+                pos: (pxs[i], pys[i]),
+            });
+        }
+
+        let mut edge_lists = vec![vec![]; nc];
+        if !edges_str.is_empty() {
+            for (i, group) in edges_str.split(';').enumerate() {
+                if i >= nc {
+                    break;
+                }
+                if group.is_empty() {
+                    continue;
+                }
+                for tok in group.split(',') {
+                    if let Ok(j) = tok.trim().parse::<usize>() {
+                        if j < nc {
+                            edge_lists[i].push(j);
+                        }
+                    }
                 }
             }
         }
-        if let Some(b_pos) = json.find("\"b\":") {
-            let rest = &json[b_pos + 4..];
-            if rest.starts_with("true") {
-                state.branch_chosen = Some(true);
-            } else if rest.starts_with("false") {
-                state.branch_chosen = Some(false);
-            }
+
+        let allocated_vec: Vec<bool> = als.iter().map(|&v| v != 0).collect();
+
+        CrucibleState {
+            nodes,
+            edges: edge_lists,
+            allocated: allocated_vec,
+            xp,
+            emergency_used: false,
+            kinetic_stored: 0,
         }
-        state
     }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/// Deterministically assign a tree template index based on equipment slot and name.
+/// Deterministically hash equipment slot and name to a usize value.
+/// Kept for backwards compatibility; callers should prefer `CrucibleState::generate`.
 pub fn tree_for_equipment(slot: EquipSlot, name: &str) -> usize {
-    let offset = match slot {
+    let offset: u32 = match slot {
         EquipSlot::Weapon => 0,
         EquipSlot::Armor => 3,
         EquipSlot::Charm => 6,
     };
-    let hash = name.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
-    offset + (hash as usize % 3)
+    let hash = name
+        .bytes()
+        .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
+    (offset + (hash % 3)) as usize
 }
 
 // ── Aggregate helpers (used by combat systems) ───────────────────────────────
 
 /// Sum a numeric effect across multiple crucible states.
 pub fn aggregate_bonus_damage(states: &[&CrucibleState]) -> i32 {
-    states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
-        CrucibleEffect::BonusDamage(n) => Some(n),
-        _ => None,
-    }).sum()
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .filter_map(|e| match e {
+            CrucibleEffect::BonusDamage(n) => Some(n),
+            _ => None,
+        })
+        .sum()
 }
 
 pub fn aggregate_bonus_armor(states: &[&CrucibleState]) -> i32 {
-    states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
-        CrucibleEffect::BonusArmor(n) => Some(n),
-        _ => None,
-    }).sum()
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .filter_map(|e| match e {
+            CrucibleEffect::BonusArmor(n) => Some(n),
+            _ => None,
+        })
+        .sum()
 }
 
 pub fn aggregate_max_hp(states: &[&CrucibleState]) -> i32 {
-    states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
-        CrucibleEffect::MaxHp(n) => Some(n),
-        _ => None,
-    }).sum()
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .filter_map(|e| match e {
+            CrucibleEffect::MaxHp(n) => Some(n),
+            _ => None,
+        })
+        .sum()
 }
 
 pub fn aggregate_crit_chance(states: &[&CrucibleState]) -> i32 {
-    states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
-        CrucibleEffect::CritChance(n) => Some(n),
-        _ => None,
-    }).sum()
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .filter_map(|e| match e {
+            CrucibleEffect::CritChance(n) => Some(n),
+            _ => None,
+        })
+        .sum()
 }
 
 #[allow(dead_code)]
 pub fn aggregate_spell_power(states: &[&CrucibleState]) -> i32 {
-    states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
-        CrucibleEffect::SpellPower(n) => Some(n),
-        _ => None,
-    }).sum()
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .filter_map(|e| match e {
+            CrucibleEffect::SpellPower(n) => Some(n),
+            _ => None,
+        })
+        .sum()
 }
 
 pub fn aggregate_dodge_chance(states: &[&CrucibleState]) -> i32 {
-    states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
-        CrucibleEffect::DodgeChance(n) => Some(n),
-        _ => None,
-    }).sum()
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .filter_map(|e| match e {
+            CrucibleEffect::DodgeChance(n) => Some(n),
+            _ => None,
+        })
+        .sum()
 }
 
 pub fn aggregate_gold_find(states: &[&CrucibleState]) -> i32 {
-    states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
-        CrucibleEffect::GoldFind(n) => Some(n),
-        _ => None,
-    }).sum()
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .filter_map(|e| match e {
+            CrucibleEffect::GoldFind(n) => Some(n),
+            _ => None,
+        })
+        .sum()
 }
 
 pub fn aggregate_radical_find(states: &[&CrucibleState]) -> i32 {
-    states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
-        CrucibleEffect::RadicalFind(n) => Some(n),
-        _ => None,
-    }).sum()
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .filter_map(|e| match e {
+            CrucibleEffect::RadicalFind(n) => Some(n),
+            _ => None,
+        })
+        .sum()
 }
 
 #[allow(dead_code)]
 pub fn aggregate_focus_regen(states: &[&CrucibleState]) -> i32 {
-    states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
-        CrucibleEffect::FocusRegen(n) => Some(n),
-        _ => None,
-    }).sum()
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .filter_map(|e| match e {
+            CrucibleEffect::FocusRegen(n) => Some(n),
+            _ => None,
+        })
+        .sum()
 }
 
 pub fn aggregate_lifesteal(states: &[&CrucibleState]) -> i32 {
-    states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
-        CrucibleEffect::LifeSteal(n) => Some(n),
-        _ => None,
-    }).sum()
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .filter_map(|e| match e {
+            CrucibleEffect::LifeSteal(n) => Some(n),
+            _ => None,
+        })
+        .sum()
 }
 
 pub fn aggregate_heal_on_kill(states: &[&CrucibleState]) -> i32 {
-    states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
-        CrucibleEffect::HealOnKill(n) => Some(n),
-        _ => None,
-    }).sum()
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .filter_map(|e| match e {
+            CrucibleEffect::HealOnKill(n) => Some(n),
+            _ => None,
+        })
+        .sum()
 }
 
 pub fn aggregate_armor_pierce(states: &[&CrucibleState]) -> i32 {
-    states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
-        CrucibleEffect::ArmorPierce(n) => Some(n),
-        _ => None,
-    }).sum()
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .filter_map(|e| match e {
+            CrucibleEffect::ArmorPierce(n) => Some(n),
+            _ => None,
+        })
+        .sum()
 }
 
 pub fn aggregate_hard_answer_damage(states: &[&CrucibleState]) -> i32 {
-    states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
-        CrucibleEffect::HardAnswerDamage(n) => Some(n),
-        _ => None,
-    }).sum()
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .filter_map(|e| match e {
+            CrucibleEffect::HardAnswerDamage(n) => Some(n),
+            _ => None,
+        })
+        .sum()
 }
 
 pub fn aggregate_hard_answer_heal(states: &[&CrucibleState]) -> i32 {
-    states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
-        CrucibleEffect::HardAnswerHeal(n) => Some(n),
-        _ => None,
-    }).sum()
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .filter_map(|e| match e {
+            CrucibleEffect::HardAnswerHeal(n) => Some(n),
+            _ => None,
+        })
+        .sum()
 }
 
 pub fn aggregate_double_strike(states: &[&CrucibleState]) -> i32 {
-    states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
-        CrucibleEffect::DoubleStrike(n) => Some(n),
-        _ => None,
-    }).sum()
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .filter_map(|e| match e {
+            CrucibleEffect::DoubleStrike(n) => Some(n),
+            _ => None,
+        })
+        .sum()
 }
 
 #[allow(dead_code)]
 pub fn aggregate_movement_bonus(states: &[&CrucibleState]) -> i32 {
-    states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
-        CrucibleEffect::MovementBonus(n) => Some(n),
-        _ => None,
-    }).sum()
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .filter_map(|e| match e {
+            CrucibleEffect::MovementBonus(n) => Some(n),
+            _ => None,
+        })
+        .sum()
 }
 
 #[allow(dead_code)]
 pub fn aggregate_focus_on_kill(states: &[&CrucibleState]) -> i32 {
-    states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
-        CrucibleEffect::FocusOnKill(n) => Some(n),
-        _ => None,
-    }).sum()
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .filter_map(|e| match e {
+            CrucibleEffect::FocusOnKill(n) => Some(n),
+            _ => None,
+        })
+        .sum()
 }
 
 /// Check if any crucible has a specific flag-type effect.
 #[allow(dead_code)]
 pub fn has_effect(states: &[&CrucibleState], check: fn(&CrucibleEffect) -> bool) -> bool {
-    states.iter().flat_map(|s| s.active_effects()).any(|e| check(&e))
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .any(|e| check(&e))
 }
 
 pub fn has_combo_extender(states: &[&CrucibleState]) -> bool {
@@ -800,114 +1217,43 @@ pub fn has_kinetic_absorber(states: &[&CrucibleState]) -> bool {
 
 /// Get burn-on-hit params if any crucible has it.
 pub fn burn_on_hit(states: &[&CrucibleState]) -> Option<(i32, i32)> {
-    states.iter().flat_map(|s| s.active_effects()).find_map(|e| match e {
-        CrucibleEffect::BurnOnHit { damage, turns } => Some((damage, turns)),
-        _ => None,
-    })
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .find_map(|e| match e {
+            CrucibleEffect::BurnOnHit { damage, turns } => Some((damage, turns)),
+            _ => None,
+        })
 }
 
 /// Get poison-on-hit params if any crucible has it.
 #[allow(dead_code)]
 pub fn poison_on_hit(states: &[&CrucibleState]) -> Option<(i32, i32)> {
-    states.iter().flat_map(|s| s.active_effects()).find_map(|e| match e {
-        CrucibleEffect::PoisonOnHit { damage, turns } => Some((damage, turns)),
-        _ => None,
-    })
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .find_map(|e| match e {
+            CrucibleEffect::PoisonOnHit { damage, turns } => Some((damage, turns)),
+            _ => None,
+        })
 }
 
 /// Get emergency repair threshold if any crucible has it (returns heal amount).
 pub fn emergency_repair_amount(states: &[&CrucibleState]) -> i32 {
-    states.iter().flat_map(|s| s.active_effects()).filter_map(|e| match e {
-        CrucibleEffect::EmergencyRepair(n) => Some(n),
-        _ => None,
-    }).sum()
+    states
+        .iter()
+        .flat_map(|s| s.active_effects())
+        .filter_map(|e| match e {
+            CrucibleEffect::EmergencyRepair(n) => Some(n),
+            _ => None,
+        })
+        .sum()
 }
 
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn tree_assignment_deterministic() {
-        let t1 = tree_for_equipment(EquipSlot::Weapon, "Laser Pistol");
-        let t2 = tree_for_equipment(EquipSlot::Weapon, "Laser Pistol");
-        assert_eq!(t1, t2);
-        assert!(t1 < 3); // weapon trees are 0-2
-    }
-
-    #[test]
-    fn tree_assignment_slot_ranges() {
-        let w = tree_for_equipment(EquipSlot::Weapon, "Test");
-        assert!(w < 3);
-        let a = tree_for_equipment(EquipSlot::Armor, "Test");
-        assert!((3..6).contains(&a));
-        let c = tree_for_equipment(EquipSlot::Charm, "Test");
-        assert!((6..9).contains(&c));
-    }
-
-    #[test]
-    fn xp_auto_unlocks_trunk() {
-        let mut s = CrucibleState::new(0);
-        assert!(!s.unlocked[0]);
-        s.gain_xp(5);
-        assert!(s.unlocked[0]);
-        assert!(!s.unlocked[1]);
-        s.gain_xp(10);
-        assert!(s.unlocked[1]);
-        s.gain_xp(15);
-        assert!(s.unlocked[2]);
-        // Branch not auto-unlocked
-        assert!(!s.unlocked[3]);
-        assert!(!s.unlocked[4]);
-    }
-
-    #[test]
-    fn branch_choice_is_exclusive() {
-        let mut s = CrucibleState::new(0);
-        s.xp = 50;
-        for i in 0..3 { s.unlocked[i] = true; }
-        assert!(s.pending_branch());
-        s.choose_branch(true);
-        assert!(s.unlocked[3]);
-        assert!(!s.unlocked[4]);
-        assert!(!s.pending_branch());
-    }
-
-    #[test]
-    fn serialization_roundtrip() {
-        let mut s = CrucibleState::new(2);
-        s.xp = 42;
-        s.unlocked = [true, true, false, false, false];
-        s.branch_chosen = Some(false);
-        let json = s.to_json();
-        let s2 = CrucibleState::from_json(&json);
-        assert_eq!(s2.tree_idx, 2);
-        assert_eq!(s2.xp, 42);
-        assert_eq!(s2.unlocked, [true, true, false, false, false]);
-        assert_eq!(s2.branch_chosen, Some(false));
-    }
-
-    // ── Helper: build a state with specific tree and unlocked trunk + optional branch ──
-
-    fn state_with_trunk(tree_idx: usize) -> CrucibleState {
-        let mut s = CrucibleState::new(tree_idx);
-        s.xp = 50;
-        s.unlocked = [true, true, true, false, false];
-        s
-    }
-
-    fn state_with_left_branch(tree_idx: usize) -> CrucibleState {
-        let mut s = state_with_trunk(tree_idx);
-        s.choose_branch(true);
-        s
-    }
-
-    fn state_with_right_branch(tree_idx: usize) -> CrucibleState {
-        let mut s = state_with_trunk(tree_idx);
-        s.choose_branch(false);
-        s
-    }
 
     // ── short_label tests ──
 
@@ -924,8 +1270,14 @@ mod tests {
         assert_eq!(CrucibleEffect::RadicalFind(15).short_label(), "+Rad");
         assert_eq!(CrucibleEffect::DodgeChance(5).short_label(), "+Dodge");
         assert_eq!(CrucibleEffect::MovementBonus(1).short_label(), "+Move");
-        assert_eq!(CrucibleEffect::BurnOnHit { damage: 1, turns: 3 }.short_label(), "🔥Hit");
-        assert_eq!(CrucibleEffect::PoisonOnHit { damage: 2, turns: 4 }.short_label(), "☠Hit");
+        assert_eq!(
+            CrucibleEffect::BurnOnHit { damage: 1, turns: 3 }.short_label(),
+            "🔥Hit"
+        );
+        assert_eq!(
+            CrucibleEffect::PoisonOnHit { damage: 2, turns: 4 }.short_label(),
+            "☠Hit"
+        );
         assert_eq!(CrucibleEffect::ShieldOnKill.short_label(), "🛡Kill");
         assert_eq!(CrucibleEffect::HealOnKill(1).short_label(), "❤Kill");
         assert_eq!(CrucibleEffect::FocusOnKill(3).short_label(), "⚡Kill");
@@ -941,102 +1293,290 @@ mod tests {
         assert_eq!(CrucibleEffect::TemporalFlux.short_label(), "Tempo");
     }
 
-    // ── unlocked_count tests ──
+    // ── generate: node count ranges per rarity ──
 
     #[test]
-    fn unlocked_count_none() {
-        let s = CrucibleState::new(0);
-        assert_eq!(s.unlocked_count(), 0);
+    fn generate_normal_count() {
+        for seed in 0..50u64 {
+            let s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, seed);
+            assert!(
+                s.nodes.len() >= 3 && s.nodes.len() <= 5,
+                "Normal tree had {} nodes (seed={})",
+                s.nodes.len(),
+                seed
+            );
+        }
     }
 
     #[test]
-    fn unlocked_count_trunk_only() {
-        let s = state_with_trunk(0);
-        assert_eq!(s.unlocked_count(), 3);
+    fn generate_magic_count() {
+        for seed in 0..50u64 {
+            let s = CrucibleState::generate(EquipSlot::Armor, ItemRarity::Magic, seed);
+            assert!(
+                s.nodes.len() >= 6 && s.nodes.len() <= 9,
+                "Magic tree had {} nodes (seed={})",
+                s.nodes.len(),
+                seed
+            );
+        }
     }
 
     #[test]
-    fn unlocked_count_with_branch() {
-        let s = state_with_left_branch(0);
-        assert_eq!(s.unlocked_count(), 4);
-    }
-
-    // ── xp_to_next tests ──
-
-    #[test]
-    fn xp_to_next_fresh_state() {
-        let s = CrucibleState::new(0);
-        // Tree 0 node 0 costs 5 XP, we have 0
-        assert_eq!(s.xp_to_next(), Some(5));
+    fn generate_rare_count() {
+        for seed in 0..50u64 {
+            let s = CrucibleState::generate(EquipSlot::Charm, ItemRarity::Rare, seed);
+            assert!(
+                s.nodes.len() >= 10 && s.nodes.len() <= 14,
+                "Rare tree had {} nodes (seed={})",
+                s.nodes.len(),
+                seed
+            );
+        }
     }
 
     #[test]
-    fn xp_to_next_after_first_unlock() {
-        let mut s = CrucibleState::new(0);
+    fn generate_unique_count() {
+        for seed in 0..50u64 {
+            let s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Unique, seed);
+            assert!(
+                s.nodes.len() >= 15 && s.nodes.len() <= 20,
+                "Unique tree had {} nodes (seed={})",
+                s.nodes.len(),
+                seed
+            );
+        }
+    }
+
+    #[test]
+    fn generate_root_pre_allocated() {
+        let s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
+        assert!(s.allocated[0], "Node 0 should be pre-allocated");
+        assert_eq!(s.nodes[0].xp_cost, 0, "Root node should be free");
+        assert_eq!(s.nodes[0].pos, (0.0, 0.0), "Root node at origin");
+    }
+
+    #[test]
+    fn generate_deterministic() {
+        let a = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Rare, 12345);
+        let b = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Rare, 12345);
+        assert_eq!(a.nodes.len(), b.nodes.len());
+        for i in 0..a.nodes.len() {
+            assert_eq!(a.nodes[i].name, b.nodes[i].name);
+            assert_eq!(a.nodes[i].xp_cost, b.nodes[i].xp_cost);
+        }
+    }
+
+    #[test]
+    fn generate_tree_connected() {
+        let s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Unique, 99);
+        let n = s.nodes.len();
+        let mut visited = vec![false; n];
+        let mut stack = vec![0usize];
+        while let Some(node) = stack.pop() {
+            if visited[node] {
+                continue;
+            }
+            visited[node] = true;
+            for &neighbor in &s.edges[node] {
+                if !visited[neighbor] {
+                    stack.push(neighbor);
+                }
+            }
+        }
+        assert!(
+            visited.iter().all(|&v| v),
+            "All nodes must be reachable from root"
+        );
+    }
+
+    // ── can_allocate / allocate ──
+
+    #[test]
+    fn can_allocate_root_already_allocated() {
+        let s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
+        assert!(!s.can_allocate(0), "Root is already allocated");
+    }
+
+    #[test]
+    fn can_allocate_neighbor_of_root() {
+        let mut s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
+        s.xp = 1000;
+        let neighbor = s.edges[0][0];
+        assert!(s.can_allocate(neighbor));
+    }
+
+    #[test]
+    fn can_allocate_requires_xp() {
+        let s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
+        let neighbor = s.edges[0][0];
+        assert!(!s.can_allocate(neighbor));
+    }
+
+    #[test]
+    fn can_allocate_requires_adjacency() {
+        let mut s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Rare, 42);
+        s.xp = 10000;
+        let non_adj = (1..s.nodes.len()).find(|&i| {
+            !s.edges[i].iter().any(|&j| s.allocated[j])
+        });
+        if let Some(idx) = non_adj {
+            assert!(
+                !s.can_allocate(idx),
+                "Node {} should not be allocatable without adjacent allocated",
+                idx
+            );
+        }
+    }
+
+    #[test]
+    fn allocate_spends_xp() {
+        let mut s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
+        s.xp = 100;
+        let neighbor = s.edges[0][0];
+        let cost = s.nodes[neighbor].xp_cost;
+        assert!(s.allocate(neighbor));
+        assert_eq!(s.xp, 100 - cost);
+        assert!(s.allocated[neighbor]);
+    }
+
+    #[test]
+    fn allocate_fails_when_cannot() {
+        let mut s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
+        assert!(!s.allocate(0)); // already allocated
+    }
+
+    #[test]
+    fn allocate_out_of_bounds() {
+        let mut s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
+        assert!(!s.can_allocate(9999));
+        assert!(!s.allocate(9999));
+    }
+
+    // ── gain_xp ──
+
+    #[test]
+    fn gain_xp_accumulates() {
+        let mut s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
+        assert_eq!(s.xp, 0);
+        s.gain_xp(10);
+        assert_eq!(s.xp, 10);
         s.gain_xp(5);
-        // Node 1 costs 15 XP, we have 5
-        assert_eq!(s.xp_to_next(), Some(10));
+        assert_eq!(s.xp, 15);
     }
 
     #[test]
-    fn xp_to_next_trunk_done_branch_not_ready() {
-        let mut s = CrucibleState::new(0);
-        s.xp = 35;
-        s.unlocked = [true, true, true, false, false];
-        // Branch costs 50, we have 35
-        assert_eq!(s.xp_to_next(), Some(15));
+    fn gain_xp_no_auto_unlock() {
+        let mut s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
+        s.gain_xp(10000);
+        assert_eq!(s.unlocked_count(), 1);
+    }
+
+    // ── active_effects ──
+
+    #[test]
+    fn active_effects_only_root() {
+        let s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
+        assert_eq!(s.active_effects().len(), 1);
     }
 
     #[test]
-    fn xp_to_next_fully_unlocked() {
-        let s = state_with_left_branch(0);
-        assert_eq!(s.xp_to_next(), None);
+    fn active_effects_after_allocate() {
+        let mut s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
+        s.xp = 1000;
+        let neighbor = s.edges[0][0];
+        s.allocate(neighbor);
+        assert_eq!(s.active_effects().len(), 2);
     }
 
     #[test]
-    fn xp_to_next_branch_chosen_returns_none() {
-        let mut s = state_with_trunk(0);
-        s.branch_chosen = Some(true);
-        s.unlocked[3] = true;
-        assert_eq!(s.xp_to_next(), None);
-    }
-
-    // ── active_effects tests ──
-
-    #[test]
-    fn active_effects_empty_when_nothing_unlocked() {
-        let s = CrucibleState::new(0);
+    fn active_effects_empty_state() {
+        let s = CrucibleState::empty();
         assert!(s.active_effects().is_empty());
     }
 
+    // ── to_json / from_json roundtrip ──
+
     #[test]
-    fn active_effects_trunk_only() {
-        let s = state_with_trunk(0);
-        let effects = s.active_effects();
-        assert_eq!(effects.len(), 3);
+    fn json_roundtrip() {
+        let mut s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Rare, 42);
+        s.xp = 1000;
+        let neighbor = s.edges[0][0];
+        s.allocate(neighbor);
+
+        let json = s.to_json();
+        let s2 = CrucibleState::from_json(&json);
+
+        assert_eq!(s2.nodes.len(), s.nodes.len());
+        assert_eq!(s2.xp, s.xp);
+        assert_eq!(s2.allocated, s.allocated);
+        for i in 0..s.nodes.len() {
+            assert_eq!(s2.nodes[i].name, s.nodes[i].name);
+            assert_eq!(s2.nodes[i].description, s.nodes[i].description);
+            assert_eq!(s2.nodes[i].xp_cost, s.nodes[i].xp_cost);
+            assert_eq!(
+                s2.nodes[i].effect.short_label(),
+                s.nodes[i].effect.short_label()
+            );
+            assert_eq!(s2.edges[i].len(), s.edges[i].len());
+        }
     }
 
     #[test]
-    fn active_effects_with_branch() {
-        let s = state_with_left_branch(0);
-        let effects = s.active_effects();
-        assert_eq!(effects.len(), 4);
+    fn json_roundtrip_empty() {
+        let s = CrucibleState::empty();
+        let json = s.to_json();
+        let s2 = CrucibleState::from_json(&json);
+        assert_eq!(s2.nodes.len(), 0);
+        assert_eq!(s2.xp, 0);
     }
 
     #[test]
-    fn active_effects_single_node() {
-        let mut s = CrucibleState::new(0);
-        s.unlocked[0] = true;
-        let effects = s.active_effects();
-        assert_eq!(effects.len(), 1);
-        assert_eq!(effects[0].short_label(), "+Dmg");
+    fn from_json_invalid_returns_empty() {
+        let s = CrucibleState::from_json("not valid json at all");
+        assert_eq!(s.nodes.len(), 0);
+        assert_eq!(s.xp, 0);
     }
 
-    // ── reset_fight tests ──
+    #[test]
+    fn from_json_empty_string() {
+        let s = CrucibleState::from_json("");
+        assert_eq!(s.nodes.len(), 0);
+    }
 
     #[test]
-    fn reset_fight_clears_emergency_and_kinetic() {
-        let mut s = CrucibleState::new(0);
+    fn from_json_old_format_returns_empty() {
+        let s = CrucibleState::from_json(r#"{"t":0,"x":42,"u":[1,1,0,0,0],"b":null}"#);
+        assert_eq!(s.nodes.len(), 0);
+    }
+
+    // ── unlocked_count ──
+
+    #[test]
+    fn unlocked_count_initial() {
+        let s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
+        assert_eq!(s.unlocked_count(), 1);
+    }
+
+    #[test]
+    fn unlocked_count_after_allocate() {
+        let mut s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
+        s.xp = 1000;
+        let neighbor = s.edges[0][0];
+        s.allocate(neighbor);
+        assert_eq!(s.unlocked_count(), 2);
+    }
+
+    #[test]
+    fn unlocked_count_empty() {
+        let s = CrucibleState::empty();
+        assert_eq!(s.unlocked_count(), 0);
+    }
+
+    // ── reset_fight ──
+
+    #[test]
+    fn reset_fight_clears_state() {
+        let mut s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
         s.emergency_used = true;
         s.kinetic_stored = 42;
         s.reset_fight();
@@ -1045,534 +1585,170 @@ mod tests {
     }
 
     #[test]
-    fn reset_fight_preserves_other_state() {
-        let mut s = state_with_left_branch(0);
+    fn reset_fight_preserves_tree() {
+        let mut s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
+        s.xp = 1000;
+        let neighbor = s.edges[0][0];
+        s.allocate(neighbor);
+        let saved_xp = s.xp;
         s.emergency_used = true;
         s.kinetic_stored = 10;
         s.reset_fight();
-        assert_eq!(s.unlocked_count(), 4);
-        assert_eq!(s.xp, 50);
-        assert_eq!(s.branch_chosen, Some(true));
+        assert_eq!(s.unlocked_count(), 2);
+        assert_eq!(s.xp, saved_xp);
     }
 
-    // ── choose_branch edge cases ──
+    // ── xp_to_next ──
 
     #[test]
-    fn choose_branch_right_unlocks_node_4() {
-        let s = state_with_right_branch(0);
-        assert!(!s.unlocked[3]);
-        assert!(s.unlocked[4]);
-        assert_eq!(s.branch_chosen, Some(false));
+    fn xp_to_next_shows_needed() {
+        let s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
+        assert_eq!(s.xp_to_next(), Some(10));
     }
 
     #[test]
-    fn choose_branch_second_call_ignored() {
-        let mut s = state_with_left_branch(0);
-        assert!(s.unlocked[3]);
-        assert!(!s.unlocked[4]);
-        // Try choosing right — should be ignored
-        s.choose_branch(false);
-        assert!(s.unlocked[3]);
-        assert!(!s.unlocked[4]);
-        assert_eq!(s.branch_chosen, Some(true));
-    }
-
-    // ── from_json edge cases ──
-
-    #[test]
-    fn from_json_invalid_json_returns_empty() {
-        let s = CrucibleState::from_json("not valid json at all");
-        assert_eq!(s.tree_idx, 0);
-        assert_eq!(s.xp, 0);
-        assert_eq!(s.unlocked, [false; 5]);
-        assert_eq!(s.branch_chosen, None);
+    fn xp_to_next_with_enough_xp() {
+        let mut s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
+        s.xp = 100;
+        assert_eq!(s.xp_to_next(), Some(0));
     }
 
     #[test]
-    fn from_json_empty_string() {
-        let s = CrucibleState::from_json("");
-        assert_eq!(s.tree_idx, 0);
-        assert_eq!(s.xp, 0);
+    fn xp_to_next_empty() {
+        let s = CrucibleState::empty();
+        assert_eq!(s.xp_to_next(), None);
+    }
+
+    // ── legacy methods ──
+
+    #[test]
+    fn pending_branch_always_false() {
+        let s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
+        assert!(!s.pending_branch());
+    }
+
+    // ── tree_for_equipment ──
+
+    #[test]
+    fn tree_for_equipment_deterministic() {
+        let t1 = tree_for_equipment(EquipSlot::Weapon, "Laser Pistol");
+        let t2 = tree_for_equipment(EquipSlot::Weapon, "Laser Pistol");
+        assert_eq!(t1, t2);
     }
 
     #[test]
-    fn from_json_out_of_range_tree_clamps() {
-        let json = r#"{"t":999,"x":10,"u":[1,0,0,0,0],"b":null}"#;
-        let s = CrucibleState::from_json(json);
-        assert_eq!(s.tree_idx, 0); // clamped to 0 for out-of-range
+    fn tree_for_equipment_slot_ranges() {
+        let w = tree_for_equipment(EquipSlot::Weapon, "Test");
+        assert!(w < 3);
+        let a = tree_for_equipment(EquipSlot::Armor, "Test");
+        assert!((3..6).contains(&a));
+        let c = tree_for_equipment(EquipSlot::Charm, "Test");
+        assert!((6..9).contains(&c));
     }
 
-    #[test]
-    fn from_json_partial_fields() {
-        let json = r#"{"t":1,"x":25}"#;
-        let s = CrucibleState::from_json(json);
-        assert_eq!(s.tree_idx, 1);
-        assert_eq!(s.xp, 25);
-        assert_eq!(s.unlocked, [false; 5]);
-        assert_eq!(s.branch_chosen, None);
-    }
+    // ── aggregate functions ──
 
     #[test]
-    fn from_json_branch_true_false_null() {
-        let json_true = r#"{"t":0,"x":0,"u":[0,0,0,0,0],"b":true}"#;
-        assert_eq!(CrucibleState::from_json(json_true).branch_chosen, Some(true));
-
-        let json_false = r#"{"t":0,"x":0,"u":[0,0,0,0,0],"b":false}"#;
-        assert_eq!(CrucibleState::from_json(json_false).branch_chosen, Some(false));
-
-        let json_null = r#"{"t":0,"x":0,"u":[0,0,0,0,0],"b":null}"#;
-        assert_eq!(CrucibleState::from_json(json_null).branch_chosen, None);
-    }
-
-    // ── aggregate function tests ──
-
-    #[test]
-    fn aggregate_bonus_damage_sums_across_states() {
-        // Tree 0 node 0: BonusDamage(1), Tree 4 node 1: BonusDamage(2)
-        let s0 = state_with_trunk(0);
-        let s4 = state_with_trunk(4);
-        assert_eq!(aggregate_bonus_damage(&[&s0, &s4]), 1 + 2);
-    }
-
-    #[test]
-    fn aggregate_bonus_damage_empty() {
-        assert_eq!(aggregate_bonus_damage(&[]), 0);
-    }
-
-    #[test]
-    fn aggregate_bonus_armor_sums() {
-        // Tree 3 node 0: BonusArmor(1), Tree 8 node 0: BonusArmor(1)
-        let s3 = state_with_trunk(3);
-        let s8 = state_with_trunk(8);
-        assert_eq!(aggregate_bonus_armor(&[&s3, &s8]), 2);
-    }
-
-    #[test]
-    fn aggregate_bonus_armor_empty() {
-        assert_eq!(aggregate_bonus_armor(&[]), 0);
-    }
-
-    #[test]
-    fn aggregate_max_hp_sums() {
-        // Tree 2 node 2: MaxHp(3), Tree 3 node 1: MaxHp(3), Tree 8 node 1: MaxHp(3)
-        let s2 = state_with_trunk(2);
-        let s3 = state_with_trunk(3);
-        let s8 = state_with_trunk(8);
-        assert_eq!(aggregate_max_hp(&[&s2, &s3, &s8]), 9);
-    }
-
-    #[test]
-    fn aggregate_max_hp_empty() {
-        assert_eq!(aggregate_max_hp(&[]), 0);
-    }
-
-    #[test]
-    fn aggregate_crit_chance_sums() {
-        // Tree 0 node 1: CritChance(10), Tree 6 node 2: CritChance(10)
-        let s0 = state_with_trunk(0);
-        let s6 = state_with_trunk(6);
-        assert_eq!(aggregate_crit_chance(&[&s0, &s6]), 20);
-    }
-
-    #[test]
-    fn aggregate_crit_chance_empty() {
-        assert_eq!(aggregate_crit_chance(&[]), 0);
-    }
-
-    #[test]
-    fn aggregate_spell_power_sums() {
-        // Tree 1 node 0: SpellPower(1), Tree 6 node 0: SpellPower(1)
-        let s1 = state_with_trunk(1);
-        let s6 = state_with_trunk(6);
-        assert_eq!(aggregate_spell_power(&[&s1, &s6]), 2);
-    }
-
-    #[test]
-    fn aggregate_dodge_chance_sums() {
-        // Tree 3 node 2: DodgeChance(5), Tree 4 node 2: DodgeChance(5), Tree 5 node 1: DodgeChance(5)
-        let s3 = state_with_trunk(3);
-        let s4 = state_with_trunk(4);
-        let s5 = state_with_trunk(5);
-        assert_eq!(aggregate_dodge_chance(&[&s3, &s4, &s5]), 15);
-    }
-
-    #[test]
-    fn aggregate_gold_find_sums() {
-        // Tree 7 node 0: GoldFind(15)
-        let s7 = state_with_trunk(7);
-        assert_eq!(aggregate_gold_find(&[&s7]), 15);
-    }
-
-    #[test]
-    fn aggregate_gold_find_no_match() {
-        let s0 = state_with_trunk(0);
-        assert_eq!(aggregate_gold_find(&[&s0]), 0);
-    }
-
-    #[test]
-    fn aggregate_radical_find_sums() {
-        // Tree 7 node 1: RadicalFind(15)
-        let s7 = state_with_trunk(7);
-        assert_eq!(aggregate_radical_find(&[&s7]), 15);
-    }
-
-    #[test]
-    fn aggregate_focus_regen_sums() {
-        // Tree 1 node 1: FocusRegen(1), Tree 5 node 2: FocusRegen(1), Tree 6 node 1: FocusRegen(1)
-        let s1 = state_with_trunk(1);
-        let s5 = state_with_trunk(5);
-        let s6 = state_with_trunk(6);
-        assert_eq!(aggregate_focus_regen(&[&s1, &s5, &s6]), 3);
-    }
-
-    #[test]
-    fn aggregate_lifesteal_sums() {
-        // Tree 2 node 1: LifeSteal(1)
-        let s2 = state_with_trunk(2);
-        assert_eq!(aggregate_lifesteal(&[&s2]), 1);
-    }
-
-    #[test]
-    fn aggregate_heal_on_kill_sums() {
-        // Tree 2 node 0: HealOnKill(1), Tree 7 node 2: HealOnKill(2)
-        let s2 = state_with_trunk(2);
-        let s7 = state_with_trunk(7);
-        assert_eq!(aggregate_heal_on_kill(&[&s2, &s7]), 3);
-    }
-
-    #[test]
-    fn aggregate_armor_pierce_from_branch() {
-        // Tree 0 node 4 (right branch): ArmorPierce(2)
-        let s0 = state_with_right_branch(0);
-        assert_eq!(aggregate_armor_pierce(&[&s0]), 2);
-    }
-
-    #[test]
-    fn aggregate_armor_pierce_trunk_only_zero() {
-        let s0 = state_with_trunk(0);
-        assert_eq!(aggregate_armor_pierce(&[&s0]), 0);
-    }
-
-    #[test]
-    fn aggregate_hard_answer_damage_sums() {
-        // Tree 1 node 2: HardAnswerDamage(2), Tree 5 node 4 (right branch): HardAnswerDamage(2)
-        let s1 = state_with_trunk(1);
-        let s5 = state_with_right_branch(5);
-        assert_eq!(aggregate_hard_answer_damage(&[&s1, &s5]), 4);
-    }
-
-    #[test]
-    fn aggregate_hard_answer_heal_sums() {
-        // Tree 4 node 4 (right branch): HardAnswerHeal(2), Tree 8 node 2: HardAnswerHeal(1)
-        let s4 = state_with_right_branch(4);
-        let s8 = state_with_trunk(8);
-        assert_eq!(aggregate_hard_answer_heal(&[&s4, &s8]), 3);
-    }
-
-    #[test]
-    fn aggregate_double_strike_sums() {
-        // Tree 1 node 3 (left branch): DoubleStrike(10), Tree 7 node 3 (left branch): DoubleStrike(10)
-        let s1 = state_with_left_branch(1);
-        let s7 = state_with_left_branch(7);
-        assert_eq!(aggregate_double_strike(&[&s1, &s7]), 20);
-    }
-
-    #[test]
-    fn aggregate_movement_bonus_sums() {
-        // Tree 5 node 0: MovementBonus(1)
-        let s5 = state_with_trunk(5);
-        assert_eq!(aggregate_movement_bonus(&[&s5]), 1);
-    }
-
-    #[test]
-    fn aggregate_focus_on_kill_sums() {
-        // Tree 7 node 4 (right branch): FocusOnKill(3)
-        let s7 = state_with_right_branch(7);
-        assert_eq!(aggregate_focus_on_kill(&[&s7]), 3);
-    }
-
-    #[test]
-    fn aggregate_focus_on_kill_no_branch_zero() {
-        let s7 = state_with_trunk(7);
-        assert_eq!(aggregate_focus_on_kill(&[&s7]), 0);
-    }
-
-    // ── has_* function tests ──
-
-    #[test]
-    fn has_combo_extender_true() {
-        // Tree 1 node 4 (right branch): ComboExtender
-        let s = state_with_right_branch(1);
-        assert!(has_combo_extender(&[&s]));
-    }
-
-    #[test]
-    fn has_combo_extender_false_trunk_only() {
-        let s = state_with_trunk(1);
-        assert!(!has_combo_extender(&[&s]));
-    }
-
-    #[test]
-    fn has_combo_extender_tree5_left_branch() {
-        // Tree 5 node 3 (left branch): ComboExtender
-        let s = state_with_left_branch(5);
-        assert!(has_combo_extender(&[&s]));
-    }
-
-    #[test]
-    fn has_overcharge_proc_true() {
-        // Tree 0 node 2: OverchargeProc
-        let s = state_with_trunk(0);
-        assert!(has_overcharge_proc(&[&s]));
-    }
-
-    #[test]
-    fn has_overcharge_proc_false() {
-        let s = state_with_trunk(1);
-        assert!(!has_overcharge_proc(&[&s]));
-    }
-
-    #[test]
-    fn has_overcharge_proc_tree6_right_branch() {
-        // Tree 6 node 4 (right branch): OverchargeProc
-        let s = state_with_right_branch(6);
-        assert!(has_overcharge_proc(&[&s]));
-    }
-
-    #[test]
-    fn has_shield_on_kill_true() {
-        // Tree 2 node 4 (right branch): ShieldOnKill
-        let s = state_with_right_branch(2);
-        assert!(has_shield_on_kill(&[&s]));
-    }
-
-    #[test]
-    fn has_shield_on_kill_false() {
-        let s = state_with_trunk(0);
-        assert!(!has_shield_on_kill(&[&s]));
-    }
-
-    #[test]
-    fn has_shield_on_kill_tree8_right_branch() {
-        // Tree 8 node 4 (right branch): ShieldOnKill
-        let s = state_with_right_branch(8);
-        assert!(has_shield_on_kill(&[&s]));
-    }
-
-    #[test]
-    fn has_neural_sync_true() {
-        // Tree 6 node 3 (left branch): NeuralSync
-        let s = state_with_left_branch(6);
-        assert!(has_neural_sync(&[&s]));
-    }
-
-    #[test]
-    fn has_neural_sync_false() {
-        let s = state_with_trunk(6);
-        assert!(!has_neural_sync(&[&s]));
-    }
-
-    #[test]
-    fn has_temporal_flux_true() {
-        // Tree 4 node 3 (left branch): TemporalFlux
-        let s = state_with_left_branch(4);
-        assert!(has_temporal_flux(&[&s]));
-    }
-
-    #[test]
-    fn has_temporal_flux_false() {
-        let s = state_with_trunk(4);
-        assert!(!has_temporal_flux(&[&s]));
-    }
-
-    #[test]
-    fn has_kinetic_absorber_true() {
-        // Tree 3 node 3 (left branch): KineticAbsorber
-        let s = state_with_left_branch(3);
-        assert!(has_kinetic_absorber(&[&s]));
-    }
-
-    #[test]
-    fn has_kinetic_absorber_false() {
-        let s = state_with_trunk(3);
-        assert!(!has_kinetic_absorber(&[&s]));
-    }
-
-    #[test]
-    fn has_functions_empty_states() {
+    fn aggregate_empty_returns_zero() {
         let empty: &[&CrucibleState] = &[];
+        assert_eq!(aggregate_bonus_damage(empty), 0);
+        assert_eq!(aggregate_bonus_armor(empty), 0);
+        assert_eq!(aggregate_max_hp(empty), 0);
+        assert_eq!(aggregate_crit_chance(empty), 0);
+        assert_eq!(aggregate_dodge_chance(empty), 0);
+        assert_eq!(aggregate_gold_find(empty), 0);
+        assert_eq!(aggregate_radical_find(empty), 0);
+        assert_eq!(aggregate_lifesteal(empty), 0);
+        assert_eq!(aggregate_heal_on_kill(empty), 0);
+        assert_eq!(aggregate_armor_pierce(empty), 0);
+        assert_eq!(aggregate_hard_answer_damage(empty), 0);
+        assert_eq!(aggregate_hard_answer_heal(empty), 0);
+        assert_eq!(aggregate_double_strike(empty), 0);
+        assert_eq!(emergency_repair_amount(empty), 0);
         assert!(!has_combo_extender(empty));
         assert!(!has_overcharge_proc(empty));
         assert!(!has_shield_on_kill(empty));
-        assert!(!has_neural_sync(empty));
-        assert!(!has_temporal_flux(empty));
-        assert!(!has_kinetic_absorber(empty));
-    }
-
-    // ── burn_on_hit tests ──
-
-    #[test]
-    fn burn_on_hit_from_tree0_left_branch() {
-        // Tree 0 node 3 (left branch): BurnOnHit { damage: 1, turns: 3 }
-        let s = state_with_left_branch(0);
-        assert_eq!(burn_on_hit(&[&s]), Some((1, 3)));
+        assert_eq!(burn_on_hit(empty), None);
+        assert_eq!(poison_on_hit(empty), None);
     }
 
     #[test]
-    fn burn_on_hit_from_tree4_trunk() {
-        // Tree 4 node 0: BurnOnHit { damage: 1, turns: 2 }
-        let s = state_with_trunk(4);
-        assert_eq!(burn_on_hit(&[&s]), Some((1, 2)));
+    fn aggregate_with_generated_state() {
+        let s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
+        let states: &[&CrucibleState] = &[&s];
+        let _ = aggregate_bonus_damage(states);
+        let _ = aggregate_bonus_armor(states);
+        let _ = aggregate_max_hp(states);
+        let _ = aggregate_crit_chance(states);
+        let _ = aggregate_dodge_chance(states);
+        let _ = aggregate_gold_find(states);
+        let _ = aggregate_radical_find(states);
+        let _ = aggregate_lifesteal(states);
+        let _ = aggregate_heal_on_kill(states);
+        let _ = aggregate_armor_pierce(states);
+        let _ = aggregate_hard_answer_damage(states);
+        let _ = aggregate_hard_answer_heal(states);
+        let _ = aggregate_double_strike(states);
+        let _ = emergency_repair_amount(states);
+        let _ = has_combo_extender(states);
+        let _ = has_overcharge_proc(states);
+        let _ = has_shield_on_kill(states);
+        let _ = burn_on_hit(states);
+        let _ = poison_on_hit(states);
     }
 
-    #[test]
-    fn burn_on_hit_none_when_no_effect() {
-        let s = state_with_trunk(1);
-        assert_eq!(burn_on_hit(&[&s]), None);
-    }
+    // ── effect tag roundtrip ──
 
     #[test]
-    fn burn_on_hit_empty() {
-        assert_eq!(burn_on_hit(&[]), None);
-    }
-
-    // ── poison_on_hit tests ──
-
-    #[test]
-    fn poison_on_hit_none_for_all_trees() {
-        // No tree has PoisonOnHit in its nodes
-        for i in 0..9 {
-            let s = state_with_left_branch(i);
-            assert_eq!(poison_on_hit(&[&s]), None, "tree {} left branch", i);
-            let s = state_with_right_branch(i);
-            assert_eq!(poison_on_hit(&[&s]), None, "tree {} right branch", i);
+    fn effect_tag_roundtrip() {
+        let effects = vec![
+            CrucibleEffect::BonusDamage(3),
+            CrucibleEffect::BonusArmor(2),
+            CrucibleEffect::MaxHp(5),
+            CrucibleEffect::CritChance(10),
+            CrucibleEffect::LifeSteal(1),
+            CrucibleEffect::SpellPower(2),
+            CrucibleEffect::FocusRegen(1),
+            CrucibleEffect::GoldFind(15),
+            CrucibleEffect::RadicalFind(15),
+            CrucibleEffect::DodgeChance(5),
+            CrucibleEffect::MovementBonus(1),
+            CrucibleEffect::BurnOnHit { damage: 2, turns: 3 },
+            CrucibleEffect::ShieldOnKill,
+            CrucibleEffect::HealOnKill(2),
+            CrucibleEffect::FocusOnKill(3),
+            CrucibleEffect::HardAnswerDamage(2),
+            CrucibleEffect::HardAnswerHeal(1),
+            CrucibleEffect::ComboExtender,
+            CrucibleEffect::DoubleStrike(10),
+            CrucibleEffect::ArmorPierce(2),
+            CrucibleEffect::OverchargeProc,
+            CrucibleEffect::EmergencyRepair(3),
+            CrucibleEffect::KineticAbsorber,
+            CrucibleEffect::NeuralSync,
+            CrucibleEffect::TemporalFlux,
+        ];
+        for e in &effects {
+            let tag = effect_tag(e);
+            let recovered = effect_from_tag(&tag);
+            assert_eq!(
+                recovered.short_label(),
+                e.short_label(),
+                "Tag '{}' didn't roundtrip for {:?}",
+                tag,
+                e
+            );
         }
     }
 
-    #[test]
-    fn poison_on_hit_empty() {
-        assert_eq!(poison_on_hit(&[]), None);
-    }
-
-    // ── emergency_repair_amount tests ──
+    // ── slot affects pool ──
 
     #[test]
-    fn emergency_repair_amount_from_tree2_left_branch() {
-        // Tree 2 node 3 (left branch): EmergencyRepair(3)
-        let s = state_with_left_branch(2);
-        assert_eq!(emergency_repair_amount(&[&s]), 3);
-    }
-
-    #[test]
-    fn emergency_repair_amount_from_tree3_right_branch() {
-        // Tree 3 node 4 (right branch): EmergencyRepair(4)
-        let s = state_with_right_branch(3);
-        assert_eq!(emergency_repair_amount(&[&s]), 4);
-    }
-
-    #[test]
-    fn emergency_repair_amount_from_tree8_left_branch() {
-        // Tree 8 node 3 (left branch): EmergencyRepair(3)
-        let s = state_with_left_branch(8);
-        assert_eq!(emergency_repair_amount(&[&s]), 3);
-    }
-
-    #[test]
-    fn emergency_repair_amount_stacks_across_states() {
-        let s2 = state_with_left_branch(2);
-        let s8 = state_with_left_branch(8);
-        assert_eq!(emergency_repair_amount(&[&s2, &s8]), 6);
-    }
-
-    #[test]
-    fn emergency_repair_amount_zero_when_no_effect() {
-        let s = state_with_trunk(0);
-        assert_eq!(emergency_repair_amount(&[&s]), 0);
-    }
-
-    #[test]
-    fn emergency_repair_amount_empty() {
-        assert_eq!(emergency_repair_amount(&[]), 0);
-    }
-
-    // ── CrucibleState::new edge cases ──
-
-    #[test]
-    fn new_clamps_tree_idx_to_max() {
-        let s = CrucibleState::new(100);
-        assert!(s.tree_idx < CRUCIBLE_TEMPLATES.len());
-    }
-
-    #[test]
-    fn empty_is_tree_zero() {
-        let s = CrucibleState::empty();
-        assert_eq!(s.tree_idx, 0);
-        assert_eq!(s.xp, 0);
-        assert_eq!(s.unlocked, [false; 5]);
-    }
-
-    // ── pending_branch tests ──
-
-    #[test]
-    fn pending_branch_false_trunk_not_done() {
-        let mut s = CrucibleState::new(0);
-        s.gain_xp(15);
-        assert!(!s.pending_branch());
-    }
-
-    #[test]
-    fn pending_branch_false_insufficient_xp() {
-        let mut s = CrucibleState::new(0);
-        s.xp = 40;
-        s.unlocked = [true, true, true, false, false];
-        assert!(!s.pending_branch());
-    }
-
-    #[test]
-    fn pending_branch_true_when_ready() {
-        let s = state_with_trunk(0);
-        assert!(s.pending_branch());
-    }
-
-    #[test]
-    fn pending_branch_false_after_choice() {
-        let s = state_with_left_branch(0);
-        assert!(!s.pending_branch());
-    }
-
-    // ── template tests ──
-
-    #[test]
-    fn template_returns_correct_tree() {
-        let s = CrucibleState::new(0);
-        assert_eq!(s.template().name, "Assault Configuration");
-
-        let s1 = CrucibleState::new(1);
-        assert_eq!(s1.template().name, "Precision Configuration");
-
-        let s7 = CrucibleState::new(7);
-        assert_eq!(s7.template().name, "Salvage Firmware");
-    }
-
-    // ── gain_xp does not auto-unlock branches ──
-
-    #[test]
-    fn gain_xp_large_amount_still_no_branch() {
-        let mut s = CrucibleState::new(0);
-        s.gain_xp(1000);
-        assert!(s.unlocked[0]);
-        assert!(s.unlocked[1]);
-        assert!(s.unlocked[2]);
-        assert!(!s.unlocked[3]);
-        assert!(!s.unlocked[4]);
-        assert!(s.pending_branch());
-    }
-
-    // ── Multiple states aggregation ──
-
-    #[test]
-    fn aggregate_with_unlocked_state_contributes_nothing() {
-        let s = CrucibleState::new(0); // nothing unlocked
-        assert_eq!(aggregate_bonus_damage(&[&s]), 0);
+    fn slot_affects_effect_pool() {
+        let s_weapon = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Rare, 42);
+        let s_armor = CrucibleState::generate(EquipSlot::Armor, ItemRarity::Rare, 42);
+        let w_labels: Vec<_> = s_weapon.nodes.iter().map(|n| n.name.clone()).collect();
+        let a_labels: Vec<_> = s_armor.nodes.iter().map(|n| n.name.clone()).collect();
+        assert_ne!(w_labels, a_labels);
     }
 }

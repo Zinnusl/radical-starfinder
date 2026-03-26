@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{window, HtmlCanvasElement, KeyboardEvent};
+use web_sys::{window, HtmlCanvasElement, KeyboardEvent, MouseEvent, WheelEvent};
 
 use crate::achievement::AchievementTracker;
 use crate::audio::Audio;
@@ -64,6 +64,72 @@ mod items;
 mod victory;
 mod game_render;
 
+
+// ── Mouse / tree-view camera state ───────────────────────────────────────────
+
+/// Tracks mouse position, button state, and scroll wheel for tree GUI.
+#[derive(Clone, Debug)]
+pub struct MouseState {
+    /// Canvas-space X coordinate
+    pub x: f64,
+    /// Canvas-space Y coordinate
+    pub y: f64,
+    /// Left button currently held
+    pub left_down: bool,
+    /// Left button was just clicked this frame
+    pub left_clicked: bool,
+    /// Scroll wheel delta (positive = zoom in)
+    pub wheel_delta: f64,
+    /// Drag start position (canvas-space)
+    pub drag_start: Option<(f64, f64)>,
+}
+
+impl Default for MouseState {
+    fn default() -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            left_down: false,
+            left_clicked: false,
+            wheel_delta: 0.0,
+            drag_start: None,
+        }
+    }
+}
+
+/// Camera state for panning/zooming a tree view.
+#[derive(Clone, Debug)]
+pub struct TreeCamera {
+    pub pan_x: f64,
+    pub pan_y: f64,
+    pub zoom: f64,
+}
+
+impl Default for TreeCamera {
+    fn default() -> Self {
+        Self {
+            pan_x: 0.0,
+            pan_y: 0.0,
+            zoom: 1.0,
+        }
+    }
+}
+
+impl TreeCamera {
+    /// Convert canvas-space coordinates to world-space coordinates.
+    pub fn screen_to_world(&self, screen_x: f64, screen_y: f64, canvas_w: f64, canvas_h: f64) -> (f64, f64) {
+        let wx = (screen_x - canvas_w / 2.0) / self.zoom - self.pan_x;
+        let wy = (screen_y - canvas_h / 2.0) / self.zoom - self.pan_y;
+        (wx, wy)
+    }
+
+    /// Convert world-space coordinates to canvas-space coordinates.
+    pub fn world_to_screen(&self, wx: f64, wy: f64, canvas_w: f64, canvas_h: f64) -> (f64, f64) {
+        let sx = (wx + self.pan_x) * self.zoom + canvas_w / 2.0;
+        let sy = (wy + self.pan_y) * self.zoom + canvas_h / 2.0;
+        (sx, sy)
+    }
+}
 
 pub struct GameState {
     pub level: DungeonLevel,
@@ -231,9 +297,128 @@ pub struct GameState {
     pub space_combat_evading: bool,
     /// Whether the shop is in sell mode (player sells items)
     pub shop_sell_mode: bool,
+    /// Mouse input state for tree GUI interaction
+    pub mouse: MouseState,
+    /// Camera for player skill tree view
+    pub skill_tree_camera: TreeCamera,
+    /// Camera for crucible tree view
+    pub crucible_camera: TreeCamera,
+    /// Node hovered in skill tree (-1 = none)
+    pub skill_tree_hover: Option<usize>,
+    /// Node hovered in crucible tree (-1 = none)
+    pub crucible_hover: Option<usize>,
 }
 
 impl GameState {
+    // ── Tree GUI interaction ─────────────────────────────────────
+
+    /// Handle a mouse click on the skill tree or crucible tree view.
+    fn handle_tree_click(&mut self) {
+        let node_radius = 14.0;
+        if self.show_skill_tree {
+            let tree = &crate::skill_tree::SKILL_TREE;
+            let cam = &self.skill_tree_camera;
+            let cw = self.renderer.canvas_w;
+            let ch = self.renderer.canvas_h;
+            let spacing = 50.0;
+            for (i, node) in tree.nodes.iter().enumerate() {
+                let wx = node.pos.0 as f64 * spacing;
+                let wy = node.pos.1 as f64 * spacing;
+                let (sx, sy) = cam.world_to_screen(wx, wy, cw, ch);
+                let dx = self.mouse.x - sx;
+                let dy = self.mouse.y - sy;
+                let r = if node.is_notable { node_radius * 1.4 } else { node_radius };
+                let r_scaled = r * cam.zoom;
+                if dx * dx + dy * dy <= r_scaled * r_scaled {
+                    if self.player.skill_tree.can_allocate(i) {
+                        self.player.skill_tree.allocate(i);
+                        if let Some(ref audio) = self.audio {
+                            audio.play_menu_click();
+                        }
+                    }
+                    return;
+                }
+            }
+        } else if self.show_crucible {
+            let cam = &self.crucible_camera;
+            let cw = self.renderer.canvas_w;
+            let ch = self.renderer.canvas_h;
+            let cruc = match self.crucible_cursor {
+                0 => &self.player.weapon_crucible,
+                1 => &self.player.armor_crucible,
+                _ => &self.player.charm_crucible,
+            };
+            let spacing = 60.0;
+            for (i, node) in cruc.nodes.iter().enumerate() {
+                let (sx, sy) = cam.world_to_screen(node.pos.0 * spacing, node.pos.1 * spacing, cw, ch);
+                let dx = self.mouse.x - sx;
+                let dy = self.mouse.y - sy;
+                let r = node_radius * cam.zoom;
+                if dx * dx + dy * dy <= r * r {
+                    let cruc_mut = match self.crucible_cursor {
+                        0 => &mut self.player.weapon_crucible,
+                        1 => &mut self.player.armor_crucible,
+                        _ => &mut self.player.charm_crucible,
+                    };
+                    if cruc_mut.can_allocate(i) {
+                        cruc_mut.allocate(i);
+                        if let Some(ref audio) = self.audio {
+                            audio.play_menu_click();
+                        }
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Update hover state based on current mouse position.
+    fn update_tree_hover(&mut self) {
+        let node_radius = 14.0;
+        if self.show_skill_tree {
+            let tree = &crate::skill_tree::SKILL_TREE;
+            let cam = &self.skill_tree_camera;
+            let cw = self.renderer.canvas_w;
+            let ch = self.renderer.canvas_h;
+            let spacing = 50.0;
+            self.skill_tree_hover = None;
+            for (i, node) in tree.nodes.iter().enumerate() {
+                let wx = node.pos.0 as f64 * spacing;
+                let wy = node.pos.1 as f64 * spacing;
+                let (sx, sy) = cam.world_to_screen(wx, wy, cw, ch);
+                let dx = self.mouse.x - sx;
+                let dy = self.mouse.y - sy;
+                let r = if node.is_notable { node_radius * 1.4 } else { node_radius };
+                let r_scaled = r * cam.zoom;
+                if dx * dx + dy * dy <= r_scaled * r_scaled {
+                    self.skill_tree_hover = Some(i);
+                    return;
+                }
+            }
+        } else if self.show_crucible {
+            let cam = &self.crucible_camera;
+            let cw = self.renderer.canvas_w;
+            let ch = self.renderer.canvas_h;
+            let cruc = match self.crucible_cursor {
+                0 => &self.player.weapon_crucible,
+                1 => &self.player.armor_crucible,
+                _ => &self.player.charm_crucible,
+            };
+            let spacing = 60.0;
+            self.crucible_hover = None;
+            for (i, node) in cruc.nodes.iter().enumerate() {
+                let (sx, sy) = cam.world_to_screen(node.pos.0 * spacing, node.pos.1 * spacing, cw, ch);
+                let dx = self.mouse.x - sx;
+                let dy = self.mouse.y - sy;
+                let r = node_radius * cam.zoom;
+                if dx * dx + dy * dy <= r * r {
+                    self.crucible_hover = Some(i);
+                    return;
+                }
+            }
+        }
+    }
+
     // ── Space combat helpers ──────────────────────────────────────
 
     pub(super) fn apply_subsystem_damage(enemy: &mut EnemyShip, target: SubsystemTarget, dmg: i32) {
@@ -860,6 +1045,11 @@ pub fn init_game() -> Result<(), JsValue> {
         space_combat_target_cursor: 0,
         space_combat_evading: false,
         shop_sell_mode: false,
+        mouse: MouseState::default(),
+        skill_tree_camera: TreeCamera::default(),
+        crucible_camera: TreeCamera::default(),
+        skill_tree_hover: None,
+        crucible_hover: None,
     }));
 
     // Initial setup
@@ -2261,23 +2451,8 @@ pub fn init_game() -> Result<(), JsValue> {
                 match key.as_str() {
                     "Escape" | "t" | "T" => {
                         s.show_skill_tree = false;
-                    }
-                    "ArrowUp" => {
-                        if s.skill_tree_cursor > 0 {
-                            s.skill_tree_cursor -= 1;
-                        }
-                    }
-                    "ArrowDown" => {
-                        let max = crate::skill_tree::SKILL_TREE.nodes.len().saturating_sub(1);
-                        if s.skill_tree_cursor < max {
-                            s.skill_tree_cursor += 1;
-                        }
-                    }
-                    "Enter" | " " => {
-                        let idx = s.skill_tree_cursor;
-                        if s.player.skill_tree.can_allocate(idx) {
-                            s.player.skill_tree.allocate(idx);
-                        }
+                        s.skill_tree_camera = crate::game::TreeCamera::default();
+                        s.skill_tree_hover = None;
                     }
                     _ => {}
                 }
@@ -2291,35 +2466,11 @@ pub fn init_game() -> Result<(), JsValue> {
                     "Escape" | "u" | "U" => {
                         s.show_crucible = false;
                     }
-                    "ArrowUp" => {
-                        if s.crucible_cursor > 0 {
-                            s.crucible_cursor -= 1;
-                        }
-                    }
-                    "ArrowDown" => {
-                        if s.crucible_cursor < 2 {
-                            s.crucible_cursor += 1;
-                        }
-                    }
-                    "ArrowLeft" => {
-                        let cruc = match s.crucible_cursor {
-                            0 => &mut s.player.weapon_crucible,
-                            1 => &mut s.player.armor_crucible,
-                            _ => &mut s.player.charm_crucible,
-                        };
-                        if cruc.pending_branch() {
-                            cruc.choose_branch(true);
-                        }
-                    }
-                    "ArrowRight" | "Enter" | " " => {
-                        let cruc = match s.crucible_cursor {
-                            0 => &mut s.player.weapon_crucible,
-                            1 => &mut s.player.armor_crucible,
-                            _ => &mut s.player.charm_crucible,
-                        };
-                        if cruc.pending_branch() {
-                            cruc.choose_branch(false);
-                        }
+                    // Tab cycles between weapon/armor/charm slot
+                    "Tab" => {
+                        s.crucible_cursor = (s.crucible_cursor + 1) % 3;
+                        s.crucible_camera = crate::game::TreeCamera::default();
+                        s.crucible_hover = None;
                     }
                     _ => {}
                 }
@@ -4987,6 +5138,103 @@ pub fn init_game() -> Result<(), JsValue> {
         });
         win.add_event_listener_with_callback("resize", closure.as_ref().unchecked_ref())?;
         closure.forget();
+    }
+
+    // Mouse event handlers for tree GUI interaction
+    {
+        let canvas_el: web_sys::EventTarget = state.borrow().renderer.canvas.clone().into();
+
+        // mousedown
+        {
+            let state = Rc::clone(&state);
+            let closure = Closure::<dyn FnMut(MouseEvent)>::new(move |event: MouseEvent| {
+                let Ok(mut s) = state.try_borrow_mut() else { return; };
+                if event.button() == 0 {
+                    s.mouse.left_down = true;
+                    s.mouse.left_clicked = true;
+                    s.mouse.drag_start = Some((event.offset_x() as f64, event.offset_y() as f64));
+                }
+                s.mouse.x = event.offset_x() as f64;
+                s.mouse.y = event.offset_y() as f64;
+                if s.show_skill_tree || s.show_crucible {
+                    s.handle_tree_click();
+                    s.render();
+                }
+            });
+            canvas_el.add_event_listener_with_callback("mousedown", closure.as_ref().unchecked_ref())?;
+            closure.forget();
+        }
+
+        // mouseup
+        {
+            let state = Rc::clone(&state);
+            let closure = Closure::<dyn FnMut(MouseEvent)>::new(move |event: MouseEvent| {
+                let Ok(mut s) = state.try_borrow_mut() else { return; };
+                if event.button() == 0 {
+                    s.mouse.left_down = false;
+                    s.mouse.drag_start = None;
+                }
+            });
+            canvas_el.add_event_listener_with_callback("mouseup", closure.as_ref().unchecked_ref())?;
+            closure.forget();
+        }
+
+        // mousemove
+        {
+            let state = Rc::clone(&state);
+            let closure = Closure::<dyn FnMut(MouseEvent)>::new(move |event: MouseEvent| {
+                let Ok(mut s) = state.try_borrow_mut() else { return; };
+                let mx = event.offset_x() as f64;
+                let my = event.offset_y() as f64;
+
+                // Pan if dragging
+                if s.mouse.left_down {
+                    if let Some((sx, sy)) = s.mouse.drag_start {
+                        let dx = mx - sx;
+                        let dy = my - sy;
+                        if s.show_skill_tree {
+                            s.skill_tree_camera.pan_x += dx / s.skill_tree_camera.zoom;
+                            s.skill_tree_camera.pan_y += dy / s.skill_tree_camera.zoom;
+                        } else if s.show_crucible {
+                            s.crucible_camera.pan_x += dx / s.crucible_camera.zoom;
+                            s.crucible_camera.pan_y += dy / s.crucible_camera.zoom;
+                        }
+                        s.mouse.drag_start = Some((mx, my));
+                    }
+                }
+
+                s.mouse.x = mx;
+                s.mouse.y = my;
+
+                if s.show_skill_tree || s.show_crucible {
+                    s.update_tree_hover();
+                    s.render();
+                }
+            });
+            canvas_el.add_event_listener_with_callback("mousemove", closure.as_ref().unchecked_ref())?;
+            closure.forget();
+        }
+
+        // wheel (zoom)
+        {
+            let state = Rc::clone(&state);
+            let closure = Closure::<dyn FnMut(WheelEvent)>::new(move |event: WheelEvent| {
+                let Ok(mut s) = state.try_borrow_mut() else { return; };
+                if s.show_skill_tree || s.show_crucible {
+                    event.prevent_default();
+                    let delta = -event.delta_y().signum() * 0.1;
+                    if s.show_skill_tree {
+                        s.skill_tree_camera.zoom = (s.skill_tree_camera.zoom + delta).clamp(0.3, 3.0);
+                    } else if s.show_crucible {
+                        s.crucible_camera.zoom = (s.crucible_camera.zoom + delta).clamp(0.3, 3.0);
+                    }
+                    s.update_tree_hover();
+                    s.render();
+                }
+            });
+            canvas_el.add_event_listener_with_callback("wheel", closure.as_ref().unchecked_ref())?;
+            closure.forget();
+        }
     }
 
     // Initial render

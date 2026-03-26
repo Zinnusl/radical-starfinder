@@ -1557,302 +1557,124 @@ impl super::Renderer {
         }
     }
 
-    pub fn draw_skill_tree(&self, player: &crate::player::Player, cursor: usize) {
-        let w = self.canvas_w;
-        let h = self.canvas_h;
+    pub fn draw_skill_tree(&self, player: &crate::player::Player, camera: &crate::game::TreeCamera, hover: Option<usize>) {
+        use crate::render::tree_view::*;
+        use crate::skill_tree::SKILL_TREE;
 
-        // Background overlay
-        self.ctx.set_fill_style_str("rgba(0, 0, 0, 0.92)");
-        self.ctx.fill_rect(0.0, 0.0, w, h);
+        let tree = &SKILL_TREE;
+        let st = &player.skill_tree;
 
-        // Title
-        self.ctx.set_fill_style_str("#ffcc33");
-        self.ctx.set_font("bold 18px monospace");
-        self.ctx.set_text_align("center");
-        self.ctx.fill_text("⚡ SKILL TREE ⚡", w / 2.0, 30.0).ok();
-
-        // Level + points info
-        self.ctx.set_fill_style_str("#aaccff");
-        self.ctx.set_font("13px monospace");
-        let level = player.skill_tree.level;
-        let points = player.skill_tree.skill_points;
-        self.ctx
-            .fill_text(
-                &format!("Level {} — {} skill points available", level, points),
-                w / 2.0,
-                52.0,
-            )
-            .ok();
-
-        // XP bar — use xp_for_next_level() for remaining XP
-        let level_span = (level + 1) * 100;
-        let xp_remaining = player.skill_tree.xp_for_next_level();
-        let xp_frac = if level_span > 0 {
-            (1.0 - xp_remaining as f64 / level_span as f64).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-        let bar_w = 200.0;
-        let bar_x = w / 2.0 - bar_w / 2.0;
-        self.ctx.set_fill_style_str("#222244");
-        self.ctx.fill_rect(bar_x, 58.0, bar_w, 6.0);
-        self.ctx.set_fill_style_str("#6688cc");
-        self.ctx.fill_rect(bar_x, 58.0, bar_w * xp_frac, 6.0);
-
-        // Node list
-        self.ctx.set_text_align("left");
-        let tree = &crate::skill_tree::SKILL_TREE;
-        let nodes = tree.nodes;
-        let start_y = 80.0;
-        let line_h = 18.0;
-
-        // Calculate visible window
-        let max_visible = ((h - start_y - 40.0) / line_h) as usize;
-        let scroll_offset = if cursor >= max_visible {
-            cursor - max_visible + 1
-        } else {
-            0
-        };
-
-        for (i, node) in nodes.iter().enumerate().skip(scroll_offset) {
-            let y = start_y + (i - scroll_offset) as f64 * line_h;
-            if y > h - 40.0 {
-                break;
-            }
-
-            let is_selected = i == cursor;
-            let is_allocated = player.skill_tree.allocated[i];
-            let can_alloc = player.skill_tree.can_allocate(i);
-
-            // Background highlight for selected
-            if is_selected {
-                self.ctx
-                    .set_fill_style_str("rgba(255, 204, 51, 0.15)");
-                self.ctx.fill_rect(20.0, y - 12.0, w - 40.0, line_h);
-            }
-
-            // Status indicator
-            let status = if is_allocated {
-                "●"
-            } else if can_alloc {
-                "○"
+        let mut nodes = Vec::with_capacity(tree.nodes.len());
+        for (i, node) in tree.nodes.iter().enumerate() {
+            let visual = if st.allocated[i] {
+                NodeVisual::Allocated
+            } else if st.can_allocate(i) {
+                NodeVisual::Available
             } else {
-                "·"
+                NodeVisual::Locked
             };
-
-            // Color based on state
-            let color = if is_allocated {
-                "#44ff44"
-            } else if can_alloc && is_selected {
-                "#ffffff"
-            } else if can_alloc {
-                "#aaaaaa"
-            } else {
-                "#555555"
-            };
-
-            // Cluster color indicator
-            let cluster_color = node.cluster.color();
-            self.ctx.set_fill_style_str(cluster_color);
-            self.ctx.set_font(if node.is_notable {
-                "bold 12px monospace"
-            } else {
-                "12px monospace"
+            nodes.push(TreeNodeView {
+                wx: node.pos.0 as f64,
+                wy: node.pos.1 as f64,
+                name: node.name.to_string(),
+                description: node.description.to_string(),
+                visual,
+                is_notable: node.is_notable,
+                color: node.cluster.color().to_string(),
             });
-            self.ctx.fill_text(status, 24.0, y).ok();
-
-            // Node name
-            self.ctx.set_fill_style_str(color);
-            let notable_tag = if node.is_notable { " ★" } else { "" };
-            self.ctx
-                .fill_text(&format!("{}{}", node.name, notable_tag), 40.0, y)
-                .ok();
-
-            // Effect description
-            self.ctx.set_fill_style_str(if is_allocated {
-                "#88cc88"
-            } else {
-                "#777777"
-            });
-            self.ctx.set_font("11px monospace");
-            self.ctx.fill_text(node.description, 220.0, y).ok();
         }
 
-        // Footer
-        self.ctx.set_fill_style_str("#666688");
-        self.ctx.set_font("11px monospace");
-        self.ctx.set_text_align("center");
-        self.ctx
-            .fill_text(
-                "↑↓ Navigate • Enter: Allocate • T/Esc: Close",
-                w / 2.0,
-                h - 12.0,
-            )
-            .ok();
+        // Build edge list from adjacency
+        let mut edges = Vec::new();
+        for (i, neighbors) in tree.edges.iter().enumerate() {
+            for &j in *neighbors {
+                if j > i {
+                    edges.push((i, j));
+                }
+            }
+        }
+
+        let subtitle = format!(
+            "Level {} — {} skill points available — {} XP to next level",
+            st.level,
+            st.skill_points,
+            st.xp_for_next_level(),
+        );
+
+        let data = TreeViewData {
+            nodes,
+            edges,
+            title: "⚡ SKILL TREE ⚡".to_string(),
+            subtitle,
+            hover,
+        };
+
+        draw_tree_view(&self.ctx, &data, camera, self.canvas_w, self.canvas_h, 50.0);
     }
 
-    pub fn draw_crucible(&self, player: &crate::player::Player, cursor: usize) {
-        let w = self.canvas_w;
-        let h = self.canvas_h;
+    pub fn draw_crucible(
+        &self,
+        player: &crate::player::Player,
+        slot_cursor: usize,
+        camera: &crate::game::TreeCamera,
+        hover: Option<usize>,
+    ) {
+        use crate::render::tree_view::*;
 
-        // Background overlay
-        self.ctx.set_fill_style_str("rgba(0, 0, 0, 0.92)");
-        self.ctx.fill_rect(0.0, 0.0, w, h);
+        let (label, equip_name, cruc, rarity) = match slot_cursor {
+            0 => ("Weapon", player.weapon.map(|e| e.name), &player.weapon_crucible, player.weapon_rarity),
+            1 => ("Armor", player.armor.map(|e| e.name), &player.armor_crucible, player.armor_rarity),
+            _ => ("Charm", player.charm.map(|e| e.name), &player.charm_crucible, player.charm_rarity),
+        };
 
-        // Title
-        self.ctx.set_fill_style_str("#ff9944");
-        self.ctx.set_font("bold 18px monospace");
-        self.ctx.set_text_align("center");
-        self.ctx
-            .fill_text("⚒ Equipment Crucible ⚒", w / 2.0, 30.0)
-            .ok();
-
-        // Slot data: (label, equipment name, crucible state)
-        let slots: [(&str, Option<&str>, &crate::crucible::CrucibleState); 3] = [
-            (
-                "Weapon",
-                player.weapon.map(|e| e.name),
-                &player.weapon_crucible,
-            ),
-            (
-                "Armor",
-                player.armor.map(|e| e.name),
-                &player.armor_crucible,
-            ),
-            (
-                "Charm",
-                player.charm.map(|e| e.name),
-                &player.charm_crucible,
-            ),
-        ];
-
-        self.ctx.set_text_align("left");
-        let mut y = 60.0;
-
-        for (slot_idx, (label, equip_name, cruc)) in slots.iter().enumerate() {
-            let is_selected = slot_idx == cursor;
-            let tmpl = cruc.template();
-
-            // Slot header highlight
-            if is_selected {
-                self.ctx
-                    .set_fill_style_str("rgba(255, 153, 68, 0.15)");
-                self.ctx.fill_rect(16.0, y - 14.0, w - 32.0, 20.0);
-            }
-
-            // Slot header
-            let header_color = if is_selected { "#ffcc33" } else { "#aaaaaa" };
-            self.ctx.set_fill_style_str(header_color);
-            self.ctx.set_font("bold 14px monospace");
-            let name_str = equip_name.unwrap_or("(empty)");
-            let header = format!(
-                "{}: {} — {} (XP: {})",
-                label,
-                name_str,
-                tmpl.name,
-                cruc.xp
-            );
-            self.ctx.fill_text(&header, 24.0, y).ok();
-            y += 20.0;
-
-            // Node list for this slot
-            for node_idx in 0..5 {
-                let node = &tmpl.nodes[node_idx];
-                let unlocked = cruc.unlocked[node_idx];
-
-                // Tree structure prefix
-                let prefix = match node_idx {
-                    0 | 1 => "├─",
-                    2 => if cruc.branch_chosen.is_some() || cruc.pending_branch() {
-                        "├─"
-                    } else {
-                        "└─"
-                    },
-                    3 => "├← L:",
-                    4 => "└→ R:",
-                    _ => "  ",
-                };
-
-                // Status indicator
-                let status = if unlocked { "●" } else { "·" };
-
-                // Color
-                let color = if unlocked {
-                    "#44ff44"
-                } else if node_idx < 3 {
-                    "#888888"
-                } else {
-                    // Branch nodes
-                    match cruc.branch_chosen {
-                        Some(true) if node_idx == 3 => "#44ff44",
-                        Some(false) if node_idx == 4 => "#44ff44",
-                        _ if cruc.pending_branch() && is_selected => "#ffcc33",
-                        _ => "#555555",
-                    }
-                };
-
-                self.ctx.set_fill_style_str(color);
-                self.ctx.set_font("12px monospace");
-                let line = format!(
-                    "  {} {} {} — {}",
-                    prefix, status, node.name, node.description
-                );
-                self.ctx.fill_text(&line, 32.0, y).ok();
-
-                // XP cost on the right
-                self.ctx.set_fill_style_str("#666688");
-                self.ctx.set_font("11px monospace");
-                self.ctx.set_text_align("right");
-                self.ctx
-                    .fill_text(&format!("{}xp", node.xp_cost), w - 28.0, y)
-                    .ok();
-                self.ctx.set_text_align("left");
-
-                y += 16.0;
-            }
-
-            // Branch choice prompt
-            if cruc.pending_branch() && is_selected {
-                self.ctx.set_fill_style_str("#ffcc33");
-                self.ctx.set_font("bold 12px monospace");
-                self.ctx
-                    .fill_text("  ⚡ Branch ready! ← Left  |  → Right", 32.0, y)
-                    .ok();
-                y += 16.0;
-            } else if let Some(left) = cruc.branch_chosen {
-                let chosen = if left { "Left (node 3)" } else { "Right (node 4)" };
-                self.ctx.set_fill_style_str("#668866");
-                self.ctx.set_font("11px monospace");
-                self.ctx
-                    .fill_text(&format!("  Branch chosen: {}", chosen), 32.0, y)
-                    .ok();
-                y += 16.0;
-            }
-
-            // XP to next
-            if let Some(needed) = cruc.xp_to_next() {
-                self.ctx.set_fill_style_str("#666688");
-                self.ctx.set_font("11px monospace");
-                self.ctx
-                    .fill_text(&format!("  Next unlock in {} XP", needed), 32.0, y)
-                    .ok();
-                y += 16.0;
-            }
-
-            y += 10.0;
+        let mut nodes = Vec::with_capacity(cruc.nodes.len());
+        for (i, node) in cruc.nodes.iter().enumerate() {
+            let visual = if cruc.allocated[i] {
+                NodeVisual::Allocated
+            } else if cruc.can_allocate(i) {
+                NodeVisual::Available
+            } else {
+                NodeVisual::Locked
+            };
+            nodes.push(TreeNodeView {
+                wx: node.pos.0,
+                wy: node.pos.1,
+                name: node.name.clone(),
+                description: node.description.clone(),
+                visual,
+                is_notable: false,
+                color: rarity.color().to_string(),
+            });
         }
 
-        // Footer
-        self.ctx.set_fill_style_str("#666688");
-        self.ctx.set_font("11px monospace");
-        self.ctx.set_text_align("center");
-        self.ctx
-            .fill_text(
-                "↑↓ Select slot • ←→ Choose branch • U/Esc: Close",
-                w / 2.0,
-                h - 12.0,
-            )
-            .ok();
+        // Build edge list
+        let mut edges = Vec::new();
+        for (i, neighbors) in cruc.edges.iter().enumerate() {
+            for &j in neighbors {
+                if j > i {
+                    edges.push((i, j));
+                }
+            }
+        }
+
+        let name_str = equip_name.unwrap_or("(empty)");
+        let title = format!("⚒ {} Crucible — {} ⚒", label, name_str);
+        let subtitle = format!(
+            "{} • {} nodes • XP: {} • Tab: switch slot",
+            rarity.label(),
+            cruc.nodes.len(),
+            cruc.xp,
+        );
+
+        let data = TreeViewData {
+            nodes,
+            edges,
+            title,
+            subtitle,
+            hover,
+        };
+
+        draw_tree_view(&self.ctx, &data, camera, self.canvas_w, self.canvas_h, 60.0);
     }
 
     pub fn draw_dungeon_dialogue(

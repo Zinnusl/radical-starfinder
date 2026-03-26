@@ -4,6 +4,7 @@ pub mod combat_hud;
 pub mod helpers;
 pub mod starmap;
 pub mod tiles;
+pub mod tree_view;
 pub mod ui;
 mod overlays;
 

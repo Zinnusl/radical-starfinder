@@ -595,21 +595,30 @@ fn equipped_effects_returns_all_equipped_effects() {
 #[test]
 fn bonus_damage_from_weapon() {
     let mut p = new_soldier();
+    let before = p.bonus_damage(); // class start node may grant damage
     p.equip(equipment_by_name("Arc Emitter"), ItemState::Normal); // BonusDamage(3)
-    assert_eq!(p.bonus_damage(), 3);
+    // After equip: weapon gives +3, crucible root may add more
+    let crucible_dmg = crate::crucible::aggregate_bonus_damage(
+        &[&p.weapon_crucible, &p.armor_crucible, &p.charm_crucible],
+    );
+    assert_eq!(p.bonus_damage(), before + 3 + crucible_dmg);
 }
 
 #[test]
 fn bonus_damage_zero_without_weapon() {
     let p = new_soldier();
-    assert_eq!(p.bonus_damage(), 0);
+    // Soldier starts at Combat cluster node 1 (Sharpened Edge: +1 damage)
+    assert_eq!(p.bonus_damage(), 1);
 }
 
 #[test]
 fn damage_reduction_from_armor() {
     let mut p = new_soldier();
     p.equip(equipment_by_name("Power Armor"), ItemState::Normal); // DamageReduction(3)
-    assert_eq!(p.damage_reduction(), 3);
+    let crucible_dr = crate::crucible::aggregate_bonus_armor(
+        &[&p.weapon_crucible, &p.armor_crucible, &p.charm_crucible],
+    );
+    assert_eq!(p.damage_reduction(), 3 + crucible_dr);
 }
 
 #[test]
@@ -622,28 +631,40 @@ fn damage_reduction_zero_without_armor() {
 fn extra_radical_chance_from_charm() {
     let mut p = new_soldier();
     p.equip(equipment_by_name("Scanner Array"), ItemState::Normal); // ExtraRadicalDrop(50)
-    assert_eq!(p.extra_radical_chance(), 50);
+    let crucible_rad = crate::crucible::aggregate_radical_find(
+        &[&p.weapon_crucible, &p.armor_crucible, &p.charm_crucible],
+    );
+    assert_eq!(p.extra_radical_chance(), 50 + crucible_rad);
 }
 
 #[test]
 fn heal_on_kill_from_charm() {
     let mut p = new_soldier();
     p.equip(equipment_by_name("Auto-Repair Module"), ItemState::Normal); // HealOnKill(2)
-    assert_eq!(p.heal_on_kill(), 2);
+    let crucible_hok = crate::crucible::aggregate_heal_on_kill(
+        &[&p.weapon_crucible, &p.armor_crucible, &p.charm_crucible],
+    );
+    assert_eq!(p.heal_on_kill(), 2 + crucible_hok);
 }
 
 #[test]
 fn gold_bonus_from_charm() {
     let mut p = new_soldier();
     p.equip(equipment_by_name("Salvage Processor"), ItemState::Normal); // GoldBonus(10)
-    assert_eq!(p.gold_bonus(), 10);
+    let crucible_gold = crate::crucible::aggregate_gold_find(
+        &[&p.weapon_crucible, &p.armor_crucible, &p.charm_crucible],
+    );
+    assert_eq!(p.gold_bonus(), 10 + crucible_gold);
 }
 
 #[test]
 fn total_crit_chance_from_weapon() {
     let mut p = new_soldier();
     p.equip(equipment_by_name("Void Lance"), ItemState::Normal); // CriticalStrike(20)
-    assert_eq!(p.total_crit_chance(), 20);
+    let crucible_crit = crate::crucible::aggregate_crit_chance(
+        &[&p.weapon_crucible, &p.armor_crucible, &p.charm_crucible],
+    );
+    assert_eq!(p.total_crit_chance(), 20 + crucible_crit);
 }
 
 #[test]

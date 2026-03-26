@@ -158,9 +158,9 @@ impl GameState {
                 self.crafting_cursor,
             );
         } else if self.show_skill_tree {
-            self.renderer.draw_skill_tree(&self.player, self.skill_tree_cursor);
+            self.renderer.draw_skill_tree(&self.player, &self.skill_tree_camera, self.skill_tree_hover);
         } else if self.show_crucible {
-            self.renderer.draw_crucible(&self.player, self.crucible_cursor);
+            self.renderer.draw_crucible(&self.player, self.crucible_cursor, &self.crucible_camera, self.crucible_hover);
         } else if self.show_spellbook {
             self.renderer.draw_spellbook(&self.player);
         } else if self.show_codex {

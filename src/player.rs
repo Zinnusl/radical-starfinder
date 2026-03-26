@@ -1280,7 +1280,7 @@ impl Player {
             weapon_crucible: CrucibleState::empty(),
             armor_crucible: CrucibleState::empty(),
             charm_crucible: CrucibleState::empty(),
-            skill_tree: SkillTreeState::new(),
+            skill_tree: SkillTreeState::new_with_class(class),
             weapon_rarity: ItemRarity::Normal,
             armor_rarity: ItemRarity::Normal,
             charm_rarity: ItemRarity::Normal,
@@ -1602,7 +1602,8 @@ impl Player {
 
     #[allow(dead_code)]
     pub fn equip(&mut self, equipment: &'static Equipment, state: ItemState) {
-        let crucible = CrucibleState::for_equipment(equipment);
+        let seed = equipment.name.len() as u64 * 31 + equipment.slot as u64;
+        let crucible = CrucibleState::generate(equipment.slot, ItemRarity::Normal, seed);
         match equipment.slot {
             EquipSlot::Weapon => {
                 self.weapon = Some(equipment);
@@ -1636,7 +1637,8 @@ impl Player {
         rarity: ItemRarity,
         affixes: Vec<RolledAffix>,
     ) {
-        let crucible = CrucibleState::for_equipment(equipment);
+        let seed = equipment.name.len() as u64 * 31 + equipment.slot as u64 + rarity as u64 * 97;
+        let crucible = CrucibleState::generate(equipment.slot, rarity, seed);
         match equipment.slot {
             EquipSlot::Weapon => {
                 self.weapon = Some(equipment);
