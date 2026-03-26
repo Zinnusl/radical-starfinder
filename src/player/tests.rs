@@ -1041,3 +1041,127 @@ fn item_short_name_is_non_empty() {
     assert!(!Item::OverchargeCell.short_name().is_empty());
 }
 
+
+// ── Item name / short_name / description — all 35 variants ──────────────────
+
+fn all_items() -> Vec<Item> {
+    vec![
+        Item::MedHypo(5),
+        Item::ToxinGrenade(3, 2),
+        Item::ScannerPulse,
+        Item::PersonalTeleporter,
+        Item::StimPack(3),
+        Item::EMPGrenade,
+        Item::RationPack(5),
+        Item::FocusStim(3),
+        Item::SynthAle(2),
+        Item::HoloDecoy(3),
+        Item::PlasmaBurst(4),
+        Item::NanoShield(3),
+        Item::NeuralBoost,
+        Item::CreditChip(50),
+        Item::ShockModule(8),
+        Item::BiogelPatch(2),
+        Item::VenomDart,
+        Item::DeflectorDrone(3),
+        Item::NaniteSwarm,
+        Item::Revitalizer(15),
+        Item::ReflectorPlate,
+        Item::CryoGrenade(3),
+        Item::CloakingDevice(4),
+        Item::PlasmaShield(2),
+        Item::SignalJammer(3),
+        Item::NavComputer,
+        Item::GrappleLine,
+        Item::OmniGel,
+        Item::SonicEmitter(5),
+        Item::CircuitInk,
+        Item::DataCore(10),
+        Item::ThrusterPack,
+        Item::AdrenalineInjector,
+        Item::GamblersChip,
+        Item::OverchargeCell,
+    ]
+}
+
+#[test]
+fn item_name_non_empty_all_35_variants() {
+    for item in all_items() {
+        assert!(!item.name().is_empty(), "name empty for {:?}", item);
+    }
+}
+
+#[test]
+fn item_short_name_non_empty_all_35_variants() {
+    for item in all_items() {
+        assert!(!item.short_name().is_empty(), "short_name empty for {:?}", item);
+    }
+}
+
+#[test]
+fn item_description_non_empty_all_35_variants() {
+    for item in all_items() {
+        assert!(!item.description().is_empty(), "description empty for {:?}", item);
+    }
+}
+
+#[test]
+fn item_sell_price_positive_all_35_variants() {
+    for item in all_items() {
+        assert!(item.sell_price() > 0, "sell_price zero for {:?}", item);
+    }
+}
+
+// ── PlayerForm::color — all 5 forms ─────────────────────────────────────────
+
+#[test]
+fn player_form_color_human_is_white() {
+    assert_eq!(PlayerForm::Human.color(), "#ffffff");
+}
+
+#[test]
+fn player_form_color_powered_is_orange_red() {
+    assert_eq!(PlayerForm::Powered.color(), "#ff5500");
+}
+
+#[test]
+fn player_form_color_cybernetic_is_grey() {
+    assert_eq!(PlayerForm::Cybernetic.color(), "#888888");
+}
+
+#[test]
+fn player_form_color_holographic_is_light_blue() {
+    assert_eq!(PlayerForm::Holographic.color(), "#aaddff");
+}
+
+#[test]
+fn player_form_color_void_is_amber() {
+    assert_eq!(PlayerForm::Void.color(), "#ffaa00");
+}
+
+// ── Faction::name — all 5 factions ──────────────────────────────────────────
+
+#[test]
+fn faction_name_consortium_is_stellar_consortium() {
+    assert_eq!(Faction::Consortium.name(), "Stellar Consortium (Commerce)");
+}
+
+#[test]
+fn faction_name_free_traders_is_free_traders_guild() {
+    assert_eq!(Faction::FreeTraders.name(), "Free Traders Guild (Exploration)");
+}
+
+#[test]
+fn faction_name_technocracy_is_technocracy() {
+    assert_eq!(Faction::Technocracy.name(), "Technocracy (Knowledge)");
+}
+
+#[test]
+fn faction_name_military_alliance_is_military_alliance() {
+    assert_eq!(Faction::MilitaryAlliance.name(), "Military Alliance (Defense)");
+}
+
+#[test]
+fn faction_name_ancient_order_is_ancient_order() {
+    assert_eq!(Faction::AncientOrder.name(), "Ancient Order (Secrets)");
+}

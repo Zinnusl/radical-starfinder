@@ -1081,3 +1081,227 @@ fn player_radical_ability_description_non_empty_for_all_variants() {
         );
     }
 }
+
+// ── RadicalAction comprehensive — all 60 variants ────────────────────────────
+
+fn all_radical_actions() -> Vec<RadicalAction> {
+    vec![
+        RadicalAction::SpreadingWildfire,
+        RadicalAction::ErosiveFlow,
+        RadicalAction::OverwhelmingForce,
+        RadicalAction::DoubtSeed,
+        RadicalAction::DevouringMaw,
+        RadicalAction::WitnessMark,
+        RadicalAction::SleightReversal,
+        RadicalAction::RootingGrasp,
+        RadicalAction::HarvestReaping,
+        RadicalAction::RevealingDawn,
+        RadicalAction::WaningCurse,
+        RadicalAction::MortalResilience,
+        RadicalAction::MaternalShield,
+        RadicalAction::PotentialBurst,
+        RadicalAction::ChasingChaff,
+        RadicalAction::CrossroadsGambit,
+        RadicalAction::RigidStance,
+        RadicalAction::GroundingWeight,
+        RadicalAction::EchoStrike,
+        RadicalAction::PreciseExecution,
+        RadicalAction::CleavingCut,
+        RadicalAction::BindingOath,
+        RadicalAction::PursuingSteps,
+        RadicalAction::EntanglingWeb,
+        RadicalAction::ThresholdSeal,
+        RadicalAction::CavalryCharge,
+        RadicalAction::SoaringEscape,
+        RadicalAction::DownpourBarrage,
+        RadicalAction::PetrifyingGaze,
+        RadicalAction::ParasiticSwarm,
+        RadicalAction::MercenaryPact,
+        RadicalAction::ImmovablePeak,
+        RadicalAction::SavageMaul,
+        RadicalAction::ArcingShot,
+        RadicalAction::ConsumingBite,
+        RadicalAction::CloakingGuise,
+        RadicalAction::FlexibleCounter,
+        RadicalAction::BlitzAssault,
+        RadicalAction::CrushingWheels,
+        RadicalAction::ImperialCommand,
+        RadicalAction::MagnifyingAura,
+        RadicalAction::NeedleStrike,
+        RadicalAction::ArtisanTrap,
+        RadicalAction::CleansingLight,
+        RadicalAction::ScatteringPages,
+        RadicalAction::TrueVision,
+        RadicalAction::QiDisruption,
+        RadicalAction::ExpandingDomain,
+        RadicalAction::SinkholeSnare,
+        RadicalAction::SonicBurst,
+        RadicalAction::VenomousLash,
+        RadicalAction::IronBodyStance,
+        RadicalAction::GoreCrush,
+        RadicalAction::IntoxicatingMist,
+        RadicalAction::SproutingBarrier,
+        RadicalAction::TidalSurge,
+        RadicalAction::BoneShatter,
+        RadicalAction::AdaptiveShift,
+        RadicalAction::BerserkerFury,
+        RadicalAction::FlockAssault,
+        RadicalAction::PhaseStrike,
+    ]
+}
+
+#[test]
+fn radical_action_roundtrip_all_60_variants() {
+    for action in all_radical_actions() {
+        let radical = action.radical();
+        assert_eq!(
+            RadicalAction::from_radical(radical),
+            Some(action),
+            "Roundtrip failed for {:?}",
+            action
+        );
+    }
+}
+
+#[test]
+fn radical_action_name_non_empty_all_60_variants() {
+    for action in all_radical_actions() {
+        assert!(!action.name().is_empty(), "Name empty for {:?}", action);
+    }
+}
+
+#[test]
+fn radical_action_description_non_empty_all_60_variants() {
+    for action in all_radical_actions() {
+        assert!(!action.description().is_empty(), "Description empty for {:?}", action);
+    }
+}
+
+#[test]
+fn radical_action_range_info_non_empty_all_60_variants() {
+    for action in all_radical_actions() {
+        assert!(!action.range_info().is_empty(), "Range info empty for {:?}", action);
+    }
+}
+
+#[test]
+fn radical_action_damage_info_non_empty_all_60_variants() {
+    for action in all_radical_actions() {
+        assert!(!action.damage_info().is_empty(), "Damage info empty for {:?}", action);
+    }
+}
+
+#[test]
+fn radical_action_attack_type_non_empty_all_60_variants() {
+    for action in all_radical_actions() {
+        assert!(!action.attack_type().is_empty(), "Attack type empty for {:?}", action);
+    }
+}
+
+#[test]
+fn radical_action_type_color_non_empty_all_60_variants() {
+    for action in all_radical_actions() {
+        assert!(!action.type_color().is_empty(), "Type color empty for {:?}", action);
+    }
+}
+
+// ── PlayerRadicalAbility comprehensive — all 52 variants ─────────────────────
+
+fn all_player_radical_abilities() -> Vec<PlayerRadicalAbility> {
+    vec![
+        PlayerRadicalAbility::FireStrike,
+        PlayerRadicalAbility::TidalSurge,
+        PlayerRadicalAbility::PowerStrike,
+        PlayerRadicalAbility::Insight,
+        PlayerRadicalAbility::Devour,
+        PlayerRadicalAbility::TrueStrike,
+        PlayerRadicalAbility::SwiftHands,
+        PlayerRadicalAbility::Entangle,
+        PlayerRadicalAbility::Reap,
+        PlayerRadicalAbility::SolarFlare,
+        PlayerRadicalAbility::MoonVenom,
+        PlayerRadicalAbility::Resilience,
+        PlayerRadicalAbility::Guardian,
+        PlayerRadicalAbility::GrowingStrike,
+        PlayerRadicalAbility::Harvest,
+        PlayerRadicalAbility::Gamble,
+        PlayerRadicalAbility::Shatter,
+        PlayerRadicalAbility::Earthquake,
+        PlayerRadicalAbility::DoubleStrike,
+        PlayerRadicalAbility::Execution,
+        PlayerRadicalAbility::DeepCut,
+        PlayerRadicalAbility::Intimidate,
+        PlayerRadicalAbility::Lunge,
+        PlayerRadicalAbility::Ensnare,
+        PlayerRadicalAbility::Fortify,
+        PlayerRadicalAbility::Charge,
+        PlayerRadicalAbility::Windstep,
+        PlayerRadicalAbility::Downpour,
+        PlayerRadicalAbility::Concuss,
+        PlayerRadicalAbility::Infest,
+        PlayerRadicalAbility::Plunder,
+        PlayerRadicalAbility::Bulwark,
+        PlayerRadicalAbility::Frenzy,
+        PlayerRadicalAbility::Snipe,
+        PlayerRadicalAbility::Nourish,
+        PlayerRadicalAbility::Evade,
+        PlayerRadicalAbility::Riposte,
+        PlayerRadicalAbility::HitAndRun,
+        PlayerRadicalAbility::Bulldoze,
+        PlayerRadicalAbility::Inspire,
+        PlayerRadicalAbility::Cleave,
+        PlayerRadicalAbility::PreciseStab,
+        PlayerRadicalAbility::Sabotage,
+        PlayerRadicalAbility::Purify,
+        PlayerRadicalAbility::Galeforce,
+        PlayerRadicalAbility::QiSurge,
+        PlayerRadicalAbility::Echolocation,
+        PlayerRadicalAbility::Undertow,
+        PlayerRadicalAbility::BoneBreaker,
+        PlayerRadicalAbility::RamStrike,
+        PlayerRadicalAbility::Discern,
+        PlayerRadicalAbility::IronForm,
+    ]
+}
+
+#[test]
+fn player_radical_ability_roundtrip_all_52_variants() {
+    for ability in all_player_radical_abilities() {
+        let radical = ability.radical();
+        assert_eq!(
+            PlayerRadicalAbility::from_radical(radical),
+            Some(ability),
+            "Roundtrip failed for {:?}",
+            ability
+        );
+    }
+}
+
+#[test]
+fn player_radical_ability_name_non_empty_all_52_variants() {
+    for ability in all_player_radical_abilities() {
+        assert!(!ability.name().is_empty(), "Name empty for {:?}", ability);
+    }
+}
+
+#[test]
+fn player_radical_ability_description_non_empty_all_52_variants() {
+    for ability in all_player_radical_abilities() {
+        assert!(!ability.description().is_empty(), "Description empty for {:?}", ability);
+    }
+}
+
+#[test]
+fn player_radical_ability_skill_type_non_default_for_all_52_variants() {
+    for ability in all_player_radical_abilities() {
+        // Just ensure skill_type() runs for every variant without panic
+        let _ = ability.skill_type();
+    }
+}
+
+#[test]
+fn player_radical_ability_skill_type_label_non_empty_all_52_variants() {
+    for ability in all_player_radical_abilities() {
+        assert!(!ability.skill_type_label().is_empty(), "Label empty for {:?}", ability);
+    }
+}

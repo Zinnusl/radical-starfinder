@@ -1093,4 +1093,33 @@ mod tests {
         assert!(targets.contains(&(1, 3)));
         assert!(targets.contains(&(5, 3)));
     }
+
+    // ── spell_range fallthrough variants ─────────────────────────────────────
+
+    #[test]
+    fn spell_range_shield_falls_through_to_default_1() {
+        assert_eq!(spell_range(&SpellEffect::Shield), 1);
+    }
+
+    #[test]
+    fn spell_range_focus_restore_falls_through_to_default_1() {
+        assert_eq!(spell_range(&SpellEffect::FocusRestore(3)), 1);
+    }
+
+    // ── find_next_target edge cases ───────────────────────────────────────────
+
+    #[test]
+    fn find_next_target_stays_when_only_current_cursor_in_valid_list() {
+        // valid only contains the current cursor position — wrap finds nothing
+        let result = find_next_target(5, 5, 1, 0, &[(5, 5)]);
+        assert_eq!(result, (5, 5));
+    }
+
+    #[test]
+    fn find_next_target_picks_closest_of_multiple_targets_in_direction() {
+        let valid = vec![(10, 5), (7, 5), (8, 5)];
+        // Pressing right from (5,5): nearest is (7,5)
+        let result = find_next_target(5, 5, 1, 0, &valid);
+        assert_eq!(result, (7, 5));
+    }
 }
