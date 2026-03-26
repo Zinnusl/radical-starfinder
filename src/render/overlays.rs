@@ -129,7 +129,7 @@ impl Renderer {
                 self.ctx
                     .set_fill_style_str(if is_cursor { "#eeddbb" } else { "#aa9977" });
                 self.ctx.set_font("11px monospace");
-                let components = recipe.inputs.iter().copied().collect::<Vec<_>>().join("+");
+                let components = recipe.inputs.to_vec().join("+");
                 self.ctx
                     .fill_text(
                         &format!(
@@ -682,7 +682,7 @@ impl Renderer {
                 )
                 .ok();
 
-            let built: String = arranged.iter().copied().collect::<Vec<_>>().join(" + ");
+            let built: String = arranged.join(" + ");
             self.ctx.set_fill_style_str("#88ccff");
             self.ctx.set_font("14px monospace");
             self.ctx
@@ -842,7 +842,7 @@ impl Renderer {
                 )
                 .ok();
 
-            let built: String = arranged.iter().copied().collect::<Vec<_>>().join("");
+            let built: String = arranged.join("");
             self.ctx.set_fill_style_str("#66dd88");
             self.ctx.set_font("28px 'Noto Serif SC', serif");
             self.ctx
@@ -1471,7 +1471,7 @@ impl Renderer {
             let pages = if total == 0 {
                 1
             } else {
-                (total + per_page - 1) / per_page
+                total.div_ceil(per_page)
             };
             let cur_page = *page;
 
@@ -1841,8 +1841,9 @@ impl Renderer {
             let start_idx_cls = page * page_size;
             let end_idx_cls = (start_idx_cls + page_size).min(total);
 
+            #[allow(clippy::needless_range_loop)]
             for i in start_idx_cls..end_idx_cls {
-                let class_var: crate::player::PlayerClass = all_classes[i];
+                let class_var = all_classes[i];
                 let data = class_var.data();
 
                 let is_selected = i == cursor;
@@ -1882,8 +1883,7 @@ impl Renderer {
                     )
                     .ok();
 
-                let dummy = crate::player::Player::new(0, 0, class_var);
-                self.ctx.set_fill_style_str("#aaa");
+                let dummy = crate::player::Player::new(0, 0, class_var);                self.ctx.set_fill_style_str("#aaa");
                 self.ctx.set_font("12px monospace");
                 self.ctx
                     .fill_text(
@@ -1902,7 +1902,7 @@ impl Renderer {
             }
 
             y += 10.0;
-            let total_pages = (total + page_size - 1) / page_size;
+            let total_pages = total.div_ceil(page_size);
             self.ctx.set_fill_style_str("#888");
             self.ctx.set_text_align("center");
             self.ctx

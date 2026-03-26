@@ -12,7 +12,7 @@ pub(crate) fn meets_dungeon_requirement(player: &Player, req: &Option<DungeonReq
         Some(DungeonRequirement::HasRadical(r)) => player.radicals.contains(r),
         Some(DungeonRequirement::HasClass(class_id)) => {
             let class = crate::player::PlayerClass::all();
-            class.get(*class_id as usize).map_or(false, |c| {
+            class.get(*class_id as usize).is_some_and(|c| {
                 std::mem::discriminant(&player.class) == std::mem::discriminant(c)
             })
         }

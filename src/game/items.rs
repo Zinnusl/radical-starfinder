@@ -108,7 +108,7 @@ impl GameState {
                 let entry_idx = self.rng_next() as usize % pool.len();
                 let entry: &'static VocabEntry = pool[entry_idx];
                 let mut mimic = Enemy::from_vocab(entry, cx, cy, self.floor_num);
-                mimic.hp = mimic.hp + 2; // mimics are tougher
+                mimic.hp += 2; // mimics are tougher
                 mimic.damage += 1;
                 mimic.alert = true;
                 mimic.gold_value *= 2; // better drops
@@ -1293,23 +1293,20 @@ impl GameState {
         use crate::player::{active_set_bonuses, SetBonus};
         self.player.phase_walk_used = false;
         for set in active_set_bonuses(&self.player) {
-            match set.bonus {
-                SetBonus::HealOnFloor(amt) => {
-                    let max_hp = self.player.max_hp;
-                    if self.player.hp < max_hp {
-                        let healed = amt.min(max_hp - self.player.hp);
-                        self.player.hp = (self.player.hp + amt).min(max_hp);
-                        if self.message.is_empty() {
-                            self.message =
-                                format!("🔗 {} set heals you for {} HP!", set.name, healed);
-                        } else {
-                            self.message
-                                .push_str(&format!(" 🔗 {} +{} HP!", set.name, healed));
-                        }
-                        self.message_timer = self.message_timer.max(90);
+            if let SetBonus::HealOnFloor(amt) = set.bonus {
+                let max_hp = self.player.max_hp;
+                if self.player.hp < max_hp {
+                    let healed = amt.min(max_hp - self.player.hp);
+                    self.player.hp = (self.player.hp + amt).min(max_hp);
+                    if self.message.is_empty() {
+                        self.message =
+                            format!("🔗 {} set heals you for {} HP!", set.name, healed);
+                    } else {
+                        self.message
+                            .push_str(&format!(" 🔗 {} +{} HP!", set.name, healed));
                     }
+                    self.message_timer = self.message_timer.max(90);
                 }
-                _ => {}
             }
         }
     }

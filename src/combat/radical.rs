@@ -1028,12 +1028,11 @@ pub fn apply_radical_action(
                             && ty >= 0
                             && tx < battle.arena.width as i32
                             && ty < battle.arena.height as i32
+                            && battle.arena.tile(tx, ty) == Some(crate::combat::BattleTile::MetalFloor)
                         {
-                            if battle.arena.tile(tx, ty) == Some(crate::combat::BattleTile::MetalFloor) {
-                                battle
-                                    .arena
-                                    .set_tile(tx, ty, crate::combat::BattleTile::WiringPanel);
-                            }
+                            battle
+                                .arena
+                                .set_tile(tx, ty, crate::combat::BattleTile::WiringPanel);
                         }
                     }
                 }
@@ -1707,7 +1706,7 @@ pub fn apply_player_radical_ability(
                         if let Some(idx) = battle.unit_at(fx, fy) {
                             if idx != attacker_idx {
                                 let actual = deal_damage(battle, idx, 1);
-                                battle.log_message(&format!(
+                                battle.log_message(format!(
                                     "🔥 Fire scorches for {} damage!",
                                     actual
                                 ));

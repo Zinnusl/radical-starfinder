@@ -183,7 +183,7 @@ impl super::GameState {
                 format!("God mode: {}", if self.god_mode { "ON" } else { "OFF" })
             }
             "hp" => {
-                let amount = effective_parts.get(0).and_then(|s| s.parse::<i32>().ok());
+                let amount = effective_parts.first().and_then(|s| s.parse::<i32>().ok());
                 match amount {
                     Some(n) => {
                         self.player.hp = n.min(self.player.max_hp);
@@ -197,14 +197,14 @@ impl super::GameState {
             }
             "gold" => {
                 let amount = effective_parts
-                    .get(0)
+                    .first()
                     .and_then(|s| s.parse::<i32>().ok())
                     .unwrap_or(100);
                 self.player.gold += amount;
                 format!("Added {} gold (total: {})", amount, self.player.gold)
             }
             "floor" => {
-                if let Some(n) = effective_parts.get(0).and_then(|s| s.parse::<i32>().ok()) {
+                if let Some(n) = effective_parts.first().and_then(|s| s.parse::<i32>().ok()) {
                     if n >= 1 {
                         self.floor_num = n - 1;
                         self.new_floor();
@@ -246,7 +246,7 @@ impl super::GameState {
             "focus" => {
                 if let CombatState::TacticalBattle(ref mut battle) = self.combat {
                     let amount = effective_parts
-                        .get(0)
+                        .first()
                         .and_then(|s| s.parse::<i32>().ok())
                         .unwrap_or(battle.max_focus);
                     battle.focus = amount;
@@ -308,7 +308,7 @@ impl super::GameState {
             }
             "give_item" => {
                 use crate::player::Item;
-                if let Some(name) = effective_parts.get(0) {
+                if let Some(name) = effective_parts.first() {
                     let lower = name.to_lowercase();
                     let item = match lower.as_str() {
                         "healthpotion" => Some(Item::MedHypo(5 + self.floor_num)),
@@ -359,7 +359,7 @@ impl super::GameState {
                 return;
             }
             "give_radical" => {
-                if let Some(ch) = effective_parts.get(0) {
+                if let Some(ch) = effective_parts.first() {
                     if let Some(r) = radical::RADICALS.iter().find(|r| r.ch == *ch) {
                         self.player.add_radical(r.ch);
                         format!("Added radical {} ({})", r.ch, r.meaning)
@@ -390,7 +390,7 @@ impl super::GameState {
                 return;
             }
             "give_spell" => {
-                if let Some(hanzi) = effective_parts.get(0) {
+                if let Some(hanzi) = effective_parts.first() {
                     if let Some(recipe) = radical::RECIPES
                         .iter()
                         .find(|r| r.output_hanzi == *hanzi)
@@ -413,7 +413,7 @@ impl super::GameState {
                 }
             }
             "fight" => {
-                if let Some(kind) = effective_parts.get(0) {
+                if let Some(kind) = effective_parts.first() {
                     let lower = kind.to_lowercase();
                     let pool = vocab::vocab_for_floor(self.floor_num);
                     if pool.is_empty() {
@@ -496,7 +496,7 @@ impl super::GameState {
                 }
             }
             "boss" => {
-                if let Some(name) = effective_parts.get(0) {
+                if let Some(name) = effective_parts.first() {
                     let lower = name.to_lowercase();
                     let boss_kind = match lower.as_str() {
                         "piratecaptain" | "gatekeeper" => Some((BossKind::PirateCaptain, 5)),

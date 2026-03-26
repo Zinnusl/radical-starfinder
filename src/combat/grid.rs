@@ -87,10 +87,8 @@ pub fn reachable_tiles(
                         continue;
                     }
                     let ntile = arena.tiles[(ny * w + nx) as usize];
-                    if !ntile.is_walkable() && battle.unit_at(nx, ny).is_none() {
-                        if !result.contains(&(nx, ny)) {
-                            result.push((nx, ny));
-                        }
+                    if !ntile.is_walkable() && battle.unit_at(nx, ny).is_none() && !result.contains(&(nx, ny)) {
+                        result.push((nx, ny));
                     }
                 }
             }

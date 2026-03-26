@@ -576,43 +576,41 @@ impl GameState {
         // Advance companion bond on each floor transition
         self.advance_companion_bond();
 
-        if self.floor_num > 1 {
-            if self.player.get_piety(Faction::Consortium) >= 10 && self.player.get_piety(Faction::AncientOrder) >= 10
-            {
-                self.player.gold += 5;
+        if self.floor_num > 1
+            && self.player.get_piety(Faction::Consortium) >= 10 && self.player.get_piety(Faction::AncientOrder) >= 10
+        {
+            self.player.gold += 5;
+        }
+
+        if self.player.get_piety(Faction::Technocracy) >= 10 && self.player.get_piety(Faction::FreeTraders) >= 10
+            && (self.rng_next() % 100) < 25
+        {
+            self.reveal_entire_floor();
+            let (sx, sy) = self.tile_to_screen(self.player.x, self.player.y);
+            self.particles.spawn_synergy(sx, sy, &mut self.rng_state);
+            if self.message.is_empty() {
+                self.message = "Scholar's Wind reveals the floor layout!".to_string();
+                self.message_timer = 90;
             }
         }
 
-        if self.player.get_piety(Faction::Technocracy) >= 10 && self.player.get_piety(Faction::FreeTraders) >= 10 {
-            if (self.rng_next() % 100) < 25 {
-                self.reveal_entire_floor();
-                let (sx, sy) = self.tile_to_screen(self.player.x, self.player.y);
-                self.particles.spawn_synergy(sx, sy, &mut self.rng_state);
-                if self.message.is_empty() {
-                    self.message = "Scholar's Wind reveals the floor layout!".to_string();
-                    self.message_timer = 90;
+        if self.player.get_piety(Faction::FreeTraders) >= 10 && self.player.get_piety(Faction::AncientOrder) >= 10
+            && (self.rng_next() % 100) < 25
+        {
+            let mut tries = 0;
+            while tries < 100 {
+                let rx = (self.rng_next() % (MAP_W as u64)) as i32;
+                let ry = (self.rng_next() % (MAP_H as u64)) as i32;
+                if self.level.in_bounds(rx, ry)
+                    && self.level.is_walkable(rx, ry)
+                    && self.level.tile(rx, ry) == Tile::MetalFloor
+                    && (rx, ry) != (self.player.x, self.player.y)
+                {
+                    let idx = self.level.idx(rx, ry);
+                    self.level.tiles[idx] = Tile::SupplyCrate;
+                    break;
                 }
-            }
-        }
-
-        if self.player.get_piety(Faction::FreeTraders) >= 10 && self.player.get_piety(Faction::AncientOrder) >= 10 {
-            if (self.rng_next() % 100) < 25 {
-                let mut tries = 0;
-                while tries < 100 {
-                    let rx = (self.rng_next() % (MAP_W as u64)) as i32;
-                    let ry = (self.rng_next() % (MAP_H as u64)) as i32;
-                    if self.level.in_bounds(rx, ry)
-                        && self.level.is_walkable(rx, ry)
-                        && self.level.tile(rx, ry) == Tile::MetalFloor
-                    {
-                        if (rx, ry) != (self.player.x, self.player.y) {
-                            let idx = self.level.idx(rx, ry);
-                            self.level.tiles[idx] = Tile::SupplyCrate;
-                            break;
-                        }
-                    }
-                    tries += 1;
-                }
+                tries += 1;
             }
         }
 
@@ -909,7 +907,7 @@ impl GameState {
                 self.mark_room_completed();
                 let idx = self.level.idx(self.player.x, self.player.y);
                 self.level.tiles[idx] = Tile::MetalFloor;
-                self.player.gold += 30 + (self.floor_num * 3) as i32;
+                self.player.gold += 30 + (self.floor_num * 3);
                 let _ = self.player.add_item(Item::ScannerPulse, ItemState::Normal);
                 self.message = format!("🪞 You navigate the mirrors! {} gold + Reveal Scroll!", 30 + self.floor_num * 3);
                 self.message_timer = 100;
@@ -1032,7 +1030,6 @@ impl GameState {
                 // Just show encouragement on entry
                 if target_tile == Tile::CreditCache {
                     // Normal GoldPile effect handles this via apply_player_tile_effect
-                    return;
                 }
             }
 

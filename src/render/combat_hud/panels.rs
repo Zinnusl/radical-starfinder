@@ -1177,7 +1177,7 @@ impl super::super::Renderer {
                     if u.hanzi.is_empty() {
                         "Enemy".to_string()
                     } else {
-                        format!("{}", u.hanzi)
+                        u.hanzi.to_string()
                     }
                 }
                 TypingAction::SpellCast {

@@ -48,6 +48,7 @@ impl ParticleSystem {
     }
 
     /// Burst of particles at a screen position.
+    #[allow(clippy::too_many_arguments)]
     fn burst(
         &mut self,
         x: f64,

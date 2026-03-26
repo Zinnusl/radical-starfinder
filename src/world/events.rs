@@ -292,6 +292,7 @@ pub fn select_event(sector: usize, system_id: usize, seed: u32) -> &'static Spac
 }
 
 /// Indices of conditional events that require specific EventMemory state.
+#[allow(clippy::type_complexity)]
 const CONDITIONAL_EVENT_INDICES: &[(usize, fn(&EventMemory) -> bool)] = &[
     (74, |m| m.faction_standing < -5),                                      // Pirate Debt Collection
     (75, |m| m.has_choice("helped_refugees") || m.has_choice("helped_stowaway")), // Refugee Gratitude

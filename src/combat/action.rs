@@ -205,7 +205,7 @@ pub fn deal_damage(battle: &mut TacticalBattle, target_idx: usize, raw_damage: i
                 // Apply stance armor modifier
                 damage -= battle.player_stance.armor_mod();
                 if unit.defending {
-                    damage = damage / 2;
+                    damage /= 2;
                     battle.audio_events.push(AudioEvent::ShieldBlock);
                 }
                 damage -= unit.radical_armor;
@@ -233,7 +233,7 @@ pub fn deal_damage(battle: &mut TacticalBattle, target_idx: usize, raw_damage: i
     }
 
     if unit.defending {
-        damage = damage / 2;
+        damage /= 2;
         battle.audio_events.push(AudioEvent::ShieldBlock);
     }
     damage -= unit.radical_armor;
@@ -408,10 +408,10 @@ pub fn deal_damage_from(
     if target.radical_counter {
         attacker_damage += 2;
         target.radical_counter = false;
-        let msg = if retaliation_msg.is_some() {
+        let msg = if let Some(prev) = retaliation_msg {
             format!(
                 "{} Radical Counter strikes back for 2 damage!",
-                retaliation_msg.unwrap()
+                prev
             )
         } else {
             "Radical Counter strikes back for 2 damage!".to_string()
@@ -668,7 +668,7 @@ pub fn check_status_combos(battle: &mut TacticalBattle, unit_idx: usize) -> Vec<
 /// Check if player has a specific equipment effect.
 #[allow(dead_code)]
 pub fn player_has_equip(battle: &TacticalBattle, check: fn(&crate::player::EquipEffect) -> bool) -> bool {
-    battle.player_equip_effects.iter().any(|e| check(e))
+    battle.player_equip_effects.iter().any(check)
 }
 
 /// LifeSteal + Poison synergy: drain extra 1 HP from poisoned enemies.

@@ -41,7 +41,7 @@ impl GameState {
                     .push(Enemy::boss_from_vocab(entry, cx, cy, self.floor_num));
                 continue;
             }
-            for _ in 0..enemies_per_room.min(ENEMIES_PER_ROOM as i32 + self.floor_num / 3) {
+            for _ in 0..enemies_per_room.min(ENEMIES_PER_ROOM + self.floor_num / 3) {
                 let rand_val = self.rng_next();
                 let entry_idx = self.srs.weighted_pick(&pool, rand_val);
                 let entry: &'static VocabEntry = pool[entry_idx];
@@ -207,7 +207,7 @@ impl GameState {
             TerminalKind::Tactical => "Tactical Commander",
             TerminalKind::Commerce => "Trade Consortium",
         };
-        if !(!has_piety && self.message.contains("disapproves")) {
+        if has_piety || !self.message.contains("disapproves") {
             self.message = format!("You kneel before the Altar of {}.", god_name);
             self.message_timer = 255;
         }

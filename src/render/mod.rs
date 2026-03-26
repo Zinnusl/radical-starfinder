@@ -125,6 +125,7 @@ impl Renderer {
     }
 
     /// Render the full game frame.
+    #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &self,
         level: &DungeonLevel,
@@ -917,7 +918,7 @@ impl Renderer {
 
         // ── Particles ────────────────────────────────────────────────────
         for p in &particles.particles {
-            let alpha = p.life.max(0.0).min(1.0);
+            let alpha = p.life.clamp(0.0, 1.0);
             let radius = (p.size * (0.35 + alpha * 0.65)).max(1.0);
             self.ctx
                 .set_fill_style_str(&format!("rgba({},{},{},{})", p.r, p.g, p.b, alpha));

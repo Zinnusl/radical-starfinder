@@ -116,6 +116,7 @@ impl super::Renderer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn draw_tile_surface(
         &self,
         level: &DungeonLevel,

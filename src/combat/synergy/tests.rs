@@ -388,3 +388,498 @@ fn on_enemy_death_revenge_enrages_multiple_adjacent_enemies() {
     assert_eq!(battle.units[4].fortify_stacks, 1);
 }
 
+// ── apply_round_start_synergies (integration) ──────────────────────────
+
+#[test]
+fn apply_round_start_synergies_resets_synergy_state() {
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    enemy.synergy_damage_bonus = 5;
+    enemy.elemental_resonance = true;
+
+    let mut battle = make_test_battle(vec![player, enemy]);
+    battle.attacks_on_player_this_round = 3;
+
+    apply_round_start_synergies(&mut battle);
+
+    assert_eq!(battle.attacks_on_player_this_round, 0);
+    assert_eq!(battle.units[1].synergy_damage_bonus, 0);
+    assert!(!battle.units[1].elemental_resonance);
+}
+
+#[test]
+fn apply_round_start_synergies_returns_messages() {
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut s1 = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    s1.ai = AiBehavior::Sentinel;
+    let mut s2 = make_test_unit(UnitKind::Enemy(1), 4, 3);
+    s2.ai = AiBehavior::Sentinel;
+
+    let mut battle = make_test_battle(vec![player, s1, s2]);
+
+    let msgs = apply_round_start_synergies(&mut battle);
+    assert!(!msgs.is_empty());
+}
+
+// ── apply_sentinel_formation ────────────────────────────────────────────
+
+#[test]
+fn sentinel_formation_two_adjacent_sentinels_gain_armor() {
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut s1 = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    s1.ai = AiBehavior::Sentinel;
+    let mut s2 = make_test_unit(UnitKind::Enemy(1), 4, 3);
+    s2.ai = AiBehavior::Sentinel;
+
+    let mut battle = make_test_battle(vec![player, s1, s2]);
+
+    let msgs = apply_round_start_synergies(&mut battle);
+
+    // Both sentinels get +1 formation armor
+    assert!(battle.units[1].radical_armor >= 1);
+    assert!(battle.units[2].radical_armor >= 1);
+    assert!(msgs.iter().any(|m| m.contains("Shield formation")));
+}
+
+#[test]
+fn sentinel_shares_armor_with_adjacent_non_sentinel_ally() {
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut sentinel = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    sentinel.ai = AiBehavior::Sentinel;
+    let ally = make_test_unit(UnitKind::Enemy(1), 4, 3); // adjacent, non-sentinel
+
+    let mut battle = make_test_battle(vec![player, sentinel, ally]);
+
+    let msgs = apply_round_start_synergies(&mut battle);
+
+    // Ally gets +1 shared armor from adjacent sentinel
+    assert_eq!(battle.units[2].radical_armor, 1);
+    assert!(msgs.iter().any(|m| m.contains("Sentinels share armor")));
+}
+
+#[test]
+fn sentinel_formation_no_bonus_for_lone_sentinel() {
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut sentinel = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    sentinel.ai = AiBehavior::Sentinel;
+    // No adjacent sentinel, no adjacent ally
+
+    let mut battle = make_test_battle(vec![player, sentinel]);
+
+    let msgs = apply_round_start_synergies(&mut battle);
+
+    // No formation bonus
+    assert_eq!(battle.units[1].radical_armor, 0);
+    assert!(!msgs.iter().any(|m| m.contains("Shield formation")));
+}
+
+#[test]
+fn sentinel_formation_does_not_share_armor_with_player() {
+    let player = make_test_unit(UnitKind::Player, 4, 3); // adjacent to sentinel
+    let mut sentinel = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    sentinel.ai = AiBehavior::Sentinel;
+
+    let mut battle = make_test_battle(vec![player, sentinel]);
+
+    apply_round_start_synergies(&mut battle);
+
+    // Player should NOT get armor from enemy sentinel
+    assert_eq!(battle.units[0].radical_armor, 0);
+}
+
+// ── apply_elemental_resonance ───────────────────────────────────────────
+
+#[test]
+fn fire_resonance_boosts_burn_damage() {
+    use crate::status::{StatusInstance, StatusKind};
+
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut fire1 = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    fire1.wuxing_element = Some(WuxingElement::Fire);
+    fire1.statuses.push(StatusInstance::new(StatusKind::Burn { damage: 1 }, 3));
+    let mut fire2 = make_test_unit(UnitKind::Enemy(1), 4, 3); // within 2 tiles
+    fire2.wuxing_element = Some(WuxingElement::Fire);
+
+    let mut battle = make_test_battle(vec![player, fire1, fire2]);
+
+    let msgs = apply_round_start_synergies(&mut battle);
+
+    // Fire resonance should boost burn damage +1
+    let burn_status = battle.units[1].statuses.iter().find(|s| matches!(s.kind, StatusKind::Burn { .. }));
+    assert!(burn_status.is_some());
+    if let Some(s) = burn_status {
+        if let StatusKind::Burn { damage } = s.kind {
+            assert_eq!(damage, 2); // 1 + 1 from resonance
+        }
+    }
+    assert!(battle.units[1].elemental_resonance);
+    assert!(msgs.iter().any(|m| m.contains("Plasma resonance")));
+}
+
+#[test]
+fn water_resonance_extends_player_slow() {
+    use crate::status::{StatusInstance, StatusKind};
+
+    let mut player = make_test_unit(UnitKind::Player, 0, 0);
+    player.statuses.push(StatusInstance::new(StatusKind::Slow, 2));
+    let mut water1 = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    water1.wuxing_element = Some(WuxingElement::Water);
+    let mut water2 = make_test_unit(UnitKind::Enemy(1), 4, 3);
+    water2.wuxing_element = Some(WuxingElement::Water);
+
+    let mut battle = make_test_battle(vec![player, water1, water2]);
+
+    let msgs = apply_round_start_synergies(&mut battle);
+
+    // Player's slow should be extended by 1 turn
+    let slow = battle.units[0].statuses.iter().find(|s| matches!(s.kind, StatusKind::Slow));
+    assert!(slow.is_some());
+    assert_eq!(slow.unwrap().turns_left, 3); // 2 + 1
+    assert!(msgs.iter().any(|m| m.contains("Coolant resonance")));
+}
+
+#[test]
+fn earth_resonance_grants_armor() {
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut earth1 = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    earth1.wuxing_element = Some(WuxingElement::Earth);
+    let mut earth2 = make_test_unit(UnitKind::Enemy(1), 4, 3);
+    earth2.wuxing_element = Some(WuxingElement::Earth);
+
+    let mut battle = make_test_battle(vec![player, earth1, earth2]);
+
+    let msgs = apply_round_start_synergies(&mut battle);
+
+    assert_eq!(battle.units[1].radical_armor, 1);
+    assert_eq!(battle.units[2].radical_armor, 1);
+    assert!(battle.units[1].elemental_resonance);
+    assert!(msgs.iter().any(|m| m.contains("Hull resonance")));
+}
+
+#[test]
+fn metal_resonance_grants_damage_bonus() {
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut metal1 = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    metal1.wuxing_element = Some(WuxingElement::Metal);
+    let mut metal2 = make_test_unit(UnitKind::Enemy(1), 4, 3);
+    metal2.wuxing_element = Some(WuxingElement::Metal);
+
+    let mut battle = make_test_battle(vec![player, metal1, metal2]);
+
+    let msgs = apply_round_start_synergies(&mut battle);
+
+    assert_eq!(battle.units[1].synergy_damage_bonus, 1);
+    assert_eq!(battle.units[2].synergy_damage_bonus, 1);
+    assert!(battle.units[1].elemental_resonance);
+    assert!(msgs.iter().any(|m| m.contains("Metal resonance")));
+}
+
+#[test]
+fn wood_resonance_heals_enemies() {
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut wood1 = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    wood1.wuxing_element = Some(WuxingElement::Wood);
+    wood1.hp = 8;
+    let mut wood2 = make_test_unit(UnitKind::Enemy(1), 4, 3);
+    wood2.wuxing_element = Some(WuxingElement::Wood);
+    wood2.hp = 10; // already at max
+
+    let mut battle = make_test_battle(vec![player, wood1, wood2]);
+
+    let msgs = apply_round_start_synergies(&mut battle);
+
+    assert_eq!(battle.units[1].hp, 9); // 8 + 1 healed
+    assert_eq!(battle.units[2].hp, 10); // capped at max_hp
+    assert!(battle.units[1].elemental_resonance);
+    assert!(msgs.iter().any(|m| m.contains("Bio resonance")));
+}
+
+#[test]
+fn elemental_resonance_requires_two_within_distance() {
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut fire1 = make_test_unit(UnitKind::Enemy(0), 1, 1);
+    fire1.wuxing_element = Some(WuxingElement::Fire);
+    let mut fire2 = make_test_unit(UnitKind::Enemy(1), 5, 5); // manhattan distance = 8, too far
+    fire2.wuxing_element = Some(WuxingElement::Fire);
+
+    let mut battle = make_test_battle(vec![player, fire1, fire2]);
+
+    let msgs = apply_round_start_synergies(&mut battle);
+
+    assert!(!battle.units[1].elemental_resonance);
+    assert!(!battle.units[2].elemental_resonance);
+    assert!(!msgs.iter().any(|m| m.contains("Plasma resonance")));
+}
+
+#[test]
+fn elemental_resonance_ignores_dead_enemies() {
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut fire1 = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    fire1.wuxing_element = Some(WuxingElement::Fire);
+    let mut fire2 = make_test_unit(UnitKind::Enemy(1), 4, 3);
+    fire2.wuxing_element = Some(WuxingElement::Fire);
+    fire2.alive = false;
+    fire2.hp = 0;
+
+    let mut battle = make_test_battle(vec![player, fire1, fire2]);
+
+    let msgs = apply_round_start_synergies(&mut battle);
+
+    assert!(!battle.units[1].elemental_resonance);
+    assert!(!msgs.iter().any(|m| m.contains("resonance")));
+}
+
+// ── apply_elemental_clash ───────────────────────────────────────────────
+
+#[test]
+fn fire_water_clash_creates_steam() {
+    use crate::combat::BattleTile;
+
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut fire = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    fire.wuxing_element = Some(WuxingElement::Fire);
+    let mut water = make_test_unit(UnitKind::Enemy(1), 4, 3); // adjacent
+    water.wuxing_element = Some(WuxingElement::Water);
+
+    let mut battle = make_test_battle(vec![player, fire, water]);
+
+    let msgs = apply_round_start_synergies(&mut battle);
+
+    // Steam tile should be placed at the fire unit's position
+    assert_eq!(battle.arena.tile(3, 3), Some(BattleTile::VentSteam));
+    assert!(msgs.iter().any(|m| m.contains("steam")));
+}
+
+#[test]
+fn fire_wood_clash_damages_wood_enemy() {
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut fire = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    fire.wuxing_element = Some(WuxingElement::Fire);
+    let mut wood = make_test_unit(UnitKind::Enemy(1), 4, 3);
+    wood.wuxing_element = Some(WuxingElement::Wood);
+    wood.hp = 5;
+
+    let mut battle = make_test_battle(vec![player, fire, wood]);
+
+    let msgs = apply_round_start_synergies(&mut battle);
+
+    assert_eq!(battle.units[2].hp, 4); // 5 - 1 burn damage
+    assert!(msgs.iter().any(|m| m.contains("scorches")));
+}
+
+#[test]
+fn fire_wood_clash_kills_at_one_hp() {
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut fire = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    fire.wuxing_element = Some(WuxingElement::Fire);
+    let mut wood = make_test_unit(UnitKind::Enemy(1), 4, 3);
+    wood.wuxing_element = Some(WuxingElement::Wood);
+    wood.hp = 1;
+
+    let mut battle = make_test_battle(vec![player, fire, wood]);
+
+    apply_round_start_synergies(&mut battle);
+
+    assert_eq!(battle.units[2].hp, 0);
+    assert!(!battle.units[2].alive);
+}
+
+#[test]
+fn water_earth_clash_creates_damaged_plating() {
+    use crate::combat::BattleTile;
+
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut water = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    water.wuxing_element = Some(WuxingElement::Water);
+    let mut earth = make_test_unit(UnitKind::Enemy(1), 4, 3);
+    earth.wuxing_element = Some(WuxingElement::Earth);
+
+    let mut battle = make_test_battle(vec![player, water, earth]);
+    // Ensure the water position is MetalFloor (default)
+    assert_eq!(battle.arena.tile(3, 3), Some(BattleTile::MetalFloor));
+
+    let msgs = apply_round_start_synergies(&mut battle);
+
+    assert_eq!(battle.arena.tile(3, 3), Some(BattleTile::DamagedPlating));
+    assert!(msgs.iter().any(|m| m.contains("sludge")));
+}
+
+#[test]
+fn water_earth_clash_skips_non_metal_floor() {
+    use crate::combat::BattleTile;
+
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut water = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    water.wuxing_element = Some(WuxingElement::Water);
+    let mut earth = make_test_unit(UnitKind::Enemy(1), 4, 3);
+    earth.wuxing_element = Some(WuxingElement::Earth);
+
+    let mut battle = make_test_battle(vec![player, water, earth]);
+    battle.arena.set_tile(3, 3, BattleTile::OilSlick);
+
+    let msgs = apply_round_start_synergies(&mut battle);
+
+    // Should not convert non-MetalFloor tiles
+    assert_eq!(battle.arena.tile(3, 3), Some(BattleTile::OilSlick));
+    assert!(!msgs.iter().any(|m| m.contains("sludge")));
+}
+
+#[test]
+fn elemental_clash_non_adjacent_no_effect() {
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut fire = make_test_unit(UnitKind::Enemy(0), 1, 1);
+    fire.wuxing_element = Some(WuxingElement::Fire);
+    let mut water = make_test_unit(UnitKind::Enemy(1), 5, 5); // far away
+    water.wuxing_element = Some(WuxingElement::Water);
+
+    let mut battle = make_test_battle(vec![player, fire, water]);
+
+    let msgs = apply_round_start_synergies(&mut battle);
+
+    assert!(!msgs.iter().any(|m| m.contains("steam") || m.contains("scorches") || m.contains("sludge")));
+}
+
+// ── apply_leader_aura ──────────────────────────────────────────────────
+
+#[test]
+fn boss_aura_grants_damage_bonus_to_non_boss_enemies() {
+    use crate::enemy::BossKind;
+
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    boss.boss_kind = Some(BossKind::PirateCaptain);
+    let minion = make_test_unit(UnitKind::Enemy(1), 5, 5);
+
+    let mut battle = make_test_battle(vec![player, boss, minion]);
+    battle.is_boss_battle = true;
+
+    let msgs = apply_round_start_synergies(&mut battle);
+
+    // Minion gets +1 damage from boss aura
+    assert_eq!(battle.units[2].synergy_damage_bonus, 1);
+    // Boss itself should NOT get the bonus (boss_kind.is_none() check)
+    assert_eq!(battle.units[1].synergy_damage_bonus, 0);
+    assert!(msgs.iter().any(|m| m.contains("Boss presence")));
+}
+
+#[test]
+fn boss_aura_no_effect_if_not_boss_battle() {
+    use crate::enemy::BossKind;
+
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    boss.boss_kind = Some(BossKind::PirateCaptain);
+    let minion = make_test_unit(UnitKind::Enemy(1), 5, 5);
+
+    let mut battle = make_test_battle(vec![player, boss, minion]);
+    battle.is_boss_battle = false;
+
+    let msgs = apply_round_start_synergies(&mut battle);
+
+    assert_eq!(battle.units[2].synergy_damage_bonus, 0);
+    assert!(!msgs.iter().any(|m| m.contains("Boss presence")));
+}
+
+#[test]
+fn boss_aura_no_effect_if_boss_dead() {
+    use crate::enemy::BossKind;
+
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    boss.boss_kind = Some(BossKind::PirateCaptain);
+    boss.alive = false;
+    boss.hp = 0;
+    let minion = make_test_unit(UnitKind::Enemy(1), 5, 5);
+
+    let mut battle = make_test_battle(vec![player, boss, minion]);
+    battle.is_boss_battle = true;
+
+    let msgs = apply_round_start_synergies(&mut battle);
+
+    assert_eq!(battle.units[2].synergy_damage_bonus, 0);
+    assert!(!msgs.iter().any(|m| m.contains("Boss presence")));
+}
+
+#[test]
+fn elite_aura_boosts_nearby_non_elite_speed() {
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut elite = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    elite.word_group = Some(0); // marks as elite
+    let nearby = make_test_unit(UnitKind::Enemy(1), 4, 3); // within 3 tiles
+    let initial_speed = nearby.speed;
+    let far = make_test_unit(UnitKind::Enemy(2), 0, 6); // too far (manhattan 9)
+
+    let mut battle = make_test_battle(vec![player, elite, nearby, far]);
+
+    let msgs = apply_round_start_synergies(&mut battle);
+
+    assert_eq!(battle.units[2].speed, initial_speed + 1);
+    // Far unit should not be boosted
+    assert_eq!(battle.units[3].speed, 4); // unchanged
+    assert!(msgs.iter().any(|m| m.contains("Commander's aura")));
+}
+
+#[test]
+fn elite_aura_does_not_boost_other_elites() {
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut elite1 = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    elite1.word_group = Some(0);
+    let mut elite2 = make_test_unit(UnitKind::Enemy(1), 4, 3);
+    elite2.word_group = Some(1);
+
+    let mut battle = make_test_battle(vec![player, elite1, elite2]);
+
+    apply_round_start_synergies(&mut battle);
+
+    // Elites should NOT boost each other (word_group.is_some() skips them)
+    assert_eq!(battle.units[1].speed, 4);
+    assert_eq!(battle.units[2].speed, 4);
+}
+
+// ── tick_sacrifice_bonuses ──────────────────────────────────────────────
+
+#[test]
+fn tick_sacrifice_bonuses_decrements_turns() {
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    enemy.sacrifice_bonus_damage = 2;
+    enemy.sacrifice_bonus_turns = 2;
+
+    let mut battle = make_test_battle(vec![player, enemy]);
+
+    apply_round_start_synergies(&mut battle);
+
+    assert_eq!(battle.units[1].sacrifice_bonus_turns, 1);
+    assert_eq!(battle.units[1].sacrifice_bonus_damage, 2); // still active
+}
+
+#[test]
+fn tick_sacrifice_bonuses_clears_on_expiry() {
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    enemy.sacrifice_bonus_damage = 2;
+    enemy.sacrifice_bonus_turns = 1;
+
+    let mut battle = make_test_battle(vec![player, enemy]);
+
+    apply_round_start_synergies(&mut battle);
+
+    assert_eq!(battle.units[1].sacrifice_bonus_turns, 0);
+    assert_eq!(battle.units[1].sacrifice_bonus_damage, 0); // cleared
+}
+
+#[test]
+fn tick_sacrifice_bonuses_no_effect_when_zero() {
+    let player = make_test_unit(UnitKind::Player, 0, 0);
+    let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+    enemy.sacrifice_bonus_damage = 0;
+    enemy.sacrifice_bonus_turns = 0;
+
+    let mut battle = make_test_battle(vec![player, enemy]);
+
+    apply_round_start_synergies(&mut battle);
+
+    assert_eq!(battle.units[1].sacrifice_bonus_turns, 0);
+    assert_eq!(battle.units[1].sacrifice_bonus_damage, 0);
+}
+

@@ -12,7 +12,7 @@ impl LocationLevel {
                 // Gold piles scattered around the vault
                 for y in room.y + 1..room.y + room.h - 1 {
                     for x in room.x + 1..room.x + room.w - 1 {
-                        if self.in_bounds(x, y) && rng.next_u64() % 7 == 0 {
+                        if self.in_bounds(x, y) && (rng.next_u64() % 7 == 0) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
                                 self.tiles[idx] = Tile::CreditCache;
@@ -62,7 +62,7 @@ impl LocationLevel {
                 // Dense gold ore on walls (higher coverage)
                 for x in room.x..room.x + room.w {
                     for y in [room.y, room.y + room.h - 1] {
-                        if self.in_bounds(x, y) && rng.next_u64() % 2 == 0 {
+                        if self.in_bounds(x, y) && (rng.next_u64() % 2 == 0) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
                                 self.tiles[idx] = Tile::OreVein;
@@ -72,7 +72,7 @@ impl LocationLevel {
                 }
                 for y in room.y..room.y + room.h {
                     for x in [room.x, room.x + room.w - 1] {
-                        if self.in_bounds(x, y) && rng.next_u64() % 2 == 0 {
+                        if self.in_bounds(x, y) && (rng.next_u64() % 2 == 0) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
                                 self.tiles[idx] = Tile::OreVein;
@@ -94,7 +94,7 @@ impl LocationLevel {
                 // Gold piles near veins
                 for y in room.y + 1..room.y + room.h - 1 {
                     for x in room.x + 1..room.x + room.w - 1 {
-                        if self.in_bounds(x, y) && rng.next_u64() % 8 == 0 {
+                        if self.in_bounds(x, y) && (rng.next_u64() % 8 == 0) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
                                 self.tiles[idx] = Tile::CreditCache;
@@ -320,7 +320,7 @@ impl LocationLevel {
                 // Gold ore on walls
                 for x in room.x..room.x + room.w {
                     for y in [room.y, room.y + room.h - 1] {
-                        if self.in_bounds(x, y) && rng.next_u64() % 2 == 0 {
+                        if self.in_bounds(x, y) && (rng.next_u64() % 2 == 0) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
                                 self.tiles[idx] = Tile::OreVein;
@@ -331,7 +331,7 @@ impl LocationLevel {
                 // Dense gold piles throughout
                 for y in room.y + 1..room.y + room.h - 1 {
                     for x in room.x + 1..room.x + room.w - 1 {
-                        if self.in_bounds(x, y) && rng.next_u64() % 3 == 0 {
+                        if self.in_bounds(x, y) && (rng.next_u64() % 3 == 0) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
                                 self.tiles[idx] = Tile::CreditCache;
@@ -477,7 +477,7 @@ impl LocationLevel {
                     for dx in -2i32..=2 {
                         if dx == 0 && dy == 0 { continue; }
                         let dist = dx.abs().max(dy.abs());
-                        if dist >= 1 && dist <= 2 {
+                        if (1..=2).contains(&dist) {
                             let x = cx + dx;
                             let y = cy + dy;
                             if self.in_bounds(x, y) {
@@ -521,7 +521,7 @@ impl LocationLevel {
                 // Oil (sand/blood) scattered in center area
                 for y in room.y + 2..room.y + room.h - 2 {
                     for x in room.x + 2..room.x + room.w - 2 {
-                        if self.in_bounds(x, y) && rng.next_u64() % 5 == 0 {
+                        if self.in_bounds(x, y) && (rng.next_u64() % 5 == 0) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
                                 self.tiles[idx] = Tile::Coolant;
@@ -685,7 +685,7 @@ impl LocationLevel {
                 // Mushroom patches in gas corridors
                 for y in room.y + 1..room.y + room.h - 1 {
                     for x in room.x + 1..room.x + room.w - 1 {
-                        if self.in_bounds(x, y) && rng.next_u64() % 8 == 0 {
+                        if self.in_bounds(x, y) && (rng.next_u64() % 8 == 0) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::ToxicGas {
                                 self.tiles[idx] = Tile::ToxicFungus;
@@ -759,7 +759,7 @@ impl LocationLevel {
                 // Oil ground texture
                 for y in room.y + 1..room.y + room.h - 1 {
                     for x in room.x + 1..room.x + room.w - 1 {
-                        if self.in_bounds(x, y) && rng.next_u64() % 6 == 0 {
+                        if self.in_bounds(x, y) && (rng.next_u64() % 6 == 0) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
                                 self.tiles[idx] = Tile::Coolant;
@@ -898,7 +898,7 @@ impl LocationLevel {
                 // Oil (disturbed earth) between tombstones
                 for y in room.y + 1..room.y + room.h - 1 {
                     for x in room.x + 1..room.x + room.w - 1 {
-                        if self.in_bounds(x, y) && rng.next_u64() % 5 == 0 {
+                        if self.in_bounds(x, y) && (rng.next_u64() % 5 == 0) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
                                 self.tiles[idx] = Tile::Coolant;
@@ -931,7 +931,7 @@ impl LocationLevel {
                 // Oil (escape routes / slippery floor)
                 for y in room.y + 1..room.y + room.h - 1 {
                     for x in room.x + 1..room.x + room.w - 1 {
-                        if self.in_bounds(x, y) && rng.next_u64() % 6 == 0 {
+                        if self.in_bounds(x, y) && (rng.next_u64() % 6 == 0) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
                                 self.tiles[idx] = Tile::Coolant;
@@ -1636,7 +1636,7 @@ impl LocationLevel {
                 // Dense bamboo with gaps for navigation
                 for y in room.y + 1..room.y + room.h - 1 {
                     for x in room.x + 1..room.x + room.w - 1 {
-                        if self.in_bounds(x, y) && rng.next_u64() % 3 != 0 {
+                        if self.in_bounds(x, y) && (rng.next_u64() % 3 != 0) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
                                 self.tiles[idx] = Tile::CargoPipes;
@@ -1746,7 +1746,7 @@ impl LocationLevel {
                 // Water (cave pools) scattered
                 for y in room.y + 1..room.y + room.h - 1 {
                     for x in room.x + 1..room.x + room.w - 1 {
-                        if self.in_bounds(x, y) && rng.next_u64() % 8 == 0 {
+                        if self.in_bounds(x, y) && (rng.next_u64() % 8 == 0) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
                                 self.tiles[idx] = Tile::CoolantPool;
@@ -1779,7 +1779,7 @@ impl LocationLevel {
                 // Crystal formations (denser, with pattern)
                 for y in room.y + 1..room.y + room.h - 1 {
                     for x in room.x + 1..room.x + room.w - 1 {
-                        if self.in_bounds(x, y) && rng.next_u64() % 5 == 0 {
+                        if self.in_bounds(x, y) && (rng.next_u64() % 5 == 0) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
                                 self.tiles[idx] = Tile::CrystalPanel;
@@ -1792,7 +1792,7 @@ impl LocationLevel {
                 // Mushroom clusters scattered
                 for y in room.y + 1..room.y + room.h - 1 {
                     for x in room.x + 1..room.x + room.w - 1 {
-                        if self.in_bounds(x, y) && rng.next_u64() % 4 == 0 {
+                        if self.in_bounds(x, y) && (rng.next_u64() % 4 == 0) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
                                 self.tiles[idx] = Tile::ToxicFungus;
@@ -1814,7 +1814,7 @@ impl LocationLevel {
                 // Poison gas spore clouds near mushroom clusters
                 for y in room.y + 1..room.y + room.h - 1 {
                     for x in room.x + 1..room.x + room.w - 1 {
-                        if self.in_bounds(x, y) && rng.next_u64() % 10 == 0 {
+                        if self.in_bounds(x, y) && (rng.next_u64() % 10 == 0) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
                                 self.tiles[idx] = Tile::ToxicGas;
@@ -1940,7 +1940,7 @@ impl LocationLevel {
                 // Oil (shadow puddles)
                 for y in room.y + 1..room.y + room.h - 1 {
                     for x in room.x + 1..room.x + room.w - 1 {
-                        if self.in_bounds(x, y) && rng.next_u64() % 4 == 0 {
+                        if self.in_bounds(x, y) && (rng.next_u64() % 4 == 0) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
                                 self.tiles[idx] = Tile::Coolant;
@@ -2790,7 +2790,7 @@ impl LocationLevel {
                 // Ink (oil) flooding most of the room
                 for y in room.y + 1..room.y + room.h - 1 {
                     for x in room.x + 1..room.x + room.w - 1 {
-                        if self.in_bounds(x, y) && rng.next_u64() % 3 != 0 {
+                        if self.in_bounds(x, y) && (rng.next_u64() % 3 != 0) {
                             let idx = self.idx(x, y);
                             if self.tiles[idx] == Tile::MetalFloor {
                                 self.tiles[idx] = Tile::Coolant;

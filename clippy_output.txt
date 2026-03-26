@@ -1,0 +1,2153 @@
+warning: stripping a prefix manually
+   --> build.rs:225:39
+    |
+225 |             cur_choice_outcome = Some(line[2..].trim().to_string());
+    |                                       ^^^^^^^^^
+    |
+note: the prefix was tested here
+   --> build.rs:223:9
+    |
+223 |         if line.starts_with("~ ") {
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_strip
+    = note: `#[warn(clippy::manual_strip)]` on by default
+help: try using the `strip_prefix` method
+    |
+223 ~         if let Some(<stripped>) = line.strip_prefix("~ ") {
+224 |             in_description = false;
+225 ~             cur_choice_outcome = Some(<stripped>.trim().to_string());
+    |
+
+warning: unnecessary use of `to_string`
+   --> build.rs:587:18
+    |
+587 |     out.push_str(&"pub static ALL_STARMAP_EVENTS: &[super::events::SpaceEvent] = &[\n".to_string());
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `"pub static ALL_STARMAP_EVENTS: &[super::events::SpaceEvent] = &[\n"`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_to_owned
+    = note: `#[warn(clippy::unnecessary_to_owned)]` on by default
+
+warning: `radical-starfinder` (build script) generated 2 warnings
+warning: empty line after doc comment
+  --> src\game\data.rs:7:1
+   |
+ 7 | / /// pick easier sentences on early floors and harder ones later.
+ 8 | |
+   | |_^
+ 9 |   /// Tier 1 ÔÇö easy (2-3 words, HSK 1)
+10 |   pub(super) const SENTENCES_EASY: &[(&[&str], &str)] = &[
+   |   ------------------------------- the comment documents this constant item
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#empty_line_after_doc_comments
+   = note: `#[warn(clippy::empty_line_after_doc_comments)]` on by default
+   = help: if the empty line is unintentional, remove it
+help: if the comment should document the parent module use an inner doc comment
+   |
+ 5 ~ //! Sentence data for sentence construction challenges.
+ 6 ~ //! Organised into three difficulty tiers so `select_sentence_for_floor` can
+ 7 ~ //! pick easier sentences on early floors and harder ones later.
+   |
+help: if the documentation should include the empty line include it in the comment
+   |
+ 8 | ///
+   |
+
+warning: empty line after doc comment
+   --> src\world\starmap.rs:200:1
+    |
+200 | / /// Each pool contains at least 15 entries; 6 pools ÔëÑ 90 total (well over 60).
+201 | |
+    | |_^
+202 |   const HSK1_NAMES: &[(&str, &str)] = &[
+    |   ---------------- the comment documents this constant item
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#empty_line_after_doc_comments
+    = help: if the empty line is unintentional, remove it
+
+warning: function `narrative_quest_gold` is never used
+  --> src\game\quests.rs:36:15
+   |
+36 | pub(crate) fn narrative_quest_gold(base_gold: i32, gold_per_floor: i32, floor: i32) -> i32 {
+   |               ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `narrative_quest_count` is never used
+  --> src\game\quests.rs:41:15
+   |
+41 | pub(crate) fn narrative_quest_count() -> usize {
+   |               ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `narrative_goal_for` is never used
+  --> src\game\quests.rs:47:15
+   |
+47 | pub(crate) fn narrative_goal_for(index: usize, floor: i32) -> Option<QuestGoal> {
+   |               ^^^^^^^^^^^^^^^^^^
+
+warning: function `extract_tone` is never used
+  --> src\game\quests.rs:52:15
+   |
+52 | pub(crate) fn extract_tone(pinyin: &str) -> u8 {
+   |               ^^^^^^^^^^^^
+
+warning: this function has too many arguments (8/7)
+   --> src\audio.rs:134:5
+    |
+134 | /     fn voice(
+135 | |         &self,
+136 | |         freq: f32,
+137 | |         detune: f32,
+...   |
+142 | |         t0: f64,
+143 | |     ) -> f64 {
+    | |____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#too_many_arguments
+    = note: `#[warn(clippy::too_many_arguments)]` on by default
+
+warning: manual implementation of an assign operation
+   --> src\combat\action.rs:208:21
+    |
+208 |                     damage = damage / 2;
+    |                     ^^^^^^^^^^^^^^^^^^^ help: replace it with: `damage /= 2`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#assign_op_pattern
+    = note: `#[warn(clippy::assign_op_pattern)]` on by default
+
+warning: manual implementation of an assign operation
+   --> src\combat\action.rs:236:9
+    |
+236 |         damage = damage / 2;
+    |         ^^^^^^^^^^^^^^^^^^^ help: replace it with: `damage /= 2`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#assign_op_pattern
+
+warning: called `unwrap` on `retaliation_msg` after checking its variant with `is_some`
+   --> src\combat\action.rs:414:17
+    |
+411 |         let msg = if retaliation_msg.is_some() {
+    |                   ---------------------------- help: try: `if let Some(<item>) = retaliation_msg`
+...
+414 |                 retaliation_msg.unwrap()
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_unwrap
+    = note: `#[warn(clippy::unnecessary_unwrap)]` on by default
+
+warning: redundant closure
+   --> src\combat\action.rs:671:44
+    |
+671 |     battle.player_equip_effects.iter().any(|e| check(e))
+    |                                            ^^^^^^^^^^^^ help: replace the closure with the function itself: `check`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#redundant_closure
+    = note: `#[warn(clippy::redundant_closure)]` on by default
+
+warning: this `if` has identical blocks
+   --> src\combat\ai.rs:178:37
+    |
+178 |                   } else if dist <= 1 {
+    |  _____________________________________^
+179 | |                     EnemyIntent::Retreat
+180 | |                 } else if dist <= 3 {
+    | |_________________^
+    |
+note: same as this
+   --> src\combat\ai.rs:180:37
+    |
+180 |                   } else if dist <= 3 {
+    |  _____________________________________^
+181 | |                     EnemyIntent::Retreat
+182 | |                 } else {
+    | |_________________^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#if_same_then_else
+    = note: `#[warn(clippy::if_same_then_else)]` on by default
+
+warning: this `if` has identical blocks
+   --> src\combat\ai.rs:220:44
+    |
+220 |                   } else if allies_near >= 2 {
+    |  ____________________________________________^
+221 | |                     EnemyIntent::Attack
+222 | |                 } else if dist <= 1 {
+    | |_________________^
+    |
+note: same as this
+   --> src\combat\ai.rs:222:37
+    |
+222 |                   } else if dist <= 1 {
+    |  _____________________________________^
+223 | |                     EnemyIntent::Attack
+224 | |                 } else {
+    | |_________________^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#if_same_then_else
+
+warning: this `if` statement can be collapsed
+   --> src\combat\ai.rs:318:17
+    |
+318 | /                 if dist <= 3 {
+319 | |                     if role == TacticalRole::Offensive {
+320 | |                         score += 100;
+321 | |                     }
+322 | |                 }
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_if
+    = note: `#[warn(clippy::collapsible_if)]` on by default
+help: collapse nested if block
+    |
+318 ~                 if dist <= 3
+319 ~                     && role == TacticalRole::Offensive {
+320 |                         score += 100;
+321 ~                     }
+    |
+
+warning: this `else { if .. }` block can be collapsed
+   --> src\combat\ai.rs:675:20
+    |
+675 |               } else {
+    |  ____________________^
+676 | |                 if dist <= 1 {
+677 | |                     AiAction::MeleeAttack { target_unit: 0 }
+678 | |                 } else if let Some(path) = path_toward_ally(battle, unit_idx) {
+...   |
+686 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_else_if
+    = note: `#[warn(clippy::collapsible_else_if)]` on by default
+help: collapse nested if block
+    |
+675 ~             } else if dist <= 1 {
+676 +                 AiAction::MeleeAttack { target_unit: 0 }
+677 +             } else if let Some(path) = path_toward_ally(battle, unit_idx) {
+678 +                 AiAction::MoveToTile { path }
+679 +             } else if let Some(path) = path_toward(battle, unit_idx, player.x, player.y, true)
+680 +             {
+681 +                 AiAction::MoveToTile { path }
+682 +             } else {
+683 +                 AiAction::Wait
+684 +             }
+    |
+
+warning: manual implementation of `.is_multiple_of()`
+  --> src\combat\boss.rs:26:8
+   |
+26 |     if turn % 3 != 0 || battle.ward_tiles.len() >= 4 {
+   |        ^^^^^^^^^^^^^ help: replace with: `!turn.is_multiple_of(3)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+   = note: `#[warn(clippy::manual_is_multiple_of)]` on by default
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\combat\boss.rs:112:8
+    |
+112 |     if turn % 4 == 0 {
+    |        ^^^^^^^^^^^^^ help: replace with: `turn.is_multiple_of(4)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\combat\boss.rs:171:8
+    |
+171 |     if turn % 5 != 0 {
+    |        ^^^^^^^^^^^^^ help: replace with: `!turn.is_multiple_of(5)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\combat\boss.rs:267:8
+    |
+267 |     if turn % 2 != 0 {
+    |        ^^^^^^^^^^^^^ help: replace with: `!turn.is_multiple_of(2)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: this `if` statement can be collapsed
+  --> src\combat\grid.rs:90:21
+   |
+90 | /                     if !ntile.is_walkable() && battle.unit_at(nx, ny).is_none() {
+91 | |                         if !result.contains(&(nx, ny)) {
+92 | |                             result.push((nx, ny));
+93 | |                         }
+94 | |                     }
+   | |_____________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_if
+help: collapse nested if block
+   |
+90 ~                     if !ntile.is_walkable() && battle.unit_at(nx, ny).is_none()
+91 ~                         && !result.contains(&(nx, ny)) {
+92 |                             result.push((nx, ny));
+93 ~                         }
+   |
+
+warning: this `if` has identical blocks
+    --> src\combat\input\resolution.rs:1272:46
+     |
+1272 |                   } else if dy != 0 && dx == 0 {
+     |  ______________________________________________^
+1273 | |                     (target_x + i, target_y)
+1274 | |                 } else {
+     | |_________________^
+     |
+note: same as this
+    --> src\combat\input\resolution.rs:1274:24
+     |
+1274 |                   } else {
+     |  ________________________^
+1275 | |                     (target_x + i, target_y)
+1276 | |                 };
+     | |_________________^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#if_same_then_else
+
+warning: the borrowed expression implements the required traits
+    --> src\combat\input\resolution.rs:1357:56
+     |
+1357 |   ...                   battle.log_message(&format!(
+     |  __________________________________________^
+1358 | | ...                       "Lubricant ignites! {} takes 3 damage!",
+1359 | | ...                       battle.units[idx].hanzi
+1360 | | ...                   ));
+     | |_______________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_borrows_for_generic_args
+     = note: `#[warn(clippy::needless_borrows_for_generic_args)]` on by default
+help: change this to
+     |
+1357 ~                                     battle.log_message(format!(
+1358 +                                         "Lubricant ignites! {} takes 3 damage!",
+1359 +                                         battle.units[idx].hanzi
+1360 ~                                     ));
+     |
+
+warning: useless use of `format!`
+    --> src\combat\input\resolution.rs:1468:13
+     |
+1468 |             format!("The deck shakes! Seismic charge detonates in 2 turns!")
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using `.to_string()`: `"The deck shakes! Seismic charge detonates in 2 turns!".to_string()`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#useless_format
+     = note: `#[warn(clippy::useless_format)]` on by default
+
+warning: useless use of `format!`
+    --> src\combat\input\resolution.rs:1551:13
+     |
+1551 |             format!("Coolant wave surges! Impact in 1 turn!")
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using `.to_string()`: `"Coolant wave surges! Impact in 1 turn!".to_string()`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#useless_format
+
+warning: this `if` statement can be collapsed
+    --> src\combat\input\mod.rs:1210:5
+     |
+1210 | /     if battle.units[unit_idx].is_enemy() {
+1211 | |         if crate::combat::synergy::try_sacrifice(battle, unit_idx) {
+1212 | |             return BattleEvent::None;
+1213 | |         }
+1214 | |     }
+     | |_____^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_if
+help: collapse nested if block
+     |
+1210 ~     if battle.units[unit_idx].is_enemy()
+1211 ~         && crate::combat::synergy::try_sacrifice(battle, unit_idx) {
+1212 |             return BattleEvent::None;
+1213 ~         }
+     |
+
+warning: this `if` statement can be collapsed
+    --> src\combat\radical.rs:1027:25
+     |
+1027 | /                         if tx >= 0
+1028 | |                             && ty >= 0
+1029 | |                             && tx < battle.arena.width as i32
+1030 | |                             && ty < battle.arena.height as i32
+...    |
+1037 | |                         }
+     | |_________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_if
+help: collapse nested if block
+     |
+1030 ~                             && ty < battle.arena.height as i32
+1031 ~                             && battle.arena.tile(tx, ty) == Some(crate::combat::BattleTile::MetalFloor) {
+1032 |                                 battle
+1033 |                                     .arena
+1034 |                                     .set_tile(tx, ty, crate::combat::BattleTile::WiringPanel);
+1035 ~                             }
+     |
+
+warning: the borrowed expression implements the required traits
+    --> src\combat\radical.rs:1710:52
+     |
+1710 |   ...                   battle.log_message(&format!(
+     |  __________________________________________^
+1711 | | ...                       "­ƒöÑ Fire scorches for {} damage!",
+1712 | | ...                       actual
+1713 | | ...                   ));
+     | |_______________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_borrows_for_generic_args
+help: change this to
+     |
+1710 ~                                 battle.log_message(format!(
+1711 ~                                     "­ƒöÑ Fire scorches for {} damage!",
+1712 +                                     actual
+1713 ~                                 ));
+     |
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\combat\synergy.rs:480:8
+    |
+480 |     if seed % 5 != 0 {
+    |        ^^^^^^^^^^^^^ help: replace with: `!seed.is_multiple_of(5)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: useless use of `format!`
+  --> src\combat\terrain.rs:38:43
+   |
+38 | ...                   messages.push(format!("­ƒÆ¿ Smoke billows from burning wiring!"));
+   |                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using `.to_string()`: `"­ƒÆ¿ Smoke billows from burning wiring!".to_string()`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#useless_format
+
+warning: this boolean expression can be simplified
+   --> src\combat\terrain.rs:543:9
+    |
+543 | /         deltas.iter().any(|&(dx, dy)| {
+544 | |             battle.arena.tile(bx + dx, by + dy) == Some(BattleTile::PlasmaPool)
+545 | |         }) || false // canister tile itself was FuelCanister, can't be PlasmaPool
+    | |___________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#nonminimal_bool
+    = note: `#[warn(clippy::nonminimal_bool)]` on by default
+help: try
+    |
+543 ~         deltas.iter().any(|&(dx, dy)| {
+544 +             battle.arena.tile(bx + dx, by + dy) == Some(BattleTile::PlasmaPool)
+545 ~         }) // canister tile itself was FuelCanister, can't be PlasmaPool
+    |
+
+warning: this `if` statement can be collapsed
+   --> src\combat\terrain.rs:642:13
+    |
+642 | /             if battle.arena.tile(x, y) == Some(BattleTile::DamagedFloor) {
+643 | |                 if battle.unit_at(x, y).is_none() {
+644 | |                     battle.arena.set_tile(x, y, BattleTile::BreachedFloor);
+645 | |                     messages.push(format!("Cracked floor collapses at ({},{})!", x, y));
+646 | |                 }
+647 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+642 ~             if battle.arena.tile(x, y) == Some(BattleTile::DamagedFloor)
+643 ~                 && battle.unit_at(x, y).is_none() {
+644 |                     battle.arena.set_tile(x, y, BattleTile::BreachedFloor);
+645 |                     messages.push(format!("Cracked floor collapses at ({},{})!", x, y));
+646 ~                 }
+    |
+
+warning: manual saturating add detected
+   --> src\combat\terrain.rs:798:17
+    |
+798 | /                 if battle.arena.lava_timers[i] < 255 {
+799 | |                     battle.arena.lava_timers[i] += 1;
+800 | |                 }
+    | |_________________^ help: use instead: `battle.arena.lava_timers[i] = battle.arena.lava_timers[i].saturating_add(1);`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#implicit_saturating_add
+    = note: `#[warn(clippy::implicit_saturating_add)]` on by default
+
+warning: manual implementation of `.is_multiple_of()`
+    --> src\combat\terrain.rs:1012:8
+     |
+1012 |     if tick % 2 == 0 {
+     |        ^^^^^^^^^^^^^ help: replace with: `tick.is_multiple_of(2)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: this `if` statement can be collapsed
+   --> src\combat\tick.rs:830:13
+    |
+830 | /             if battle.arena.tile(target_x, target_y) == Some(BattleTile::CargoCrate) {
+831 | |                 if !crate_pushes.iter().any(|&(cx, cy, _, _)| cx == target_x && cy == target_y) {
+832 | |                     crate_pushes.push((target_x, target_y, dx, dy));
+833 | |                 }
+834 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+830 ~             if battle.arena.tile(target_x, target_y) == Some(BattleTile::CargoCrate)
+831 ~                 && !crate_pushes.iter().any(|&(cx, cy, _, _)| cx == target_x && cy == target_y) {
+832 |                     crate_pushes.push((target_x, target_y, dx, dy));
+833 ~                 }
+    |
+
+warning: manual `!RangeInclusive::contains` implementation
+   --> src\combat\tick.rs:970:16
+    |
+970 |             if dist < 1 || dist > 2 {
+    |                ^^^^^^^^^^^^^^^^^^^^ help: use: `!(1..=2).contains(&dist)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_range_contains
+    = note: `#[warn(clippy::manual_range_contains)]` on by default
+
+warning: this `if` statement can be collapsed
+    --> src\combat\tick.rs:1093:25
+     |
+1093 | /                         if battle.arena.tiles[i] == BattleTile::VentSteam {
+1094 | |                             if battle.arena.steam_timers[i] < 4 {
+1095 | |                                 battle.arena.steam_timers[i] = 4;
+1096 | |                             }
+1097 | |                         }
+     | |_________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_if
+help: collapse nested if block
+     |
+1093 ~                         if battle.arena.tiles[i] == BattleTile::VentSteam
+1094 ~                             && battle.arena.steam_timers[i] < 4 {
+1095 |                                 battle.arena.steam_timers[i] = 4;
+1096 ~                             }
+     |
+
+warning: this `map_or` can be simplified
+    --> src\combat\tick.rs:1441:24
+     |
+1441 |                       && battle
+     |  ________________________^
+1442 | |                         .arena
+1443 | |                         .tile(nx, ny)
+1444 | |                         .map_or(false, |t| t.is_walkable())
+     | |___________________________________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_map_or
+     = note: `#[warn(clippy::unnecessary_map_or)]` on by default
+help: use is_some_and instead
+     |
+1444 -                         .map_or(false, |t| t.is_walkable())
+1444 +                         .is_some_and(|t| t.is_walkable())
+     |
+
+warning: this `map_or` can be simplified
+    --> src\combat\tick.rs:1471:20
+     |
+1471 |                   if battle
+     |  ____________________^
+1472 | |                     .arena
+1473 | |                     .tile(target_x, target_y)
+1474 | |                     .map_or(false, |t| t.is_walkable())
+     | |_______________________________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_map_or
+help: use is_some_and instead
+     |
+1474 -                     .map_or(false, |t| t.is_walkable())
+1474 +                     .is_some_and(|t| t.is_walkable())
+     |
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\combat\transition.rs:599:28
+    |
+599 |         let should_place = flow_hash % 3 != 0;
+    |                            ^^^^^^^^^^^^^^^^^^ help: replace with: `!flow_hash.is_multiple_of(3)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: casting to the same type is unnecessary (`i32` -> `i32`)
+   --> src\combat\transition.rs:608:35
+    |
+608 |             let channel_len = 3 + (floor / 6).min(3) as i32;
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `(floor / 6).min(3)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_cast
+    = note: `#[warn(clippy::unnecessary_cast)]` on by default
+
+warning: this `if` has identical blocks
+  --> src\combat\turn.rs:52:16
+   |
+52 |       if is_boss {
+   |  ________________^
+53 | |         4
+54 | |     } else if is_elite {
+   | |_____^
+   |
+note: same as this
+  --> src\combat\turn.rs:54:24
+   |
+54 |       } else if is_elite {
+   |  ________________________^
+55 | |         4
+56 | |     } else {
+   | |_____^
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#if_same_then_else
+
+warning: this `else { if .. }` block can be collapsed
+   --> src\combat\mod.rs:425:16
+    |
+425 |           } else {
+    |  ________________^
+426 | |             if dy > 0 {
+427 | |                 Some(Direction::South)
+428 | |             } else if dy < 0 {
+...   |
+433 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_else_if
+help: collapse nested if block
+    |
+425 ~         } else if dy > 0 {
+426 +             Some(Direction::South)
+427 +         } else if dy < 0 {
+428 +             Some(Direction::North)
+429 +         } else {
+430 +             None
+431 +         }
+    |
+
+warning: this `map_or` can be simplified
+  --> src\game\events.rs:36:13
+   |
+36 | /             class.get(*class_id as usize).map_or(false, |c| {
+37 | |                 std::mem::discriminant(&player.class) == std::mem::discriminant(c)
+38 | |             })
+   | |______________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_map_or
+help: use is_some_and instead
+   |
+36 -             class.get(*class_id as usize).map_or(false, |c| {
+36 +             class.get(*class_id as usize).is_some_and(|c| {
+   |
+
+warning: accessing first element with `effective_parts.get(0)`
+   --> src\game\input.rs:186:30
+    |
+186 |                 let amount = effective_parts.get(0).and_then(|s| s.parse::<i32>().ok());
+    |                              ^^^^^^^^^^^^^^^^^^^^^^ help: try: `effective_parts.first()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#get_first
+    = note: `#[warn(clippy::get_first)]` on by default
+
+warning: accessing first element with `effective_parts.get(0)`
+   --> src\game\input.rs:199:30
+    |
+199 |                   let amount = effective_parts
+    |  ______________________________^
+200 | |                     .get(0)
+    | |___________________________^ help: try: `effective_parts.first()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#get_first
+
+warning: accessing first element with `effective_parts.get(0)`
+   --> src\game\input.rs:207:34
+    |
+207 |                 if let Some(n) = effective_parts.get(0).and_then(|s| s.parse::<i32>().ok()) {
+    |                                  ^^^^^^^^^^^^^^^^^^^^^^ help: try: `effective_parts.first()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#get_first
+
+warning: accessing first element with `effective_parts.get(0)`
+   --> src\game\input.rs:248:34
+    |
+248 |                       let amount = effective_parts
+    |  __________________________________^
+249 | |                         .get(0)
+    | |_______________________________^ help: try: `effective_parts.first()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#get_first
+
+warning: accessing first element with `effective_parts.get(0)`
+   --> src\game\input.rs:311:37
+    |
+311 |                 if let Some(name) = effective_parts.get(0) {
+    |                                     ^^^^^^^^^^^^^^^^^^^^^^ help: try: `effective_parts.first()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#get_first
+
+warning: accessing first element with `effective_parts.get(0)`
+   --> src\game\input.rs:362:35
+    |
+362 |                 if let Some(ch) = effective_parts.get(0) {
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^ help: try: `effective_parts.first()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#get_first
+
+warning: accessing first element with `effective_parts.get(0)`
+   --> src\game\input.rs:393:38
+    |
+393 |                 if let Some(hanzi) = effective_parts.get(0) {
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^ help: try: `effective_parts.first()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#get_first
+
+warning: accessing first element with `effective_parts.get(0)`
+   --> src\game\input.rs:416:37
+    |
+416 |                 if let Some(kind) = effective_parts.get(0) {
+    |                                     ^^^^^^^^^^^^^^^^^^^^^^ help: try: `effective_parts.first()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#get_first
+
+warning: accessing first element with `effective_parts.get(0)`
+   --> src\game\input.rs:499:37
+    |
+499 |                 if let Some(name) = effective_parts.get(0) {
+    |                                     ^^^^^^^^^^^^^^^^^^^^^^ help: try: `effective_parts.first()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#get_first
+
+warning: this `map_or` can be simplified
+  --> src\game\dungeon_events.rs:15:13
+   |
+15 | /             class.get(*class_id as usize).map_or(false, |c| {
+16 | |                 std::mem::discriminant(&player.class) == std::mem::discriminant(c)
+17 | |             })
+   | |______________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_map_or
+help: use is_some_and instead
+   |
+15 -             class.get(*class_id as usize).map_or(false, |c| {
+15 +             class.get(*class_id as usize).is_some_and(|c| {
+   |
+
+warning: casting to the same type is unnecessary (`i32` -> `i32`)
+  --> src\game\floor.rs:44:46
+   |
+44 |             for _ in 0..enemies_per_room.min(ENEMIES_PER_ROOM as i32 + self.floor_num / 3) {
+   |                                              ^^^^^^^^^^^^^^^^^^^^^^^ help: try: `ENEMIES_PER_ROOM`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_cast
+
+warning: manual implementation of `.is_multiple_of()`
+  --> src\game\floor.rs:64:16
+   |
+64 |             if self.rng_next() % 5 == 0 {
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `self.rng_next().is_multiple_of(5)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: this boolean expression can be simplified
+   --> src\game\floor.rs:210:12
+    |
+210 |         if !(!has_piety && self.message.contains("disapproves")) {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `has_piety || !self.message.contains("disapproves")`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#nonminimal_bool
+
+warning: this `if` statement can be collapsed
+   --> src\game\rooms.rs:579:9
+    |
+579 | /         if self.floor_num > 1 {
+580 | |             if self.player.get_piety(Faction::Consortium) >= 10 && self.player.get_piety(Faction::AncientOrder) >= 10
+581 | |             {
+582 | |                 self.player.gold += 5;
+583 | |             }
+584 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+579 ~         if self.floor_num > 1
+580 ~             && self.player.get_piety(Faction::Consortium) >= 10 && self.player.get_piety(Faction::AncientOrder) >= 10
+581 |             {
+582 |                 self.player.gold += 5;
+583 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+   --> src\game\rooms.rs:586:9
+    |
+586 | /         if self.player.get_piety(Faction::Technocracy) >= 10 && self.player.get_piety(Faction::FreeTraders) >= 10 {
+587 | |             if (self.rng_next() % 100) < 25 {
+588 | |                 self.reveal_entire_floor();
+589 | |                 let (sx, sy) = self.tile_to_screen(self.player.x, self.player.y);
+...   |
+596 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+586 ~         if self.player.get_piety(Faction::Technocracy) >= 10 && self.player.get_piety(Faction::FreeTraders) >= 10
+587 ~             && (self.rng_next() % 100) < 25 {
+588 |                 self.reveal_entire_floor();
+...
+594 |                 }
+595 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+   --> src\game\rooms.rs:598:9
+    |
+598 | /         if self.player.get_piety(Faction::FreeTraders) >= 10 && self.player.get_piety(Faction::AncientOrder) >= 10 {
+599 | |             if (self.rng_next() % 100) < 25 {
+600 | |                 let mut tries = 0;
+601 | |                 while tries < 100 {
+...   |
+617 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+598 ~         if self.player.get_piety(Faction::FreeTraders) >= 10 && self.player.get_piety(Faction::AncientOrder) >= 10
+599 ~             && (self.rng_next() % 100) < 25 {
+600 |                 let mut tries = 0;
+...
+615 |                 }
+616 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+   --> src\game\rooms.rs:604:21
+    |
+604 | /                     if self.level.in_bounds(rx, ry)
+605 | |                         && self.level.is_walkable(rx, ry)
+606 | |                         && self.level.tile(rx, ry) == Tile::MetalFloor
+...   |
+613 | |                     }
+    | |_____________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+606 ~                         && self.level.tile(rx, ry) == Tile::MetalFloor
+607 ~                         && (rx, ry) != (self.player.x, self.player.y) {
+608 |                             let idx = self.level.idx(rx, ry);
+609 |                             self.level.tiles[idx] = Tile::SupplyCrate;
+610 |                             break;
+611 ~                         }
+    |
+
+warning: unneeded `return` statement
+    --> src\game\rooms.rs:1035:21
+     |
+1035 |                     return;
+     |                     ^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_return
+     = note: `#[warn(clippy::needless_return)]` on by default
+help: remove `return`
+     |
+1034 -                     // Normal GoldPile effect handles this via apply_player_tile_effect
+1035 -                     return;
+1034 +                     // Normal GoldPile effect handles this via apply_player_tile_effect
+     |
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\game\rooms.rs:884:20
+    |
+884 |                 if self.rng_next() % 2 == 0 {
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `self.rng_next().is_multiple_of(2)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: casting to the same type is unnecessary (`i32` -> `i32`)
+   --> src\game\rooms.rs:912:42
+    |
+912 |                 self.player.gold += 30 + (self.floor_num * 3) as i32;
+    |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `(self.floor_num * 3)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_cast
+
+warning: manual implementation of `.is_multiple_of()`
+    --> src\game\rooms.rs:1236:31
+     |
+1236 |                 let success = self.rng_next() % 2 == 0;
+     |                               ^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `self.rng_next().is_multiple_of(2)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\game\movement.rs:103:50
+    |
+103 |             } else if self.move_count > grace && (self.move_count - grace) % 25 == 0 {
+    |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `(self.move_count - grace).is_multiple_of(25)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\game\movement.rs:239:65
+    |
+239 |                     status::has_haste(&self.player.statuses) && self.move_count % 2 == 0;
+    |                                                                 ^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `self.move_count.is_multiple_of(2)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: this `map_or` can be simplified
+   --> src\game\movement.rs:259:27
+    |
+259 |               let can_dig = self
+    |  ___________________________^
+260 | |                 .player
+261 | |                 .weapon
+262 | |                 .map_or(false, |eq| matches!(eq.effect, EquipEffect::Digging))
+    | |______________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_map_or
+help: use is_some_and instead
+    |
+262 -                 .map_or(false, |eq| matches!(eq.effect, EquipEffect::Digging))
+262 +                 .is_some_and(|eq| matches!(eq.effect, EquipEffect::Digging))
+    |
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\game\movement.rs:299:65
+    |
+299 |                     status::has_haste(&self.player.statuses) && self.move_count % 2 == 0;
+    |                                                                 ^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `self.move_count.is_multiple_of(2)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\game\movement.rs:350:69
+    |
+350 |                         status::has_haste(&self.player.statuses) && self.move_count % 2 == 0;
+    |                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `self.move_count.is_multiple_of(2)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: this `map_or` can be simplified
+   --> src\game\movement.rs:404:27
+    |
+404 |               let can_dig = self
+    |  ___________________________^
+405 | |                 .player
+406 | |                 .weapon
+407 | |                 .map_or(false, |eq| matches!(eq.effect, EquipEffect::Digging))
+    | |______________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_map_or
+help: use is_some_and instead
+    |
+407 -                 .map_or(false, |eq| matches!(eq.effect, EquipEffect::Digging))
+407 +                 .is_some_and(|eq| matches!(eq.effect, EquipEffect::Digging))
+    |
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\game\movement.rs:433:20
+    |
+433 |                 if self.rng_next() % chance == 0 {
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `self.rng_next().is_multiple_of(chance)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\game\movement.rs:775:70
+    |
+775 |         let skip_enemy = status::has_haste(&self.player.statuses) && self.move_count % 2 == 0;
+    |                                                                      ^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `self.move_count.is_multiple_of(2)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+  --> src\game\combat_core.rs:22:67
+   |
+22 |             if status::has_confused(&self.enemies[i].statuses) && self.rng_next() % 2 == 0 {
+   |                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `self.rng_next().is_multiple_of(2)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: this `if` statement can be collapsed
+   --> src\game\combat_core.rs:687:21
+    |
+687 | /                     if self.companion_synergy_level() >= 3 && self.companion == Some(Companion::Quartermaster) {
+688 | |                         if self.rng_next() % 100 < 20 {
+689 | |                             gold_gain *= 2;
+690 | |                             self.message = Companion::Quartermaster.combo_ability_message().to_string();
+...   |
+693 | |                     }
+    | |_____________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+687 ~                     if self.companion_synergy_level() >= 3 && self.companion == Some(Companion::Quartermaster)
+688 ~                         && self.rng_next() % 100 < 20 {
+689 |                             gold_gain *= 2;
+690 |                             self.message = Companion::Quartermaster.combo_ability_message().to_string();
+691 |                             self.message_timer = 90;
+692 ~                         }
+    |
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\game\combat_core.rs:706:28
+    |
+706 |                         if self.rng_next() % 2 == 0 {
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `self.rng_next().is_multiple_of(2)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: this `if` statement can be collapsed
+    --> src\game\combat_core.rs:1128:21
+     |
+1128 | /                     if self.player.get_piety(Faction::FreeTraders) >= 10 {
+1129 | |                         if (self.rng_next() % 100) < 15 {
+1130 | |                             evaded = true;
+1131 | |                         }
+1132 | |                     }
+     | |_____________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_if
+help: collapse nested if block
+     |
+1128 ~                     if self.player.get_piety(Faction::FreeTraders) >= 10
+1129 ~                         && (self.rng_next() % 100) < 15 {
+1130 |                             evaded = true;
+1131 ~                         }
+     |
+
+warning: calling `push_str()` using a single-character string literal
+    --> src\game\combat_core.rs:1271:25
+     |
+1271 |                         self.message.push_str(" ");
+     |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using `push` with a character literal: `self.message.push(' ')`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#single_char_add_str
+     = note: `#[warn(clippy::single_char_add_str)]` on by default
+
+warning: this `else { if .. }` block can be collapsed
+   --> src\game\quests.rs:400:24
+    |
+400 |                   } else {
+    |  ________________________^
+401 | |                     if q.is_narrative() && !q.completion_text.is_empty() {
+402 | |                         self.message = format!(
+403 | |                             "Ô£à {} ({}): {} +{}g",
+...   |
+410 | |                 }
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_else_if
+help: collapse nested if block
+    |
+400 ~                 } else if q.is_narrative() && !q.completion_text.is_empty() {
+401 +                     self.message = format!(
+402 ~                         "Ô£à {} ({}): {} +{}g",
+403 +                         q.giver_name, q.giver_title, q.completion_text, q.gold_reward
+404 +                     );
+405 +                 } else {
+406 +                     self.message =
+407 +                         format!("Quest complete: {}! +{}g", q.description, q.gold_reward);
+408 +                 }
+    |
+
+warning: casting to the same type is unnecessary (`i32` -> `i32`)
+   --> src\game\quests.rs:960:34
+    |
+960 |                 let target = 3 + (floor / 3) as i32;
+    |                                  ^^^^^^^^^^^^^^^^^^ help: try: `(floor / 3)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_cast
+
+warning: casting to the same type is unnecessary (`i32` -> `i32`)
+   --> src\game\quests.rs:980:34
+    |
+980 |                 let target = 3 + (floor / 2) as i32;
+    |                                  ^^^^^^^^^^^^^^^^^^ help: try: `(floor / 2)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_cast
+
+warning: casting to the same type is unnecessary (`i32` -> `i32`)
+   --> src\game\quests.rs:992:38
+    |
+992 |                     let target = 3 + (floor / 2) as i32;
+    |                                      ^^^^^^^^^^^^^^^^^^ help: try: `(floor / 2)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_cast
+
+warning: manual `Range::contains` implementation
+    --> src\game\quests.rs:1019:12
+     |
+1019 |         if chain_id >= NARRATIVE_CHAIN_ID_BASE && chain_id < NARRATIVE_CHAIN_ID_BASE + 4 {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `(NARRATIVE_CHAIN_ID_BASE..NARRATIVE_CHAIN_ID_BASE + 4).contains(&chain_id)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_range_contains
+
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+   --> src\game\spells.rs:761:53
+    |
+761 |                         self.apply_combo(enemy_idx, &combo_name, combo_effect, p_screen, e_screen);
+    |                                                     ^^^^^^^^^^^ help: change this to: `combo_name`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_borrow
+    = note: `#[warn(clippy::needless_borrow)]` on by default
+
+warning: manual implementation of an assign operation
+   --> src\game\items.rs:111:17
+    |
+111 |                 mimic.hp = mimic.hp + 2; // mimics are tougher
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^ help: replace it with: `mimic.hp += 2`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#assign_op_pattern
+
+warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+    --> src\game\items.rs:1296:13
+     |
+1296 | /             match set.bonus {
+1297 | |                 SetBonus::HealOnFloor(amt) => {
+1298 | |                     let max_hp = self.player.max_hp;
+1299 | |                     if self.player.hp < max_hp {
+...    |
+1312 | |                 _ => {}
+1313 | |             }
+     | |_____________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#single_match
+     = note: `#[warn(clippy::single_match)]` on by default
+help: try
+     |
+1296 ~             if let SetBonus::HealOnFloor(amt) = set.bonus {
+1297 +                 let max_hp = self.player.max_hp;
+1298 +                 if self.player.hp < max_hp {
+1299 +                     let healed = amt.min(max_hp - self.player.hp);
+1300 +                     self.player.hp = (self.player.hp + amt).min(max_hp);
+1301 +                     if self.message.is_empty() {
+1302 +                         self.message =
+1303 ~                             format!("­ƒöù {} set heals you for {} HP!", set.name, healed);
+1304 +                     } else {
+1305 +                         self.message
+1306 ~                             .push_str(&format!(" ­ƒöù {} +{} HP!", set.name, healed));
+1307 +                     }
+1308 +                     self.message_timer = self.message_timer.max(90);
+1309 +                 }
+1310 +             }
+     |
+
+warning: redundant pattern matching, consider using `is_some()`
+   --> src\game\victory.rs:238:24
+    |
+238 |                 if let Some(_) = self.player.weapon {
+    |                 -------^^^^^^^--------------------- help: try: `if self.player.weapon.is_some()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#redundant_pattern_matching
+    = note: `#[warn(clippy::redundant_pattern_matching)]` on by default
+
+warning: redundant pattern matching, consider using `is_some()`
+   --> src\game\victory.rs:262:24
+    |
+262 |                 if let Some(_) = self.player.armor {
+    |                 -------^^^^^^^-------------------- help: try: `if self.player.armor.is_some()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#redundant_pattern_matching
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\game\victory.rs:407:49
+    |
+407 |                 let drop_item = if e_is_boss && (self.rng_next() % 5) == 0 {
+    |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `self.rng_next().is_multiple_of(5)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\game\mod.rs:291:20
+    |
+291 |                 if enemy.turns_taken % 2 == 0 {
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `enemy.turns_taken.is_multiple_of(2)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: redundant closure
+   --> src\game\mod.rs:694:50
+    |
+694 |     let renderer = Renderer::new(canvas).map_err(|e| JsValue::from_str(e))?;
+    |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the associated function itself: `JsValue::from_str`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#redundant_closure
+
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+   --> src\game\mod.rs:737:28
+    |
+737 |         codex: Codex::load(&vocab::VOCAB),
+    |                            ^^^^^^^^^^^^^ help: change this to: `vocab::VOCAB`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_borrow
+
+warning: casting to the same type is unnecessary (`i32` -> `i32`)
+    --> src\game\mod.rs:1211:62
+     |
+1211 | ...                   let difficulty = s.floor_num as i32 + 1;
+     |                                        ^^^^^^^^^^^^^^^^^^ help: try: `s.floor_num`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_cast
+
+warning: deref which would be done by auto-deref
+    --> src\game\mod.rs:1821:76
+     |
+1821 | ...                   GameState::enemy_fires(&mut enemy, &mut *s, false);
+     |                                                          ^^^^^^^ help: try: `&mut s`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#explicit_auto_deref
+     = note: `#[warn(clippy::explicit_auto_deref)]` on by default
+
+warning: wildcard pattern covers any other pattern as it will match anyway
+    --> src\game\mod.rs:2014:45
+     |
+2014 | ...                   7 | _ => {
+     |                       ^^^^^
+     |
+     = help: consider handling `_` separately
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#wildcard_in_or_patterns
+     = note: `#[warn(clippy::wildcard_in_or_patterns)]` on by default
+
+warning: deref which would be done by auto-deref
+    --> src\game\mod.rs:1913:84
+     |
+1913 | ...                   GameState::enemy_fires(&mut enemy, &mut *s, false);
+     |                                                          ^^^^^^^ help: try: `&mut s`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#explicit_auto_deref
+
+warning: deref which would be done by auto-deref
+    --> src\game\mod.rs:1935:84
+     |
+1935 | ...                   GameState::enemy_fires(&mut enemy, &mut *s, false);
+     |                                                          ^^^^^^^ help: try: `&mut s`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#explicit_auto_deref
+
+warning: deref which would be done by auto-deref
+    --> src\game\mod.rs:1974:84
+     |
+1974 | ...                   GameState::enemy_fires(&mut enemy, &mut *s, evading);
+     |                                                          ^^^^^^^ help: try: `&mut s`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#explicit_auto_deref
+
+warning: this `if` statement can be collapsed
+    --> src\game\mod.rs:2129:13
+     |
+2129 | /             if key == "r" || key == "R" {
+2130 | |                 if s.pending_recruit.is_some() && s.crew.len() < 6 {
+2131 | |                     let recruit = s.pending_recruit.take().unwrap();
+2132 | |                     s.message = format!(
+...    |
+2142 | |             }
+     | |_____________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_if
+help: collapse nested if block
+     |
+2129 ~             if (key == "r" || key == "R") {
+2130 ~                 && s.pending_recruit.is_some() && s.crew.len() < 6 {
+2131 |                     let recruit = s.pending_recruit.take().unwrap();
+ ...
+2140 |                     return;
+2141 ~                 }
+     |
+
+warning: very complex type used. Consider factoring parts into `type` definitions
+    --> src\game\mod.rs:5000:16
+     |
+5000 |         let f: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
+     |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#type_complexity
+     = note: `#[warn(clippy::type_complexity)]` on by default
+
+warning: this function has too many arguments (9/7)
+  --> src\particle.rs:51:5
+   |
+51 | /     fn burst(
+52 | |         &mut self,
+53 | |         x: f64,
+54 | |         y: f64,
+...  |
+60 | |         rng: &mut u64,
+61 | |     ) {
+   | |_____^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#too_many_arguments
+
+warning: methods with the following characteristics: (`to_*` and `self` type is `Copy`) usually take `self` by value
+  --> src\rarity.rs:34:20
+   |
+34 |     pub fn to_json(&self) -> String {
+   |                    ^^^^^
+   |
+   = help: consider choosing a less ambiguous name
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#wrong_self_convention
+   = note: `#[warn(clippy::wrong_self_convention)]` on by default
+
+warning: this `if` has identical blocks
+   --> src\rarity.rs:193:42
+    |
+193 |               let n_prefix = if total == 4 {
+    |  __________________________________________^
+194 | |                 if r1 % 2 == 0 { 2 } else { 1 }
+195 | |             } else {
+    | |_____________^
+    |
+note: same as this
+   --> src\rarity.rs:195:20
+    |
+195 |               } else {
+    |  ____________________^
+196 | |                 if r1 % 2 == 0 { 2 } else { 1 }
+197 | |             };
+    | |_____________^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#if_same_then_else
+
+warning: this `else { if .. }` block can be collapsed
+   --> src\rarity.rs:195:20
+    |
+195 |               } else {
+    |  ____________________^
+196 | |                 if r1 % 2 == 0 { 2 } else { 1 }
+197 | |             };
+    | |_____________^ help: collapse nested if block: `if r1 % 2 == 0 { 2 } else { 1 }`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_else_if
+
+warning: the following explicit lifetimes could be elided: 'a
+   --> src\rarity.rs:615:30
+    |
+615 | fn extract_json_string_field<'a>(obj: &'a str, field: &str) -> Option<String> {
+    |                              ^^        ^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_lifetimes
+    = note: `#[warn(clippy::needless_lifetimes)]` on by default
+help: elide the lifetimes
+    |
+615 - fn extract_json_string_field<'a>(obj: &'a str, field: &str) -> Option<String> {
+615 + fn extract_json_string_field(obj: &str, field: &str) -> Option<String> {
+    |
+
+warning: casting to the same type is unnecessary (`i32` -> `i32`)
+   --> src\render\combat_hud\grid.rs:815:35
+    |
+815 |                         let br = (aoe_r as i32 + 40).min(255) as u8;
+    |                                   ^^^^^^^^^^^^ help: try: `aoe_r`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_cast
+
+warning: casting to the same type is unnecessary (`i32` -> `i32`)
+   --> src\render\combat_hud\grid.rs:816:35
+    |
+816 |                         let bg = (aoe_g as i32 + 40).min(255) as u8;
+    |                                   ^^^^^^^^^^^^ help: try: `aoe_g`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_cast
+
+warning: casting to the same type is unnecessary (`i32` -> `i32`)
+   --> src\render\combat_hud\grid.rs:817:35
+    |
+817 |                         let bb = (aoe_b as i32 + 10).min(255) as u8;
+    |                                   ^^^^^^^^^^^^ help: try: `aoe_b`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_cast
+
+warning: useless use of `format!`
+    --> src\render\combat_hud\panels.rs:1180:25
+     |
+1180 |                         format!("{}", u.hanzi)
+     |                         ^^^^^^^^^^^^^^^^^^^^^^ help: consider using `.to_string()`: `u.hanzi.to_string()`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#useless_format
+
+warning: clamp-like pattern without using clamp function
+   --> src\render\combat_hud\effects.rs:228:29
+    |
+228 |                 let pulse = ((anim_t * 3.0).sin() * 0.3 + intensity).max(0.1).min(1.0);
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with clamp: `((anim_t * 3.0).sin() * 0.3 + intensity).clamp(0.1, 1.0)`
+    |
+    = note: clamp will panic if max < min, min.is_nan(), or max.is_nan()
+    = note: clamp returns NaN if the input is NaN
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_clamp
+    = note: `#[warn(clippy::manual_clamp)]` on by default
+
+warning: clamp-like pattern without using clamp function
+  --> src\render\combat_hud.rs:52:20
+   |
+52 |         let cell = (max_grid_px / grid_size).floor().max(24.0).min(36.0);
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with clamp: `(max_grid_px / grid_size).floor().clamp(24.0, 36.0)`
+   |
+   = note: clamp will panic if max < min, min.is_nan(), or max.is_nan()
+   = note: clamp returns NaN if the input is NaN
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_clamp
+
+warning: manual implementation of `.is_multiple_of()`
+  --> src\render\helpers.rs:24:31
+   |
+24 |         "Space Station" => if enemy_index % 2 == 0 { "enemy_station_guard" } else { "enemy_maintenance_drone" },
+   |                               ^^^^^^^^^^^^^^^^^^^^ help: replace with: `enemy_index.is_multiple_of(2)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+  --> src\render\helpers.rs:25:31
+   |
+25 |         "Asteroid Base" => if enemy_index % 2 == 0 { "enemy_rock_crawler" } else { "enemy_asteroid_miner" },
+   |                               ^^^^^^^^^^^^^^^^^^^^ help: replace with: `enemy_index.is_multiple_of(2)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+  --> src\render\helpers.rs:26:31
+   |
+26 |         "Derelict Ship" => if enemy_index % 2 == 0 { "enemy_zombie_crew" } else { "enemy_hull_parasite" },
+   |                               ^^^^^^^^^^^^^^^^^^^^ help: replace with: `enemy_index.is_multiple_of(2)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+  --> src\render\helpers.rs:27:29
+   |
+27 |         "Alien Ruins" => if enemy_index % 2 == 0 { "enemy_ruin_sentinel" } else { "enemy_glyph_phantom" },
+   |                             ^^^^^^^^^^^^^^^^^^^^ help: replace with: `enemy_index.is_multiple_of(2)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+  --> src\render\helpers.rs:28:30
+   |
+28 |         "Trading Post" => if enemy_index % 2 == 0 { "enemy_smuggler" } else { "enemy_market_thug" },
+   |                              ^^^^^^^^^^^^^^^^^^^^ help: replace with: `enemy_index.is_multiple_of(2)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+  --> src\render\helpers.rs:29:34
+   |
+29 |         "Orbital Platform" => if enemy_index % 2 == 0 { "enemy_platform_turret" } else { "enemy_void_drifter" },
+   |                                  ^^^^^^^^^^^^^^^^^^^^ help: replace with: `enemy_index.is_multiple_of(2)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+  --> src\render\helpers.rs:30:31
+   |
+30 |         "Mining Colony" => if enemy_index % 2 == 0 { "enemy_tunnel_worm" } else { "enemy_gas_specter" },
+   |                               ^^^^^^^^^^^^^^^^^^^^ help: replace with: `enemy_index.is_multiple_of(2)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+  --> src\render\helpers.rs:31:30
+   |
+31 |         "Research Lab" => if enemy_index % 2 == 0 { "enemy_lab_mutant" } else { "enemy_security_bot" },
+   |                              ^^^^^^^^^^^^^^^^^^^^ help: replace with: `enemy_index.is_multiple_of(2)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: this `if` statement can be collapsed
+   --> src\render\starmap.rs:100:17
+    |
+100 | /                 if sys.difficulty >= 8 || sys.event_id.is_some() { 
+101 | |                     if sys.x > boss_x { boss_x = sys.x; }
+102 | |                 }
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+100 ~                 if (sys.difficulty >= 8 || sys.event_id.is_some()) { 
+101 ~                     && sys.x > boss_x { boss_x = sys.x; }
+    |
+
+warning: the loop variable `i` is used to index `all_classes`
+   --> src\render\starmap.rs:750:18
+    |
+750 |         for i in start_idx..end_idx {
+    |                  ^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_range_loop
+    = note: `#[warn(clippy::needless_range_loop)]` on by default
+help: consider using an iterator and enumerate()
+    |
+750 -         for i in start_idx..end_idx {
+750 +         for (i, <item>) in all_classes.iter().enumerate().take(end_idx).skip(start_idx) {
+    |
+
+warning: manually reimplementing `div_ceil`
+   --> src\render\starmap.rs:808:27
+    |
+808 |         let total_pages = (total + page_size - 1) / page_size;
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using `.div_ceil()`: `total.div_ceil(page_size)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_div_ceil
+    = note: `#[warn(clippy::manual_div_ceil)]` on by default
+
+warning: this function has too many arguments (11/7)
+   --> src\render\starmap.rs:825:5
+    |
+825 | /     pub fn draw_ship_interior(
+826 | |         &self,
+827 | |         layout: &ShipLayout,
+828 | |         ship_x: i32,
+...   |
+836 | |         show_help: bool,
+837 | |     ) {
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#too_many_arguments
+
+warning: this let-binding has unit value
+   --> src\render\starmap.rs:957:9
+    |
+957 |         let _ = self.ctx.begin_path();
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#let_unit_value
+    = note: `#[warn(clippy::let_unit_value)]` on by default
+help: omit the `let` binding
+    |
+957 -         let _ = self.ctx.begin_path();
+957 +         self.ctx.begin_path();
+    |
+
+warning: this let-binding has unit value
+   --> src\render\starmap.rs:996:9
+    |
+996 |         let _ = self.ctx.begin_path();
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#let_unit_value
+help: omit the `let` binding
+    |
+996 -         let _ = self.ctx.begin_path();
+996 +         self.ctx.begin_path();
+    |
+
+warning: this function has too many arguments (11/7)
+    --> src\render\starmap.rs:1177:5
+     |
+1177 | /     pub fn draw_space_combat(
+1178 | |         &self,
+1179 | |         player_ship: &Ship,
+1180 | |         enemy_ship: &EnemyShip,
+...    |
+1188 | |         anim_t: f64,
+1189 | |     ) {
+     | |_____^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (8/7)
+    --> src\render\starmap.rs:1560:5
+     |
+1560 |     fn draw_bar(&self, x: f64, y: f64, w: f64, h: f64, pct: f64, label: &str, is_hull: bool) {
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#too_many_arguments
+
+warning: clamp-like pattern without using clamp function
+    --> src\render\starmap.rs:1561:19
+     |
+1561 |         let pct = pct.max(0.0).min(1.0);
+     |                   ^^^^^^^^^^^^^^^^^^^^^ help: replace with clamp: `pct.clamp(0.0, 1.0)`
+     |
+     = note: clamp will panic if max < min, min.is_nan(), or max.is_nan()
+     = note: clamp returns NaN if the input is NaN
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_clamp
+
+warning: this function has too many arguments (9/7)
+   --> src\render\tiles.rs:119:5
+    |
+119 | /     pub(crate) fn draw_tile_surface(
+120 | |         &self,
+121 | |         level: &DungeonLevel,
+122 | |         tile: Tile,
+...   |
+128 | |         anim_t: f64,
+129 | |     ) {
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#too_many_arguments
+
+warning: match expression looks like `matches!` macro
+  --> src\render\ui.rs:48:28
+   |
+48 |               .find(|(d, _)| match (d, altar_kind) {
+   |  ____________________________^
+49 | |                 (crate::player::Faction::Consortium, crate::world::TerminalKind::Quantum) => true,
+50 | |                 (crate::player::Faction::FreeTraders, crate::world::TerminalKind::Stellar) => true,
+51 | |                 (crate::player::Faction::Technocracy, crate::world::TerminalKind::Holographic) => true,
+...  |
+54 | |                 _ => false,
+55 | |             })
+   | |_____________^ help: try: `matches!((d, altar_kind), (crate::player::Faction::Consortium, crate::world::TerminalKind::Quantum) | (crate::player::Faction::FreeTraders, crate::world::TerminalKind::Stellar) | (crate::player::Faction::Technocracy, crate::world::TerminalKind::Holographic) | (crate::player::Faction::MilitaryAlliance, crate::world::TerminalKind::Tactical) | (crate::player::Faction::AncientOrder, crate::world::TerminalKind::Commerce))`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#match_like_matches_macro
+   = note: `#[warn(clippy::match_like_matches_macro)]` on by default
+
+warning: the loop variable `i` is used to index `equips`
+   --> src\render\ui.rs:223:18
+    |
+223 |         for i in 0..3 {
+    |                  ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+223 -         for i in 0..3 {
+223 +         for (i, <item>) in equips.iter().enumerate() {
+    |
+
+warning: this function has too many arguments (14/7)
+   --> src\render\ui.rs:532:5
+    |
+532 | /     pub fn draw_inventory(
+533 | |         &self,
+534 | |         player: &Player,
+535 | |         floor_num: i32,
+...   |
+546 | |         crafting_cursor: usize,
+547 | |     ) {
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#too_many_arguments
+
+warning: very complex type used. Consider factoring parts into `type` definitions
+   --> src\render\ui.rs:650:26
+    |
+650 |           let equip_slots: [(
+    |  __________________________^
+651 | |             &str,
+652 | |             Option<&crate::player::Equipment>,
+653 | |             Option<&'static str>,
+...   |
+656 | |             &[crate::rarity::RolledAffix],
+657 | |         ); 3] = [
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#type_complexity
+
+warning: this let-binding has unit value
+    --> src\render\ui.rs:1460:9
+     |
+1460 |         let _ = ctx.stroke();
+     |         ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#let_unit_value
+help: omit the `let` binding
+     |
+1460 -         let _ = ctx.stroke();
+1460 +         ctx.stroke();
+     |
+
+warning: this let-binding has unit value
+    --> src\render\ui.rs:1469:9
+     |
+1469 |         let _ = ctx.stroke();
+     |         ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#let_unit_value
+help: omit the `let` binding
+     |
+1469 -         let _ = ctx.stroke();
+1469 +         ctx.stroke();
+     |
+
+warning: this let-binding has unit value
+    --> src\render\ui.rs:1494:9
+     |
+1494 |         let _ = ctx.stroke();
+     |         ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#let_unit_value
+help: omit the `let` binding
+     |
+1494 -         let _ = ctx.stroke();
+1494 +         ctx.stroke();
+     |
+
+warning: manual implementation of `.is_multiple_of()`
+    --> src\render\ui.rs:1499:22
+     |
+1499 |             .map(|p| ((p.now() / 530.0) as u64) % 2 == 0)
+     |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `((p.now() / 530.0) as u64).is_multiple_of(2)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+    --> src\render\ui.rs:1879:32
+     |
+1879 |             .map(|c| word_wrap(&c.text, max_chars.saturating_sub(2)))
+     |                                ^^^^^^^ help: change this to: `c.text`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_borrow
+
+warning: called `iter().copied().collect()` on a slice to create a `Vec`. Calling `to_vec()` is both faster and more readable
+   --> src\render\overlays.rs:132:47
+    |
+132 |                 let components = recipe.inputs.iter().copied().collect::<Vec<_>>().join("+");
+    |                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `.to_vec()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#iter_cloned_collect
+    = note: `#[warn(clippy::iter_cloned_collect)]` on by default
+
+warning: called `iter().copied().collect()` on a slice to create a `Vec`. Calling `to_vec()` is both faster and more readable
+   --> src\render\overlays.rs:685:41
+    |
+685 |             let built: String = arranged.iter().copied().collect::<Vec<_>>().join(" + ");
+    |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `.to_vec()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#iter_cloned_collect
+
+warning: called `iter().copied().collect()` on a slice to create a `Vec`. Calling `to_vec()` is both faster and more readable
+   --> src\render\overlays.rs:845:41
+    |
+845 |             let built: String = arranged.iter().copied().collect::<Vec<_>>().join("");
+    |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `.to_vec()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#iter_cloned_collect
+
+warning: manually reimplementing `div_ceil`
+    --> src\render\overlays.rs:1474:17
+     |
+1474 |                 (total + per_page - 1) / per_page
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using `.div_ceil()`: `total.div_ceil(per_page)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_div_ceil
+
+warning: the loop variable `i` is used to index `all_classes`
+    --> src\render\overlays.rs:1844:22
+     |
+1844 |             for i in start_idx_cls..end_idx_cls {
+     |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+     |
+1844 -             for i in start_idx_cls..end_idx_cls {
+1844 +             for (i, <item>) in all_classes.iter().enumerate().take(end_idx_cls).skip(start_idx_cls) {
+     |
+
+warning: manually reimplementing `div_ceil`
+    --> src\render\overlays.rs:1905:31
+     |
+1905 |             let total_pages = (total + page_size - 1) / page_size;
+     |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using `.div_ceil()`: `total.div_ceil(page_size)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_div_ceil
+
+warning: this function has too many arguments (38/7)
+   --> src\render\mod.rs:128:5
+    |
+128 | /     pub fn draw(
+129 | |         &self,
+130 | |         level: &DungeonLevel,
+131 | |         player: &Player,
+...   |
+166 | |         shop_sell_mode: bool,
+167 | |     ) {
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#too_many_arguments
+
+warning: clamp-like pattern without using clamp function
+   --> src\render\mod.rs:920:25
+    |
+920 |             let alpha = p.life.max(0.0).min(1.0);
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with clamp: `p.life.clamp(0.0, 1.0)`
+    |
+    = note: clamp will panic if max < min, min.is_nan(), or max.is_nan()
+    = note: clamp returns NaN if the input is NaN
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_clamp
+
+warning: manually reimplementing `div_ceil`
+  --> src\srs.rs:85:13
+   |
+85 |             ((base + 1) / 2).max(1)
+   |             ^^^^^^^^^^^^^^^^ help: consider using `.div_ceil()`: `base.div_ceil(2)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_div_ceil
+
+warning: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+   --> src\vocab.rs:134:14
+    |
+134 |         .zip(syllables.into_iter())
+    |              ^^^^^^^^^------------
+    |                       |
+    |                       help: consider removing the `.into_iter()`
+    |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+   --> C:\Users\zarax\.rustup\toolchains\stable-x86_64-pc-windows-gnu\lib/rustlib/src/rust\library\core\src\iter\traits\iterator.rs:616:12
+    |
+616 |         U: IntoIterator,
+    |            ^^^^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#useless_conversion
+    = note: `#[warn(clippy::useless_conversion)]` on by default
+
+warning: this function has too many arguments (8/7)
+  --> src\world\fov.rs:34:1
+   |
+34 | / fn cast_light(
+35 | |     level: &mut DungeonLevel,
+36 | |     ox: i32,
+37 | |     oy: i32,
+...  |
+42 | |     octant: usize,
+43 | | ) {
+   | |_^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#too_many_arguments
+
+warning: this `if` statement can be collapsed
+  --> src\world\fov.rs:69:13
+   |
+69 | /             if dx * dx + dy * dy <= radius * radius {
+70 | |                 if level.in_bounds(map_x, map_y) {
+71 | |                     let idx = level.idx(map_x, map_y);
+72 | |                     level.visible[idx] = true;
+...  |
+75 | |             }
+   | |_____________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#collapsible_if
+help: collapse nested if block
+   |
+69 ~             if dx * dx + dy * dy <= radius * radius
+70 ~                 && level.in_bounds(map_x, map_y) {
+71 |                     let idx = level.idx(map_x, map_y);
+72 |                     level.visible[idx] = true;
+73 |                     level.revealed[idx] = true;
+74 ~                 }
+   |
+
+warning: manual implementation of `.is_multiple_of()`
+  --> src\world\location_gen\bsp.rs:43:13
+   |
+43 |             rng.next_u64() % 2 == 0
+   |             ^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `rng.next_u64().is_multiple_of(2)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: very complex type used. Consider factoring parts into `type` definitions
+   --> src\world\location_gen\bsp.rs:110:55
+    |
+110 |     pub(super) fn collect_corridors(&self, corridors: &mut Vec<((i32, i32), (i32, i32))>) {
+    |                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#type_complexity
+
+warning: manual implementation of `.is_multiple_of()`
+  --> src\world\location_gen\special_rooms.rs:15:52
+   |
+15 |                         if self.in_bounds(x, y) && rng.next_u64() % 7 == 0 {
+   |                                                    ^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `rng.next_u64().is_multiple_of(7)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+  --> src\world\location_gen\special_rooms.rs:65:52
+   |
+65 |                         if self.in_bounds(x, y) && rng.next_u64() % 2 == 0 {
+   |                                                    ^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `rng.next_u64().is_multiple_of(2)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+  --> src\world\location_gen\special_rooms.rs:75:52
+   |
+75 |                         if self.in_bounds(x, y) && rng.next_u64() % 2 == 0 {
+   |                                                    ^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `rng.next_u64().is_multiple_of(2)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+  --> src\world\location_gen\special_rooms.rs:97:52
+   |
+97 |                         if self.in_bounds(x, y) && rng.next_u64() % 8 == 0 {
+   |                                                    ^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `rng.next_u64().is_multiple_of(8)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\world\location_gen\special_rooms.rs:323:52
+    |
+323 |                         if self.in_bounds(x, y) && rng.next_u64() % 2 == 0 {
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `rng.next_u64().is_multiple_of(2)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\world\location_gen\special_rooms.rs:334:52
+    |
+334 |                         if self.in_bounds(x, y) && rng.next_u64() % 3 == 0 {
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `rng.next_u64().is_multiple_of(3)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual `RangeInclusive::contains` implementation
+   --> src\world\location_gen\special_rooms.rs:480:28
+    |
+480 |                         if dist >= 1 && dist <= 2 {
+    |                            ^^^^^^^^^^^^^^^^^^^^^^ help: use: `(1..=2).contains(&dist)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_range_contains
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\world\location_gen\special_rooms.rs:524:52
+    |
+524 |                         if self.in_bounds(x, y) && rng.next_u64() % 5 == 0 {
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `rng.next_u64().is_multiple_of(5)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\world\location_gen\special_rooms.rs:688:52
+    |
+688 |                         if self.in_bounds(x, y) && rng.next_u64() % 8 == 0 {
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `rng.next_u64().is_multiple_of(8)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\world\location_gen\special_rooms.rs:762:52
+    |
+762 |                         if self.in_bounds(x, y) && rng.next_u64() % 6 == 0 {
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `rng.next_u64().is_multiple_of(6)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\world\location_gen\special_rooms.rs:901:52
+    |
+901 |                         if self.in_bounds(x, y) && rng.next_u64() % 5 == 0 {
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `rng.next_u64().is_multiple_of(5)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+   --> src\world\location_gen\special_rooms.rs:934:52
+    |
+934 |                         if self.in_bounds(x, y) && rng.next_u64() % 6 == 0 {
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `rng.next_u64().is_multiple_of(6)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+    --> src\world\location_gen\special_rooms.rs:1478:54
+     |
+1478 | ...                   self.tiles[idx] = if rng.next_u64() % 5 == 0 {
+     |                                            ^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `rng.next_u64().is_multiple_of(5)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+    --> src\world\location_gen\special_rooms.rs:1639:52
+     |
+1639 |                         if self.in_bounds(x, y) && rng.next_u64() % 3 != 0 {
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `!rng.next_u64().is_multiple_of(3)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+    --> src\world\location_gen\special_rooms.rs:1749:52
+     |
+1749 |                         if self.in_bounds(x, y) && rng.next_u64() % 8 == 0 {
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `rng.next_u64().is_multiple_of(8)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+    --> src\world\location_gen\special_rooms.rs:1782:52
+     |
+1782 |                         if self.in_bounds(x, y) && rng.next_u64() % 5 == 0 {
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `rng.next_u64().is_multiple_of(5)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+    --> src\world\location_gen\special_rooms.rs:1795:52
+     |
+1795 |                         if self.in_bounds(x, y) && rng.next_u64() % 4 == 0 {
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `rng.next_u64().is_multiple_of(4)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+    --> src\world\location_gen\special_rooms.rs:1817:52
+     |
+1817 |                         if self.in_bounds(x, y) && rng.next_u64() % 10 == 0 {
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `rng.next_u64().is_multiple_of(10)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+    --> src\world\location_gen\special_rooms.rs:1943:52
+     |
+1943 |                         if self.in_bounds(x, y) && rng.next_u64() % 4 == 0 {
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `rng.next_u64().is_multiple_of(4)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: manual implementation of `.is_multiple_of()`
+    --> src\world\location_gen\special_rooms.rs:2793:52
+     |
+2793 |                         if self.in_bounds(x, y) && rng.next_u64() % 3 != 0 {
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `!rng.next_u64().is_multiple_of(3)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_is_multiple_of
+
+warning: this function has too many arguments (8/7)
+  --> src\world\location_gen.rs:78:5
+   |
+78 | /     pub(super) fn try_place_secret_room_candidate(
+79 | |         &mut self,
+80 | |         secret_x: i32,
+81 | |         secret_y: i32,
+...  |
+86 | |         rng: &mut Rng,
+87 | |     ) -> bool {
+   | |_____________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#too_many_arguments
+
+warning: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src\world\starmap.rs:935:26
+    |
+935 |             if a != b && (a as isize - b as isize).unsigned_abs() as usize <= 4 {
+    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `(a as isize - b as isize).unsigned_abs()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_cast
+
+warning: the loop variable `i` is only used to index `systems`
+   --> src\world\starmap.rs:962:14
+    |
+962 |     for i in 1..num_systems.saturating_sub(1) {
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_range_loop
+help: consider using an iterator
+    |
+962 -     for i in 1..num_systems.saturating_sub(1) {
+962 +     for <item> in systems.iter_mut().take(num_systems.saturating_sub(1)).skip(1) {
+    |
+
+warning: manual `RangeInclusive::contains` implementation
+   --> src\world\ship.rs:362:8
+    |
+362 |     if y >= 0 && y <= 3 {
+    |        ^^^^^^^^^^^^^^^^ help: use: `(0..=3).contains(&y)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_range_contains
+
+warning: manual `RangeInclusive::contains` implementation
+   --> src\world\ship.rs:363:12
+    |
+363 |         if x >= 3 && x <= 11 {
+    |            ^^^^^^^^^^^^^^^^^ help: use: `(3..=11).contains(&x)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_range_contains
+
+warning: manual `RangeInclusive::contains` implementation
+   --> src\world\ship.rs:366:12
+    |
+366 |         if x >= 12 && x <= 20 {
+    |            ^^^^^^^^^^^^^^^^^^ help: use: `(12..=20).contains(&x)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_range_contains
+
+warning: manual `RangeInclusive::contains` implementation
+   --> src\world\ship.rs:372:18
+    |
+372 |     if y == 4 && x >= 7 && x <= 15 {
+    |                  ^^^^^^^^^^^^^^^^^ help: use: `(7..=15).contains(&x)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_range_contains
+
+warning: manual `RangeInclusive::contains` implementation
+   --> src\world\ship.rs:377:8
+    |
+377 |     if y >= 5 && y <= 8 {
+    |        ^^^^^^^^^^^^^^^^ help: use: `(5..=8).contains(&y)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_range_contains
+
+warning: manual `RangeInclusive::contains` implementation
+   --> src\world\ship.rs:378:12
+    |
+378 |         if x >= 3 && x <= 11 {
+    |            ^^^^^^^^^^^^^^^^^ help: use: `(3..=11).contains(&x)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_range_contains
+
+warning: manual `RangeInclusive::contains` implementation
+   --> src\world\ship.rs:381:12
+    |
+381 |         if x >= 12 && x <= 20 {
+    |            ^^^^^^^^^^^^^^^^^^ help: use: `(12..=20).contains(&x)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_range_contains
+
+warning: manual `RangeInclusive::contains` implementation
+   --> src\world\ship.rs:387:18
+    |
+387 |     if y == 9 && x >= 7 && x <= 15 {
+    |                  ^^^^^^^^^^^^^^^^^ help: use: `(7..=15).contains(&x)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_range_contains
+
+warning: manual `RangeInclusive::contains` implementation
+   --> src\world\ship.rs:392:8
+    |
+392 |     if y >= 10 && y <= 13 {
+    |        ^^^^^^^^^^^^^^^^^^ help: use: `(10..=13).contains(&y)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_range_contains
+
+warning: manual `RangeInclusive::contains` implementation
+   --> src\world\ship.rs:393:12
+    |
+393 |         if x >= 3 && x <= 11 {
+    |            ^^^^^^^^^^^^^^^^^ help: use: `(3..=11).contains(&x)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_range_contains
+
+warning: manual `RangeInclusive::contains` implementation
+   --> src\world\ship.rs:396:12
+    |
+396 |         if x >= 12 && x <= 20 {
+    |            ^^^^^^^^^^^^^^^^^^ help: use: `(12..=20).contains(&x)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_range_contains
+
+warning: manual `RangeInclusive::contains` implementation
+   --> src\world\ship.rs:402:30
+    |
+402 |     if y >= 14 && y <= 17 && x >= 8 && x <= 15 {
+    |                              ^^^^^^^^^^^^^^^^^ help: use: `(8..=15).contains(&x)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_range_contains
+
+warning: manual `RangeInclusive::contains` implementation
+   --> src\world\ship.rs:402:8
+    |
+402 |     if y >= 14 && y <= 17 && x >= 8 && x <= 15 {
+    |        ^^^^^^^^^^^^^^^^^^ help: use: `(14..=17).contains(&y)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#manual_range_contains
+
+warning: very complex type used. Consider factoring parts into `type` definitions
+   --> src\world\events.rs:295:34
+    |
+295 | const CONDITIONAL_EVENT_INDICES: &[(usize, fn(&EventMemory) -> bool)] = &[
+    |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#type_complexity
+
+warning: variant name ends with the enum's name
+   --> src\world\mod.rs:587:5
+    |
+587 |     MedBayTile,
+    |     ^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#enum_variant_names
+    = note: `#[warn(clippy::enum_variant_names)]` on by default
+
+warning: `radical-starfinder` (lib) generated 189 warnings (run `cargo clippy --fix --lib -p radical-starfinder` to apply 149 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s

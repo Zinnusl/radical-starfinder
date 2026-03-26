@@ -33,22 +33,26 @@ struct NarrativeQuestDef {
 pub(super) const NARRATIVE_CHAIN_ID_BASE: u32 = 10_000;
 
 /// Calculate narrative quest gold reward based on base, floor, and scaling.
+#[cfg(test)]
 pub(crate) fn narrative_quest_gold(base_gold: i32, gold_per_floor: i32, floor: i32) -> i32 {
     base_gold + floor * gold_per_floor
 }
 
 /// Return the number of narrative quest definitions.
+#[cfg(test)]
 pub(crate) fn narrative_quest_count() -> usize {
     NARRATIVE_QUESTS.len()
 }
 
 /// Build a quest goal from the narrative quest at the given index.
 /// Returns None if index is out of bounds.
+#[cfg(test)]
 pub(crate) fn narrative_goal_for(index: usize, floor: i32) -> Option<QuestGoal> {
     NARRATIVE_QUESTS.get(index).map(|def| (def.goal_factory)(floor))
 }
 
 /// Extract tone digit from a pinyin string (last char if it's 1-4).
+#[cfg(test)]
 pub(crate) fn extract_tone(pinyin: &str) -> u8 {
     pinyin
         .chars()
@@ -397,16 +401,14 @@ impl GameState {
                         );
                     }
                     self.player.gold += 20;
+                } else if q.is_narrative() && !q.completion_text.is_empty() {
+                    self.message = format!(
+                        "✅ {} ({}): {} +{}g",
+                        q.giver_name, q.giver_title, q.completion_text, q.gold_reward
+                    );
                 } else {
-                    if q.is_narrative() && !q.completion_text.is_empty() {
-                        self.message = format!(
-                            "✅ {} ({}): {} +{}g",
-                            q.giver_name, q.giver_title, q.completion_text, q.gold_reward
-                        );
-                    } else {
-                        self.message =
-                            format!("Quest complete: {}! +{}g", q.description, q.gold_reward);
-                    }
+                    self.message =
+                        format!("Quest complete: {}! +{}g", q.description, q.gold_reward);
                 }
                 self.message_timer = 100;
                 q.gold_reward = 0;
@@ -957,7 +959,7 @@ impl GameState {
         let floor = self.floor_num;
         match self.rng_next() % 4 {
             0 => {
-                let target = 3 + (floor / 3) as i32;
+                let target = 3 + (floor / 3);
                 Quest::procedural(
                     format!("Defeat {} enemies", target),
                     QuestGoal::KillEnemies(0, target),
@@ -977,7 +979,7 @@ impl GameState {
                 )
             }
             2 => {
-                let target = 3 + (floor / 2) as i32;
+                let target = 3 + (floor / 2);
                 Quest::procedural(
                     format!("Collect {} radicals", target),
                     QuestGoal::CollectRadicals(0, target),
@@ -989,7 +991,7 @@ impl GameState {
             _ => {
                 let candidates = Self::forge_quest_candidates_for_floor(floor);
                 if candidates.is_empty() {
-                    let target = 3 + (floor / 2) as i32;
+                    let target = 3 + (floor / 2);
                     Quest::procedural(
                         format!("Collect {} radicals", target),
                         QuestGoal::CollectRadicals(0, target),
@@ -1016,7 +1018,7 @@ impl GameState {
 
     pub(super) fn generate_chain_quest(&mut self, step: u8, chain_id: u32) -> Quest {
         // If this is a narrative chain, delegate to narrative chain generation
-        if chain_id >= NARRATIVE_CHAIN_ID_BASE && chain_id < NARRATIVE_CHAIN_ID_BASE + 4 {
+        if (NARRATIVE_CHAIN_ID_BASE..NARRATIVE_CHAIN_ID_BASE + 4).contains(&chain_id) {
             if let Some(nq) = self.generate_narrative_chain_step(step, chain_id) {
                 return nq;
             }

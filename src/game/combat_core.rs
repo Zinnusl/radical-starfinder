@@ -19,7 +19,7 @@ impl GameState {
                 continue;
             }
             // Confused enemies have a 50% chance to skip their turn
-            if status::has_confused(&self.enemies[i].statuses) && self.rng_next() % 2 == 0 {
+            if status::has_confused(&self.enemies[i].statuses) && (self.rng_next() % 2 == 0) {
                 continue;
             }
             // Alert if within FOV radius
@@ -684,12 +684,12 @@ impl GameState {
                         }
                     }
                     // Synergy level 3 Supply Drop: chance for double gold
-                    if self.companion_synergy_level() >= 3 && self.companion == Some(Companion::Quartermaster) {
-                        if self.rng_next() % 100 < 20 {
-                            gold_gain *= 2;
-                            self.message = Companion::Quartermaster.combo_ability_message().to_string();
-                            self.message_timer = 90;
-                        }
+                    if self.companion_synergy_level() >= 3 && self.companion == Some(Companion::Quartermaster)
+                        && self.rng_next() % 100 < 20
+                    {
+                        gold_gain *= 2;
+                        self.message = Companion::Quartermaster.combo_ability_message().to_string();
+                        self.message_timer = 90;
                     }
                     // Location gold bonus
                     if self.current_location_type == Some(crate::world::LocationType::AsteroidBase)
@@ -1125,10 +1125,10 @@ impl GameState {
                     self.message_timer = if e_is_elite { 70 } else { 60 };
                 } else {
                     let mut evaded = false;
-                    if self.player.get_piety(Faction::FreeTraders) >= 10 {
-                        if (self.rng_next() % 100) < 15 {
-                            evaded = true;
-                        }
+                    if self.player.get_piety(Faction::FreeTraders) >= 10
+                        && (self.rng_next() % 100) < 15
+                    {
+                        evaded = true;
                     }
 
                     // Synergy level 3 SecurityChief: Fortified Stance (25% negate even after guard)
@@ -1268,7 +1268,7 @@ impl GameState {
                         }
                     }
                     if !action_msgs.is_empty() {
-                        self.message.push_str(" ");
+                        self.message.push(' ');
                         self.message.push_str(&action_msgs.join(" "));
                     }
                 }

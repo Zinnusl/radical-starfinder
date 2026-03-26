@@ -65,7 +65,7 @@ impl SrsTracker {
     /// for several decks (temporal decay).
     pub fn spawn_weight(&self, hanzi: &str) -> u32 {
         let acc = self.accuracy(hanzi);
-        let base = if acc < 0.5 {
+        let base: u32 = if acc < 0.5 {
             4
         } else if acc < 0.7 {
             2
@@ -82,7 +82,7 @@ impl SrsTracker {
         if deck_gap >= 8 {
             1
         } else if deck_gap >= 4 {
-            ((base + 1) / 2).max(1)
+            base.div_ceil(2).max(1)
         } else {
             base
         }

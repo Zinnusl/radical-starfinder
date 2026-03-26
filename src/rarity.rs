@@ -31,6 +31,7 @@ impl ItemRarity {
         }
     }
 
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_json(&self) -> String {
         format!("\"{}\"", self.label())
     }
@@ -190,11 +191,7 @@ pub fn roll_affixes(rarity: ItemRarity, rng: u64) -> Vec<RolledAffix> {
             let (r4, _s4) = splitmix(s3);
 
             let total = if r0 % 2 == 0 { 4 } else { 3 };
-            let n_prefix = if total == 4 {
-                if r1 % 2 == 0 { 2 } else { 1 }
-            } else {
-                if r1 % 2 == 0 { 2 } else { 1 }
-            };
+            let n_prefix = if r1 % 2 == 0 { 2 } else { 1 };
             let n_suffix = total - n_prefix;
 
             let mut out = Vec::with_capacity(total);
@@ -612,7 +609,7 @@ fn split_json_objects(s: &str) -> Vec<&str> {
 }
 
 /// Extract a string-valued field from a JSON object string.
-fn extract_json_string_field<'a>(obj: &'a str, field: &str) -> Option<String> {
+fn extract_json_string_field(obj: &str, field: &str) -> Option<String> {
     let key = format!("\"{}\":\"", field);
     if let Some(start) = obj.find(&key) {
         let val_start = start + key.len();
@@ -813,11 +810,323 @@ mod tests {
     }
 
     #[test]
+    fn rarity_labels() {
+        assert_eq!(ItemRarity::Normal.label(), "Normal");
+        assert_eq!(ItemRarity::Magic.label(), "Magic");
+        assert_eq!(ItemRarity::Rare.label(), "Rare");
+        assert_eq!(ItemRarity::Unique.label(), "Unique");
+    }
+
+    #[test]
+    fn rarity_to_json_format() {
+        assert_eq!(ItemRarity::Normal.to_json(), "\"Normal\"");
+        assert_eq!(ItemRarity::Magic.to_json(), "\"Magic\"");
+        assert_eq!(ItemRarity::Rare.to_json(), "\"Rare\"");
+        assert_eq!(ItemRarity::Unique.to_json(), "\"Unique\"");
+    }
+
+    #[test]
+    fn rarity_from_json_all_variants() {
+        assert_eq!(ItemRarity::from_json("\"Normal\""), ItemRarity::Normal);
+        assert_eq!(ItemRarity::from_json("\"Magic\""), ItemRarity::Magic);
+        assert_eq!(ItemRarity::from_json("\"Rare\""), ItemRarity::Rare);
+        assert_eq!(ItemRarity::from_json("\"Unique\""), ItemRarity::Unique);
+    }
+
+    #[test]
+    fn rarity_from_json_unknown_defaults_to_normal() {
+        assert_eq!(ItemRarity::from_json("\"Unknown\""), ItemRarity::Normal);
+        assert_eq!(ItemRarity::from_json("\"\""), ItemRarity::Normal);
+        assert_eq!(ItemRarity::from_json("garbage"), ItemRarity::Normal);
+    }
+
+    #[test]
+    fn rarity_from_json_with_whitespace() {
+        assert_eq!(ItemRarity::from_json("  \"Magic\"  "), ItemRarity::Magic);
+    }
+
+    #[test]
     fn roll_unique_returns_valid_item() {
         for seed in 0..20u64 {
             let u = roll_unique(seed);
             assert!(!u.name.is_empty());
             assert!(!u.effects.is_empty());
         }
+    }
+
+    // ── AffixEffect::describe ─────────────────────────────────────
+
+    #[test]
+    fn affix_effect_describe_all_variants() {
+        assert_eq!(AffixEffect::BonusDamage(2).describe(), "+2 damage");
+        assert_eq!(AffixEffect::BonusArmor(3).describe(), "+3 armor");
+        assert_eq!(AffixEffect::MaxHp(5).describe(), "+5 max HP");
+        assert_eq!(AffixEffect::SpellPower(1).describe(), "+1 spell power");
+        assert_eq!(AffixEffect::CritChance(10).describe(), "+10% crit");
+        assert_eq!(AffixEffect::LifeSteal(2).describe(), "+2 life steal");
+        assert_eq!(AffixEffect::FocusRegen(1).describe(), "+1 focus regen");
+        assert_eq!(AffixEffect::DodgeChance(5).describe(), "+5% dodge");
+        assert_eq!(AffixEffect::GoldFind(15).describe(), "+15% gold find");
+        assert_eq!(AffixEffect::RadicalFind(25).describe(), "+25% radical find");
+        assert_eq!(AffixEffect::HardAnswerDamage(1).describe(), "+1 hard answer dmg");
+        assert_eq!(AffixEffect::DamageReduction(2).describe(), "-2 damage taken");
+        assert_eq!(AffixEffect::MovementBonus(1).describe(), "+1 movement");
+    }
+
+    // ── Affix pools ───────────────────────────────────────────────
+
+    #[test]
+    fn prefix_pool_count() {
+        assert_eq!(PREFIX_POOL.len(), 16);
+    }
+
+    #[test]
+    fn suffix_pool_count() {
+        assert_eq!(SUFFIX_POOL.len(), 18);
+    }
+
+    #[test]
+    fn all_prefixes_have_is_prefix_true() {
+        for affix in PREFIX_POOL {
+            assert!(affix.is_prefix, "prefix {} has is_prefix=false", affix.name);
+        }
+    }
+
+    #[test]
+    fn all_suffixes_have_is_prefix_false() {
+        for affix in SUFFIX_POOL {
+            assert!(!affix.is_prefix, "suffix {} has is_prefix=true", affix.name);
+        }
+    }
+
+    #[test]
+    fn affix_names_are_non_empty() {
+        for affix in PREFIX_POOL.iter().chain(SUFFIX_POOL.iter()) {
+            assert!(!affix.name.is_empty());
+        }
+    }
+
+    // ── roll_rarity thresholds ────────────────────────────────────
+
+    #[test]
+    fn roll_rarity_very_low_roll_is_unique() {
+        // rng % 1000 = 0 should be < unique_threshold (5+luck)
+        assert_eq!(roll_rarity(1, 0, 0), ItemRarity::Unique);
+        assert_eq!(roll_rarity(1, 0, 1000), ItemRarity::Unique);
+    }
+
+    #[test]
+    fn roll_rarity_high_luck_increases_unique_chance() {
+        // unique_threshold = 5 + luck_bonus
+        // With luck=100, threshold is 105. rng=104*something -> roll=104 should be unique
+        let roll_104 = 104u64; // rng%1000 = 104
+        assert_eq!(roll_rarity(1, 100, roll_104), ItemRarity::Unique);
+    }
+
+    #[test]
+    fn roll_rarity_high_roll_is_normal() {
+        // rng % 1000 = 999 should always be Normal
+        assert_eq!(roll_rarity(1, 0, 999), ItemRarity::Normal);
+    }
+
+    #[test]
+    fn roll_rarity_high_floor_increases_magic_threshold() {
+        // magic_threshold = 200 + floor*5 + luck*3
+        // Floor 50: magic_threshold = 200+250+0 = 450
+        // rng%1000 = 400 should be Magic
+        assert_eq!(roll_rarity(50, 0, 400), ItemRarity::Magic);
+        // At floor 1: magic_threshold = 205, rng%1000=400 should be Normal
+        assert_eq!(roll_rarity(1, 0, 400), ItemRarity::Normal);
+    }
+
+    // ── roll_affixes ──────────────────────────────────────────────
+
+    #[test]
+    fn magic_affixes_contain_at_least_one_prefix_or_suffix() {
+        for seed in 0..50u64 {
+            let affixes = roll_affixes(ItemRarity::Magic, seed);
+            let has_prefix = affixes.iter().any(|a| a.affix.is_prefix);
+            let has_suffix = affixes.iter().any(|a| !a.affix.is_prefix);
+            assert!(
+                has_prefix || has_suffix,
+                "Magic item should have at least one prefix or suffix"
+            );
+        }
+    }
+
+    #[test]
+    fn rare_affixes_have_both_prefix_and_suffix() {
+        for seed in 0..50u64 {
+            let affixes = roll_affixes(ItemRarity::Rare, seed);
+            let has_prefix = affixes.iter().any(|a| a.affix.is_prefix);
+            let has_suffix = affixes.iter().any(|a| !a.affix.is_prefix);
+            assert!(
+                has_prefix && has_suffix,
+                "Rare item seed {} should have both prefix and suffix, got {:?}",
+                seed,
+                affixes.iter().map(|a| (a.affix.name, a.affix.is_prefix)).collect::<Vec<_>>()
+            );
+        }
+    }
+
+    // ── rarity_name edge cases ────────────────────────────────────
+
+    #[test]
+    fn rarity_name_unique_uses_base_name() {
+        let name = rarity_name("Star Destroyer", ItemRarity::Unique, &[]);
+        assert_eq!(name, "Star Destroyer");
+    }
+
+    #[test]
+    fn rarity_name_magic_no_affixes() {
+        let name = rarity_name("Blade", ItemRarity::Magic, &[]);
+        assert_eq!(name, "Blade");
+    }
+
+    #[test]
+    fn rarity_name_rare_no_affixes() {
+        let name = rarity_name("Blade", ItemRarity::Rare, &[]);
+        assert_eq!(name, "Blade");
+    }
+
+    #[test]
+    fn rarity_name_magic_prefix_and_suffix() {
+        let affixes = vec![
+            RolledAffix { affix: &PREFIX_POOL[0] }, // Sharpened
+            RolledAffix { affix: &SUFFIX_POOL[0] }, // of Precision
+        ];
+        let name = rarity_name("Blade", ItemRarity::Magic, &affixes);
+        assert_eq!(name, "Sharpened Blade of Precision");
+    }
+
+    // ── aggregate functions ───────────────────────────────────────
+
+    #[test]
+    fn total_affix_spell_power_sums_correctly() {
+        let affixes = vec![
+            RolledAffix { affix: &PREFIX_POOL[8] },  // SpellPower(1) - Learned
+            RolledAffix { affix: &PREFIX_POOL[9] },  // SpellPower(2) - Brilliant
+        ];
+        assert_eq!(total_affix_spell_power(&affixes), 3);
+    }
+
+    #[test]
+    fn total_affix_focus_regen_sums_correctly() {
+        let affixes = vec![
+            RolledAffix { affix: &SUFFIX_POOL[4] },  // FocusRegen(1) - of Focus
+            RolledAffix { affix: &SUFFIX_POOL[5] },  // FocusRegen(2) - of Concentration
+        ];
+        assert_eq!(total_affix_focus_regen(&affixes), 3);
+    }
+
+    #[test]
+    fn total_affix_gold_find_sums_correctly() {
+        let affixes = vec![
+            RolledAffix { affix: &PREFIX_POOL[10] }, // GoldFind(15) - Lucky
+            RolledAffix { affix: &PREFIX_POOL[11] }, // GoldFind(25) - Prosperous
+        ];
+        assert_eq!(total_affix_gold_find(&affixes), 40);
+    }
+
+    #[test]
+    fn total_affix_radical_find_sums_correctly() {
+        let affixes = vec![
+            RolledAffix { affix: &SUFFIX_POOL[12] }, // RadicalFind(15) - of Radicals
+            RolledAffix { affix: &SUFFIX_POOL[13] }, // RadicalFind(25) - of Discovery
+        ];
+        assert_eq!(total_affix_radical_find(&affixes), 40);
+    }
+
+    #[test]
+    fn total_affix_hard_answer_damage_sums() {
+        let affixes = vec![
+            RolledAffix { affix: &SUFFIX_POOL[8] },  // HardAnswerDamage(1)
+            RolledAffix { affix: &SUFFIX_POOL[9] },  // HardAnswerDamage(2)
+        ];
+        assert_eq!(total_affix_hard_answer_damage(&affixes), 3);
+    }
+
+    #[test]
+    fn total_affix_damage_reduction_sums() {
+        let affixes = vec![
+            RolledAffix { affix: &SUFFIX_POOL[10] }, // DamageReduction(1)
+            RolledAffix { affix: &SUFFIX_POOL[11] }, // DamageReduction(2)
+        ];
+        assert_eq!(total_affix_damage_reduction(&affixes), 3);
+    }
+
+    #[test]
+    fn aggregate_empty_affixes_returns_zero() {
+        assert_eq!(total_affix_damage(&[]), 0);
+        assert_eq!(total_affix_armor(&[]), 0);
+        assert_eq!(total_affix_max_hp(&[]), 0);
+        assert_eq!(total_affix_crit(&[]), 0);
+        assert_eq!(total_affix_spell_power(&[]), 0);
+        assert_eq!(total_affix_lifesteal(&[]), 0);
+        assert_eq!(total_affix_focus_regen(&[]), 0);
+        assert_eq!(total_affix_dodge(&[]), 0);
+        assert_eq!(total_affix_gold_find(&[]), 0);
+        assert_eq!(total_affix_radical_find(&[]), 0);
+        assert_eq!(total_affix_hard_answer_damage(&[]), 0);
+        assert_eq!(total_affix_damage_reduction(&[]), 0);
+    }
+
+    // ── JSON serialization ────────────────────────────────────────
+
+    #[test]
+    fn affixes_to_json_single_affix() {
+        let affixes = vec![RolledAffix { affix: &PREFIX_POOL[0] }];
+        let json = affixes_to_json(&affixes);
+        assert!(json.contains("Sharpened"));
+        assert!(json.contains("BonusDamage"));
+        assert!(json.starts_with('['));
+        assert!(json.ends_with(']'));
+    }
+
+    #[test]
+    fn affixes_from_json_empty_string() {
+        let parsed = affixes_from_json("");
+        assert!(parsed.is_empty());
+    }
+
+    #[test]
+    fn affixes_from_json_unknown_affix_skipped() {
+        let json = r#"[{"name":"NonexistentAffix","effect":"BonusDamage","value":99}]"#;
+        let parsed = affixes_from_json(json);
+        assert!(parsed.is_empty());
+    }
+
+    #[test]
+    fn affixes_json_roundtrip_all_pools() {
+        // Test with one prefix and one suffix
+        for i in 0..PREFIX_POOL.len().min(5) {
+            let affixes = vec![RolledAffix { affix: &PREFIX_POOL[i] }];
+            let json = affixes_to_json(&affixes);
+            let parsed = affixes_from_json(&json);
+            assert_eq!(parsed.len(), 1);
+            assert_eq!(parsed[0].affix.name, PREFIX_POOL[i].name);
+        }
+        for i in 0..SUFFIX_POOL.len().min(5) {
+            let affixes = vec![RolledAffix { affix: &SUFFIX_POOL[i] }];
+            let json = affixes_to_json(&affixes);
+            let parsed = affixes_from_json(&json);
+            assert_eq!(parsed.len(), 1);
+            assert_eq!(parsed[0].affix.name, SUFFIX_POOL[i].name);
+        }
+    }
+
+    // ── find_unique ───────────────────────────────────────────────
+
+    #[test]
+    fn find_unique_all_names() {
+        for u in UNIQUE_POOL {
+            assert!(find_unique(u.name).is_some(), "unique '{}' not found", u.name);
+        }
+    }
+
+    #[test]
+    fn find_unique_returns_correct_slot() {
+        let u = find_unique("Void Conduit").unwrap();
+        assert_eq!(u.base_slot, EquipSlot::Charm);
     }
 }

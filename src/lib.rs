@@ -1,5 +1,8 @@
 //! Radical Starfinder — WASM entry point.
 
+// is_multiple_of is unstable on MSVC toolchain used for coverage measurement
+#![allow(clippy::manual_is_multiple_of)]
+
 use wasm_bindgen::prelude::*;
 
 mod achievement;

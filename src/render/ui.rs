@@ -45,14 +45,13 @@ impl super::Renderer {
         let piety = player
             .piety
             .iter()
-            .find(|(d, _)| match (d, altar_kind) {
-                (crate::player::Faction::Consortium, crate::world::TerminalKind::Quantum) => true,
-                (crate::player::Faction::FreeTraders, crate::world::TerminalKind::Stellar) => true,
-                (crate::player::Faction::Technocracy, crate::world::TerminalKind::Holographic) => true,
-                (crate::player::Faction::MilitaryAlliance, crate::world::TerminalKind::Tactical) => true,
-                (crate::player::Faction::AncientOrder, crate::world::TerminalKind::Commerce) => true,
-                _ => false,
-            })
+            .find(|(d, _)| matches!((d, altar_kind),
+                (crate::player::Faction::Consortium, crate::world::TerminalKind::Quantum)
+                | (crate::player::Faction::FreeTraders, crate::world::TerminalKind::Stellar)
+                | (crate::player::Faction::Technocracy, crate::world::TerminalKind::Holographic)
+                | (crate::player::Faction::MilitaryAlliance, crate::world::TerminalKind::Tactical)
+                | (crate::player::Faction::AncientOrder, crate::world::TerminalKind::Commerce)
+            ))
             .map(|(_, p)| *p)
             .unwrap_or(0);
 
@@ -220,6 +219,7 @@ impl super::Renderer {
 
         // Equipment
         let equips = ["Weapon", "Armor", "Charm"];
+        #[allow(clippy::needless_range_loop)]
         for i in 0..3 {
             let selected = cursor == i;
             if selected {
@@ -529,6 +529,7 @@ impl super::Renderer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_inventory(
         &self,
         player: &Player,
@@ -647,6 +648,7 @@ impl super::Renderer {
         self.ctx.fill_text("Equipment", left_x + 12.0, left_y).ok();
         left_y += 18.0;
 
+        #[allow(clippy::type_complexity)]
         let equip_slots: [(
             &str,
             Option<&crate::player::Equipment>,
@@ -1457,16 +1459,14 @@ impl super::Renderer {
         ctx.begin_path();
         ctx.move_to(0.0, h);
         ctx.line_to(w, h);
-        let _ = ctx.stroke();
-
-        ctx.set_fill_style_str("rgba(57,255,20,0.03)");
+        ctx.stroke();
         ctx.fill_rect(0.0, 0.0, w, 24.0);
         ctx.set_stroke_style_str("rgba(57,255,20,0.2)");
         ctx.set_line_width(1.0);
         ctx.begin_path();
         ctx.move_to(0.0, 24.0);
         ctx.line_to(w, 24.0);
-        let _ = ctx.stroke();
+        ctx.stroke();
 
         ctx.set_fill_style_str("#39ff14");
         ctx.set_font("bold 12px monospace");
@@ -1491,12 +1491,12 @@ impl super::Renderer {
         ctx.begin_path();
         ctx.move_to(0.0, input_y - 16.0);
         ctx.line_to(w, input_y - 16.0);
-        let _ = ctx.stroke();
+        ctx.stroke();
 
         // Blinking cursor: use JS performance.now() for timing
         let blink_on = web_sys::window()
             .and_then(|w| w.performance())
-            .map(|p| ((p.now() / 530.0) as u64) % 2 == 0)
+            .map(|p| (p.now() / 530.0) as u64 % 2 == 0)
             .unwrap_or(true);
         let cursor = if blink_on { "_" } else { " " };
 
@@ -1876,7 +1876,7 @@ impl super::Renderer {
 
         // Pre-wrap all choice texts so we can compute total height
         let choice_lines: Vec<Vec<String>> = dialogue.choices.iter()
-            .map(|c| word_wrap(&c.text, max_chars.saturating_sub(2)))
+            .map(|c| word_wrap(c.text, max_chars.saturating_sub(2)))
             .collect();
 
         let title_h = title_lines.len() as f64 * 20.0;

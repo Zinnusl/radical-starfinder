@@ -49,9 +49,7 @@ pub fn player_movement(
 }
 
 pub fn enemy_base_speed(is_elite: bool, is_boss: bool) -> i32 {
-    if is_boss {
-        4
-    } else if is_elite {
+    if is_boss || is_elite {
         4
     } else {
         3

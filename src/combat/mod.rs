@@ -422,14 +422,12 @@ impl Direction {
             } else {
                 None
             }
+        } else if dy > 0 {
+            Some(Direction::South)
+        } else if dy < 0 {
+            Some(Direction::North)
         } else {
-            if dy > 0 {
-                Some(Direction::South)
-            } else if dy < 0 {
-                Some(Direction::North)
-            } else {
-                None
-            }
+            None
         }
     }
 }
@@ -2379,5 +2377,115 @@ mod tests {
         for set in EQUIPMENT_SETS {
             assert!(!set.bonus_description().is_empty(), "Empty description for set: {}", set.name);
         }
+    }
+
+    // ── PlayerStance armor_mod — remaining variants ─────────────────────────
+
+    #[test]
+    fn mobile_has_no_armor_mod() {
+        assert_eq!(PlayerStance::Mobile.armor_mod(), 0);
+    }
+
+    #[test]
+    fn focused_has_no_armor_mod() {
+        assert_eq!(PlayerStance::Focused.armor_mod(), 0);
+    }
+
+    // ── PlayerStance movement_mod — remaining variants ──────────────────────
+
+    #[test]
+    fn defensive_has_no_movement_mod() {
+        assert_eq!(PlayerStance::Defensive.movement_mod(), 0);
+    }
+
+    #[test]
+    fn reckless_has_no_movement_mod() {
+        assert_eq!(PlayerStance::Reckless.movement_mod(), 0);
+    }
+
+    // ── PlayerStance spell_power_mod — remaining variants ───────────────────
+
+    #[test]
+    fn defensive_has_no_spell_power_mod() {
+        assert_eq!(PlayerStance::Defensive.spell_power_mod(), 0);
+    }
+
+    #[test]
+    fn mobile_has_no_spell_power_mod() {
+        assert_eq!(PlayerStance::Mobile.spell_power_mod(), 0);
+    }
+
+    // ── PlayerStance spell_range_mod — remaining variants ───────────────────
+
+    #[test]
+    fn balanced_has_no_spell_range_mod() {
+        assert_eq!(PlayerStance::Balanced.spell_range_mod(), 0);
+    }
+
+    #[test]
+    fn aggressive_has_no_spell_range_mod() {
+        assert_eq!(PlayerStance::Aggressive.spell_range_mod(), 0);
+    }
+
+    #[test]
+    fn defensive_has_no_spell_range_mod() {
+        assert_eq!(PlayerStance::Defensive.spell_range_mod(), 0);
+    }
+
+    #[test]
+    fn reckless_has_no_spell_range_mod() {
+        assert_eq!(PlayerStance::Reckless.spell_range_mod(), 0);
+    }
+
+    // ── PlayerStance can_cast_spells — remaining variants ───────────────────
+
+    #[test]
+    fn defensive_can_cast_spells() {
+        assert!(PlayerStance::Defensive.can_cast_spells());
+    }
+
+    #[test]
+    fn reckless_can_cast_spells() {
+        assert!(PlayerStance::Reckless.can_cast_spells());
+    }
+
+    // ── PlayerStance name — all variants ────────────────────────────────────
+
+    #[test]
+    fn stance_name_all_variants() {
+        assert_eq!(PlayerStance::Aggressive.name(), "Aggressive");
+        assert_eq!(PlayerStance::Defensive.name(), "Defensive");
+        assert_eq!(PlayerStance::Mobile.name(), "Mobile");
+        assert_eq!(PlayerStance::Focused.name(), "Focused");
+    }
+
+    // ── PlayerStance icon — all variants ────────────────────────────────────
+
+    #[test]
+    fn stance_icon_all_variants() {
+        assert!(!PlayerStance::Aggressive.icon().is_empty());
+        assert!(!PlayerStance::Defensive.icon().is_empty());
+        assert!(!PlayerStance::Mobile.icon().is_empty());
+        assert!(!PlayerStance::Focused.icon().is_empty());
+    }
+
+    // ── PlayerStance color — all variants ───────────────────────────────────
+
+    #[test]
+    fn stance_color_all_variants_are_hex() {
+        assert!(PlayerStance::Aggressive.color().starts_with('#'));
+        assert!(PlayerStance::Defensive.color().starts_with('#'));
+        assert!(PlayerStance::Mobile.color().starts_with('#'));
+        assert!(PlayerStance::Focused.color().starts_with('#'));
+    }
+
+    // ── PlayerStance description — all variants ─────────────────────────────
+
+    #[test]
+    fn stance_description_all_variants() {
+        assert!(!PlayerStance::Aggressive.description().is_empty());
+        assert!(!PlayerStance::Defensive.description().is_empty());
+        assert!(!PlayerStance::Mobile.description().is_empty());
+        assert!(!PlayerStance::Focused.description().is_empty());
     }
 }

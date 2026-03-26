@@ -31,6 +31,7 @@ const MULT: [[i32; 8]; 4] = [
     [1, 0, 0, 1, -1, 0, 0, -1],
 ];
 
+#[allow(clippy::too_many_arguments)]
 fn cast_light(
     level: &mut DungeonLevel,
     ox: i32,
@@ -66,12 +67,10 @@ fn cast_light(
             let map_y = oy + dx * MULT[2][octant] + dy * MULT[3][octant];
 
             // Distance check (circular FOV)
-            if dx * dx + dy * dy <= radius * radius {
-                if level.in_bounds(map_x, map_y) {
+            if dx * dx + dy * dy <= radius * radius && level.in_bounds(map_x, map_y) {
                     let idx = level.idx(map_x, map_y);
                     level.visible[idx] = true;
                     level.revealed[idx] = true;
-                }
             }
 
             let is_wall = !level.in_bounds(map_x, map_y) || !level.tile(map_x, map_y).is_walkable();

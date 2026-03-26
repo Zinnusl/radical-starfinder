@@ -198,7 +198,6 @@ impl SystemHazard {
 
 /// (English name, Chinese name) pairs per HSK level.
 /// Each pool contains at least 15 entries; 6 pools ≥ 90 total (well over 60).
-
 const HSK1_NAMES: &[(&str, &str)] = &[
     ("Sky Star", "天星"),
     ("Sun Harbor", "日港"),
@@ -932,7 +931,7 @@ pub fn generate_sector(sector_id: usize, hsk_level: u8, rng_seed: u32) -> Sector
         for _ in 0..extra_connections {
             let a = lcg_range(&mut rng, num_systems);
             let b = lcg_range(&mut rng, num_systems);
-            if a != b && (a as isize - b as isize).unsigned_abs() as usize <= 4 {
+            if a != b && (a as isize - b as isize).unsigned_abs() <= 4 {
                 add_edge(&mut systems, a, b);
             }
         }
@@ -959,6 +958,7 @@ pub fn generate_sector(sector_id: usize, hsk_level: u8, rng_seed: u32) -> Sector
     systems[exit].description = "The gateway to the next sector. Prepare well before moving on.";
 
     // ── Assign event IDs to some mid-path systems ────────────────────
+    #[allow(clippy::needless_range_loop)]
     for i in 1..num_systems.saturating_sub(1) {
         if lcg_range(&mut rng, 3) == 0 {
             systems[i].event_id = Some(lcg_range(&mut rng, 100));

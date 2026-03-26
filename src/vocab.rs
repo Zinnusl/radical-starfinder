@@ -131,7 +131,7 @@ pub fn split_hanzi_chars(hanzi: &str, pinyin: &str) -> Vec<(String, String)> {
     }
     chars
         .into_iter()
-        .zip(syllables.into_iter())
+        .zip(syllables)
         .map(|(ch, syl)| (ch.to_string(), syl.to_string()))
         .collect()
 }

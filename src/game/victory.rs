@@ -235,7 +235,7 @@ impl GameState {
         match target_cursor {
             0 => {
                 // Weapon
-                if let Some(_) = self.player.weapon {
+                if self.player.weapon.is_some() {
                     if matches!(potion.kind(), ItemKind::ToxinGrenade) {
                         self.message =
                             "Coated weapon with poison! (Attacks poison enemies)".to_string();
@@ -259,7 +259,7 @@ impl GameState {
             }
             1 => {
                 // Armor
-                if let Some(_) = self.player.armor {
+                if self.player.armor.is_some() {
                     self.message = "You wash your armor.".to_string();
                 } else {
                     self.message = "No armor.".to_string();
@@ -404,7 +404,7 @@ impl GameState {
 
             let item_chance = item_drop_chance(e_is_boss, e_is_elite, self.player.skill_tree.has_scavenger());
             if (self.rng_next() % 100) < item_chance {
-                let drop_item = if e_is_boss && (self.rng_next() % 5) == 0 {
+                let drop_item = if e_is_boss && (self.rng_next() % 5 == 0) {
                     crate::player::Item::Revitalizer(self.player.max_hp / 2)
                 } else {
                     self.random_item()

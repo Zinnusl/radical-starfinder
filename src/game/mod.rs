@@ -691,7 +691,7 @@ pub fn init_game() -> Result<(), JsValue> {
         el.remove();
     }
 
-    let renderer = Renderer::new(canvas).map_err(|e| JsValue::from_str(e))?;
+    let renderer = Renderer::new(canvas).map_err(JsValue::from_str)?;
 
     let seed = win.performance().map(|p| p.now() as u64).unwrap_or(42);
     let level = DungeonLevel::generate(MAP_W, MAP_H, seed, 1, crate::world::LocationType::OrbitalPlatform);
@@ -734,7 +734,7 @@ pub fn init_game() -> Result<(), JsValue> {
         flash: None,
         achievements: AchievementTracker::load(),
         achievement_popup: None,
-        codex: Codex::load(&vocab::VOCAB),
+        codex: Codex::load(vocab::VOCAB),
         show_codex: false,
         show_inventory: false,
         inventory_cursor: 0,
@@ -1208,7 +1208,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                         let encounter_roll = (s.seed.wrapping_mul(1664525).wrapping_add(1013904223)) % 100;
                                         s.seed = s.seed.wrapping_mul(1664525).wrapping_add(1013904223);
                                         if encounter_roll < 20 {
-                                            let difficulty = s.floor_num as i32 + 1;
+                                            let difficulty = s.floor_num + 1;
                                             let names = ["Pirate Raider", "Void Corsair", "Rogue Frigate", "Scav Interceptor"];
                                             let ship_name_idx = (encounter_roll as usize / 5) % 4;
                                             let sub_hp = 10 + difficulty * 5;
@@ -1818,7 +1818,7 @@ pub fn init_game() -> Result<(), JsValue> {
 
                                         // Enemy fires back
                                         enemy.turns_taken += 1;
-                                        GameState::enemy_fires(&mut enemy, &mut *s, false);
+                                        GameState::enemy_fires(&mut enemy, &mut s, false);
 
                                         if s.ship.hull <= 0 {
                                             s.space_combat_phase = SpaceCombatPhase::Defeat;
@@ -1910,7 +1910,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                                 }
 
                                                 enemy.turns_taken += 1;
-                                                GameState::enemy_fires(&mut enemy, &mut *s, false);
+                                                GameState::enemy_fires(&mut enemy, &mut s, false);
 
                                                 if s.ship.hull <= 0 {
                                                     s.space_combat_phase = SpaceCombatPhase::Defeat;
@@ -1932,7 +1932,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                                 if let Some(ref audio) = s.audio { audio.play_shield_recharge(); }
 
                                                 enemy.turns_taken += 1;
-                                                GameState::enemy_fires(&mut enemy, &mut *s, false);
+                                                GameState::enemy_fires(&mut enemy, &mut s, false);
 
                                                 if s.ship.hull <= 0 {
                                                     s.space_combat_phase = SpaceCombatPhase::Defeat;
@@ -1971,7 +1971,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                                 }
 
                                                 enemy.turns_taken += 1;
-                                                GameState::enemy_fires(&mut enemy, &mut *s, evading);
+                                                GameState::enemy_fires(&mut enemy, &mut s, evading);
 
                                                 s.space_combat_evading = false;
                                                 if s.ship.hull <= 0 {
@@ -2011,7 +2011,7 @@ pub fn init_game() -> Result<(), JsValue> {
                                                     s.space_combat_phase = SpaceCombatPhase::Choosing;
                                                 }
                                             }
-                                            7 | _ => {
+                                            _ => {
                                                 // Flee
                                                 let can_flee = enemy.engines_sub.is_destroyed() || s.ship.engine_power >= enemy.engine_power;
                                                 if can_flee {
@@ -2126,19 +2126,17 @@ pub fn init_game() -> Result<(), JsValue> {
             }
 
             // Crew recruitment: press R to recruit pending crew member
-            if key == "r" || key == "R" {
-                if s.pending_recruit.is_some() && s.crew.len() < 6 {
-                    let recruit = s.pending_recruit.take().unwrap();
-                    s.message = format!(
-                        "🎉 {} ({}) has joined your crew!",
-                        recruit.name,
-                        recruit.role.name()
-                    );
-                    s.message_timer = 120;
-                    s.crew.push(recruit);
-                    s.render();
-                    return;
-                }
+            if (key == "r" || key == "R") && s.pending_recruit.is_some() && s.crew.len() < 6 {
+                let recruit = s.pending_recruit.take().unwrap();
+                s.message = format!(
+                    "🎉 {} ({}) has joined your crew!",
+                    recruit.name,
+                    recruit.role.name()
+                );
+                s.message_timer = 120;
+                s.crew.push(recruit);
+                s.render();
+                return;
             }
 
             if key == "?" || key == "/" {
@@ -4997,6 +4995,7 @@ pub fn init_game() -> Result<(), JsValue> {
     // Animation loop for particles, screen shake, and flash effects
     {
         let state = Rc::clone(&state);
+        #[allow(clippy::type_complexity)]
         let f: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
         let g = Rc::clone(&f);
         *g.borrow_mut() = Some(Closure::new(move || {

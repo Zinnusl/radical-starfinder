@@ -225,7 +225,7 @@ impl super::super::Renderer {
                 } else {
                     0.4
                 };
-                let pulse = ((anim_t * 3.0).sin() * 0.3 + intensity).max(0.1).min(1.0);
+                let pulse = ((anim_t * 3.0).sin() * 0.3 + intensity).clamp(0.1, 1.0);
                 let border_w = 3.0;
                 let color = format!("rgba(255,40,40,{})", pulse);
                 self.ctx.set_fill_style_str(&color);

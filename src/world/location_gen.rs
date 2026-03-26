@@ -75,6 +75,7 @@ impl LocationLevel {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn try_place_secret_room_candidate(
         &mut self,
         secret_x: i32,

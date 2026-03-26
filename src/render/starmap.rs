@@ -97,8 +97,8 @@ impl super::Renderer {
                 if sys.id == 0 { start_x = sys.x; }
                 if sys.id == sector_map.current_system { current_x = sys.x; }
                 // Assume boss is marked by difficulty > 8 or event_id exists
-                if sys.difficulty >= 8 || sys.event_id.is_some() { 
-                    if sys.x > boss_x { boss_x = sys.x; }
+                if (sys.difficulty >= 8 || sys.event_id.is_some()) && sys.x > boss_x {
+                    boss_x = sys.x;
                 }
                 // Exit is rightmost
                 if sys.x > exit_x { exit_x = sys.x; }
@@ -747,6 +747,7 @@ impl super::Renderer {
         let start_idx = page * page_size;
         let end_idx = (start_idx + page_size).min(total);
 
+        #[allow(clippy::needless_range_loop)]
         for i in start_idx..end_idx {
             let class_var = all_classes[i];
             let data = class_var.data();
@@ -805,7 +806,7 @@ impl super::Renderer {
         }
 
         y += 10.0;
-        let total_pages = (total + page_size - 1) / page_size;
+        let total_pages = total.div_ceil(page_size);
         self.ctx.set_fill_style_str("#888");
         self.ctx.set_text_align("center");
         self.ctx
@@ -822,6 +823,7 @@ impl super::Renderer {
         self.ctx.set_text_align("left");
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_ship_interior(
         &self,
         layout: &ShipLayout,
@@ -954,8 +956,7 @@ impl super::Renderer {
         self.ctx.set_fill_style_str("rgba(10, 10, 20, 0.9)");
         self.ctx.fill_rect(0.0, 0.0, self.canvas_w, hud_top);
         self.ctx.set_stroke_style_str("#333355");
-        let _ = self.ctx.begin_path();
-        self.ctx.move_to(0.0, hud_top);
+        self.ctx.begin_path();
         self.ctx.line_to(self.canvas_w, hud_top);
         self.ctx.stroke();
 
@@ -993,8 +994,7 @@ impl super::Renderer {
         self.ctx.set_fill_style_str("rgba(10, 10, 20, 0.9)");
         self.ctx.fill_rect(0.0, bar_y, self.canvas_w, hud_bottom);
         self.ctx.set_stroke_style_str("#333355");
-        let _ = self.ctx.begin_path();
-        self.ctx.move_to(0.0, bar_y);
+        self.ctx.begin_path();
         self.ctx.line_to(self.canvas_w, bar_y);
         self.ctx.stroke();
 
@@ -1174,6 +1174,7 @@ impl super::Renderer {
         self.ctx.set_text_align("left");
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_space_combat(
         &self,
         player_ship: &Ship,
@@ -1557,8 +1558,9 @@ impl super::Renderer {
     }
 
     /// Draw a horizontal bar with label text
+    #[allow(clippy::too_many_arguments)]
     fn draw_bar(&self, x: f64, y: f64, w: f64, h: f64, pct: f64, label: &str, is_hull: bool) {
-        let pct = pct.max(0.0).min(1.0);
+        let pct = pct.clamp(0.0, 1.0);
         self.ctx.set_fill_style_str("#333333");
         self.ctx.fill_rect(x, y, w, h);
         let color = if is_hull {

@@ -1,0 +1,12 @@
+#[cfg(test)]
+mod quick_check {
+    #[test]
+    fn check_huo_vocab() {
+        let entry = crate::vocab::vocab_entry_by_hanzi("火");
+        if let Some(e) = entry {
+            panic!("Found: pinyin='{}', meaning='{}', hsk={}", e.pinyin, e.meaning, e.hsk);
+        } else {
+            panic!("Not found in vocab");
+        }
+    }
+}

@@ -49,7 +49,7 @@ impl super::Renderer {
     pub(crate) fn draw_tactical_battle(&self, battle: &TacticalBattle, anim_t: f64, _player: &Player) {
         let grid_size = battle.arena.width as f64;
         let max_grid_px = (self.canvas_h - 80.0).min(self.canvas_w * 0.55);
-        let cell = (max_grid_px / grid_size).floor().max(24.0).min(36.0);
+        let cell = (max_grid_px / grid_size).floor().clamp(24.0, 36.0);
         let grid_px = grid_size * cell;
         let grid_x = (self.canvas_w - grid_px) / 2.0;
         let grid_y = 30.0;

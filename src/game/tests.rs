@@ -1470,6 +1470,345 @@ fn narrative_quest_gold_high_floor() {
     assert_eq!(narrative_quest_gold(70, 5, 10), 120);
 }
 
+// ── tile_look_text — comprehensive coverage ──────────────────────
+
+#[test]
+fn tile_look_text_bulkhead_mentions_wall() {
+    let text = tile_look_text(Tile::Bulkhead);
+    assert!(text.to_lowercase().contains("wall"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_metal_floor_mentions_open() {
+    let text = tile_look_text(Tile::MetalFloor);
+    assert!(text.to_lowercase().contains("open") || text.to_lowercase().contains("floor"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_hallway_mentions_corridor() {
+    let text = tile_look_text(Tile::Hallway);
+    assert!(text.to_lowercase().contains("corridor") || text.to_lowercase().contains("passage"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_airlock_mentions_stairs_or_next() {
+    let text = tile_look_text(Tile::Airlock);
+    assert!(text.to_lowercase().contains("stairs") || text.to_lowercase().contains("next"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_quantum_forge_mentions_forge() {
+    let text = tile_look_text(Tile::QuantumForge);
+    assert!(text.to_lowercase().contains("forge"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_trade_terminal_mentions_shop() {
+    let text = tile_look_text(Tile::TradeTerminal);
+    assert!(text.to_lowercase().contains("shop"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_supply_crate_mentions_chest() {
+    let text = tile_look_text(Tile::SupplyCrate);
+    assert!(text.to_lowercase().contains("chest") || text.to_lowercase().contains("treasure"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_cargo_crate_mentions_crate() {
+    let text = tile_look_text(Tile::CargoCrate);
+    assert!(text.to_lowercase().contains("crate"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_laser_grid_mentions_trap() {
+    let text = tile_look_text(Tile::LaserGrid);
+    assert!(text.to_lowercase().contains("trap") || text.to_lowercase().contains("spike"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_coolant_mentions_oil_or_fire() {
+    let text = tile_look_text(Tile::Coolant);
+    assert!(text.to_lowercase().contains("oil") || text.to_lowercase().contains("fire"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_coolant_pool_mentions_water() {
+    let text = tile_look_text(Tile::CoolantPool);
+    assert!(text.to_lowercase().contains("water"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_vacuum_breach_mentions_deep() {
+    let text = tile_look_text(Tile::VacuumBreach);
+    assert!(text.to_lowercase().contains("deep"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_npc_0_mentions_science_officer() {
+    let text = tile_look_text(Tile::Npc(0));
+    assert!(text.contains("研") || text.to_lowercase().contains("science"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_npc_1_mentions_medic() {
+    let text = tile_look_text(Tile::Npc(1));
+    assert!(text.contains("医") || text.to_lowercase().contains("medic") || text.to_lowercase().contains("heal"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_npc_2_mentions_quartermaster() {
+    let text = tile_look_text(Tile::Npc(2));
+    assert!(text.contains("商") || text.to_lowercase().contains("quartermaster") || text.to_lowercase().contains("discount"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_npc_3_mentions_security() {
+    let text = tile_look_text(Tile::Npc(3));
+    assert!(text.contains("卫") || text.to_lowercase().contains("security") || text.to_lowercase().contains("block"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_circuit_shrine_mentions_tone() {
+    let text = tile_look_text(Tile::CircuitShrine);
+    assert!(text.to_lowercase().contains("tone"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_compound_shrine_mentions_stroke() {
+    let text = tile_look_text(Tile::CompoundShrine);
+    assert!(text.to_lowercase().contains("stroke") || text.to_lowercase().contains("component"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_frequency_wall_mentions_tone() {
+    let text = tile_look_text(Tile::FrequencyWall);
+    assert!(text.to_lowercase().contains("tone"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_classifier_node_mentions_classifier() {
+    let text = tile_look_text(Tile::ClassifierNode);
+    assert!(text.to_lowercase().contains("classifier"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_info_panel_mentions_tutorial() {
+    let text = tile_look_text(Tile::InfoPanel(0));
+    assert!(text.to_lowercase().contains("tutorial") || text.to_lowercase().contains("sign"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_catwalk_mentions_bridge() {
+    let text = tile_look_text(Tile::Catwalk);
+    assert!(text.to_lowercase().contains("bridge"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_data_well_mentions_ink_or_hp() {
+    let text = tile_look_text(Tile::DataWell);
+    assert!(text.to_lowercase().contains("ink") || text.to_lowercase().contains("hp") || text.to_lowercase().contains("component"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_memorial_node_mentions_proverb() {
+    let text = tile_look_text(Tile::MemorialNode);
+    assert!(text.to_lowercase().contains("proverb") || text.to_lowercase().contains("ancestor"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_translation_terminal_mentions_translation() {
+    let text = tile_look_text(Tile::TranslationTerminal);
+    assert!(text.to_lowercase().contains("translation") || text.to_lowercase().contains("meaning"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_radical_lab_mentions_radical() {
+    let text = tile_look_text(Tile::RadicalLab);
+    assert!(text.to_lowercase().contains("radical"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_holo_pool_mentions_spell_power_or_mirror() {
+    let text = tile_look_text(Tile::HoloPool);
+    assert!(text.to_lowercase().contains("mirror") || text.to_lowercase().contains("spell"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_droid_tutor_mentions_tutor() {
+    let text = tile_look_text(Tile::DroidTutor);
+    assert!(text.to_lowercase().contains("tutor") || text.to_lowercase().contains("tone"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_codex_terminal_mentions_codex() {
+    let text = tile_look_text(Tile::CodexTerminal);
+    assert!(text.to_lowercase().contains("codex") || text.to_lowercase().contains("quiz"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_data_bridge_mentions_bridge() {
+    let text = tile_look_text(Tile::DataBridge);
+    assert!(text.to_lowercase().contains("bridge"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_sealed_hatch_mentions_locked() {
+    let text = tile_look_text(Tile::SealedHatch);
+    assert!(text.to_lowercase().contains("lock"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_corrupted_floor_mentions_trap_or_curse() {
+    let text = tile_look_text(Tile::CorruptedFloor);
+    assert!(text.to_lowercase().contains("trap") || text.to_lowercase().contains("curse") || text.to_lowercase().contains("hidden"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_ore_vein_mentions_gold() {
+    let text = tile_look_text(Tile::OreVein);
+    assert!(text.to_lowercase().contains("gold"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_plasma_vent_mentions_burn_or_lava() {
+    let text = tile_look_text(Tile::PlasmaVent);
+    assert!(text.to_lowercase().contains("burn") || text.to_lowercase().contains("lava") || text.to_lowercase().contains("molten"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_frozen_deck_mentions_ice() {
+    let text = tile_look_text(Tile::FrozenDeck);
+    assert!(text.to_lowercase().contains("ice") || text.to_lowercase().contains("slippery"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_cargo_pipes_mentions_blocks() {
+    let text = tile_look_text(Tile::CargoPipes);
+    assert!(text.to_lowercase().contains("block") || text.to_lowercase().contains("bamboo") || text.to_lowercase().contains("dense"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_toxic_fungus_mentions_mushroom() {
+    let text = tile_look_text(Tile::ToxicFungus);
+    assert!(text.to_lowercase().contains("mushroom") || text.to_lowercase().contains("spore"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_toxic_gas_mentions_poison() {
+    let text = tile_look_text(Tile::ToxicGas);
+    assert!(text.to_lowercase().contains("poison") || text.to_lowercase().contains("toxic"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_pressure_sensor_mentions_pressure() {
+    let text = tile_look_text(Tile::PressureSensor);
+    assert!(text.to_lowercase().contains("pressure"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_crystal_panel_mentions_crystal() {
+    let text = tile_look_text(Tile::CrystalPanel);
+    assert!(text.to_lowercase().contains("crystal"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_warp_gate_mentions_portal() {
+    let text = tile_look_text(Tile::WarpGatePortal);
+    assert!(text.to_lowercase().contains("portal") || text.to_lowercase().contains("gate"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_med_bay_mentions_hp_or_heal() {
+    let text = tile_look_text(Tile::MedBayTile);
+    assert!(text.to_lowercase().contains("hp") || text.to_lowercase().contains("heal") || text.to_lowercase().contains("restore"), "got: {}", text);
+}
+
+#[test]
+fn tile_look_text_credit_cache_mentions_gold() {
+    let text = tile_look_text(Tile::CreditCache);
+    assert!(text.to_lowercase().contains("gold") || text.to_lowercase().contains("collect"), "got: {}", text);
+}
+
+// ── combat_prompt_for — additional coverage ──────────────────────
+
+#[test]
+fn combat_prompt_for_normal_enemy_includes_pinyin() {
+    let entry = friend_entry();
+    let enemy = Enemy::from_vocab(entry, 5, 5, 1);
+    let prompt = combat_prompt_for(&enemy, ListenMode::Off, false);
+    assert!(prompt.contains("朋友"), "Should contain hanzi: {}", prompt);
+}
+
+#[test]
+fn combat_prompt_for_shielded_enemy_mentions_component() {
+    let entry = shielded_entry();
+    let mut enemy = Enemy::from_vocab(entry, 5, 5, 1);
+    if enemy.components.is_empty() {
+        enemy.components.push("女");
+    }
+    let prompt = combat_prompt_for(&enemy, ListenMode::Off, false);
+    assert!(prompt.to_lowercase().contains("shield") || prompt.contains("女"), "got: {}", prompt);
+}
+
+#[test]
+fn combat_prompt_for_tone_only_mode() {
+    // Create enemy with no components to reach tone-only branch
+    let entry = shielded_entry();
+    let mut enemy = Enemy::from_vocab(entry, 5, 5, 1);
+    enemy.components.clear();
+    let prompt = combat_prompt_for(&enemy, ListenMode::ToneOnly, false);
+    assert!(prompt.contains("🎵"), "got: {}", prompt);
+}
+
+#[test]
+fn combat_prompt_for_full_audio_mode() {
+    // Create enemy with no components to reach full-audio branch
+    let entry = shielded_entry();
+    let mut enemy = Enemy::from_vocab(entry, 5, 5, 1);
+    enemy.components.clear();
+    let prompt = combat_prompt_for(&enemy, ListenMode::FullAudio, false);
+    assert!(prompt.contains("🎧"), "got: {}", prompt);
+}
+
+#[test]
+fn combat_prompt_for_mirror_hint_includes_pinyin() {
+    let entry = friend_entry();
+    let enemy = Enemy::from_vocab(entry, 5, 5, 1);
+    let prompt = combat_prompt_for(&enemy, ListenMode::Off, true);
+    assert!(prompt.to_lowercase().contains("hint"), "got: {}", prompt);
+}
+
+// ── enemy_look_text — additional coverage ────────────────────────
+
+#[test]
+fn enemy_look_text_normal_enemy_shows_hp() {
+    // Use single-char entry with no components for a plain enemy
+    let entry = shielded_entry();
+    let enemy = Enemy::from_vocab(entry, 5, 5, 1);
+    let text = enemy_look_text(&enemy);
+    assert!(text.contains("HP"), "got: {}", text);
+    assert!(text.contains("Enemy"), "got: {}", text);
+}
+
+#[test]
+fn enemy_look_text_boss_shows_boss_label() {
+    let entry = friend_entry();
+    let mut enemy = Enemy::from_vocab(entry, 5, 5, 1);
+    enemy.is_boss = true;
+    let text = enemy_look_text(&enemy);
+    assert!(text.contains("Boss"), "got: {}", text);
+}
+
+#[test]
+fn enemy_look_text_elite_shows_elite_label() {
+    let entry = friend_entry();
+    let mut enemy = Enemy::from_vocab(entry, 5, 5, 1);
+    enemy.is_elite = true;
+    let text = enemy_look_text(&enemy);
+    assert!(text.contains("Elite"), "got: {}", text);
+}
+
 // ── quests.rs: narrative_quest_count tests ───────────────────
 
 #[test]

@@ -1,11 +1,9 @@
 //! Static data tables for challenges and mini-games.
 
-
-
 /// Sentence data for sentence construction challenges.
 /// Organised into three difficulty tiers so `select_sentence_for_floor` can
 /// pick easier sentences on early floors and harder ones later.
-
+///
 /// Tier 1 — easy (2-3 words, HSK 1)
 pub(super) const SENTENCES_EASY: &[(&[&str], &str)] = &[
     (&["我", "是", "学生"], "I am a student"),

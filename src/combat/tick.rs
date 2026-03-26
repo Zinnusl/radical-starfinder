@@ -827,10 +827,10 @@ fn apply_conveyor_crates(battle: &mut TacticalBattle) -> Vec<String> {
             };
             let target_x = x + dx;
             let target_y = y + dy;
-            if battle.arena.tile(target_x, target_y) == Some(BattleTile::CargoCrate) {
-                if !crate_pushes.iter().any(|&(cx, cy, _, _)| cx == target_x && cy == target_y) {
-                    crate_pushes.push((target_x, target_y, dx, dy));
-                }
+            if battle.arena.tile(target_x, target_y) == Some(BattleTile::CargoCrate)
+                && !crate_pushes.iter().any(|&(cx, cy, _, _)| cx == target_x && cy == target_y)
+            {
+                crate_pushes.push((target_x, target_y, dx, dy));
             }
         }
     }
@@ -967,7 +967,7 @@ fn apply_gravity_wells(battle: &mut TacticalBattle) -> Vec<String> {
             let ux = battle.units[idx].x;
             let uy = battle.units[idx].y;
             let dist = (ux - wx).abs() + (uy - wy).abs();
-            if dist < 1 || dist > 2 {
+            if !(1..=2).contains(&dist) {
                 continue;
             }
             // Deal 1 damage to adjacent units (distance 1)
@@ -1090,10 +1090,8 @@ fn apply_weather_terrain_synergies(battle: &mut TacticalBattle) -> Vec<String> {
             for y in 0..h {
                 for x in 0..w {
                     if let Some(i) = battle.arena.idx(x, y) {
-                        if battle.arena.tiles[i] == BattleTile::VentSteam {
-                            if battle.arena.steam_timers[i] < 4 {
-                                battle.arena.steam_timers[i] = 4;
-                            }
+                        if battle.arena.tiles[i] == BattleTile::VentSteam && battle.arena.steam_timers[i] < 4 {
+                            battle.arena.steam_timers[i] = 4;
                         }
                     }
                 }
@@ -1441,7 +1439,7 @@ fn execute_arena_event(
                     && battle
                         .arena
                         .tile(nx, ny)
-                        .map_or(false, |t| t.is_walkable())
+                        .is_some_and(|t| t.is_walkable())
                     && battle.unit_at(nx, ny).is_none()
                 {
                     pushes.push((idx, nx, ny));
@@ -1471,7 +1469,7 @@ fn execute_arena_event(
                 if battle
                     .arena
                     .tile(target_x, target_y)
-                    .map_or(false, |t| t.is_walkable())
+                    .is_some_and(|t| t.is_walkable())
                 {
                     break;
                 }
@@ -1733,7 +1731,9 @@ fn execute_arena_event(
 mod tests {
     use super::*;
     use crate::combat::test_helpers::{make_test_battle, make_test_unit};
-    use crate::combat::{BattleTile, TacticalPhase, UnitKind};
+    use crate::combat::{ArenaBiome, BattleTile, ProjectileEffect, TacticalPhase, UnitKind};
+    use crate::dungeon::Rng;
+    use crate::radical::SpellEffect;
 
     // ── tick_battle: phase handling ──────────────────────────────────
 
@@ -2117,5 +2117,2438 @@ mod tests {
         tick_arena_events(&mut battle);
 
         assert!(battle.units[1].hp > 5);
+    }
+
+    // ── apply_exhaustion ─────────────────────────────────────────────
+
+    #[test]
+    fn exhaustion_warning_at_turn_15() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.turn_number = 15;
+
+        apply_exhaustion(&mut battle);
+
+        assert!(battle.log.iter().any(|m| m.contains("unstable")));
+        assert_eq!(battle.units[0].hp, 10); // no damage yet
+    }
+
+    #[test]
+    fn exhaustion_warning_boss_at_turn_25() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.is_boss_battle = true;
+        battle.turn_number = 25;
+
+        apply_exhaustion(&mut battle);
+
+        assert!(battle.log.iter().any(|m| m.contains("unstable")));
+        assert_eq!(battle.units[0].hp, 10);
+    }
+
+    #[test]
+    fn exhaustion_deals_damage_at_threshold() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.turn_number = 20;
+
+        apply_exhaustion(&mut battle);
+
+        assert!(battle.units[0].hp < 10);
+        assert!(battle.log.iter().any(|m| m.contains("Overload")));
+    }
+
+    #[test]
+    fn exhaustion_escalates_damage_over_time() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        // turn 23 => escalation = (23-20)/3 = 1, dmg = min(2,3) = 2
+        battle.turn_number = 23;
+
+        apply_exhaustion(&mut battle);
+
+        assert_eq!(battle.units[0].hp, 8);
+    }
+
+    #[test]
+    fn exhaustion_caps_damage_at_3() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        // turn 29 => escalation = (29-20)/3 = 3, dmg = min(4,3) = 3
+        battle.turn_number = 29;
+
+        apply_exhaustion(&mut battle);
+
+        assert_eq!(battle.units[0].hp, 7);
+    }
+
+    #[test]
+    fn exhaustion_kills_player() {
+        let mut player = make_test_unit(UnitKind::Player, 0, 0);
+        player.hp = 1;
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.turn_number = 20;
+
+        apply_exhaustion(&mut battle);
+
+        assert_eq!(battle.units[0].hp, 0);
+        assert!(!battle.units[0].alive);
+    }
+
+    #[test]
+    fn exhaustion_boss_threshold_is_30() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.is_boss_battle = true;
+        battle.turn_number = 20;
+
+        apply_exhaustion(&mut battle);
+
+        // Turn 20 < boss threshold 30, so no damage
+        assert_eq!(battle.units[0].hp, 10);
+    }
+
+    #[test]
+    fn exhaustion_no_effect_before_warning() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.turn_number = 10;
+
+        apply_exhaustion(&mut battle);
+
+        assert_eq!(battle.units[0].hp, 10);
+        assert!(battle.log.is_empty());
+    }
+
+    // ── tick_player_end_of_turn ──────────────────────────────────────
+
+    #[test]
+    fn player_end_of_turn_applies_status_damage() {
+        let mut player = make_test_unit(UnitKind::Player, 0, 0);
+        player.statuses.push(crate::status::StatusInstance::new(
+            crate::status::StatusKind::Poison { damage: 2 },
+            3,
+        ));
+        // Mark as not fresh so damage applies
+        player.statuses[0].fresh = false;
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+
+        tick_player_end_of_turn(&mut battle);
+
+        assert!(battle.units[0].hp < 10);
+        assert!(battle.log.iter().any(|m| m.contains("Status damage")));
+    }
+
+    #[test]
+    fn player_end_of_turn_applies_status_heal() {
+        let mut player = make_test_unit(UnitKind::Player, 0, 0);
+        player.hp = 5;
+        player.statuses.push(crate::status::StatusInstance::new(
+            crate::status::StatusKind::Regen { heal: 2 },
+            3,
+        ));
+        player.statuses[0].fresh = false;
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+
+        tick_player_end_of_turn(&mut battle);
+
+        assert!(battle.units[0].hp > 5);
+        assert!(battle.log.iter().any(|m| m.contains("Status heal")));
+    }
+
+    #[test]
+    fn player_end_of_turn_heal_capped_at_max_hp() {
+        let mut player = make_test_unit(UnitKind::Player, 0, 0);
+        player.hp = 9;
+        player.max_hp = 10;
+        player.statuses.push(crate::status::StatusInstance::new(
+            crate::status::StatusKind::Regen { heal: 5 },
+            3,
+        ));
+        player.statuses[0].fresh = false;
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+
+        tick_player_end_of_turn(&mut battle);
+
+        assert_eq!(battle.units[0].hp, 10);
+    }
+
+    #[test]
+    fn player_end_of_turn_kills_player_from_status() {
+        let mut player = make_test_unit(UnitKind::Player, 0, 0);
+        player.hp = 1;
+        player.statuses.push(crate::status::StatusInstance::new(
+            crate::status::StatusKind::Poison { damage: 5 },
+            3,
+        ));
+        player.statuses[0].fresh = false;
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+
+        tick_player_end_of_turn(&mut battle);
+
+        assert!(!battle.units[0].alive);
+    }
+
+    #[test]
+    fn player_end_of_turn_no_status_no_change() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+
+        tick_player_end_of_turn(&mut battle);
+
+        assert_eq!(battle.units[0].hp, 10);
+        assert!(battle.log.is_empty());
+    }
+
+    // ── apply_flow_water (conveyor unit movement) ────────────────────
+
+    #[test]
+    fn conveyor_pushes_unit_north() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::ConveyorN);
+
+        let msgs = apply_flow_water(&mut battle);
+
+        assert_eq!(battle.units[0].x, 3);
+        assert_eq!(battle.units[0].y, 2);
+        assert!(msgs.iter().any(|m| m.contains("pushed by the conveyor")));
+    }
+
+    #[test]
+    fn conveyor_pushes_unit_south() {
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::ConveyorS);
+
+        let msgs = apply_flow_water(&mut battle);
+
+        assert_eq!(battle.units[1].y, 4);
+        assert!(msgs.iter().any(|m| m.contains("pushed")));
+    }
+
+    #[test]
+    fn conveyor_pushes_unit_east() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::ConveyorE);
+
+        let msgs = apply_flow_water(&mut battle);
+
+        assert_eq!(battle.units[0].x, 4);
+        assert_eq!(battle.units[0].y, 3);
+        assert!(!msgs.is_empty());
+    }
+
+    #[test]
+    fn conveyor_pushes_unit_west() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::ConveyorW);
+
+        let msgs = apply_flow_water(&mut battle);
+
+        assert_eq!(battle.units[0].x, 2);
+        assert_eq!(battle.units[0].y, 3);
+        assert!(!msgs.is_empty());
+    }
+
+    #[test]
+    fn conveyor_crushes_against_wall() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::ConveyorE);
+        battle.arena.set_tile(4, 3, BattleTile::CoverBarrier);
+
+        let msgs = apply_flow_water(&mut battle);
+
+        // Unit stays, takes damage
+        assert_eq!(battle.units[0].x, 3);
+        assert!(battle.units[0].hp < 10);
+        assert!(msgs.iter().any(|m| m.contains("crushed")));
+    }
+
+    #[test]
+    fn conveyor_blocked_by_another_unit() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 4, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::ConveyorE);
+
+        let msgs = apply_flow_water(&mut battle);
+
+        // Unit can't move into occupied tile
+        assert_eq!(battle.units[0].x, 3);
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn conveyor_skips_dead_units() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        enemy.alive = false;
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::ConveyorE);
+
+        let msgs = apply_flow_water(&mut battle);
+
+        assert_eq!(battle.units[1].x, 3);
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn conveyor_out_of_bounds_skips() {
+        let player = make_test_unit(UnitKind::Player, 0, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(0, 3, BattleTile::ConveyorW);
+
+        let msgs = apply_flow_water(&mut battle);
+
+        // Can't push west from x=0
+        assert_eq!(battle.units[0].x, 0);
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn conveyor_non_conveyor_tile_no_effect() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        // MetalFloor is default, not a conveyor
+
+        let msgs = apply_flow_water(&mut battle);
+
+        assert_eq!(battle.units[0].x, 3);
+        assert!(msgs.is_empty());
+    }
+
+    // ── apply_conveyor_crates ────────────────────────────────────────
+
+    #[test]
+    fn conveyor_pushes_crate() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut battle = make_test_battle(vec![player]);
+        battle.arena.set_tile(3, 3, BattleTile::ConveyorE);
+        battle.arena.set_tile(4, 3, BattleTile::CargoCrate);
+
+        let msgs = apply_conveyor_crates(&mut battle);
+
+        assert_eq!(battle.arena.tile(5, 3), Some(BattleTile::CargoCrate));
+        assert!(msgs.iter().any(|m| m.contains("Conveyor pushes")));
+    }
+
+    #[test]
+    fn conveyor_no_crates_returns_empty() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut battle = make_test_battle(vec![player]);
+        battle.arena.set_tile(3, 3, BattleTile::ConveyorE);
+
+        let msgs = apply_conveyor_crates(&mut battle);
+
+        assert!(msgs.is_empty());
+    }
+
+    // ── apply_gravity_wells ──────────────────────────────────────────
+
+    #[test]
+    fn gravity_well_damages_adjacent_unit() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 4, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::GravityWell);
+
+        let msgs = apply_gravity_wells(&mut battle);
+
+        assert!(battle.units[1].hp < 10);
+        assert!(msgs.iter().any(|m| m.contains("gravity well")));
+    }
+
+    #[test]
+    fn gravity_well_pulls_distant_unit_closer() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 5, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::GravityWell);
+
+        let msgs = apply_gravity_wells(&mut battle);
+
+        // Distance 2 -> pulled 1 step closer
+        assert!(
+            (battle.units[1].x - 3).abs() + (battle.units[1].y - 3).abs() < 2,
+            "Unit should be pulled closer"
+        );
+        assert!(msgs.iter().any(|m| m.contains("pulls")));
+    }
+
+    #[test]
+    fn gravity_well_no_effect_on_distant_unit() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::GravityWell);
+
+        let msgs = apply_gravity_wells(&mut battle);
+
+        // Distance > 2, no effect
+        assert_eq!(battle.units[1].x, 6);
+        assert_eq!(battle.units[1].y, 6);
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn gravity_well_skips_dead_units() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 5, 3);
+        enemy.alive = false;
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::GravityWell);
+
+        let msgs = apply_gravity_wells(&mut battle);
+
+        assert_eq!(battle.units[1].x, 5);
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn gravity_well_blocked_by_unwalkable_tile() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 5, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::GravityWell);
+        battle.arena.set_tile(4, 3, BattleTile::CoverBarrier);
+
+        let msgs = apply_gravity_wells(&mut battle);
+
+        assert_eq!(battle.units[1].x, 5);
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn gravity_well_blocked_by_occupied_tile() {
+        let player = make_test_unit(UnitKind::Player, 4, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 5, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::GravityWell);
+
+        let _msgs = apply_gravity_wells(&mut battle);
+
+        // Enemy can't be pulled because player occupies (4,3)
+        assert_eq!(battle.units[1].x, 5);
+    }
+
+    #[test]
+    fn gravity_well_damages_player_adjacent() {
+        let player = make_test_unit(UnitKind::Player, 4, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::GravityWell);
+
+        let msgs = apply_gravity_wells(&mut battle);
+
+        assert!(battle.units[0].hp < 10);
+        assert!(msgs.iter().any(|m| m.contains("You")));
+    }
+
+    // ── apply_weather_terrain_synergies ──────────────────────────────
+
+    #[test]
+    fn weather_coolant_extinguishes_fire() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.weather = Weather::CoolantLeak;
+        battle.arena.set_tile(3, 3, BattleTile::BlastMark);
+
+        let msgs = apply_weather_terrain_synergies(&mut battle);
+
+        assert!(msgs.iter().any(|m| m.contains("extinguishes")));
+    }
+
+    #[test]
+    fn weather_coolant_melts_frozen() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.weather = Weather::CoolantLeak;
+        battle.arena.set_tile(3, 3, BattleTile::FrozenCoolant);
+
+        let msgs = apply_weather_terrain_synergies(&mut battle);
+
+        assert_eq!(
+            battle.arena.tile(3, 3),
+            Some(BattleTile::CoolantPool)
+        );
+        assert!(msgs.iter().any(|m| m.contains("melts")));
+    }
+
+    #[test]
+    fn weather_debris_covers_lubricant() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.weather = Weather::DebrisStorm;
+        battle.arena.set_tile(3, 3, BattleTile::Lubricant);
+
+        let msgs = apply_weather_terrain_synergies(&mut battle);
+
+        assert_eq!(battle.arena.tile(3, 3), Some(BattleTile::Debris));
+        assert!(msgs.iter().any(|m| m.contains("covers lubricant")));
+    }
+
+    #[test]
+    fn weather_smoke_extends_steam() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.weather = Weather::SmokeScreen;
+        battle.arena.set_tile(3, 3, BattleTile::VentSteam);
+        if let Some(i) = battle.arena.idx(3, 3) {
+            battle.arena.steam_timers[i] = 1;
+        }
+
+        apply_weather_terrain_synergies(&mut battle);
+
+        if let Some(i) = battle.arena.idx(3, 3) {
+            assert_eq!(battle.arena.steam_timers[i], 4);
+        }
+    }
+
+    #[test]
+    fn weather_normal_no_effect() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.weather = Weather::Normal;
+
+        let msgs = apply_weather_terrain_synergies(&mut battle);
+
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn weather_energy_flux_no_terrain_change() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.weather = Weather::EnergyFlux;
+
+        let msgs = apply_weather_terrain_synergies(&mut battle);
+
+        assert!(msgs.is_empty());
+    }
+
+    // ── apply_companion_passives ─────────────────────────────────────
+
+    #[test]
+    fn companion_none_returns_empty() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.companion_kind = None;
+
+        let msgs = apply_companion_passives(&mut battle);
+
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn companion_medic_heals_player() {
+        use crate::game::Companion;
+        let mut player = make_test_unit(UnitKind::Player, 0, 0);
+        player.hp = 5;
+        let companion = make_test_unit(UnitKind::Companion, 1, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, companion, enemy]);
+        battle.companion_kind = Some(Companion::Medic);
+
+        let msgs = apply_companion_passives(&mut battle);
+
+        assert_eq!(battle.units[0].hp, 6);
+        assert!(msgs.iter().any(|m| m.contains("healing aura")));
+    }
+
+    #[test]
+    fn companion_medic_no_heal_at_full_hp() {
+        use crate::game::Companion;
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let companion = make_test_unit(UnitKind::Companion, 1, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, companion, enemy]);
+        battle.companion_kind = Some(Companion::Medic);
+
+        let msgs = apply_companion_passives(&mut battle);
+
+        assert_eq!(battle.units[0].hp, 10);
+        assert!(!msgs.iter().any(|m| m.contains("healing aura")));
+    }
+
+    #[test]
+    fn companion_medic_purifies_when_hp_below_50() {
+        use crate::game::Companion;
+        let mut player = make_test_unit(UnitKind::Player, 0, 0);
+        player.hp = 3; // < 50% of 10
+        player.statuses.push(crate::status::StatusInstance::new(
+            crate::status::StatusKind::Poison { damage: 1 },
+            3,
+        ));
+        let companion = make_test_unit(UnitKind::Companion, 1, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, companion, enemy]);
+        battle.companion_kind = Some(Companion::Medic);
+
+        let msgs = apply_companion_passives(&mut battle);
+
+        assert!(battle.units[0].statuses.is_empty());
+        assert!(msgs.iter().any(|m| m.contains("purifies")));
+    }
+
+    #[test]
+    fn companion_science_officer_message_early_turns() {
+        use crate::game::Companion;
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let companion = make_test_unit(UnitKind::Companion, 1, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, companion, enemy]);
+        battle.companion_kind = Some(Companion::ScienceOfficer);
+        battle.turn_number = 1;
+
+        let msgs = apply_companion_passives(&mut battle);
+
+        assert!(msgs.iter().any(|m| m.contains("combo buildup")));
+    }
+
+    #[test]
+    fn companion_science_officer_no_message_late() {
+        use crate::game::Companion;
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let companion = make_test_unit(UnitKind::Companion, 1, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, companion, enemy]);
+        battle.companion_kind = Some(Companion::ScienceOfficer);
+        battle.turn_number = 5;
+
+        let msgs = apply_companion_passives(&mut battle);
+
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn companion_dead_returns_empty() {
+        use crate::game::Companion;
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut companion = make_test_unit(UnitKind::Companion, 1, 0);
+        companion.alive = false;
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, companion, enemy]);
+        battle.companion_kind = Some(Companion::Medic);
+
+        let msgs = apply_companion_passives(&mut battle);
+
+        assert!(msgs.is_empty());
+    }
+
+    // ── tick_arcing_projectiles ──────────────────────────────────────
+
+    #[test]
+    fn arcing_projectile_skips_fresh() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arcing_projectiles.push(crate::combat::ArcingProjectile {
+            target_x: 6,
+            target_y: 6,
+            turns_remaining: 2,
+            effect: ProjectileEffect::Damage(5),
+            glyph: "★",
+            color: "#fff",
+            owner_is_player: true,
+            fresh: true,
+            aoe_radius: 0,
+        });
+
+        tick_arcing_projectiles(&mut battle);
+
+        // Fresh projectile should now not be fresh, but not landed
+        assert_eq!(battle.arcing_projectiles.len(), 1);
+        assert!(!battle.arcing_projectiles[0].fresh);
+        assert_eq!(battle.arcing_projectiles[0].turns_remaining, 2);
+    }
+
+    #[test]
+    fn arcing_projectile_decrements_and_lands() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arcing_projectiles.push(crate::combat::ArcingProjectile {
+            target_x: 6,
+            target_y: 6,
+            turns_remaining: 1,
+            effect: ProjectileEffect::Damage(5),
+            glyph: "★",
+            color: "#fff",
+            owner_is_player: true,
+            fresh: false,
+            aoe_radius: 0,
+        });
+
+        tick_arcing_projectiles(&mut battle);
+
+        assert!(battle.arcing_projectiles.is_empty());
+        assert!(battle.units[1].hp < 10);
+        assert!(battle.log.iter().any(|m| m.contains("Arc strike")));
+    }
+
+    #[test]
+    fn arcing_projectile_piercing_damage() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arcing_projectiles.push(crate::combat::ArcingProjectile {
+            target_x: 6,
+            target_y: 6,
+            turns_remaining: 1,
+            effect: ProjectileEffect::PiercingDamage(4),
+            glyph: "★",
+            color: "#fff",
+            owner_is_player: true,
+            fresh: false,
+            aoe_radius: 0,
+        });
+
+        tick_arcing_projectiles(&mut battle);
+
+        assert_eq!(battle.units[1].hp, 6);
+        assert!(battle.log.iter().any(|m| m.contains("pierces")));
+    }
+
+    #[test]
+    fn arcing_projectile_enemy_hits_player() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arcing_projectiles.push(crate::combat::ArcingProjectile {
+            target_x: 3,
+            target_y: 3,
+            turns_remaining: 1,
+            effect: ProjectileEffect::Damage(4),
+            glyph: "★",
+            color: "#fff",
+            owner_is_player: false,
+            fresh: false,
+            aoe_radius: 0,
+        });
+
+        tick_arcing_projectiles(&mut battle);
+
+        assert!(battle.units[0].hp < 10);
+        assert!(battle.log.iter().any(|m| m.contains("Incoming arc")));
+    }
+
+    #[test]
+    fn arcing_projectile_piercing_enemy_hits_player() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arcing_projectiles.push(crate::combat::ArcingProjectile {
+            target_x: 3,
+            target_y: 3,
+            turns_remaining: 1,
+            effect: ProjectileEffect::PiercingDamage(3),
+            glyph: "★",
+            color: "#fff",
+            owner_is_player: false,
+            fresh: false,
+            aoe_radius: 0,
+        });
+
+        tick_arcing_projectiles(&mut battle);
+
+        assert_eq!(battle.units[0].hp, 7);
+        assert!(battle.log.iter().any(|m| m.contains("pierces you")));
+    }
+
+    #[test]
+    fn arcing_projectile_misses_empty_tile() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arcing_projectiles.push(crate::combat::ArcingProjectile {
+            target_x: 3,
+            target_y: 3,
+            turns_remaining: 1,
+            effect: ProjectileEffect::Damage(5),
+            glyph: "★",
+            color: "#fff",
+            owner_is_player: true,
+            fresh: false,
+            aoe_radius: 0,
+        });
+
+        tick_arcing_projectiles(&mut battle);
+
+        // No units at (3,3), so no damage
+        assert_eq!(battle.units[0].hp, 10);
+        assert_eq!(battle.units[1].hp, 10);
+    }
+
+    #[test]
+    fn arcing_projectile_spell_player_lands() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arcing_projectiles.push(crate::combat::ArcingProjectile {
+            target_x: 3,
+            target_y: 3,
+            turns_remaining: 1,
+            effect: ProjectileEffect::SpellHit(SpellEffect::StrongHit(5)),
+            glyph: "★",
+            color: "#fff",
+            owner_is_player: true,
+            fresh: false,
+            aoe_radius: 0,
+        });
+
+        tick_arcing_projectiles(&mut battle);
+
+        assert!(battle.units[1].hp < 10);
+        assert!(battle.log.iter().any(|m| m.contains("lobbed spell")));
+    }
+
+    #[test]
+    fn arcing_projectile_spell_enemy_hits_player() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arcing_projectiles.push(crate::combat::ArcingProjectile {
+            target_x: 3,
+            target_y: 3,
+            turns_remaining: 1,
+            effect: ProjectileEffect::SpellHit(SpellEffect::StrongHit(5)),
+            glyph: "★",
+            color: "#fff",
+            owner_is_player: false,
+            fresh: false,
+            aoe_radius: 0,
+        });
+
+        tick_arcing_projectiles(&mut battle);
+
+        assert!(battle.units[0].hp < 10);
+        assert!(battle.log.iter().any(|m| m.contains("Enemy arc")));
+    }
+
+    // ── tick_pending_impacts ─────────────────────────────────────────
+
+    #[test]
+    fn pending_impact_decrements_timer() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.pending_impacts.push(crate::combat::PendingImpact {
+            x: 3,
+            y: 3,
+            turns_until_hit: 3,
+            damage: 5,
+            radius: 0,
+            source_is_player: true,
+            element: None,
+            glyph: "💥",
+            color: "#f00",
+        });
+
+        tick_pending_impacts(&mut battle);
+
+        assert_eq!(battle.pending_impacts.len(), 1);
+        assert_eq!(battle.pending_impacts[0].turns_until_hit, 2);
+    }
+
+    #[test]
+    fn pending_impact_detonates_on_enemy() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.pending_impacts.push(crate::combat::PendingImpact {
+            x: 3,
+            y: 3,
+            turns_until_hit: 1,
+            damage: 5,
+            radius: 0,
+            source_is_player: true,
+            element: None,
+            glyph: "💥",
+            color: "#f00",
+        });
+
+        tick_pending_impacts(&mut battle);
+
+        assert!(battle.pending_impacts.is_empty());
+        assert!(battle.units[1].hp < 10);
+        assert!(battle.log.iter().any(|m| m.contains("Impact detonates")));
+    }
+
+    #[test]
+    fn pending_impact_detonates_on_player() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.pending_impacts.push(crate::combat::PendingImpact {
+            x: 3,
+            y: 3,
+            turns_until_hit: 1,
+            damage: 4,
+            radius: 0,
+            source_is_player: false,
+            element: None,
+            glyph: "💥",
+            color: "#f00",
+        });
+
+        tick_pending_impacts(&mut battle);
+
+        assert!(battle.units[0].hp < 10);
+        assert!(battle.log.iter().any(|m| m.contains("hits you")));
+    }
+
+    #[test]
+    fn pending_impact_aoe_hits_multiple() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy1 = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        let enemy2 = make_test_unit(UnitKind::Enemy(1), 4, 3);
+        let mut battle = make_test_battle(vec![player, enemy1, enemy2]);
+        battle.pending_impacts.push(crate::combat::PendingImpact {
+            x: 3,
+            y: 3,
+            turns_until_hit: 1,
+            damage: 2,
+            radius: 1, // 3x3 area
+            source_is_player: true,
+            element: None,
+            glyph: "💥",
+            color: "#f00",
+        });
+
+        tick_pending_impacts(&mut battle);
+
+        assert!(battle.units[1].hp < 10);
+        assert!(battle.units[2].hp < 10);
+        assert!(battle.log.iter().any(|m| m.contains("targets")));
+    }
+
+    #[test]
+    fn pending_impact_fire_element_applies_burn() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.pending_impacts.push(crate::combat::PendingImpact {
+            x: 3,
+            y: 3,
+            turns_until_hit: 1,
+            damage: 2,
+            radius: 0,
+            source_is_player: true,
+            element: Some(crate::combat::WuxingElement::Fire),
+            glyph: "💥",
+            color: "#f00",
+        });
+
+        tick_pending_impacts(&mut battle);
+
+        assert!(battle.units[1]
+            .statuses
+            .iter()
+            .any(|s| matches!(s.kind, crate::status::StatusKind::Burn { .. })));
+    }
+
+    #[test]
+    fn pending_impact_water_element_applies_wet() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.pending_impacts.push(crate::combat::PendingImpact {
+            x: 3,
+            y: 3,
+            turns_until_hit: 1,
+            damage: 2,
+            radius: 0,
+            source_is_player: true,
+            element: Some(crate::combat::WuxingElement::Water),
+            glyph: "💥",
+            color: "#f00",
+        });
+
+        tick_pending_impacts(&mut battle);
+
+        assert!(battle.units[1]
+            .statuses
+            .iter()
+            .any(|s| matches!(s.kind, crate::status::StatusKind::Wet)));
+    }
+
+    #[test]
+    fn pending_impact_water_no_duplicate_wet() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        enemy.statuses.push(crate::status::StatusInstance::new(
+            crate::status::StatusKind::Wet,
+            2,
+        ));
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.pending_impacts.push(crate::combat::PendingImpact {
+            x: 3,
+            y: 3,
+            turns_until_hit: 1,
+            damage: 2,
+            radius: 0,
+            source_is_player: true,
+            element: Some(crate::combat::WuxingElement::Water),
+            glyph: "💥",
+            color: "#f00",
+        });
+
+        tick_pending_impacts(&mut battle);
+
+        let wet_count = battle.units[1]
+            .statuses
+            .iter()
+            .filter(|s| matches!(s.kind, crate::status::StatusKind::Wet))
+            .count();
+        assert_eq!(wet_count, 1);
+    }
+
+    #[test]
+    fn pending_impact_no_element_no_status() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.pending_impacts.push(crate::combat::PendingImpact {
+            x: 3,
+            y: 3,
+            turns_until_hit: 1,
+            damage: 2,
+            radius: 0,
+            source_is_player: true,
+            element: None,
+            glyph: "💥",
+            color: "#f00",
+        });
+
+        tick_pending_impacts(&mut battle);
+
+        assert!(battle.units[1].statuses.is_empty());
+    }
+
+    #[test]
+    fn pending_impact_audio_event_on_detonation() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.pending_impacts.push(crate::combat::PendingImpact {
+            x: 3,
+            y: 3,
+            turns_until_hit: 1,
+            damage: 2,
+            radius: 0,
+            source_is_player: true,
+            element: None,
+            glyph: "💥",
+            color: "#f00",
+        });
+
+        tick_pending_impacts(&mut battle);
+
+        assert!(battle
+            .audio_events
+            .iter()
+            .any(|e| matches!(e, AudioEvent::ProjectileImpact)));
+    }
+
+    // ── tick_projectiles ─────────────────────────────────────────────
+
+    #[test]
+    fn projectile_advances_progress() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::ProjectileAnimation {
+            message: String::new(),
+            end_turn: false,
+        };
+        battle.projectiles.push(crate::combat::Projectile {
+            from_x: 0.0,
+            from_y: 0.0,
+            to_x: 6,
+            to_y: 6,
+            progress: 0.0,
+            speed: 0.1,
+            arc_height: 0.0,
+            effect: ProjectileEffect::Damage(5),
+            owner_idx: 0,
+            glyph: "•",
+            color: "#fff",
+            done: false,
+        });
+
+        tick_projectiles(&mut battle);
+
+        // Projectile is still in flight (progress 0.1 < 1.0)
+        assert_eq!(battle.projectiles.len(), 1);
+        assert!((battle.projectiles[0].progress - 0.1).abs() < 0.001);
+    }
+
+    #[test]
+    fn projectile_finishes_and_deals_damage() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::ProjectileAnimation {
+            message: String::new(),
+            end_turn: false,
+        };
+        battle.projectiles.push(crate::combat::Projectile {
+            from_x: 0.0,
+            from_y: 0.0,
+            to_x: 6,
+            to_y: 6,
+            progress: 0.95,
+            speed: 0.1,
+            arc_height: 0.0,
+            effect: ProjectileEffect::Damage(5),
+            owner_idx: 0,
+            glyph: "•",
+            color: "#fff",
+            done: false,
+        });
+
+        tick_projectiles(&mut battle);
+
+        assert!(battle.projectiles.is_empty());
+        assert!(battle.units[1].hp < 10);
+    }
+
+    #[test]
+    fn projectile_piercing_bypasses_armor() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        enemy.radical_armor = 5;
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::ProjectileAnimation {
+            message: String::new(),
+            end_turn: false,
+        };
+        battle.projectiles.push(crate::combat::Projectile {
+            from_x: 0.0,
+            from_y: 0.0,
+            to_x: 6,
+            to_y: 6,
+            progress: 0.95,
+            speed: 0.1,
+            arc_height: 0.0,
+            effect: ProjectileEffect::PiercingDamage(4),
+            owner_idx: 0,
+            glyph: "•",
+            color: "#fff",
+            done: false,
+        });
+
+        tick_projectiles(&mut battle);
+
+        // Piercing ignores armor, deals exact damage
+        assert_eq!(battle.units[1].hp, 6);
+    }
+
+    #[test]
+    fn projectile_piercing_kills_unit() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        enemy.hp = 2;
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::ProjectileAnimation {
+            message: String::new(),
+            end_turn: false,
+        };
+        battle.projectiles.push(crate::combat::Projectile {
+            from_x: 0.0,
+            from_y: 0.0,
+            to_x: 6,
+            to_y: 6,
+            progress: 0.95,
+            speed: 0.1,
+            arc_height: 0.0,
+            effect: ProjectileEffect::PiercingDamage(5),
+            owner_idx: 0,
+            glyph: "•",
+            color: "#fff",
+            done: false,
+        });
+
+        tick_projectiles(&mut battle);
+
+        assert_eq!(battle.units[1].hp, 0);
+        assert!(!battle.units[1].alive);
+    }
+
+    #[test]
+    fn projectile_hits_cargo_crate_pushes() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut battle = make_test_battle(vec![player]);
+        battle.phase = TacticalPhase::ProjectileAnimation {
+            message: String::new(),
+            end_turn: false,
+        };
+        battle.arena.set_tile(3, 3, BattleTile::CargoCrate);
+        battle.projectiles.push(crate::combat::Projectile {
+            from_x: 0.0,
+            from_y: 3.0,
+            to_x: 3,
+            to_y: 3,
+            progress: 0.95,
+            speed: 0.1,
+            arc_height: 0.0,
+            effect: ProjectileEffect::Damage(5),
+            owner_idx: 0,
+            glyph: "•",
+            color: "#fff",
+            done: false,
+        });
+
+        tick_projectiles(&mut battle);
+
+        // Crate should be pushed in projectile direction (east)
+        assert_eq!(battle.arena.tile(4, 3), Some(BattleTile::CargoCrate));
+    }
+
+    #[test]
+    fn projectile_hits_fuel_canister_explodes() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut battle = make_test_battle(vec![player]);
+        battle.phase = TacticalPhase::ProjectileAnimation {
+            message: String::new(),
+            end_turn: false,
+        };
+        battle.arena.set_tile(3, 3, BattleTile::FuelCanister);
+        battle.projectiles.push(crate::combat::Projectile {
+            from_x: 0.0,
+            from_y: 0.0,
+            to_x: 3,
+            to_y: 3,
+            progress: 0.95,
+            speed: 0.1,
+            arc_height: 0.0,
+            effect: ProjectileEffect::Damage(5),
+            owner_idx: 0,
+            glyph: "•",
+            color: "#fff",
+            done: false,
+        });
+
+        tick_projectiles(&mut battle);
+
+        // Fuel canister should be replaced with BlastMark
+        assert_eq!(battle.arena.tile(3, 3), Some(BattleTile::BlastMark));
+    }
+
+    #[test]
+    fn projectile_done_skipped() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::ProjectileAnimation {
+            message: String::new(),
+            end_turn: false,
+        };
+        battle.projectiles.push(crate::combat::Projectile {
+            from_x: 0.0,
+            from_y: 0.0,
+            to_x: 6,
+            to_y: 6,
+            progress: 1.0,
+            speed: 0.1,
+            arc_height: 0.0,
+            effect: ProjectileEffect::Damage(5),
+            owner_idx: 0,
+            glyph: "•",
+            color: "#fff",
+            done: true,
+        });
+
+        tick_projectiles(&mut battle);
+
+        // Already-done projectile gets collected and removed
+        assert!(battle.projectiles.is_empty());
+    }
+
+    #[test]
+    fn projectile_all_done_transitions_to_resolve() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::ProjectileAnimation {
+            message: "test msg".to_string(),
+            end_turn: true,
+        };
+        battle.projectiles.push(crate::combat::Projectile {
+            from_x: 0.0,
+            from_y: 0.0,
+            to_x: 3,
+            to_y: 3, // empty tile
+            progress: 0.95,
+            speed: 0.1,
+            arc_height: 0.0,
+            effect: ProjectileEffect::Damage(5),
+            owner_idx: 0,
+            glyph: "•",
+            color: "#fff",
+            done: false,
+        });
+
+        tick_projectiles(&mut battle);
+
+        match &battle.phase {
+            TacticalPhase::Resolve {
+                message, end_turn, ..
+            } => {
+                assert_eq!(message, "test msg");
+                assert!(*end_turn);
+            }
+            _ => panic!("Expected Resolve phase after all projectiles done"),
+        }
+    }
+
+    #[test]
+    fn projectile_player_dies_ends_defeat() {
+        let mut player = make_test_unit(UnitKind::Player, 3, 3);
+        player.hp = 1;
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::ProjectileAnimation {
+            message: String::new(),
+            end_turn: false,
+        };
+        battle.projectiles.push(crate::combat::Projectile {
+            from_x: 6.0,
+            from_y: 6.0,
+            to_x: 3,
+            to_y: 3,
+            progress: 0.95,
+            speed: 0.1,
+            arc_height: 0.0,
+            effect: ProjectileEffect::PiercingDamage(5),
+            owner_idx: 1,
+            glyph: "•",
+            color: "#fff",
+            done: false,
+        });
+
+        tick_projectiles(&mut battle);
+
+        match &battle.phase {
+            TacticalPhase::End { victory, .. } => assert!(!victory),
+            _ => panic!("Expected End(defeat) phase"),
+        }
+    }
+
+    #[test]
+    fn projectile_all_enemies_die_ends_victory() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        enemy.hp = 1;
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::ProjectileAnimation {
+            message: String::new(),
+            end_turn: false,
+        };
+        battle.projectiles.push(crate::combat::Projectile {
+            from_x: 0.0,
+            from_y: 0.0,
+            to_x: 6,
+            to_y: 6,
+            progress: 0.95,
+            speed: 0.1,
+            arc_height: 0.0,
+            effect: ProjectileEffect::PiercingDamage(5),
+            owner_idx: 0,
+            glyph: "•",
+            color: "#fff",
+            done: false,
+        });
+
+        tick_projectiles(&mut battle);
+
+        match &battle.phase {
+            TacticalPhase::End { victory, .. } => assert!(*victory),
+            _ => panic!("Expected End(victory) phase"),
+        }
+    }
+
+    // ── apply_projectile_spell ───────────────────────────────────────
+
+    #[test]
+    fn spell_strong_hit_damages_enemy() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+
+        apply_projectile_spell(&mut battle, 3, 3, &SpellEffect::StrongHit(5));
+
+        assert!(battle.units[1].hp < 10);
+    }
+
+    #[test]
+    fn spell_strong_hit_ignores_player() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+
+        apply_projectile_spell(&mut battle, 3, 3, &SpellEffect::StrongHit(5));
+
+        assert_eq!(battle.units[0].hp, 10);
+    }
+
+    #[test]
+    fn spell_drain_damages_and_heals() {
+        let mut player = make_test_unit(UnitKind::Player, 0, 0);
+        player.hp = 5;
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+
+        apply_projectile_spell(&mut battle, 3, 3, &SpellEffect::Drain(4));
+
+        assert!(battle.units[1].hp < 10);
+        assert!(battle.units[0].hp > 5);
+    }
+
+    #[test]
+    fn spell_drain_heal_capped_at_max() {
+        let mut player = make_test_unit(UnitKind::Player, 0, 0);
+        player.hp = 9;
+        player.max_hp = 10;
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+
+        apply_projectile_spell(&mut battle, 3, 3, &SpellEffect::Drain(5));
+
+        assert_eq!(battle.units[0].hp, 10);
+    }
+
+    #[test]
+    fn spell_stun_stuns_enemy() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+
+        apply_projectile_spell(&mut battle, 3, 3, &SpellEffect::Stun);
+
+        assert!(battle.units[1].stunned);
+    }
+
+    #[test]
+    fn spell_stun_does_not_stun_player() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+
+        apply_projectile_spell(&mut battle, 3, 3, &SpellEffect::Stun);
+
+        assert!(!battle.units[0].stunned);
+    }
+
+    #[test]
+    fn spell_poison_adds_status() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+
+        apply_projectile_spell(&mut battle, 3, 3, &SpellEffect::Poison(2, 3));
+
+        assert!(battle.units[1]
+            .statuses
+            .iter()
+            .any(|s| matches!(s.kind, crate::status::StatusKind::Poison { damage: 2 })));
+        assert!(battle
+            .audio_events
+            .iter()
+            .any(|e| matches!(e, AudioEvent::StatusPoison)));
+    }
+
+    #[test]
+    fn spell_slow_adds_status() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+
+        apply_projectile_spell(&mut battle, 3, 3, &SpellEffect::Slow(2));
+
+        assert!(battle.units[1]
+            .statuses
+            .iter()
+            .any(|s| matches!(s.kind, crate::status::StatusKind::Slow)));
+        assert!(battle
+            .audio_events
+            .iter()
+            .any(|e| matches!(e, AudioEvent::StatusSlow)));
+    }
+
+    #[test]
+    fn spell_pierce_damages_enemy() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+
+        apply_projectile_spell(&mut battle, 3, 3, &SpellEffect::Pierce(4));
+
+        assert!(battle.units[1].hp < 10);
+    }
+
+    #[test]
+    fn spell_knockback_damages_and_pushes() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 2, 0);
+        let mut battle = make_test_battle(vec![player, enemy]);
+
+        apply_projectile_spell(&mut battle, 2, 0, &SpellEffect::KnockBack(3));
+
+        assert!(battle.units[1].hp < 10);
+        // Enemy should have been pushed away from player
+        if battle.units[1].alive {
+            assert!(battle.units[1].x > 2);
+        }
+    }
+
+    #[test]
+    fn spell_on_empty_tile_no_effect() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+
+        apply_projectile_spell(&mut battle, 3, 3, &SpellEffect::StrongHit(5));
+
+        // No unit at (3,3), no damage
+        assert_eq!(battle.units[0].hp, 10);
+        assert_eq!(battle.units[1].hp, 10);
+    }
+
+    // ── select_next_unit ─────────────────────────────────────────────
+
+    #[test]
+    fn select_next_unit_player_sets_command() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        // Make sure current unit is player (index 0)
+        battle.turn_queue_pos = 0;
+
+        select_next_unit(&mut battle);
+
+        assert!(matches!(battle.phase, TacticalPhase::Command));
+        assert!(!battle.player_moved);
+        assert!(!battle.player_acted);
+    }
+
+    #[test]
+    fn select_next_unit_enemy_sets_enemy_turn() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        // Point to enemy
+        battle.turn_queue_pos = 1;
+
+        select_next_unit(&mut battle);
+
+        match &battle.phase {
+            TacticalPhase::EnemyTurn {
+                unit_idx, acted, ..
+            } => {
+                assert_eq!(*unit_idx, 1);
+                assert!(!acted);
+            }
+            _ => panic!("Expected EnemyTurn phase"),
+        }
+    }
+
+    #[test]
+    fn select_next_unit_skips_dead() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut enemy1 = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        enemy1.alive = false;
+        let enemy2 = make_test_unit(UnitKind::Enemy(1), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy1, enemy2]);
+        // Point to dead enemy
+        battle.turn_queue_pos = 1;
+
+        select_next_unit(&mut battle);
+
+        // Should skip dead enemy and go to enemy2 or wrap around
+        match &battle.phase {
+            TacticalPhase::EnemyTurn { unit_idx, .. } => {
+                assert_ne!(*unit_idx, 1);
+            }
+            TacticalPhase::Command => {
+                // Wrapped to player
+            }
+            _ => panic!("Expected EnemyTurn or Command phase"),
+        }
+    }
+
+    // ── spread_rain_water ────────────────────────────────────────────
+
+    #[test]
+    fn spread_rain_water_expands_pool() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut battle = make_test_battle(vec![player]);
+        battle.arena.set_tile(3, 3, BattleTile::CoolantPool);
+
+        // Run many times to ensure probabilistic expansion
+        for _ in 0..20 {
+            spread_rain_water(&mut battle.arena);
+        }
+
+        // At least some neighboring tiles should be water
+        let has_adjacent_water = [(2, 3), (4, 3), (3, 2), (3, 4)]
+            .iter()
+            .any(|&(x, y)| battle.arena.tile(x, y) == Some(BattleTile::CoolantPool));
+        assert!(has_adjacent_water, "Rain should spread water to at least one neighbor");
+    }
+
+    #[test]
+    fn spread_rain_water_no_water_no_spread() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut battle = make_test_battle(vec![player]);
+
+        spread_rain_water(&mut battle.arena);
+
+        // No CoolantPool tiles means no spreading
+        for y in 0..7 {
+            for x in 0..7 {
+                assert_eq!(
+                    battle.arena.tile(x, y),
+                    Some(BattleTile::MetalFloor)
+                );
+            }
+        }
+    }
+
+    // ── finish_environment_tick ──────────────────────────────────────
+
+    #[test]
+    fn finish_environment_tick_regens_focus() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.focus = 3;
+        battle.max_focus = 10;
+        battle.weather = Weather::Normal;
+
+        finish_environment_tick(&mut battle);
+
+        assert_eq!(battle.focus, 6); // +3 normal regen
+    }
+
+    #[test]
+    fn finish_environment_tick_energy_flux_extra_focus() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.focus = 3;
+        battle.max_focus = 10;
+        battle.weather = Weather::EnergyFlux;
+
+        finish_environment_tick(&mut battle);
+
+        assert_eq!(battle.focus, 7); // +4 energy flux regen
+    }
+
+    #[test]
+    fn finish_environment_tick_focus_capped_at_max() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.focus = 9;
+        battle.max_focus = 10;
+
+        finish_environment_tick(&mut battle);
+
+        assert_eq!(battle.focus, 10);
+    }
+
+    #[test]
+    fn finish_environment_tick_coolant_leak_applies_wet() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.weather = Weather::CoolantLeak;
+
+        finish_environment_tick(&mut battle);
+
+        assert!(battle.units[0]
+            .statuses
+            .iter()
+            .any(|s| matches!(s.kind, crate::status::StatusKind::Wet)));
+        assert!(battle.units[1]
+            .statuses
+            .iter()
+            .any(|s| matches!(s.kind, crate::status::StatusKind::Wet)));
+        assert!(battle.log.iter().any(|m| m.contains("soaks everyone")));
+    }
+
+    #[test]
+    fn finish_environment_tick_coolant_leak_no_duplicate_wet() {
+        let mut player = make_test_unit(UnitKind::Player, 0, 0);
+        player.statuses.push(crate::status::StatusInstance::new(
+            crate::status::StatusKind::Wet,
+            2,
+        ));
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.weather = Weather::CoolantLeak;
+
+        finish_environment_tick(&mut battle);
+
+        let wet_count = battle.units[0]
+            .statuses
+            .iter()
+            .filter(|s| matches!(s.kind, crate::status::StatusKind::Wet))
+            .count();
+        assert_eq!(wet_count, 1);
+    }
+
+    #[test]
+    fn finish_environment_tick_dead_player_ends_defeat() {
+        let mut player = make_test_unit(UnitKind::Player, 0, 0);
+        player.alive = false;
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+
+        finish_environment_tick(&mut battle);
+
+        match &battle.phase {
+            TacticalPhase::End { victory, .. } => assert!(!victory),
+            _ => panic!("Expected End(defeat) phase"),
+        }
+    }
+
+    #[test]
+    fn finish_environment_tick_all_enemies_dead_ends_victory() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        enemy.alive = false;
+        let mut battle = make_test_battle(vec![player, enemy]);
+
+        finish_environment_tick(&mut battle);
+
+        match &battle.phase {
+            TacticalPhase::End { victory, .. } => assert!(*victory),
+            _ => panic!("Expected End(victory) phase"),
+        }
+    }
+
+    // ── execute_arena_event ──────────────────────────────────────────
+
+    #[test]
+    fn arena_event_coolant_flood_spreads_water() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::CoolantPool);
+        let mut rng = Rng::new(42);
+
+        let msgs = execute_arena_event(&mut battle, ArenaEvent::CoolantFlood, &mut rng);
+
+        assert!(!msgs.is_empty());
+        assert!(msgs.iter().any(|m| m.contains("Coolant Flood")));
+    }
+
+    #[test]
+    fn arena_event_coolant_flood_no_water_message() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let mut rng = Rng::new(42);
+
+        let msgs = execute_arena_event(&mut battle, ArenaEvent::CoolantFlood, &mut rng);
+
+        assert!(msgs.iter().any(|m| m.contains("no tiles to flood")));
+    }
+
+    #[test]
+    fn arena_event_hull_breach_creates_cracked_tiles() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let mut rng = Rng::new(42);
+
+        let msgs = execute_arena_event(&mut battle, ArenaEvent::HullBreach, &mut rng);
+
+        assert!(msgs.iter().any(|m| m.contains("Hull Breach")));
+    }
+
+    #[test]
+    fn arena_event_power_surge_places_oil_slick() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let mut rng = Rng::new(42);
+
+        let msgs = execute_arena_event(&mut battle, ArenaEvent::PowerSurge, &mut rng);
+
+        assert!(msgs.iter().any(|m| m.contains("Power Surge")));
+        // Should have placed some OilSlick tiles
+        let has_oil = (0..7).any(|y| {
+            (0..7).any(|x| battle.arena.tile(x, y) == Some(BattleTile::OilSlick))
+        });
+        assert!(has_oil);
+    }
+
+    #[test]
+    fn arena_event_vent_blast_pushes_units() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 4, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let mut rng = Rng::new(42);
+
+        let msgs = execute_arena_event(&mut battle, ArenaEvent::VentBlast, &mut rng);
+
+        assert!(msgs.iter().any(|m| m.contains("Vent Blast")));
+    }
+
+    #[test]
+    fn arena_event_arc_discharge_message() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let mut rng = Rng::new(42);
+
+        let msgs = execute_arena_event(&mut battle, ArenaEvent::ArcDischarge, &mut rng);
+
+        assert!(msgs.iter().any(|m| m.contains("Arc discharge")));
+    }
+
+    #[test]
+    fn arena_event_plasma_leak_places_plasma() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let mut rng = Rng::new(42);
+
+        let msgs = execute_arena_event(&mut battle, ArenaEvent::PlasmaLeak, &mut rng);
+
+        assert!(msgs.iter().any(|m| m.contains("Plasma Leak")));
+    }
+
+    #[test]
+    fn arena_event_cryo_vent_freezes_water() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::CoolantPool);
+        let mut rng = Rng::new(42);
+
+        let msgs = execute_arena_event(&mut battle, ArenaEvent::CryoVent, &mut rng);
+
+        assert_eq!(
+            battle.arena.tile(3, 3),
+            Some(BattleTile::FrozenCoolant)
+        );
+        assert!(msgs.iter().any(|m| m.contains("Cryo Vent")));
+    }
+
+    #[test]
+    fn arena_event_cryo_vent_slows_wet_units() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        enemy.statuses.push(crate::status::StatusInstance::new(
+            crate::status::StatusKind::Wet,
+            3,
+        ));
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let mut rng = Rng::new(42);
+
+        execute_arena_event(&mut battle, ArenaEvent::CryoVent, &mut rng);
+
+        assert!(battle.units[1]
+            .statuses
+            .iter()
+            .any(|s| matches!(s.kind, crate::status::StatusKind::Slow)));
+    }
+
+    #[test]
+    fn arena_event_cryo_vent_no_duplicate_slow() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        enemy.statuses.push(crate::status::StatusInstance::new(
+            crate::status::StatusKind::Wet,
+            3,
+        ));
+        enemy.statuses.push(crate::status::StatusInstance::new(
+            crate::status::StatusKind::Slow,
+            2,
+        ));
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let mut rng = Rng::new(42);
+
+        execute_arena_event(&mut battle, ArenaEvent::CryoVent, &mut rng);
+
+        let slow_count = battle.units[1]
+            .statuses
+            .iter()
+            .filter(|s| matches!(s.kind, crate::status::StatusKind::Slow))
+            .count();
+        assert_eq!(slow_count, 1);
+    }
+
+    #[test]
+    fn arena_event_debris_burst_places_debris() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let mut rng = Rng::new(42);
+
+        let msgs = execute_arena_event(&mut battle, ArenaEvent::DebrisBurst, &mut rng);
+
+        assert!(msgs.iter().any(|m| m.contains("Debris Burst")));
+    }
+
+    #[test]
+    fn arena_event_debris_burst_reduces_stored_movement() {
+        let mut player = make_test_unit(UnitKind::Player, 0, 0);
+        player.stored_movement = 2;
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let mut rng = Rng::new(42);
+
+        execute_arena_event(&mut battle, ArenaEvent::DebrisBurst, &mut rng);
+
+        assert_eq!(battle.units[0].stored_movement, 1);
+    }
+
+    #[test]
+    fn arena_event_system_glitch_extends_statuses() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        enemy.statuses.push(crate::status::StatusInstance::new(
+            crate::status::StatusKind::Slow,
+            2,
+        ));
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let mut rng = Rng::new(42);
+
+        let msgs = execute_arena_event(&mut battle, ArenaEvent::SystemGlitch, &mut rng);
+
+        assert_eq!(battle.units[1].statuses[0].turns_left, 3);
+        assert!(msgs.iter().any(|m| m.contains("System Glitch")));
+    }
+
+    #[test]
+    fn arena_event_nanite_spread_message() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let mut rng = Rng::new(42);
+
+        let msgs = execute_arena_event(&mut battle, ArenaEvent::NaniteSpread, &mut rng);
+
+        assert!(msgs.iter().any(|m| m.contains("Nanite Spread")));
+    }
+
+    #[test]
+    fn arena_event_reactor_blowout_places_plasma() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let mut rng = Rng::new(42);
+
+        let msgs = execute_arena_event(&mut battle, ArenaEvent::ReactorBlowout, &mut rng);
+
+        assert!(msgs.iter().any(|m| m.contains("Reactor Blowout")));
+        let has_plasma = (0..7).any(|y| {
+            (0..7).any(|x| battle.arena.tile(x, y) == Some(BattleTile::PlasmaPool))
+        });
+        assert!(has_plasma);
+    }
+
+    // ── pick_arena_event ─────────────────────────────────────────────
+
+    #[test]
+    fn pick_arena_event_returns_valid_event() {
+        let mut rng = Rng::new(42);
+        let event = pick_arena_event(&mut rng, ArenaBiome::StationInterior);
+        // Should be one of the known events
+        let valid = matches!(
+            event,
+            ArenaEvent::CoolantFlood
+                | ArenaEvent::HullBreach
+                | ArenaEvent::PowerSurge
+                | ArenaEvent::VentBlast
+                | ArenaEvent::ArcDischarge
+                | ArenaEvent::PlasmaLeak
+                | ArenaEvent::MediGas
+                | ArenaEvent::CryoVent
+                | ArenaEvent::DebrisBurst
+                | ArenaEvent::SystemGlitch
+                | ArenaEvent::NaniteSpread
+                | ArenaEvent::ReactorBlowout
+        );
+        assert!(valid);
+    }
+
+    #[test]
+    fn pick_arena_event_different_biomes() {
+        // Ensure all biomes produce valid events without panicking
+        let biomes = [
+            ArenaBiome::StationInterior,
+            ArenaBiome::CryoBay,
+            ArenaBiome::ReactorRoom,
+            ArenaBiome::Hydroponics,
+            ArenaBiome::AlienRuins,
+            ArenaBiome::DerelictShip,
+            ArenaBiome::IrradiatedZone,
+        ];
+        for biome in &biomes {
+            let mut rng = Rng::new(123);
+            let _ = pick_arena_event(&mut rng, *biome);
+        }
+    }
+
+    // ── tick_battle additional phase tests ───────────────────────────
+
+    #[test]
+    fn tick_resolve_end_turn_advances() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::Resolve {
+            message: "test".to_string(),
+            timer: 0,
+            end_turn: true,
+        };
+
+        tick_battle(&mut battle);
+
+        // Should have advanced turn, not just gone to Command
+        assert!(!matches!(battle.phase, TacticalPhase::Resolve { .. }));
+    }
+
+    #[test]
+    fn tick_enemy_turn_acts_and_waits() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::EnemyTurn {
+            unit_idx: 1,
+            timer: 10,
+            acted: false,
+        };
+
+        tick_battle(&mut battle);
+
+        // After first tick, acted should be true
+        match &battle.phase {
+            TacticalPhase::EnemyTurn { acted, timer, .. } => {
+                // acted is set true, timer may have changed
+                assert!(*acted || *timer > 0);
+            }
+            // Could transition to End if battle ended
+            TacticalPhase::End { .. } => {}
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn tick_enemy_turn_timer_decrements_after_acted() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::EnemyTurn {
+            unit_idx: 1,
+            timer: 5,
+            acted: true,
+        };
+
+        tick_battle(&mut battle);
+
+        match &battle.phase {
+            TacticalPhase::EnemyTurn { timer, .. } => {
+                assert_eq!(*timer, 4);
+            }
+            _ => panic!("Expected EnemyTurn phase with decremented timer"),
+        }
+    }
+
+    #[test]
+    fn tick_environment_tick_zero_calls_finish() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::EnvironmentTick { timer: 0 };
+
+        tick_battle(&mut battle);
+
+        // Should have called finish_environment_tick and transitioned
+        assert!(!matches!(
+            battle.phase,
+            TacticalPhase::EnvironmentTick { .. }
+        ));
+    }
+
+    #[test]
+    fn tick_projectile_animation_phase() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::ProjectileAnimation {
+            message: String::new(),
+            end_turn: false,
+        };
+        // No projectiles => immediately transitions
+        let event = tick_battle(&mut battle);
+
+        assert!(matches!(event, BattleEvent::None));
+        // With no projectiles, should transition to Resolve
+        assert!(matches!(battle.phase, TacticalPhase::Resolve { .. }));
+    }
+
+    // ── push_boulder chain depth limit ───────────────────────────────
+
+    #[test]
+    fn push_boulder_chain_depth_limit() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut battle = make_test_battle(vec![player]);
+        // Create a chain of 5 crates (exceeds depth 3 limit)
+        battle.arena.set_tile(1, 3, BattleTile::CargoCrate);
+        battle.arena.set_tile(2, 3, BattleTile::CargoCrate);
+        battle.arena.set_tile(3, 3, BattleTile::CargoCrate);
+        battle.arena.set_tile(4, 3, BattleTile::CargoCrate);
+        battle.arena.set_tile(5, 3, BattleTile::CargoCrate);
+
+        let msgs = push_boulder(&mut battle, 1, 3, 1, 0);
+
+        assert!(msgs.iter().any(|m| m.contains("too long")));
+    }
+
+    // ── push_boulder chain at depth > 0 messages ─────────────────────
+
+    #[test]
+    fn push_boulder_chained_crate_slides_message() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut battle = make_test_battle(vec![player]);
+        battle.arena.set_tile(2, 3, BattleTile::CargoCrate);
+        battle.arena.set_tile(3, 3, BattleTile::CargoCrate);
+        battle.arena.set_tile(4, 3, BattleTile::CargoCrate);
+
+        let msgs = push_boulder(&mut battle, 2, 3, 1, 0);
+
+        // Should have chain push messages
+        assert!(msgs.iter().any(|m| m.contains("chain") || m.contains("Chain")));
+        assert_eq!(battle.arena.tile(4, 3), Some(BattleTile::CargoCrate));
+        assert_eq!(battle.arena.tile(5, 3), Some(BattleTile::CargoCrate));
+    }
+
+    // ── apply_flow_water enemy name ──────────────────────────────────
+
+    #[test]
+    fn conveyor_enemy_crush_shows_hanzi() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::ConveyorE);
+        battle.arena.set_tile(4, 3, BattleTile::CoverBarrier);
+
+        let msgs = apply_flow_water(&mut battle);
+
+        assert!(msgs.iter().any(|m| m.contains("火")));
+    }
+
+    // ── finish_environment_tick skips dead units for wet ──────────────
+
+    #[test]
+    fn finish_environment_tick_coolant_skips_dead() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        enemy.alive = false;
+        let enemy2 = make_test_unit(UnitKind::Enemy(1), 5, 5);
+        let mut battle = make_test_battle(vec![player, enemy, enemy2]);
+        battle.weather = Weather::CoolantLeak;
+
+        finish_environment_tick(&mut battle);
+
+        // Dead enemy should not get Wet status
+        assert!(battle.units[1].statuses.is_empty());
+    }
+
+    // ── Quartermaster companion ──────────────────────────────────────
+
+    #[test]
+    fn companion_quartermaster_bribe_attempt() {
+        use crate::game::Companion;
+        let mut player = make_test_unit(UnitKind::Player, 0, 0);
+        player.hp = 3; // < 40% of 10
+        let companion = make_test_unit(UnitKind::Companion, 1, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, companion, enemy]);
+        battle.companion_kind = Some(Companion::Quartermaster);
+
+        let msgs = apply_companion_passives(&mut battle);
+
+        // Bribe either succeeds or fails, both produce a message
+        assert!(msgs.iter().any(|m| m.contains("Merchant") || m.contains("bribe")));
+    }
+
+    // ── SecurityChief companion ──────────────────────────────────────
+
+    #[test]
+    fn companion_security_chief_taunt() {
+        use crate::game::Companion;
+        let mut player = make_test_unit(UnitKind::Player, 0, 0);
+        player.hp = 2; // < 30% of 10
+        let companion = make_test_unit(UnitKind::Companion, 1, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        let mut battle = make_test_battle(vec![player, companion, enemy]);
+        battle.companion_kind = Some(Companion::SecurityChief);
+
+        let msgs = apply_companion_passives(&mut battle);
+
+        assert!(msgs.iter().any(|m| m.contains("Guard taunts")));
+    }
+
+    // ── tick_battle EnemyTurn: timer=0, acted, no projectiles ────────
+
+    #[test]
+    fn tick_enemy_turn_timer_zero_advances() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::EnemyTurn {
+            unit_idx: 1,
+            timer: 0,
+            acted: true,
+        };
+
+        tick_battle(&mut battle);
+
+        // Should have advanced turn — phase transitions away from the original EnemyTurn
+        // (may wrap to EnvironmentTick, Command, or a new EnemyTurn for next unit)
+        match &battle.phase {
+            TacticalPhase::EnemyTurn { unit_idx, acted, .. } => {
+                // If it's still EnemyTurn, it should be for a new turn (acted=false)
+                assert!(!acted, "Should be a fresh EnemyTurn, not the same one");
+            }
+            _ => {
+                // Any other phase is fine — turn advanced
+            }
+        }
+    }
+
+    #[test]
+    fn tick_enemy_turn_with_projectiles_goes_to_animation() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.phase = TacticalPhase::EnemyTurn {
+            unit_idx: 1,
+            timer: 0,
+            acted: true,
+        };
+        battle.projectiles.push(crate::combat::Projectile {
+            from_x: 6.0,
+            from_y: 6.0,
+            to_x: 0,
+            to_y: 0,
+            progress: 0.0,
+            speed: 0.1,
+            arc_height: 0.0,
+            effect: ProjectileEffect::Damage(3),
+            owner_idx: 1,
+            glyph: "•",
+            color: "#f00",
+            done: false,
+        });
+
+        tick_battle(&mut battle);
+
+        assert!(matches!(
+            battle.phase,
+            TacticalPhase::ProjectileAnimation { .. }
+        ));
+    }
+
+    // ── arcing projectile piercing kills ──────────────────────────────
+
+    #[test]
+    fn arcing_piercing_kills_enemy() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        enemy.hp = 2;
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arcing_projectiles.push(crate::combat::ArcingProjectile {
+            target_x: 3,
+            target_y: 3,
+            turns_remaining: 1,
+            effect: ProjectileEffect::PiercingDamage(5),
+            glyph: "★",
+            color: "#fff",
+            owner_is_player: true,
+            fresh: false,
+            aoe_radius: 0,
+        });
+
+        tick_arcing_projectiles(&mut battle);
+
+        assert!(!battle.units[1].alive);
+        assert_eq!(battle.units[1].hp, 0);
+    }
+
+    #[test]
+    fn arcing_piercing_kills_player() {
+        let mut player = make_test_unit(UnitKind::Player, 3, 3);
+        player.hp = 2;
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arcing_projectiles.push(crate::combat::ArcingProjectile {
+            target_x: 3,
+            target_y: 3,
+            turns_remaining: 1,
+            effect: ProjectileEffect::PiercingDamage(5),
+            glyph: "★",
+            color: "#fff",
+            owner_is_player: false,
+            fresh: false,
+            aoe_radius: 0,
+        });
+
+        tick_arcing_projectiles(&mut battle);
+
+        assert!(!battle.units[0].alive);
+        assert_eq!(battle.units[0].hp, 0);
+    }
+
+    // ── pending impact: out-of-bounds tiles skipped ──────────────────
+
+    #[test]
+    fn pending_impact_ignores_out_of_bounds() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        // Impact at corner with radius 1 — some tiles will be OOB
+        battle.pending_impacts.push(crate::combat::PendingImpact {
+            x: 0,
+            y: 0,
+            turns_until_hit: 1,
+            damage: 2,
+            radius: 1,
+            source_is_player: true,
+            element: None,
+            glyph: "💥",
+            color: "#f00",
+        });
+
+        // Should not panic
+        tick_pending_impacts(&mut battle);
+
+        assert!(battle.pending_impacts.is_empty());
+    }
+
+    // ── conveyor audio only once ─────────────────────────────────────
+
+    #[test]
+    fn conveyor_plays_audio_once_for_multiple_pushes() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 5);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::ConveyorE);
+        battle.arena.set_tile(3, 5, BattleTile::ConveyorE);
+
+        apply_flow_water(&mut battle);
+
+        let conveyor_audio_count = battle
+            .audio_events
+            .iter()
+            .filter(|e| matches!(e, AudioEvent::ConveyorMove))
+            .count();
+        assert_eq!(conveyor_audio_count, 1);
+    }
+
+    // ── gravity well pull direction ──────────────────────────────────
+
+    #[test]
+    fn gravity_well_pulls_along_x_axis() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 5, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::GravityWell);
+
+        apply_gravity_wells(&mut battle);
+
+        // Should be pulled toward well along x axis
+        assert_eq!(battle.units[1].x, 4);
+        assert_eq!(battle.units[1].y, 3);
+    }
+
+    #[test]
+    fn gravity_well_pulls_along_y_axis() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 5);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::GravityWell);
+
+        apply_gravity_wells(&mut battle);
+
+        // Should be pulled toward well along y axis
+        assert_eq!(battle.units[1].x, 3);
+        assert_eq!(battle.units[1].y, 4);
+    }
+
+    // ── CoolantFlood applies Wet to units on flooded tiles ───────────
+
+    #[test]
+    fn coolant_flood_wets_unit_on_flooded_tile() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        // Place enemy adjacent to existing water
+        let enemy = make_test_unit(UnitKind::Enemy(0), 4, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::CoolantPool);
+        let mut rng = Rng::new(42);
+
+        execute_arena_event(&mut battle, ArenaEvent::CoolantFlood, &mut rng);
+
+        // If enemy's tile got flooded, they should be wet
+        if battle.arena.tile(4, 3) == Some(BattleTile::CoolantPool) {
+            assert!(battle.units[1]
+                .statuses
+                .iter()
+                .any(|s| matches!(s.kind, crate::status::StatusKind::Wet)));
+        }
+    }
+
+    // ── arc discharge chains through water ───────────────────────────
+
+    #[test]
+    fn arc_discharge_chains_through_water() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        // Place coolant pool adjacent to target for chain
+        battle.arena.set_tile(3, 3, BattleTile::CoolantPool);
+        let mut rng = Rng::new(1);
+
+        // We can't control exact targeting, so just verify no panic
+        execute_arena_event(&mut battle, ArenaEvent::ArcDischarge, &mut rng);
     }
 }

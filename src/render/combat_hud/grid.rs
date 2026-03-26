@@ -812,9 +812,9 @@ impl super::super::Renderer {
                             aoe_r, aoe_g, aoe_b, aoe_pulse
                         ));
                         self.ctx.fill_rect(sx, sy, cell, cell);
-                        let br = (aoe_r as i32 + 40).min(255) as u8;
-                        let bg = (aoe_g as i32 + 40).min(255) as u8;
-                        let bb = (aoe_b as i32 + 10).min(255) as u8;
+                        let br = (aoe_r + 40).min(255) as u8;
+                        let bg = (aoe_g + 40).min(255) as u8;
+                        let bb = (aoe_b + 10).min(255) as u8;
                         self.ctx.set_stroke_style_str(&format!(
                             "rgba({},{},{},{:.3})",
                             br,

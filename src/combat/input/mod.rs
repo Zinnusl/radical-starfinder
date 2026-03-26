@@ -1207,10 +1207,8 @@ pub fn execute_enemy_turn_action(battle: &mut TacticalBattle, unit_idx: usize) -
     }
 
     // ── Sacrifice check: low-HP enemies may sacrifice for allies ─────
-    if battle.units[unit_idx].is_enemy() {
-        if crate::combat::synergy::try_sacrifice(battle, unit_idx) {
-            return BattleEvent::None;
-        }
+    if battle.units[unit_idx].is_enemy() && crate::combat::synergy::try_sacrifice(battle, unit_idx) {
+        return BattleEvent::None;
     }
 
     let action = if battle.units[unit_idx].is_companion() {

@@ -107,6 +107,7 @@ impl BspNode {
         None
     }
 
+    #[allow(clippy::type_complexity)]
     pub(super) fn collect_corridors(&self, corridors: &mut Vec<((i32, i32), (i32, i32))>) {
         if let (Some(ref l), Some(ref r)) = (&self.left, &self.right) {
             l.collect_corridors(corridors);

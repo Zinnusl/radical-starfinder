@@ -35,7 +35,7 @@ pub fn apply_terrain_interactions(
                                     }
                                 }
                             }
-                            messages.push(format!("💨 Smoke billows from burning wiring!"));
+                            messages.push("💨 Smoke billows from burning wiring!".to_string());
                             if let Some(idx) = battle.unit_at(x, y) {
                                 let actual = deal_damage(battle, idx, 1);
                                 messages.push(format!("Fire scorches for {} damage!", actual));
@@ -542,7 +542,7 @@ pub fn explode_barrel(battle: &mut TacticalBattle, bx: i32, by: i32) -> Vec<Stri
         let deltas: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
         deltas.iter().any(|&(dx, dy)| {
             battle.arena.tile(bx + dx, by + dy) == Some(BattleTile::PlasmaPool)
-        }) || false // canister tile itself was FuelCanister, can't be PlasmaPool
+        }) // canister tile itself was FuelCanister, can't be PlasmaPool
     };
     battle.arena.set_tile(bx, by, BattleTile::BlastMark);
 
@@ -639,11 +639,9 @@ pub fn decay_cracked_floors(battle: &mut TacticalBattle) -> Vec<String> {
     let h = battle.arena.height as i32;
     for y in 0..h {
         for x in 0..w {
-            if battle.arena.tile(x, y) == Some(BattleTile::DamagedFloor) {
-                if battle.unit_at(x, y).is_none() {
-                    battle.arena.set_tile(x, y, BattleTile::BreachedFloor);
-                    messages.push(format!("Cracked floor collapses at ({},{})!", x, y));
-                }
+            if battle.arena.tile(x, y) == Some(BattleTile::DamagedFloor) && battle.unit_at(x, y).is_none() {
+                battle.arena.set_tile(x, y, BattleTile::BreachedFloor);
+                messages.push(format!("Cracked floor collapses at ({},{})!", x, y));
             }
         }
     }
@@ -795,9 +793,7 @@ pub fn tick_terrain(battle: &mut TacticalBattle) {
         let mut cooled = Vec::new();
         for i in 0..battle.arena.tiles.len() {
             if battle.arena.tiles[i] == BattleTile::PlasmaPool {
-                if battle.arena.lava_timers[i] < 255 {
-                    battle.arena.lava_timers[i] += 1;
-                }
+                battle.arena.lava_timers[i] = battle.arena.lava_timers[i].saturating_add(1);
                 if battle.arena.lava_timers[i] >= 3 && terrain_roll(tick, i, 15) {
                     let x = (i % battle.arena.width) as i32;
                     let y = (i / battle.arena.width) as i32;
@@ -1009,7 +1005,7 @@ pub fn tick_terrain(battle: &mut TacticalBattle) {
     }
 
     // ── 13. Steam Vent Toggling ───────────────────────────────────────────
-    if tick % 2 == 0 {
+    if tick % 2 == 0  {
         let mut toggled_active = false;
         let mut toggled_inactive = false;
         for i in 0..battle.arena.tiles.len() {

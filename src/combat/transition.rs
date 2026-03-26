@@ -596,7 +596,7 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
     if floor >= 4 {
         let flow_seed = seed.wrapping_mul(6271).wrapping_add(99);
         let flow_hash = flow_seed.wrapping_mul(31337);
-        let should_place = flow_hash % 3 != 0;
+        let should_place = flow_hash % 3 != 0 ;
         if should_place {
             let dir = flow_hash % 4;
             let (flow_tile, is_horizontal) = match dir {
@@ -605,7 +605,7 @@ fn generate_arena(floor: i32, size: usize, biome: ArenaBiome) -> TacticalArena {
                 2 => (BattleTile::ConveyorE, true),
                 _ => (BattleTile::ConveyorW, true),
             };
-            let channel_len = 3 + (floor / 6).min(3) as i32;
+            let channel_len = 3 + (floor / 6).min(3);
             if is_horizontal {
                 let y = (2 + (flow_hash >> 8) % (size as u64 - 4)) as i32;
                 let start_x = ((flow_hash >> 16) % (size as u64 / 2)) as i32;

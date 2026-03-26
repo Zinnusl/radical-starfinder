@@ -758,7 +758,7 @@ impl GameState {
                 if let Some(prev) = self.last_spell.take() {
                     let combo = detect_combo(&prev, &current_effect);
                     if let Some((combo_name, combo_effect)) = combo {
-                        self.apply_combo(enemy_idx, &combo_name, combo_effect, p_screen, e_screen);
+                        self.apply_combo(enemy_idx, combo_name, combo_effect, p_screen, e_screen);
                     }
                 }
                 self.last_spell = Some(current_effect);

@@ -621,3 +621,476 @@ fn confirm_target(battle: &mut TacticalBattle, mode: &TargetMode, tx: i32, ty: i
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::combat::test_helpers::{make_test_battle, make_test_unit};
+    use crate::combat::UnitKind;
+    use crate::radical::SpellEffect;
+
+    // ── spell_range ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn spell_range_fire_aoe_returns_4() {
+        assert_eq!(spell_range(&SpellEffect::FireAoe(3)), 4);
+    }
+
+    #[test]
+    fn spell_range_strong_hit_returns_2() {
+        assert_eq!(spell_range(&SpellEffect::StrongHit(5)), 2);
+    }
+
+    #[test]
+    fn spell_range_drain_returns_1() {
+        assert_eq!(spell_range(&SpellEffect::Drain(3)), 1);
+    }
+
+    #[test]
+    fn spell_range_stun_returns_3() {
+        assert_eq!(spell_range(&SpellEffect::Stun), 3);
+    }
+
+    #[test]
+    fn spell_range_pacify_returns_3() {
+        assert_eq!(spell_range(&SpellEffect::Pacify), 3);
+    }
+
+    #[test]
+    fn spell_range_slow_returns_3() {
+        assert_eq!(spell_range(&SpellEffect::Slow(2)), 3);
+    }
+
+    #[test]
+    fn spell_range_teleport_returns_4() {
+        assert_eq!(spell_range(&SpellEffect::Teleport), 4);
+    }
+
+    #[test]
+    fn spell_range_poison_returns_2() {
+        assert_eq!(spell_range(&SpellEffect::Poison(2, 3)), 2);
+    }
+
+    #[test]
+    fn spell_range_armor_break_returns_2() {
+        assert_eq!(spell_range(&SpellEffect::ArmorBreak), 2);
+    }
+
+    #[test]
+    fn spell_range_dash_returns_5() {
+        assert_eq!(spell_range(&SpellEffect::Dash(3)), 5);
+    }
+
+    #[test]
+    fn spell_range_pierce_returns_6() {
+        assert_eq!(spell_range(&SpellEffect::Pierce(3)), 6);
+    }
+
+    #[test]
+    fn spell_range_pull_toward_returns_4() {
+        assert_eq!(spell_range(&SpellEffect::PullToward), 4);
+    }
+
+    #[test]
+    fn spell_range_knockback_returns_2() {
+        assert_eq!(spell_range(&SpellEffect::KnockBack(2)), 2);
+    }
+
+    #[test]
+    fn spell_range_thorns_returns_0() {
+        assert_eq!(spell_range(&SpellEffect::Thorns(3)), 0);
+    }
+
+    #[test]
+    fn spell_range_cone_returns_3() {
+        assert_eq!(spell_range(&SpellEffect::Cone(4)), 3);
+    }
+
+    #[test]
+    fn spell_range_wall_returns_4() {
+        assert_eq!(spell_range(&SpellEffect::Wall(3)), 4);
+    }
+
+    #[test]
+    fn spell_range_oil_slick_returns_4() {
+        assert_eq!(spell_range(&SpellEffect::OilSlick), 4);
+    }
+
+    #[test]
+    fn spell_range_freeze_ground_returns_5() {
+        assert_eq!(spell_range(&SpellEffect::FreezeGround(2)), 5);
+    }
+
+    #[test]
+    fn spell_range_ignite_returns_4() {
+        assert_eq!(spell_range(&SpellEffect::Ignite), 4);
+    }
+
+    #[test]
+    fn spell_range_plant_growth_returns_3() {
+        assert_eq!(spell_range(&SpellEffect::PlantGrowth), 3);
+    }
+
+    #[test]
+    fn spell_range_earthquake_returns_3() {
+        assert_eq!(spell_range(&SpellEffect::Earthquake(3)), 3);
+    }
+
+    #[test]
+    fn spell_range_sanctify_returns_3() {
+        assert_eq!(spell_range(&SpellEffect::Sanctify(2)), 3);
+    }
+
+    #[test]
+    fn spell_range_flood_wave_returns_5() {
+        assert_eq!(spell_range(&SpellEffect::FloodWave(2)), 5);
+    }
+
+    #[test]
+    fn spell_range_summon_boulder_returns_4() {
+        assert_eq!(spell_range(&SpellEffect::SummonBoulder), 4);
+    }
+
+    #[test]
+    fn spell_range_charge_returns_5() {
+        assert_eq!(spell_range(&SpellEffect::Charge(3)), 5);
+    }
+
+    #[test]
+    fn spell_range_blink_returns_4() {
+        assert_eq!(spell_range(&SpellEffect::Blink(2)), 4);
+    }
+
+    #[test]
+    fn spell_range_heal_falls_through_to_default_1() {
+        assert_eq!(spell_range(&SpellEffect::Heal(5)), 1);
+    }
+
+    #[test]
+    fn spell_range_reveal_falls_through_to_default_1() {
+        assert_eq!(spell_range(&SpellEffect::Reveal), 1);
+    }
+
+    // ── compute_aoe_preview ───────────────────────────────────────────────────
+
+    #[test]
+    fn aoe_preview_fire_aoe_produces_cross_5_tiles() {
+        let tiles = compute_aoe_preview(&SpellEffect::FireAoe(3), 3, 3, 0, 0);
+        assert_eq!(tiles.len(), 5);
+        assert!(tiles.contains(&(3, 3)));
+        assert!(tiles.contains(&(2, 3)));
+        assert!(tiles.contains(&(4, 3)));
+        assert!(tiles.contains(&(3, 2)));
+        assert!(tiles.contains(&(3, 4)));
+    }
+
+    #[test]
+    fn aoe_preview_poison_produces_3_tiles() {
+        let tiles = compute_aoe_preview(&SpellEffect::Poison(2, 3), 2, 2, 0, 0);
+        assert_eq!(tiles.len(), 3);
+        assert!(tiles.contains(&(2, 2)));
+        assert!(tiles.contains(&(3, 2)));
+        assert!(tiles.contains(&(2, 3)));
+    }
+
+    #[test]
+    fn aoe_preview_dash_returns_line_from_player_to_cursor() {
+        let tiles = compute_aoe_preview(&SpellEffect::Dash(3), 3, 0, 0, 0);
+        assert_eq!(tiles, vec![(1, 0), (2, 0), (3, 0)]);
+    }
+
+    #[test]
+    fn aoe_preview_pierce_horizontal_produces_6_tiles() {
+        let tiles = compute_aoe_preview(&SpellEffect::Pierce(3), 3, 0, 0, 0);
+        assert_eq!(tiles.len(), 6);
+        assert!(tiles.contains(&(1, 0)));
+        assert!(tiles.contains(&(6, 0)));
+    }
+
+    #[test]
+    fn aoe_preview_pierce_same_point_returns_that_point() {
+        let tiles = compute_aoe_preview(&SpellEffect::Pierce(3), 0, 0, 0, 0);
+        assert_eq!(tiles, vec![(0, 0)]);
+    }
+
+    #[test]
+    fn aoe_preview_cone_horizontal_right_produces_7_tiles() {
+        // Player at (0,3), cursor to the right at (3,3) → dx=1, dy=0
+        let tiles = compute_aoe_preview(&SpellEffect::Cone(3), 3, 3, 0, 3);
+        assert_eq!(tiles.len(), 7);
+        assert!(tiles.contains(&(1, 3))); // first column
+        assert!(tiles.contains(&(2, 2)));
+        assert!(tiles.contains(&(2, 4)));
+        assert!(tiles.contains(&(3, 2)));
+        assert!(tiles.contains(&(3, 3)));
+        assert!(tiles.contains(&(3, 4)));
+    }
+
+    #[test]
+    fn aoe_preview_cone_vertical_down_produces_7_tiles() {
+        // Player at (3,0), cursor below at (3,3) → dx=0, dy=1
+        let tiles = compute_aoe_preview(&SpellEffect::Cone(3), 3, 3, 3, 0);
+        assert_eq!(tiles.len(), 7);
+        assert!(tiles.contains(&(3, 1)));
+    }
+
+    #[test]
+    fn aoe_preview_cone_diagonal_returns_single_tile() {
+        // Diagonal aim: dx=1, dy=1 → fallback to single tile
+        let tiles = compute_aoe_preview(&SpellEffect::Cone(3), 3, 3, 1, 1);
+        assert_eq!(tiles, vec![(3, 3)]);
+    }
+
+    #[test]
+    fn aoe_preview_wall_horizontal_aim_produces_vertical_wall() {
+        // Player at (0,3), cursor right at (3,3) → dx=1, dy=0 → vertical wall at (3, 2..4)
+        let tiles = compute_aoe_preview(&SpellEffect::Wall(3), 3, 3, 0, 3);
+        assert_eq!(tiles.len(), 3);
+        assert!(tiles.contains(&(3, 2)));
+        assert!(tiles.contains(&(3, 3)));
+        assert!(tiles.contains(&(3, 4)));
+    }
+
+    #[test]
+    fn aoe_preview_wall_vertical_aim_produces_horizontal_wall() {
+        // Player at (3,0), cursor down at (3,3) → dx=0, dy=1 → horizontal wall
+        let tiles = compute_aoe_preview(&SpellEffect::Wall(3), 3, 3, 3, 0);
+        assert_eq!(tiles.len(), 3);
+        assert!(tiles.contains(&(2, 3)));
+        assert!(tiles.contains(&(3, 3)));
+        assert!(tiles.contains(&(4, 3)));
+    }
+
+    #[test]
+    fn aoe_preview_wall_diagonal_returns_single_tile() {
+        let tiles = compute_aoe_preview(&SpellEffect::Wall(3), 3, 3, 1, 1);
+        assert_eq!(tiles, vec![(3, 3)]);
+    }
+
+    #[test]
+    fn aoe_preview_oil_slick_produces_3x3_square_9_tiles() {
+        let tiles = compute_aoe_preview(&SpellEffect::OilSlick, 3, 3, 0, 0);
+        assert_eq!(tiles.len(), 9);
+        assert!(tiles.contains(&(2, 2)));
+        assert!(tiles.contains(&(4, 4)));
+        assert!(tiles.contains(&(3, 3)));
+    }
+
+    #[test]
+    fn aoe_preview_plant_growth_produces_3x3_square_9_tiles() {
+        let tiles = compute_aoe_preview(&SpellEffect::PlantGrowth, 5, 5, 0, 0);
+        assert_eq!(tiles.len(), 9);
+        assert!(tiles.contains(&(4, 4)));
+        assert!(tiles.contains(&(6, 6)));
+    }
+
+    #[test]
+    fn aoe_preview_freeze_ground_produces_cross_5_tiles() {
+        let tiles = compute_aoe_preview(&SpellEffect::FreezeGround(2), 3, 3, 0, 0);
+        assert_eq!(tiles.len(), 5);
+        assert!(tiles.contains(&(3, 3)));
+        assert!(tiles.contains(&(2, 3)));
+        assert!(tiles.contains(&(4, 3)));
+    }
+
+    #[test]
+    fn aoe_preview_ignite_produces_cross_5_tiles() {
+        let tiles = compute_aoe_preview(&SpellEffect::Ignite, 3, 3, 0, 0);
+        assert_eq!(tiles.len(), 5);
+    }
+
+    #[test]
+    fn aoe_preview_sanctify_produces_cross_5_tiles() {
+        let tiles = compute_aoe_preview(&SpellEffect::Sanctify(2), 3, 3, 0, 0);
+        assert_eq!(tiles.len(), 5);
+    }
+
+    #[test]
+    fn aoe_preview_earthquake_produces_13_tiles() {
+        let tiles = compute_aoe_preview(&SpellEffect::Earthquake(3), 3, 3, 0, 0);
+        assert_eq!(tiles.len(), 13);
+        assert!(tiles.contains(&(3, 3)));
+        assert!(tiles.contains(&(1, 3)));
+        assert!(tiles.contains(&(5, 3)));
+        assert!(tiles.contains(&(2, 2)));
+    }
+
+    #[test]
+    fn aoe_preview_flood_wave_horizontal_produces_15_tiles() {
+        // Player at (0,3), cursor right at (3,3) → dx=1, dy=0 → horizontal wave
+        let tiles = compute_aoe_preview(&SpellEffect::FloodWave(2), 3, 3, 0, 3);
+        assert_eq!(tiles.len(), 15);
+    }
+
+    #[test]
+    fn aoe_preview_flood_wave_vertical_produces_15_tiles() {
+        // Player at (3,0), cursor down at (3,3) → dx=0, dy=1 → vertical wave
+        let tiles = compute_aoe_preview(&SpellEffect::FloodWave(2), 3, 3, 3, 0);
+        assert_eq!(tiles.len(), 15);
+    }
+
+    #[test]
+    fn aoe_preview_flood_wave_diagonal_fallback_produces_5_tiles() {
+        // Diagonal: dx=1, dy=1 → fallback diagonal line
+        let tiles = compute_aoe_preview(&SpellEffect::FloodWave(2), 3, 3, 1, 1);
+        assert_eq!(tiles.len(), 5);
+    }
+
+    #[test]
+    fn aoe_preview_summon_boulder_returns_single_target_tile() {
+        let tiles = compute_aoe_preview(&SpellEffect::SummonBoulder, 4, 2, 0, 0);
+        assert_eq!(tiles, vec![(4, 2)]);
+    }
+
+    #[test]
+    fn aoe_preview_charge_returns_line_from_player_to_cursor() {
+        let tiles = compute_aoe_preview(&SpellEffect::Charge(3), 3, 0, 0, 0);
+        assert_eq!(tiles, vec![(1, 0), (2, 0), (3, 0)]);
+    }
+
+    #[test]
+    fn aoe_preview_blink_returns_cross_at_player_position() {
+        let tiles = compute_aoe_preview(&SpellEffect::Blink(2), 5, 5, 2, 2);
+        assert_eq!(tiles.len(), 5);
+        assert!(tiles.contains(&(2, 2)));
+        assert!(tiles.contains(&(1, 2)));
+        assert!(tiles.contains(&(3, 2)));
+        assert!(tiles.contains(&(2, 1)));
+        assert!(tiles.contains(&(2, 3)));
+    }
+
+    #[test]
+    fn aoe_preview_default_effect_returns_single_target_tile() {
+        let tiles = compute_aoe_preview(&SpellEffect::Stun, 4, 3, 0, 0);
+        assert_eq!(tiles, vec![(4, 3)]);
+    }
+
+    // ── line_between ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn line_between_same_point_returns_that_point() {
+        let tiles = line_between(3, 3, 3, 3);
+        assert_eq!(tiles, vec![(3, 3)]);
+    }
+
+    #[test]
+    fn line_between_horizontal_right_includes_all_tiles() {
+        let tiles = line_between(0, 0, 4, 0);
+        assert_eq!(tiles, vec![(1, 0), (2, 0), (3, 0), (4, 0)]);
+    }
+
+    #[test]
+    fn line_between_horizontal_left_includes_all_tiles() {
+        let tiles = line_between(4, 0, 0, 0);
+        assert_eq!(tiles, vec![(3, 0), (2, 0), (1, 0), (0, 0)]);
+    }
+
+    #[test]
+    fn line_between_vertical_down_includes_all_tiles() {
+        let tiles = line_between(0, 0, 0, 3);
+        assert_eq!(tiles, vec![(0, 1), (0, 2), (0, 3)]);
+    }
+
+    #[test]
+    fn line_between_diagonal_includes_diagonal_tiles() {
+        let tiles = line_between(0, 0, 3, 3);
+        assert_eq!(tiles, vec![(1, 1), (2, 2), (3, 3)]);
+    }
+
+    #[test]
+    fn line_between_caps_at_20_tiles_for_long_lines() {
+        // Horizontal line of length 25, should stop at 20
+        let tiles = line_between(0, 0, 25, 0);
+        assert!(tiles.len() <= 21, "Too many tiles: {}", tiles.len());
+    }
+
+    // ── find_next_target ──────────────────────────────────────────────────────
+
+    #[test]
+    fn find_next_target_returns_current_when_no_valid_targets() {
+        let targets: Vec<(i32, i32)> = vec![];
+        let result = find_next_target(3, 3, 1, 0, &targets);
+        assert_eq!(result, (3, 3));
+    }
+
+    #[test]
+    fn find_next_target_finds_nearest_in_given_direction() {
+        let targets = vec![(4, 3), (5, 3), (6, 3)];
+        let result = find_next_target(3, 3, 1, 0, &targets); // moving right
+        assert_eq!(result, (4, 3));
+    }
+
+    #[test]
+    fn find_next_target_ignores_targets_in_wrong_direction() {
+        let targets = vec![(1, 3), (2, 3)]; // all to the left
+        // Moving right (dx=1): no targets in direction, wraps to first non-current
+        let result = find_next_target(3, 3, 1, 0, &targets);
+        assert_ne!(result, (3, 3)); // should wrap to some target
+    }
+
+    // ── dash_target_tiles ─────────────────────────────────────────────────────
+
+    #[test]
+    fn dash_target_tiles_returns_4_cardinal_directions_in_open_arena() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let battle = make_test_battle(vec![player]);
+        let targets = dash_target_tiles(&battle, 3, 3, 3);
+        assert_eq!(targets.len(), 4, "Should have 4 cardinal dash targets");
+    }
+
+    #[test]
+    fn dash_target_tiles_range_1_returns_adjacent_tiles() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let battle = make_test_battle(vec![player]);
+        let targets = dash_target_tiles(&battle, 3, 3, 1);
+        // With range 1, should get immediate adjacent in each cardinal direction
+        assert_eq!(targets.len(), 4);
+        assert!(targets.contains(&(4, 3)));
+        assert!(targets.contains(&(2, 3)));
+        assert!(targets.contains(&(3, 4)));
+        assert!(targets.contains(&(3, 2)));
+    }
+
+    #[test]
+    fn dash_target_tiles_from_corner_returns_fewer_directions() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let battle = make_test_battle(vec![player]);
+        let targets = dash_target_tiles(&battle, 0, 0, 3);
+        // From corner (0,0), can only dash right and down
+        assert_eq!(targets.len(), 2);
+        assert!(targets.contains(&(3, 0)));
+        assert!(targets.contains(&(0, 3)));
+    }
+
+    // ── blink_target_tiles ────────────────────────────────────────────────────
+
+    #[test]
+    fn blink_target_tiles_excludes_player_position() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let battle = make_test_battle(vec![player]);
+        let los_tiles = vec![(2, 3), (3, 3), (4, 3)];
+        let targets = blink_target_tiles(&battle, &los_tiles);
+        assert!(!targets.contains(&(3, 3)), "Player tile must be excluded");
+    }
+
+    #[test]
+    fn blink_target_tiles_excludes_occupied_tiles() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut enemy = make_test_unit(UnitKind::Enemy(1), 4, 3);
+        enemy.alive = true;
+        let battle = make_test_battle(vec![player, enemy]);
+        let los_tiles = vec![(2, 3), (3, 3), (4, 3), (5, 3)];
+        let targets = blink_target_tiles(&battle, &los_tiles);
+        assert!(!targets.contains(&(4, 3)), "Occupied enemy tile must be excluded");
+    }
+
+    #[test]
+    fn blink_target_tiles_includes_empty_walkable_tiles() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let battle = make_test_battle(vec![player]);
+        let los_tiles = vec![(1, 3), (5, 3)];
+        let targets = blink_target_tiles(&battle, &los_tiles);
+        assert!(targets.contains(&(1, 3)));
+        assert!(targets.contains(&(5, 3)));
+    }
+}

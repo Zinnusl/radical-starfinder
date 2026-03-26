@@ -175,8 +175,6 @@ pub fn calculate_all_intents(battle: &mut TacticalBattle) {
             AiBehavior::Retreat => {
                 if let Some(r) = best_radical {
                     get_radical_intent(&battle.units[i].radical_actions[r])
-                } else if dist <= 1 {
-                    EnemyIntent::Retreat
                 } else if dist <= 3 {
                     EnemyIntent::Retreat
                 } else {
@@ -217,9 +215,7 @@ pub fn calculate_all_intents(battle: &mut TacticalBattle) {
             AiBehavior::Pack => {
                 if let Some(r) = best_radical {
                     get_radical_intent(&battle.units[i].radical_actions[r])
-                } else if allies_near >= 2 {
-                    EnemyIntent::Attack
-                } else if dist <= 1 {
+                } else if allies_near >= 2 || dist <= 1 {
                     EnemyIntent::Attack
                 } else {
                     EnemyIntent::Surround
@@ -315,10 +311,8 @@ fn score_and_pick_radical(
                 }
             }
             AiBehavior::Ambush => {
-                if dist <= 3 {
-                    if role == TacticalRole::Offensive {
-                        score += 100;
-                    }
+                if dist <= 3 && role == TacticalRole::Offensive {
+                    score += 100;
                 }
             }
             AiBehavior::Sentinel => {
@@ -672,17 +666,15 @@ pub fn choose_action(battle: &TacticalBattle, unit_idx: usize) -> AiAction {
                 } else {
                     AiAction::Wait
                 }
+            } else if dist <= 1 {
+                AiAction::MeleeAttack { target_unit: 0 }
+            } else if let Some(path) = path_toward_ally(battle, unit_idx) {
+                AiAction::MoveToTile { path }
+            } else if let Some(path) = path_toward(battle, unit_idx, player.x, player.y, true)
+            {
+                AiAction::MoveToTile { path }
             } else {
-                if dist <= 1 {
-                    AiAction::MeleeAttack { target_unit: 0 }
-                } else if let Some(path) = path_toward_ally(battle, unit_idx) {
-                    AiAction::MoveToTile { path }
-                } else if let Some(path) = path_toward(battle, unit_idx, player.x, player.y, true)
-                {
-                    AiAction::MoveToTile { path }
-                } else {
-                    AiAction::Wait
-                }
+                AiAction::Wait
             }
         }
     }

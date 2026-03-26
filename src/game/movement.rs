@@ -100,7 +100,7 @@ impl GameState {
             if self.move_count == warning_threshold {
                 self.message = "⚠ Your energy reserves are running low...".to_string();
                 self.message_timer = 60;
-            } else if self.move_count > grace && (self.move_count - grace) % 25 == 0 {
+            } else if self.move_count > grace && (self.move_count - (grace) % 25 == 0) {
                 let starvation_dmg = 1 + self.floor_num / 5;
                 self.player.hp -= starvation_dmg;
                 self.message = format!(
@@ -236,7 +236,7 @@ impl GameState {
                 self.move_count += 1;
 
                 let skip_enemy =
-                    status::has_haste(&self.player.statuses) && self.move_count % 2 == 0;
+                    status::has_haste(&self.player.statuses) && (self.move_count % 2 == 0);
                 if !skip_enemy {
                     self.enemy_turn();
                 }
@@ -259,7 +259,7 @@ impl GameState {
             let can_dig = self
                 .player
                 .weapon
-                .map_or(false, |eq| matches!(eq.effect, EquipEffect::Digging))
+                .is_some_and(|eq| matches!(eq.effect, EquipEffect::Digging))
                 || self.player.form == PlayerForm::Cybernetic;
 
             if can_dig {
@@ -296,7 +296,7 @@ impl GameState {
                 self.move_count += 1;
 
                 let skip_enemy =
-                    status::has_haste(&self.player.statuses) && self.move_count % 2 == 0;
+                    status::has_haste(&self.player.statuses) && (self.move_count % 2 == 0);
                 if !skip_enemy {
                     self.enemy_turn();
                 }
@@ -347,7 +347,7 @@ impl GameState {
                     self.player.y = ny;
                     self.move_count += 1;
                     let skip_enemy =
-                        status::has_haste(&self.player.statuses) && self.move_count % 2 == 0;
+                        status::has_haste(&self.player.statuses) && (self.move_count % 2 == 0);
                     if !skip_enemy {
                         self.enemy_turn();
                     }
@@ -404,7 +404,7 @@ impl GameState {
             let can_dig = self
                 .player
                 .weapon
-                .map_or(false, |eq| matches!(eq.effect, EquipEffect::Digging))
+                .is_some_and(|eq| matches!(eq.effect, EquipEffect::Digging))
                 || self.player.form == PlayerForm::Cybernetic;
             if can_dig {
                 let idx = self.level.idx(nx, ny);
@@ -772,7 +772,7 @@ impl GameState {
 
         // After player moves, enemies take a turn(skipped on even moves during haste)
         self.move_count += 1;
-        let skip_enemy = status::has_haste(&self.player.statuses) && self.move_count % 2 == 0;
+        let skip_enemy = status::has_haste(&self.player.statuses) && (self.move_count % 2 == 0);
         if !skip_enemy {
             self.enemy_turn();
         }

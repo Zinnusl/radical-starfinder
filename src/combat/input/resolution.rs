@@ -1269,8 +1269,6 @@ pub(super) fn resolve_spell_cast(
             for i in -half..=half {
                 let (wx, wy) = if dx != 0 && dy == 0 {
                     (target_x, target_y + i)
-                } else if dy != 0 && dx == 0 {
-                    (target_x + i, target_y)
                 } else {
                     (target_x + i, target_y)
                 };
@@ -1354,7 +1352,7 @@ pub(super) fn resolve_spell_cast(
                                 // Oil explosion: 3 damage to unit on this tile
                                 if let Some(idx) = battle.unit_at(tx, ty) {
                                     deal_damage(battle, idx, 3);
-                                    battle.log_message(&format!(
+                                    battle.log_message(format!(
                                         "Lubricant ignites! {} takes 3 damage!",
                                         battle.units[idx].hanzi
                                     ));
@@ -1465,7 +1463,7 @@ pub(super) fn resolve_spell_cast(
                 glyph: "💥",
                 color: "#cc9944",
             });
-            format!("The deck shakes! Seismic charge detonates in 2 turns!")
+            "The deck shakes! Seismic charge detonates in 2 turns!".to_string()
         }
         SpellEffect::Sanctify(heal) => {
             let px = battle.units[0].x;
@@ -1548,7 +1546,7 @@ pub(super) fn resolve_spell_cast(
                     });
                 }
             }
-            format!("Coolant wave surges! Impact in 1 turn!")
+            "Coolant wave surges! Impact in 1 turn!".to_string()
         }
         SpellEffect::SummonBoulder => {
             if battle.arena.in_bounds(target_x, target_y) {
@@ -2444,6 +2442,1092 @@ mod tests {
     #[test]
     fn spell_school_focus_restore_is_focus() {
         assert_eq!(spell_effect_school(&SpellEffect::FocusRestore(5)), "focus");
+    }
+
+    // ── wuxing_element_name ───────────────────────────────────────────
+
+    #[test]
+    fn wuxing_element_name_water() {
+        assert_eq!(wuxing_element_name(&WuxingElement::Water), "Water");
+    }
+
+    #[test]
+    fn wuxing_element_name_fire() {
+        assert_eq!(wuxing_element_name(&WuxingElement::Fire), "Fire");
+    }
+
+    #[test]
+    fn wuxing_element_name_metal() {
+        assert_eq!(wuxing_element_name(&WuxingElement::Metal), "Metal");
+    }
+
+    #[test]
+    fn wuxing_element_name_wood() {
+        assert_eq!(wuxing_element_name(&WuxingElement::Wood), "Wood");
+    }
+
+    #[test]
+    fn wuxing_element_name_earth() {
+        assert_eq!(wuxing_element_name(&WuxingElement::Earth), "Earth");
+    }
+
+    // ── resolve_basic_attack ──────────────────────────────────────────
+
+    #[test]
+    fn resolve_basic_attack_correct_answer_deals_damage() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let _ = resolve_basic_attack(&mut battle, 1, "huo3");
+        assert!(battle.units[1].hp < 10);
+        assert_eq!(battle.combo_streak, 1);
+    }
+
+    #[test]
+    fn resolve_basic_attack_correct_increments_combo() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.combo_streak = 2;
+        let _ = resolve_basic_attack(&mut battle, 1, "huo3");
+        assert_eq!(battle.combo_streak, 3);
+    }
+
+    #[test]
+    fn resolve_basic_attack_wrong_answer_resets_combo() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.combo_streak = 5;
+        let _ = resolve_basic_attack(&mut battle, 1, "wrong");
+        assert_eq!(battle.combo_streak, 0);
+    }
+
+    #[test]
+    fn resolve_basic_attack_wrong_answer_counter_attacks() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let _ = resolve_basic_attack(&mut battle, 1, "wrong");
+        assert!(battle.units[0].hp < 10, "Player should take counter damage");
+    }
+
+    #[test]
+    fn resolve_basic_attack_partial_match_deals_half_damage() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        // "huo" is the base without tone → partial match for "huo3"
+        let _ = resolve_basic_attack(&mut battle, 1, "huo");
+        // Half of base_damage (3) = max(3/2, 1) = 1
+        assert!(battle.units[1].hp < 10, "Should deal half damage");
+    }
+
+    #[test]
+    fn resolve_basic_attack_target_gone_returns_early() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        enemy.alive = false;
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let event = resolve_basic_attack(&mut battle, 1, "huo3");
+        assert!(matches!(event, BattleEvent::None));
+    }
+
+    #[test]
+    fn resolve_basic_attack_invalid_target_idx_returns_early() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        let event = resolve_basic_attack(&mut battle, 5, "huo3");
+        assert!(matches!(event, BattleEvent::None));
+    }
+
+    #[test]
+    fn resolve_basic_attack_non_enemy_target_returns_none() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        let event = resolve_basic_attack(&mut battle, 0, "huo3");
+        assert!(matches!(event, BattleEvent::None));
+    }
+
+    #[test]
+    fn resolve_basic_attack_dodge_prevents_damage() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        enemy.radical_dodge = true;
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let _ = resolve_basic_attack(&mut battle, 1, "huo3");
+        assert_eq!(battle.units[1].hp, 10, "Dodge should prevent damage");
+        assert!(!battle.units[1].radical_dodge, "Dodge consumed");
+    }
+
+    #[test]
+    fn resolve_basic_attack_riposte_blocks_counter_damage() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.riposte_charges = 2;
+        let _ = resolve_basic_attack(&mut battle, 1, "wrong");
+        assert_eq!(battle.units[0].hp, 10, "Riposte should block counter");
+        assert_eq!(battle.riposte_charges, 1, "Should consume one charge");
+    }
+
+    #[test]
+    fn resolve_basic_attack_overcharge_triples_damage_on_correct() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.overcharge_active = true;
+        let _ = resolve_basic_attack(&mut battle, 1, "huo3");
+        assert!(!battle.overcharge_active, "Overcharge should be consumed");
+        // Base damage 3 × overcharge 3 = 9
+        assert!(battle.units[1].hp <= 1, "Should deal triple damage (9)");
+    }
+
+    #[test]
+    fn resolve_basic_attack_overcharge_doubles_counter_on_wrong() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.overcharge_active = true;
+        let _ = resolve_basic_attack(&mut battle, 1, "wrong");
+        assert!(!battle.overcharge_active, "Overcharge consumed");
+        // Counter = enemy_dmg(3) * 2 = 6
+        assert_eq!(battle.units[0].hp, 4, "Player should take 2× counter");
+    }
+
+    #[test]
+    fn resolve_basic_attack_hubris_increases_counter_damage() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.hubris_mode = true;
+        let _ = resolve_basic_attack(&mut battle, 1, "wrong");
+        // Hubris counter = round(3 * 1.5) = 5
+        assert_eq!(battle.units[0].hp, 5, "Player should take hubris-boosted counter");
+    }
+
+    #[test]
+    fn resolve_basic_attack_frozen_edge_adds_damage_and_slow() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.frozen_edge_charges = 2;
+        let _ = resolve_basic_attack(&mut battle, 1, "huo3");
+        assert_eq!(battle.frozen_edge_charges, 1, "Should consume one charge");
+        assert!(
+            battle.units[1].statuses.iter().any(|s| matches!(s.kind, StatusKind::Slow)),
+            "Should apply Slow"
+        );
+    }
+
+    #[test]
+    fn resolve_basic_attack_kills_enemy_sets_end_phase() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        enemy.hp = 1;
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let _ = resolve_basic_attack(&mut battle, 1, "huo3");
+        assert!(!battle.units[1].alive);
+        assert!(matches!(battle.phase, TacticalPhase::End { victory: true, .. }));
+    }
+
+    #[test]
+    fn resolve_basic_attack_player_killed_by_counter_sets_defeat() {
+        let mut player = make_test_unit(UnitKind::Player, 3, 3);
+        player.hp = 1;
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let _ = resolve_basic_attack(&mut battle, 1, "wrong");
+        assert!(!battle.units[0].alive);
+        assert!(matches!(battle.phase, TacticalPhase::End { victory: false, .. }));
+    }
+
+    #[test]
+    fn resolve_basic_attack_correct_logs_audio_correct() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let _ = resolve_basic_attack(&mut battle, 1, "huo3");
+        assert!(battle.audio_events.iter().any(|e| matches!(e, AudioEvent::TypingCorrect)));
+    }
+
+    #[test]
+    fn resolve_basic_attack_wrong_logs_audio_error() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let _ = resolve_basic_attack(&mut battle, 1, "wrong");
+        assert!(battle.audio_events.iter().any(|e| matches!(e, AudioEvent::TypingError)));
+    }
+
+    #[test]
+    fn resolve_basic_attack_correct_sets_last_answer_true() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let _ = resolve_basic_attack(&mut battle, 1, "huo3");
+        assert_eq!(battle.last_answer, Some(("火", true)));
+    }
+
+    #[test]
+    fn resolve_basic_attack_wrong_sets_last_answer_false() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let _ = resolve_basic_attack(&mut battle, 1, "wrong");
+        assert_eq!(battle.last_answer, Some(("火", false)));
+    }
+
+    #[test]
+    fn resolve_basic_attack_focus_consumed_on_correct() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        assert_eq!(battle.focus, 10);
+        let _ = resolve_basic_attack(&mut battle, 1, "huo3");
+        // "火" has 1 char → focus cost 1
+        assert_eq!(battle.focus, 9);
+    }
+
+    #[test]
+    fn resolve_basic_attack_hard_answer_polyglot_grants_riposte() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.has_polyglot = true;
+        assert_eq!(battle.riposte_charges, 0);
+        let _ = resolve_basic_attack(&mut battle, 1, "huo3");
+        assert_eq!(battle.riposte_charges, 1);
+    }
+
+    #[test]
+    fn resolve_basic_attack_xp_gained_on_correct() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let _ = resolve_basic_attack(&mut battle, 1, "huo3");
+        assert!(battle.pending_skill_xp >= 5);
+    }
+
+    #[test]
+    fn resolve_basic_attack_debris_storm_can_miss() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.weather = Weather::DebrisStorm;
+        // roll = (turn_number * 7 + target_idx * 13) % 100
+        // turn_number=1, target_idx=1: (7+13)%100 = 20 → >= 10, no miss
+        // Adjust turn number to get a miss (roll < 10)
+        // For target_idx=1: need (tn*7+13)%100 < 10
+        // tn=85: (595+13)%100 = 608%100 = 8 → miss!
+        battle.turn_number = 85;
+        let _ = resolve_basic_attack(&mut battle, 1, "huo3");
+        // With the miss, the attack becomes incorrect
+        assert_eq!(battle.units[1].hp, 10, "Debris storm should cause miss");
+    }
+
+    #[test]
+    fn resolve_basic_attack_envenomed_applies_poison() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.units[0]
+            .statuses
+            .push(StatusInstance::new(StatusKind::Envenomed, 5));
+        let _ = resolve_basic_attack(&mut battle, 1, "huo3");
+        assert!(
+            battle.units[1].statuses.iter().any(|s| matches!(s.kind, StatusKind::Poison { .. })),
+            "Envenomed player should apply Poison on hit"
+        );
+    }
+
+    #[test]
+    fn resolve_basic_attack_hard_answer_armor_absorbs_counter() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.hard_answer_armor_bonus = 10;
+        let hp_before = battle.units[0].hp;
+        let _ = resolve_basic_attack(&mut battle, 1, "wrong");
+        // Armor absorbs some counter damage; bonus is consumed
+        assert!(battle.units[0].hp >= hp_before - 3, "Armor should reduce counter damage");
+        assert_eq!(battle.hard_answer_armor_bonus, 0, "Armor consumed");
+    }
+
+    #[test]
+    fn resolve_basic_attack_reckless_stance_double_counter() {
+        let mut player = make_test_unit(UnitKind::Player, 3, 3);
+        player.hp = 20;
+        player.max_hp = 20;
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.player_stance = crate::combat::PlayerStance::Reckless;
+        let hp_before = battle.units[0].hp;
+        let _ = resolve_basic_attack(&mut battle, 1, "wrong");
+        let damage_taken = hp_before - battle.units[0].hp;
+        // Reckless stance should increase counter damage vs non-reckless
+        assert!(damage_taken > 0, "Should take counter damage with Reckless stance");
+    }
+
+    #[test]
+    fn resolve_basic_attack_charge_interrupted_on_correct() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        enemy.charge_remaining = Some(2);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let _ = resolve_basic_attack(&mut battle, 1, "huo3");
+        assert_eq!(battle.units[1].charge_remaining, None, "Charge should be interrupted");
+    }
+
+    // ── resolve_spell_cast ────────────────────────────────────────────
+
+    #[test]
+    fn resolve_spell_cast_invalid_spell_idx() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        let event = resolve_spell_cast(&mut battle, 0, 3, 4, SpellEffect::Heal(5), "huo3");
+        assert!(matches!(event, BattleEvent::None));
+        assert!(battle.log.iter().any(|m| m.contains("no longer available")));
+    }
+
+    #[test]
+    fn resolve_spell_cast_wrong_pinyin_fizzles() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Heal(5)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 3, SpellEffect::Heal(5), "wrong");
+        assert_eq!(battle.combo_streak, 0);
+        assert!(battle.log.iter().any(|m| m.contains("fizzles")));
+    }
+
+    #[test]
+    fn resolve_spell_cast_heal_restores_hp() {
+        let mut player = make_test_unit(UnitKind::Player, 3, 3);
+        player.hp = 5;
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Heal(3)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 3, SpellEffect::Heal(3), "huo3");
+        assert_eq!(battle.units[0].hp, 8);
+    }
+
+    #[test]
+    fn resolve_spell_cast_heal_capped_at_max() {
+        let mut player = make_test_unit(UnitKind::Player, 3, 3);
+        player.hp = 9;
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Heal(5)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 3, SpellEffect::Heal(5), "huo3");
+        assert_eq!(battle.units[0].hp, 10);
+    }
+
+    #[test]
+    fn resolve_spell_cast_shield_sets_defending() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Shield));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 3, SpellEffect::Shield, "huo3");
+        assert!(battle.units[0].defending);
+    }
+
+    #[test]
+    fn resolve_spell_cast_reveal_reveals_mines() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.arena.set_tile(1, 1, BattleTile::MineTile);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Reveal));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 3, SpellEffect::Reveal, "huo3");
+        assert_eq!(battle.arena.tile(1, 1), Some(BattleTile::MineTileRevealed));
+    }
+
+    #[test]
+    fn resolve_spell_cast_pacify_kills_enemy() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Pacify));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 4, SpellEffect::Pacify, "huo3");
+        assert!(!battle.units[1].alive);
+        assert_eq!(battle.units[1].hp, 0);
+    }
+
+    #[test]
+    fn resolve_spell_cast_pacify_no_target_returns_message() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Pacify));
+        let _ = resolve_spell_cast(&mut battle, 0, 5, 5, SpellEffect::Pacify, "huo3");
+        assert!(battle.log.iter().any(|m| m.contains("finds no one")));
+    }
+
+    #[test]
+    fn resolve_spell_cast_teleport_swaps_positions() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 5, 5);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Teleport));
+        let _ = resolve_spell_cast(&mut battle, 0, 5, 5, SpellEffect::Teleport, "huo3");
+        assert_eq!((battle.units[0].x, battle.units[0].y), (5, 5));
+        assert_eq!((battle.units[1].x, battle.units[1].y), (3, 3));
+    }
+
+    #[test]
+    fn resolve_spell_cast_focus_restore_increases_focus() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.focus = 5;
+        battle.available_spells.push(("火", "huo3", SpellEffect::FocusRestore(3)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 3, SpellEffect::FocusRestore(3), "huo3");
+        assert_eq!(battle.focus, 8);
+    }
+
+    #[test]
+    fn resolve_spell_cast_focus_restore_capped_at_max() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.focus = 9;
+        battle.available_spells.push(("火", "huo3", SpellEffect::FocusRestore(5)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 3, SpellEffect::FocusRestore(5), "huo3");
+        assert_eq!(battle.focus, 10);
+    }
+
+    #[test]
+    fn resolve_spell_cast_armor_break_removes_armor() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        enemy.radical_armor = 5;
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::ArmorBreak));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 4, SpellEffect::ArmorBreak, "huo3");
+        assert_eq!(battle.units[1].radical_armor, 0);
+    }
+
+    #[test]
+    fn resolve_spell_cast_thorns_applies_status() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Thorns(3)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 3, SpellEffect::Thorns(3), "huo3");
+        assert!(battle.units[0].statuses.iter().any(|s| matches!(s.kind, StatusKind::Thorns)));
+    }
+
+    #[test]
+    fn resolve_spell_cast_wall_places_barriers() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Wall(3)));
+        // Place wall perpendicular to player direction (player at 3,3, target at 3,5)
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 5, SpellEffect::Wall(3), "huo3");
+        // Wall perpendicular: dx=0, dy=1 → places at (3+i, 5) for i in -1..=1
+        let barrier_count = (2..=4)
+            .filter(|&x| battle.arena.tile(x, 5) == Some(BattleTile::CoverBarrier))
+            .count();
+        assert!(barrier_count > 0, "Should place at least one barrier");
+    }
+
+    #[test]
+    fn resolve_spell_cast_summon_boulder_places_crate() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::SummonBoulder));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 5, SpellEffect::SummonBoulder, "huo3");
+        assert_eq!(battle.arena.tile(3, 5), Some(BattleTile::CargoCrate));
+    }
+
+    #[test]
+    fn resolve_spell_cast_summon_boulder_blocked_by_unit() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 5);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::SummonBoulder));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 5, SpellEffect::SummonBoulder, "huo3");
+        assert_ne!(battle.arena.tile(3, 5), Some(BattleTile::CargoCrate));
+    }
+
+    #[test]
+    fn resolve_spell_cast_fire_aoe_creates_pending_impacts() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::FireAoe(4)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 4, SpellEffect::FireAoe(4), "huo3");
+        assert!(!battle.pending_impacts.is_empty(), "Should create pending impacts");
+        assert!(battle.pending_impacts.iter().all(|pi| pi.turns_until_hit == 1));
+    }
+
+    #[test]
+    fn resolve_spell_cast_strong_hit_creates_projectile() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 5);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::StrongHit(5)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 5, SpellEffect::StrongHit(5), "huo3");
+        assert!(!battle.projectiles.is_empty());
+    }
+
+    #[test]
+    fn resolve_spell_cast_drain_creates_projectile() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 5);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Drain(3)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 5, SpellEffect::Drain(3), "huo3");
+        assert!(!battle.projectiles.is_empty());
+    }
+
+    #[test]
+    fn resolve_spell_cast_stun_creates_projectile() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 5);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Stun));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 5, SpellEffect::Stun, "huo3");
+        assert!(!battle.projectiles.is_empty());
+    }
+
+    #[test]
+    fn resolve_spell_cast_slow_creates_projectile() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 5);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Slow(2)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 5, SpellEffect::Slow(2), "huo3");
+        assert!(!battle.projectiles.is_empty());
+    }
+
+    #[test]
+    fn resolve_spell_cast_poison_creates_projectile() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 5);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Poison(2, 3)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 5, SpellEffect::Poison(2, 3), "huo3");
+        assert!(!battle.projectiles.is_empty());
+    }
+
+    #[test]
+    fn resolve_spell_cast_dash_moves_player() {
+        let player = make_test_unit(UnitKind::Player, 1, 1);
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Dash(3)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 1, SpellEffect::Dash(3), "huo3");
+        assert_eq!(battle.units[0].x, 3);
+        assert!(battle.player_moved);
+    }
+
+    #[test]
+    fn resolve_spell_cast_pull_toward_moves_enemy() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 6);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::PullToward));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 6, SpellEffect::PullToward, "huo3");
+        assert!(battle.units[1].y < 6, "Enemy should be pulled closer");
+    }
+
+    #[test]
+    fn resolve_spell_cast_teleport_no_target() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Teleport));
+        let _ = resolve_spell_cast(&mut battle, 0, 5, 5, SpellEffect::Teleport, "huo3");
+        assert_eq!((battle.units[0].x, battle.units[0].y), (3, 3));
+    }
+
+    #[test]
+    fn resolve_spell_cast_correct_increments_combo() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.combo_streak = 1;
+        battle.available_spells.push(("火", "huo3", SpellEffect::Shield));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 3, SpellEffect::Shield, "huo3");
+        assert_eq!(battle.combo_streak, 2);
+    }
+
+    #[test]
+    fn resolve_spell_cast_wrong_resets_combo() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.combo_streak = 5;
+        battle.available_spells.push(("火", "huo3", SpellEffect::Shield));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 3, SpellEffect::Shield, "wrong");
+        assert_eq!(battle.combo_streak, 0);
+    }
+
+    #[test]
+    fn resolve_spell_cast_marks_spell_spent() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Shield));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 3, SpellEffect::Shield, "huo3");
+        assert_eq!(battle.spent_spell_index, Some(0));
+    }
+
+    #[test]
+    fn resolve_spell_cast_sets_player_acted() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Shield));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 3, SpellEffect::Shield, "huo3");
+        assert!(battle.player_acted);
+    }
+
+    #[test]
+    fn resolve_spell_cast_pierce_hits_enemies_in_line() {
+        let player = make_test_unit(UnitKind::Player, 1, 3);
+        let enemy1 = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        let enemy2 = make_test_unit(UnitKind::Enemy(1), 5, 3);
+        let mut battle = make_test_battle(vec![player, enemy1, enemy2]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Pierce(3)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 3, SpellEffect::Pierce(3), "huo3");
+        assert!(battle.units[1].hp < 10, "First enemy should take damage");
+        assert!(battle.units[2].hp < 10, "Second enemy should take damage");
+    }
+
+    #[test]
+    fn resolve_spell_cast_knockback_deals_damage() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::KnockBack(4)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 4, SpellEffect::KnockBack(4), "huo3");
+        assert!(battle.units[1].hp < 10);
+    }
+
+    #[test]
+    fn resolve_spell_cast_blink_teleports_and_damages() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Blink(3)));
+        let _ = resolve_spell_cast(&mut battle, 0, 5, 5, SpellEffect::Blink(3), "huo3");
+        assert_eq!((battle.units[0].x, battle.units[0].y), (5, 5));
+        assert!(battle.player_moved);
+        // Enemy at (3,4) is adjacent to departure (3,3) → should take damage
+        assert!(battle.units[1].hp < 10);
+    }
+
+    #[test]
+    fn resolve_spell_cast_freeze_ground_creates_pending_impacts() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::FreezeGround(4)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 4, SpellEffect::FreezeGround(4), "huo3");
+        assert!(!battle.pending_impacts.is_empty());
+    }
+
+    #[test]
+    fn resolve_spell_cast_earthquake_creates_pending_impact() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Earthquake(5)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 5, SpellEffect::Earthquake(5), "huo3");
+        assert!(battle.pending_impacts.iter().any(|pi| pi.turns_until_hit == 2));
+    }
+
+    #[test]
+    fn resolve_spell_cast_flood_wave_pushes_enemy() {
+        let player = make_test_unit(UnitKind::Player, 1, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::FloodWave(3)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 3, SpellEffect::FloodWave(3), "huo3");
+        assert!(battle.units[1].x > 3, "Enemy should be pushed");
+    }
+
+    #[test]
+    fn resolve_spell_cast_charge_moves_and_damages() {
+        let player = make_test_unit(UnitKind::Player, 1, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 5, 3);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Charge(3)));
+        let _ = resolve_spell_cast(&mut battle, 0, 5, 3, SpellEffect::Charge(3), "huo3");
+        assert!(battle.units[0].x > 1, "Player should have moved");
+        assert!(battle.units[1].hp < 10, "Enemy should take damage");
+    }
+
+    #[test]
+    fn resolve_spell_cast_oil_slick_places_lubricant() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::OilSlick));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 5, SpellEffect::OilSlick, "huo3");
+        let lubricant_count = (0..battle.arena.tiles.len())
+            .filter(|&i| battle.arena.tiles[i] == BattleTile::Lubricant)
+            .count();
+        assert!(lubricant_count > 0, "Should place Lubricant tiles");
+    }
+
+    #[test]
+    fn resolve_spell_cast_cone_creates_pending_impacts() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Cone(4)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 5, SpellEffect::Cone(4), "huo3");
+        assert!(!battle.pending_impacts.is_empty());
+    }
+
+    #[test]
+    fn resolve_spell_cast_ignite_burns_wiring_panels() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.arena.set_tile(3, 5, BattleTile::WiringPanel);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Ignite));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 5, SpellEffect::Ignite, "huo3");
+        assert_ne!(battle.arena.tile(3, 5), Some(BattleTile::WiringPanel));
+    }
+
+    #[test]
+    fn resolve_spell_cast_plant_growth_transforms_terrain() {
+        let player = make_test_unit(UnitKind::Player, 1, 1);
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::PlantGrowth));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 3, SpellEffect::PlantGrowth, "huo3");
+        // MetalFloor should transform to WiringPanel
+        let wiring_count = (0..battle.arena.tiles.len())
+            .filter(|&i| battle.arena.tiles[i] == BattleTile::WiringPanel)
+            .count();
+        assert!(wiring_count > 0, "Should transform some tiles");
+    }
+
+    #[test]
+    fn resolve_spell_cast_all_enemies_dead_sets_victory() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        enemy.hp = 1;
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Pacify));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 4, SpellEffect::Pacify, "huo3");
+        assert!(matches!(battle.phase, TacticalPhase::End { victory: true, .. }));
+    }
+
+    #[test]
+    fn resolve_spell_cast_spell_combo_triggers_on_consecutive_elements() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        // Set up for combo: previous spell was Water, now casting Fire → "Steam Burst"
+        battle.last_spell_element = Some(WuxingElement::Water);
+        battle.last_spell_turn = 1;
+        battle.turn_number = 2;
+        battle.available_spells.push(("火", "huo3", SpellEffect::FireAoe(3)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 4, SpellEffect::FireAoe(3), "huo3");
+        assert!(battle.combo_message.is_some(), "Combo message should be set");
+        assert!(
+            battle.combo_message.as_ref().unwrap().contains("Steam"),
+            "Should trigger Steam Burst combo"
+        );
+    }
+
+    #[test]
+    fn resolve_spell_cast_sets_last_spell_school() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Shield));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 3, SpellEffect::Shield, "huo3");
+        assert_eq!(battle.last_spell_school, Some("shield"));
+    }
+
+    #[test]
+    fn resolve_spell_cast_sanctify_creates_holy_tiles() {
+        let player = make_test_unit(UnitKind::Player, 1, 1);
+        let mut battle = make_test_battle(vec![player]);
+        battle.available_spells.push(("火", "huo3", SpellEffect::Sanctify(2)));
+        let _ = resolve_spell_cast(&mut battle, 0, 3, 3, SpellEffect::Sanctify(2), "huo3");
+        // Check that some tiles have holy timers set
+        let holy_count = battle.arena.holy_timers.iter().filter(|&&t| t > 0).count();
+        assert!(holy_count > 0, "Should create holy tiles");
+    }
+
+    // ── resolve_shield_break ──────────────────────────────────────────
+
+    #[test]
+    fn resolve_shield_break_correct_removes_radical_action() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        enemy.radical_actions = vec![crate::enemy::RadicalAction::SpreadingWildfire];
+        let mut battle = make_test_battle(vec![player, enemy]);
+        // Use "好" (hao3) which is in vocab
+        let _ = resolve_shield_break(&mut battle, 1, "好", "hao3");
+        assert!(battle.units[1].radical_actions.is_empty());
+    }
+
+    #[test]
+    fn resolve_shield_break_wrong_keeps_radical_action() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        enemy.radical_actions = vec![crate::enemy::RadicalAction::SpreadingWildfire];
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let _ = resolve_shield_break(&mut battle, 1, "好", "wrong");
+        assert_eq!(battle.units[1].radical_actions.len(), 1);
+    }
+
+    #[test]
+    fn resolve_shield_break_target_dead_returns_early() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        enemy.alive = false;
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let event = resolve_shield_break(&mut battle, 1, "好", "hao3");
+        assert!(matches!(event, BattleEvent::None));
+    }
+
+    #[test]
+    fn resolve_shield_break_out_of_bounds_target() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        let event = resolve_shield_break(&mut battle, 5, "好", "hao3");
+        assert!(matches!(event, BattleEvent::None));
+    }
+
+    // ── resolve_elite_chain ───────────────────────────────────────────
+
+    #[test]
+    fn resolve_elite_chain_target_dead_returns_early() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        enemy.alive = false;
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let event = resolve_elite_chain(&mut battle, 1, 0, 2, 3, 0, "huo3");
+        assert!(matches!(event, BattleEvent::None));
+    }
+
+    #[test]
+    fn resolve_elite_chain_miss_counter_attacks() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        // Use a multi-syllable pinyin so resolve_compound_pinyin_step works
+        enemy.pinyin = "peng2you3";
+        enemy.hanzi = "朋友";
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let _ = resolve_elite_chain(&mut battle, 1, 0, 2, 3, 0, "wrong");
+        // Counter damage = enemy.damage / 2 = 3/2 = 1
+        assert!(battle.units[0].hp < 10, "Should take counter damage on miss");
+        assert_eq!(battle.combo_streak, 0);
+    }
+
+    #[test]
+    fn resolve_elite_chain_miss_can_kill_player() {
+        let mut player = make_test_unit(UnitKind::Player, 3, 3);
+        player.hp = 1;
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        enemy.pinyin = "peng2you3";
+        enemy.hanzi = "朋友";
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let _ = resolve_elite_chain(&mut battle, 1, 0, 2, 3, 0, "wrong");
+        assert!(!battle.units[0].alive);
+        assert!(matches!(battle.phase, TacticalPhase::End { victory: false, .. }));
+    }
+
+    #[test]
+    fn resolve_elite_chain_advance_deals_damage() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        enemy.pinyin = "peng2you3";
+        enemy.hanzi = "朋友";
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let _ = resolve_elite_chain(&mut battle, 1, 0, 2, 3, 0, "peng2");
+        assert!(battle.units[1].hp < 10, "Should deal damage on advance");
+        // Should update typing action with new progress
+        assert!(battle.typing_action.is_some());
+    }
+
+    #[test]
+    fn resolve_elite_chain_complete_deals_bonus_damage() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        enemy.pinyin = "peng2you3";
+        enemy.hanzi = "朋友";
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let _ = resolve_elite_chain(&mut battle, 1, 1, 2, 3, 3, "you3");
+        assert!(battle.units[1].hp < 10, "Should deal final damage");
+        assert_eq!(battle.combo_streak, 1);
+    }
+
+    #[test]
+    fn resolve_elite_chain_complete_with_envenomed_applies_poison() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        enemy.pinyin = "peng2you3";
+        enemy.hanzi = "朋友";
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.units[0]
+            .statuses
+            .push(StatusInstance::new(StatusKind::Envenomed, 5));
+        let _ = resolve_elite_chain(&mut battle, 1, 1, 2, 3, 3, "you3");
+        assert!(
+            battle.units[1].statuses.iter().any(|s| matches!(s.kind, StatusKind::Poison { .. })),
+            "Should apply venom"
+        );
+    }
+
+    // ── apply_spell_combo ─────────────────────────────────────────────
+
+    #[test]
+    fn apply_combo_steam_burst_damages_and_confuses() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let msg = apply_spell_combo(&mut battle, "Steam Burst", 3, 4);
+        assert!(msg.contains("Steam"));
+    }
+
+    #[test]
+    fn apply_combo_inferno_hits_target() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let msg = apply_spell_combo(&mut battle, "Inferno", 3, 4);
+        assert!(msg.contains("Inferno"));
+        assert!(battle.units[1].hp < 10);
+        assert!(battle.units[1].statuses.iter().any(|s| matches!(s.kind, StatusKind::Burn { .. })));
+    }
+
+    #[test]
+    fn apply_combo_inferno_fallback_aoe_when_no_target() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        let msg = apply_spell_combo(&mut battle, "Inferno", 5, 5);
+        assert!(msg.contains("Inferno"));
+    }
+
+    #[test]
+    fn apply_combo_toxic_cloud_poisons_area() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let msg = apply_spell_combo(&mut battle, "Toxic Cloud", 3, 4);
+        assert!(msg.contains("Toxic"));
+        assert!(battle.units[1].statuses.iter().any(|s| matches!(s.kind, StatusKind::Poison { .. })));
+    }
+
+    #[test]
+    fn apply_combo_tempering_grants_armor_and_fortify() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        let msg = apply_spell_combo(&mut battle, "Tempering", 3, 3);
+        assert!(msg.contains("Tempering"));
+        assert_eq!(battle.combo_armor_bonus, 2);
+        assert_eq!(battle.combo_armor_turns, 3);
+    }
+
+    #[test]
+    fn apply_combo_lightning_storm_hits_target() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let msg = apply_spell_combo(&mut battle, "Lightning Storm", 3, 4);
+        assert!(msg.contains("Lightning"));
+        assert!(battle.units[1].hp < 10);
+    }
+
+    #[test]
+    fn apply_combo_petrify_stuns_and_armors_target() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let msg = apply_spell_combo(&mut battle, "Petrify", 3, 4);
+        assert!(msg.contains("Petrify"));
+        assert!(battle.units[1].stunned);
+        assert_eq!(battle.units[1].radical_armor, 4);
+    }
+
+    #[test]
+    fn apply_combo_petrify_no_target() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        let msg = apply_spell_combo(&mut battle, "Petrify", 5, 5);
+        assert!(msg.contains("Petrify"));
+    }
+
+    #[test]
+    fn apply_combo_overgrowth_heals_player_and_creates_terrain() {
+        let mut player = make_test_unit(UnitKind::Player, 3, 3);
+        player.hp = 7;
+        let mut battle = make_test_battle(vec![player]);
+        let msg = apply_spell_combo(&mut battle, "Overgrowth", 3, 4);
+        assert!(msg.contains("Overgrowth"));
+        assert_eq!(battle.units[0].hp, 10);
+    }
+
+    #[test]
+    fn apply_combo_shatter_breaks_armor_and_deals_damage() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        enemy.radical_armor = 3;
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let msg = apply_spell_combo(&mut battle, "Shatter", 3, 4);
+        assert!(msg.contains("Shatter"));
+        assert_eq!(battle.units[1].radical_armor, 0);
+        assert!(battle.units[1].hp < 10);
+    }
+
+    #[test]
+    fn apply_combo_shatter_no_target_cracks_ground() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        let msg = apply_spell_combo(&mut battle, "Shatter", 3, 5);
+        assert!(msg.contains("Shatter"));
+        assert_eq!(battle.arena.tile(3, 5), Some(BattleTile::DamagedPlating));
+    }
+
+    #[test]
+    fn apply_combo_entangle_roots_enemy() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let msg = apply_spell_combo(&mut battle, "Entangle", 3, 4);
+        assert!(msg.contains("Entangle"));
+        assert!(battle.units[1].statuses.iter().any(|s| matches!(s.kind, StatusKind::Rooted)));
+    }
+
+    #[test]
+    fn apply_combo_purifying_flame_cleanses_and_damages() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.units[0].statuses.push(StatusInstance::new(StatusKind::Poison { damage: 1 }, 3));
+        let msg = apply_spell_combo(&mut battle, "Purifying Flame", 3, 4);
+        assert!(msg.contains("Purifying"));
+        assert!(
+            !battle.units[0].statuses.iter().any(|s| matches!(s.kind, StatusKind::Poison { .. })),
+            "Negative statuses should be cleansed"
+        );
+    }
+
+    #[test]
+    fn apply_combo_frozen_edge_sets_charges() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        let msg = apply_spell_combo(&mut battle, "Frozen Edge", 3, 3);
+        assert!(msg.contains("Frozen Edge"));
+        assert_eq!(battle.frozen_edge_charges, 3);
+    }
+
+    #[test]
+    fn apply_combo_unknown_returns_unknown() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        let msg = apply_spell_combo(&mut battle, "NonExistent", 3, 3);
+        assert!(msg.contains("Unknown"));
+    }
+
+    #[test]
+    fn apply_combo_avalanche_damages_and_slows() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 5);
+        let mut battle = make_test_battle(vec![player, enemy]);
+        let msg = apply_spell_combo(&mut battle, "Avalanche", 3, 5);
+        assert!(msg.contains("Avalanche"));
+    }
+
+    #[test]
+    fn apply_combo_lightning_storm_chains_to_wet_enemies() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let enemy1 = make_test_unit(UnitKind::Enemy(0), 3, 4);
+        let mut enemy2 = make_test_unit(UnitKind::Enemy(1), 5, 5);
+        enemy2.statuses.push(StatusInstance::new(StatusKind::Wet, 3));
+        let mut battle = make_test_battle(vec![player, enemy1, enemy2]);
+        let _ = apply_spell_combo(&mut battle, "Lightning Storm", 3, 4);
+        assert!(battle.units[2].hp < 10, "Wet enemy should take chain damage");
     }
 }
 

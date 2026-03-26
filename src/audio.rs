@@ -131,6 +131,7 @@ impl Audio {
 
     /// Create a single oscillator with ADSR routed to destination (or a target node).
     /// Returns the total duration of the sound.
+    #[allow(clippy::too_many_arguments)]
     fn voice(
         &self,
         freq: f32,

@@ -91,7 +91,7 @@ fn collect_ink_files(dir: &str) -> Vec<std::path::PathBuf> {
     if let Ok(entries) = fs::read_dir(dir_path) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "ink") {
+            if path.extension().is_some_and(|e| e == "ink") {
                 files.push(path);
             }
         }
@@ -171,8 +171,7 @@ fn parse_ink_file(path: &Path) -> Result<Vec<InkDialogue>, String> {
         }
 
         // Metadata lines
-        if line.starts_with("# ") {
-            let meta = &line[2..];
+        if let Some(meta) = line.strip_prefix("# ") {
             if let Some((key, val)) = meta.split_once(':') {
                 let key = key.trim();
                 let val = val.trim();
@@ -221,9 +220,9 @@ fn parse_ink_file(path: &Path) -> Result<Vec<InkDialogue>, String> {
         }
 
         // Outcome line: ~ outcome(args)
-        if line.starts_with("~ ") {
+        if let Some(stripped) = line.strip_prefix("~ ") {
             in_description = false;
-            cur_choice_outcome = Some(line[2..].trim().to_string());
+            cur_choice_outcome = Some(stripped.trim().to_string());
             continue;
         }
 
@@ -241,7 +240,7 @@ fn parse_ink_file(path: &Path) -> Result<Vec<InkDialogue>, String> {
         }
 
         // Description text (between metadata and first choice)
-        if current.as_ref().map_or(false, |d| !d.category.is_empty()) && cur_choice_text.is_none()
+        if current.as_ref().is_some_and(|d| !d.category.is_empty()) && cur_choice_text.is_none()
         {
             if !line.is_empty() || !desc_buf.is_empty() {
                 in_description = true;
@@ -499,38 +498,12 @@ fn split_two_args(s: &str) -> Option<(String, String)> {
 }
 
 fn format_starmap_category(cat: &str) -> String {
-    let variant = match cat.trim() {
-        "DistressSignal" => "DistressSignal",
-        "PirateEncounter" => "PirateEncounter",
-        "Trading" => "Trading",
-        "Discovery" => "Discovery",
-        "AnomalyEncounter" => "AnomalyEncounter",
-        "CrewEvent" => "CrewEvent",
-        "AlienContact" => "AlienContact",
-        "HazardEvent" => "HazardEvent",
-        "AncientRuins" => "AncientRuins",
-        "LanguageChallenge" => "LanguageChallenge",
-        other => other,
-    };
+    let variant = cat.trim();
     format!("super::events::EventCategory::{}", variant)
 }
 
 fn format_dungeon_category(cat: &str) -> String {
-    let variant = match cat.trim() {
-        "Discovery" => "Discovery",
-        "Trader" => "Trader",
-        "Alien" => "Alien",
-        "Hazard" => "Hazard",
-        "Crew" => "Crew",
-        "Puzzle" => "Puzzle",
-        "Lore" => "Lore",
-        "Shrine" => "Shrine",
-        "Wreckage" => "Wreckage",
-        "Terminal" => "Terminal",
-        "Creature" => "Creature",
-        "Anomaly" => "Anomaly",
-        other => other,
-    };
+    let variant = cat.trim();
     format!("DungeonCategory::{}", variant)
 }
 
@@ -611,9 +584,7 @@ fn generate_dialogue_data() -> Result<(), String> {
     }
 
     // Emit the array
-    out.push_str(&format!(
-        "pub static ALL_STARMAP_EVENTS: &[super::events::SpaceEvent] = &[\n"
-    ));
+    out.push_str("pub static ALL_STARMAP_EVENTS: &[super::events::SpaceEvent] = &[\n");
     for (idx, d) in starmap_dialogues.iter().enumerate() {
         out.push_str(&format!(
             "    super::events::SpaceEvent {{\n\

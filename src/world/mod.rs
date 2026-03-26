@@ -123,7 +123,7 @@ impl TerminalKind {
 
 // ── Security seal (was SealKind) ────────────────────────────────────────────
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum SecuritySeal {
     Thermal,
     Hydraulic,
@@ -498,6 +498,7 @@ impl SpecialRoomKind {
 // ── Tile types ──────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum Tile {
     Bulkhead,
     DamagedBulkhead,
@@ -719,4 +720,5 @@ impl LocationLevel {
     }
 }
 
-
+#[cfg(test)]
+mod tests;

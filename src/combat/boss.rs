@@ -23,7 +23,7 @@ pub fn boss_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<Strin
 
 fn pirate_captain_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<String> {
     let turn = battle.turn_number;
-    if turn % 3 != 0 || battle.ward_tiles.len() >= 4 {
+    if (turn % 3 != 0) || battle.ward_tiles.len() >= 4 {
         return None;
     }
 
@@ -109,7 +109,7 @@ fn hive_queen_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<Str
 fn rogue_ai_core_action(battle: &mut TacticalBattle, _unit_idx: usize) -> Option<String> {
     let turn = battle.turn_number;
 
-    if turn % 4 == 0 {
+    if turn % 4 == 0  {
         let seed = turn as u64;
         let size = battle.arena.width as i32;
         let mut shifted = 0;
@@ -168,7 +168,7 @@ pub fn elementalist_resistance(
 
 fn void_entity_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<String> {
     let turn = battle.turn_number;
-    if turn % 5 != 0 {
+    if turn % 5 != 0  {
         return None;
     }
 
@@ -264,7 +264,7 @@ fn void_entity_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<St
 
 fn ancient_guardian_action(battle: &mut TacticalBattle, unit_idx: usize) -> Option<String> {
     let turn = battle.turn_number;
-    if turn % 2 != 0 {
+    if turn % 2 != 0  {
         return None;
     }
 
@@ -393,4 +393,454 @@ pub fn try_pickup_stolen_spell(battle: &mut TacticalBattle, x: i32, y: i32) -> O
     let (_, _, hanzi, pinyin, effect) = battle.stolen_spells.remove(pos);
     battle.available_spells.push((hanzi, pinyin, effect));
     Some(format!("Recovered stolen module {}!", hanzi))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::combat::test_helpers::{make_test_battle, make_test_unit};
+    use crate::combat::{BattleTile, UnitKind};
+    use crate::enemy::BossKind;
+
+    // ── elementalist_resistance ─────────────────────────────────────────
+
+    #[test]
+    fn elementalist_resistance_halves_for_resisted_school() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        boss.boss_kind = Some(BossKind::RogueAICore);
+
+        let mut battle = make_test_battle(vec![player, boss]);
+        battle.last_spell_school = Some("fire");
+
+        let mult = elementalist_resistance(&battle, 1, "fire");
+        assert!((mult - 0.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn elementalist_resistance_full_for_different_school() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        boss.boss_kind = Some(BossKind::RogueAICore);
+
+        let mut battle = make_test_battle(vec![player, boss]);
+        battle.last_spell_school = Some("fire");
+
+        let mult = elementalist_resistance(&battle, 1, "water");
+        assert!((mult - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn elementalist_resistance_full_for_non_rogue_ai() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        boss.boss_kind = Some(BossKind::PirateCaptain);
+
+        let mut battle = make_test_battle(vec![player, boss]);
+        battle.last_spell_school = Some("fire");
+
+        let mult = elementalist_resistance(&battle, 1, "fire");
+        assert!((mult - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn elementalist_resistance_full_when_no_last_spell() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        boss.boss_kind = Some(BossKind::RogueAICore);
+
+        let battle = make_test_battle(vec![player, boss]);
+
+        let mult = elementalist_resistance(&battle, 1, "fire");
+        assert!((mult - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn elementalist_resistance_full_for_non_boss() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.last_spell_school = Some("fire");
+
+        let mult = elementalist_resistance(&battle, 1, "fire");
+        assert!((mult - 1.0).abs() < f64::EPSILON);
+    }
+
+    // ── ink_sage_bonus ─────────────────────────────────────────────────
+
+    #[test]
+    fn ink_sage_bonus_on_oil_slick() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        boss.boss_kind = Some(BossKind::AncientGuardian);
+
+        let mut battle = make_test_battle(vec![player, boss]);
+        battle.arena.set_tile(3, 3, BattleTile::OilSlick);
+
+        assert_eq!(ink_sage_bonus(&battle, 1), 2);
+    }
+
+    #[test]
+    fn ink_sage_bonus_zero_on_metal_floor() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        boss.boss_kind = Some(BossKind::AncientGuardian);
+
+        let battle = make_test_battle(vec![player, boss]);
+
+        assert_eq!(ink_sage_bonus(&battle, 1), 0);
+    }
+
+    #[test]
+    fn ink_sage_bonus_zero_for_non_guardian() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        boss.boss_kind = Some(BossKind::PirateCaptain);
+
+        let mut battle = make_test_battle(vec![player, boss]);
+        battle.arena.set_tile(3, 3, BattleTile::OilSlick);
+
+        assert_eq!(ink_sage_bonus(&battle, 1), 0);
+    }
+
+    #[test]
+    fn ink_sage_bonus_zero_for_non_boss() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+
+        let mut battle = make_test_battle(vec![player, enemy]);
+        battle.arena.set_tile(3, 3, BattleTile::OilSlick);
+
+        assert_eq!(ink_sage_bonus(&battle, 1), 0);
+    }
+
+    // ── try_destroy_ward ───────────────────────────────────────────────
+
+    #[test]
+    fn try_destroy_ward_removes_ward_and_resets_tile() {
+        let player = make_test_unit(UnitKind::Player, 2, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle.ward_tiles.push((3, 3));
+        battle.arena.set_tile(3, 3, BattleTile::CoverBarrier);
+
+        let result = try_destroy_ward(&mut battle, 3, 3);
+
+        assert!(result);
+        assert!(battle.ward_tiles.is_empty());
+        assert_eq!(battle.arena.tile(3, 3), Some(BattleTile::MetalFloor));
+    }
+
+    #[test]
+    fn try_destroy_ward_returns_false_if_no_ward() {
+        let player = make_test_unit(UnitKind::Player, 2, 3);
+        let mut battle = make_test_battle(vec![player]);
+
+        let result = try_destroy_ward(&mut battle, 3, 3);
+
+        assert!(!result);
+    }
+
+    #[test]
+    fn try_destroy_ward_only_removes_matching_position() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut battle = make_test_battle(vec![player]);
+        battle.ward_tiles.push((3, 3));
+        battle.ward_tiles.push((5, 5));
+
+        try_destroy_ward(&mut battle, 3, 3);
+
+        assert_eq!(battle.ward_tiles.len(), 1);
+        assert_eq!(battle.ward_tiles[0], (5, 5));
+    }
+
+    // ── steal_spell ────────────────────────────────────────────────────
+
+    #[test]
+    fn steal_spell_removes_last_spell_and_places_on_grid() {
+        use crate::radical::SpellEffect;
+
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        boss.boss_kind = Some(BossKind::DriftLeviathan);
+
+        let mut battle = make_test_battle(vec![player, boss]);
+        battle
+            .available_spells
+            .push(("火", "huo3", SpellEffect::FireAoe(3)));
+
+        let msg = steal_spell(&mut battle, 1);
+
+        assert!(msg.is_some());
+        assert!(msg.unwrap().contains("火"));
+        assert!(battle.available_spells.is_empty());
+        assert_eq!(battle.stolen_spells.len(), 1);
+    }
+
+    #[test]
+    fn steal_spell_returns_none_for_non_leviathan() {
+        use crate::radical::SpellEffect;
+
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        boss.boss_kind = Some(BossKind::PirateCaptain);
+
+        let mut battle = make_test_battle(vec![player, boss]);
+        battle
+            .available_spells
+            .push(("火", "huo3", SpellEffect::FireAoe(3)));
+
+        assert!(steal_spell(&mut battle, 1).is_none());
+        assert_eq!(battle.available_spells.len(), 1); // unchanged
+    }
+
+    #[test]
+    fn steal_spell_returns_none_when_no_spells() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        boss.boss_kind = Some(BossKind::DriftLeviathan);
+
+        let mut battle = make_test_battle(vec![player, boss]);
+
+        assert!(steal_spell(&mut battle, 1).is_none());
+    }
+
+    // ── try_pickup_stolen_spell ────────────────────────────────────────
+
+    #[test]
+    fn try_pickup_stolen_spell_recovers_spell() {
+        use crate::radical::SpellEffect;
+
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle
+            .stolen_spells
+            .push((3, 3, "火", "huo3", SpellEffect::FireAoe(3)));
+
+        let msg = try_pickup_stolen_spell(&mut battle, 3, 3);
+
+        assert!(msg.is_some());
+        assert!(msg.unwrap().contains("火"));
+        assert!(battle.stolen_spells.is_empty());
+        assert_eq!(battle.available_spells.len(), 1);
+        assert_eq!(battle.available_spells[0].0, "火");
+    }
+
+    #[test]
+    fn try_pickup_stolen_spell_returns_none_at_wrong_position() {
+        use crate::radical::SpellEffect;
+
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+        battle
+            .stolen_spells
+            .push((5, 5, "火", "huo3", SpellEffect::FireAoe(3)));
+
+        let msg = try_pickup_stolen_spell(&mut battle, 3, 3);
+
+        assert!(msg.is_none());
+        assert_eq!(battle.stolen_spells.len(), 1);
+    }
+
+    #[test]
+    fn try_pickup_stolen_spell_returns_none_when_empty() {
+        let player = make_test_unit(UnitKind::Player, 3, 3);
+        let mut battle = make_test_battle(vec![player]);
+
+        assert!(try_pickup_stolen_spell(&mut battle, 3, 3).is_none());
+    }
+
+    // ── boss_action dispatch ───────────────────────────────────────────
+
+    #[test]
+    fn boss_action_returns_none_for_non_boss() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let enemy = make_test_unit(UnitKind::Enemy(0), 3, 3);
+
+        let mut battle = make_test_battle(vec![player, enemy]);
+
+        assert!(boss_action(&mut battle, 1).is_none());
+    }
+
+    #[test]
+    fn boss_action_pirate_captain_deploys_ward_on_turn_3() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        boss.boss_kind = Some(BossKind::PirateCaptain);
+
+        let mut battle = make_test_battle(vec![player, boss]);
+        battle.turn_number = 3;
+
+        let msg = boss_action(&mut battle, 1);
+
+        assert!(msg.is_some());
+        assert!(msg.unwrap().contains("shield generator"));
+        assert!(!battle.ward_tiles.is_empty());
+    }
+
+    #[test]
+    fn boss_action_pirate_captain_skips_non_multiple_of_3() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        boss.boss_kind = Some(BossKind::PirateCaptain);
+
+        let mut battle = make_test_battle(vec![player, boss]);
+        battle.turn_number = 4;
+
+        assert!(boss_action(&mut battle, 1).is_none());
+    }
+
+    #[test]
+    fn boss_action_pirate_captain_max_4_wards() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 6, 6);
+        boss.boss_kind = Some(BossKind::PirateCaptain);
+
+        let mut battle = make_test_battle(vec![player, boss]);
+        battle.turn_number = 3;
+        battle.ward_tiles = vec![(1, 1), (2, 2), (3, 3), (4, 4)]; // already at max
+
+        assert!(boss_action(&mut battle, 1).is_none());
+    }
+
+    #[test]
+    fn boss_action_ancient_guardian_creates_oil_on_even_turn() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        boss.boss_kind = Some(BossKind::AncientGuardian);
+
+        let mut battle = make_test_battle(vec![player, boss]);
+        battle.turn_number = 2;
+
+        let msg = boss_action(&mut battle, 1);
+
+        assert!(msg.is_some());
+        // Check that at least one adjacent tile became OilSlick
+        let adjacent = [(2, 3), (4, 3), (3, 2), (3, 4)];
+        let oil_count = adjacent
+            .iter()
+            .filter(|&&(x, y)| battle.arena.tile(x, y) == Some(BattleTile::OilSlick))
+            .count();
+        assert!(oil_count > 0);
+    }
+
+    #[test]
+    fn boss_action_ancient_guardian_skips_odd_turn() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        boss.boss_kind = Some(BossKind::AncientGuardian);
+
+        let mut battle = make_test_battle(vec![player, boss]);
+        battle.turn_number = 1;
+
+        assert!(boss_action(&mut battle, 1).is_none());
+    }
+
+    #[test]
+    fn boss_action_void_entity_spawns_decoy_on_turn_5() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        boss.boss_kind = Some(BossKind::VoidEntity);
+        boss.hanzi = "虚";
+
+        let mut battle = make_test_battle(vec![player, boss]);
+        battle.turn_number = 5;
+
+        let msg = boss_action(&mut battle, 1);
+
+        assert!(msg.is_some());
+        assert!(msg.unwrap().contains("decoy"));
+        // Decoy should be added
+        assert!(battle.units.len() > 2);
+        let decoy = &battle.units[battle.units.len() - 1];
+        assert!(decoy.is_decoy);
+        assert_eq!(decoy.hanzi, "虚"); // same hanzi as boss
+        assert_eq!(decoy.pinyin, "???");
+        assert_eq!(decoy.hp, 4);
+    }
+
+    #[test]
+    fn boss_action_void_entity_max_2_decoys() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        boss.boss_kind = Some(BossKind::VoidEntity);
+
+        let mut decoy1 = make_test_unit(UnitKind::Enemy(1), 2, 3);
+        decoy1.is_decoy = true;
+        let mut decoy2 = make_test_unit(UnitKind::Enemy(2), 4, 3);
+        decoy2.is_decoy = true;
+
+        let mut battle = make_test_battle(vec![player, boss, decoy1, decoy2]);
+        battle.turn_number = 5;
+
+        assert!(boss_action(&mut battle, 1).is_none());
+    }
+
+    #[test]
+    fn boss_action_void_entity_skips_non_multiple_of_5() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        boss.boss_kind = Some(BossKind::VoidEntity);
+
+        let mut battle = make_test_battle(vec![player, boss]);
+        battle.turn_number = 3;
+
+        assert!(boss_action(&mut battle, 1).is_none());
+    }
+
+    #[test]
+    fn boss_action_rogue_ai_shifts_terrain_on_turn_4() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        boss.boss_kind = Some(BossKind::RogueAICore);
+
+        let mut battle = make_test_battle(vec![player, boss]);
+        battle.turn_number = 4;
+
+        let msg = boss_action(&mut battle, 1);
+
+        // The terrain should shift (at least something should happen)
+        assert!(msg.is_some());
+        assert!(msg.unwrap().contains("reconfigures"));
+    }
+
+    #[test]
+    fn boss_action_rogue_ai_skips_non_multiple_of_4() {
+        let player = make_test_unit(UnitKind::Player, 0, 0);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        boss.boss_kind = Some(BossKind::RogueAICore);
+
+        let mut battle = make_test_battle(vec![player, boss]);
+        battle.turn_number = 5;
+
+        assert!(boss_action(&mut battle, 1).is_none());
+    }
+
+    #[test]
+    fn boss_action_hive_queen_retreats_at_low_hp() {
+        let player = make_test_unit(UnitKind::Player, 3, 4); // adjacent to queen
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        boss.boss_kind = Some(BossKind::HiveQueen);
+        boss.hp = 4;
+        boss.max_hp = 10; // 40% < 50%
+
+        let mut battle = make_test_battle(vec![player, boss]);
+
+        let msg = boss_action(&mut battle, 1);
+
+        assert!(msg.is_some());
+    }
+
+    #[test]
+    fn boss_action_hive_queen_none_at_high_hp() {
+        let player = make_test_unit(UnitKind::Player, 3, 4);
+        let mut boss = make_test_unit(UnitKind::Enemy(0), 3, 3);
+        boss.boss_kind = Some(BossKind::HiveQueen);
+        boss.hp = 8;
+        boss.max_hp = 10; // 80% > 50%
+
+        let mut battle = make_test_battle(vec![player, boss]);
+
+        assert!(boss_action(&mut battle, 1).is_none());
+    }
 }
