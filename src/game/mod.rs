@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{window, HtmlCanvasElement, KeyboardEvent, MouseEvent, WheelEvent};
+use web_sys::{window, CompositionEvent, HtmlCanvasElement, KeyboardEvent, MouseEvent, WheelEvent};
 
 use crate::achievement::AchievementTracker;
 use crate::audio::Audio;
@@ -1147,7 +1147,7 @@ pub fn init_game() -> Result<(), JsValue> {
                         s.console.tab_prefix.clear();
                         s.console.tab_matches.clear();
                         s.console.tab_cycle_index = 0;
-                        if key.len() == 1 {
+                        if key.chars().count() == 1 {
                             s.console.input_buffer.push_str(&key);
                         } else if key == "Space" {
                             s.console.input_buffer.push(' ');
@@ -5122,7 +5122,29 @@ pub fn init_game() -> Result<(), JsValue> {
         closure.forget();
     }
 
-    // Window resize handler — keep canvas filling the viewport
+    // IME composition support — lets players type Hanzi directly into the console
+    // (e.g. `give_radical 火` or `give_spell 明`) via OS input method editors.
+    // compositionend fires when the user confirms a composed character; its `data`
+    // field holds the final Unicode string (one or more Hanzi).
+    {
+        let state = Rc::clone(&state);
+        let closure = Closure::<dyn FnMut(CompositionEvent)>::new(move |event: CompositionEvent| {
+            let Ok(mut s) = state.try_borrow_mut() else { return };
+            if s.console.active {
+                if let Some(data) = event.data() {
+                    if !data.is_empty() {
+                        s.console.tab_prefix.clear();
+                        s.console.tab_matches.clear();
+                        s.console.tab_cycle_index = 0;
+                        s.console.input_buffer.push_str(&data);
+                        s.render();
+                    }
+                }
+            }
+        });
+        doc.add_event_listener_with_callback("compositionend", closure.as_ref().unchecked_ref())?;
+        closure.forget();
+    }
     {
         let state = Rc::clone(&state);
         let closure = Closure::<dyn FnMut()>::new(move || {

@@ -46,6 +46,7 @@ web-sys = { version = "0.3", features = [
     "BiquadFilterType",
     "MouseEvent",
     "WheelEvent",
+    "CompositionEvent",
 ] }
 console_error_panic_hook = { version = "0.1", optional = true }
 
