@@ -28,7 +28,7 @@ pub(crate) fn longest_common_prefix_ci(strings: &[&str]) -> String {
 
 impl super::GameState {
     const CONSOLE_COMMANDS: &'static [&'static str] = &[
-        "help", "god", "hp", "gold", "floor", "reveal", "kill", "kill_all",
+        "help", "god", "hp", "gold", "xp", "floor", "reveal", "kill", "kill_all",
         "focus", "clear", "stats", "items", "give_item", "give",
         "radicals", "give_radical", "spells", "give_spell", "fight", "spawn", "boss",
         "list",
@@ -138,6 +138,7 @@ impl super::GameState {
             ("give", Some("item")) => ("give_item", parts[2..].to_vec()),
             ("give", Some("gold")) => ("gold", parts[2..].to_vec()),
             ("give", Some("hp")) => ("hp", parts[2..].to_vec()),
+            ("give", Some("xp")) => ("xp", parts[2..].to_vec()),
             ("give", Some("radical")) => ("give_radical", parts[2..].to_vec()),
             ("give", Some("spell")) => ("give_spell", parts[2..].to_vec()),
             ("give", Some(_)) => ("give_item", parts[1..].to_vec()),
@@ -157,6 +158,7 @@ impl super::GameState {
                 self.console.push_history("god               - Toggle god mode".into());
                 self.console.push_history("hp [n]            - Set HP to n (or full)".into());
                 self.console.push_history("gold [n]          - Add n gold (default 100)".into());
+                self.console.push_history("xp [n]            - Add n XP to skill tree + crucibles (default 100)".into());
                 self.console.push_history("give item <name>  - Give item by name".into());
                 self.console.push_history("give gold <n>     - Add gold".into());
                 self.console.push_history("give hp <n>       - Heal player".into());
@@ -202,6 +204,24 @@ impl super::GameState {
                     .unwrap_or(100);
                 self.player.gold += amount;
                 format!("Added {} gold (total: {})", amount, self.player.gold)
+            }
+            "xp" => {
+                let amount = effective_parts
+                    .first()
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(100);
+                self.player.skill_tree.gain_xp(amount);
+                self.player.weapon_crucible.gain_xp(amount);
+                self.player.armor_crucible.gain_xp(amount);
+                self.player.charm_crucible.gain_xp(amount);
+                format!(
+                    "Added {} XP (skill tree: {}, crucibles: {}/{}/{})",
+                    amount,
+                    self.player.skill_tree.xp,
+                    self.player.weapon_crucible.xp,
+                    self.player.armor_crucible.xp,
+                    self.player.charm_crucible.xp,
+                )
             }
             "floor" => {
                 if let Some(n) = effective_parts.first().and_then(|s| s.parse::<i32>().ok()) {
