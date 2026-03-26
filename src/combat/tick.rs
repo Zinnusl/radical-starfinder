@@ -2116,7 +2116,7 @@ mod tests {
 
         tick_arena_events(&mut battle);
 
-        assert!(battle.units[1].hp > 5);
+        assert_eq!(battle.units[1].hp, 7);
     }
 
     // ── apply_exhaustion ─────────────────────────────────────────────
@@ -2157,7 +2157,7 @@ mod tests {
 
         apply_exhaustion(&mut battle);
 
-        assert!(battle.units[0].hp < 10);
+        assert_eq!(battle.units[0].hp, 9);
         assert!(battle.log.iter().any(|m| m.contains("Overload")));
     }
 
@@ -2244,7 +2244,7 @@ mod tests {
 
         tick_player_end_of_turn(&mut battle);
 
-        assert!(battle.units[0].hp < 10);
+        assert_eq!(battle.units[0].hp, 8);
         assert!(battle.log.iter().any(|m| m.contains("Status damage")));
     }
 
@@ -2262,7 +2262,7 @@ mod tests {
 
         tick_player_end_of_turn(&mut battle);
 
-        assert!(battle.units[0].hp > 5);
+        assert_eq!(battle.units[0].hp, 7);
         assert!(battle.log.iter().any(|m| m.contains("Status heal")));
     }
 
@@ -2382,7 +2382,7 @@ mod tests {
 
         // Unit stays, takes damage
         assert_eq!(battle.units[0].x, 3);
-        assert!(battle.units[0].hp < 10);
+        assert_eq!(battle.units[0].hp, 9);
         assert!(msgs.iter().any(|m| m.contains("crushed")));
     }
 
@@ -2478,7 +2478,7 @@ mod tests {
 
         let msgs = apply_gravity_wells(&mut battle);
 
-        assert!(battle.units[1].hp < 10);
+        assert_eq!(battle.units[1].hp, 9);
         assert!(msgs.iter().any(|m| m.contains("gravity well")));
     }
 
@@ -2564,7 +2564,7 @@ mod tests {
 
         let msgs = apply_gravity_wells(&mut battle);
 
-        assert!(battle.units[0].hp < 10);
+        assert_eq!(battle.units[0].hp, 9);
         assert!(msgs.iter().any(|m| m.contains("You")));
     }
 
@@ -2813,7 +2813,7 @@ mod tests {
         tick_arcing_projectiles(&mut battle);
 
         assert!(battle.arcing_projectiles.is_empty());
-        assert!(battle.units[1].hp < 10);
+        assert_eq!(battle.units[1].hp, 5);
         assert!(battle.log.iter().any(|m| m.contains("Arc strike")));
     }
 
@@ -2859,7 +2859,7 @@ mod tests {
 
         tick_arcing_projectiles(&mut battle);
 
-        assert!(battle.units[0].hp < 10);
+        assert_eq!(battle.units[0].hp, 6);
         assert!(battle.log.iter().any(|m| m.contains("Incoming arc")));
     }
 
@@ -2929,7 +2929,7 @@ mod tests {
 
         tick_arcing_projectiles(&mut battle);
 
-        assert!(battle.units[1].hp < 10);
+        assert_eq!(battle.units[1].hp, 5);
         assert!(battle.log.iter().any(|m| m.contains("lobbed spell")));
     }
 
@@ -2952,7 +2952,7 @@ mod tests {
 
         tick_arcing_projectiles(&mut battle);
 
-        assert!(battle.units[0].hp < 10);
+        assert_eq!(battle.units[0].hp, 7);
         assert!(battle.log.iter().any(|m| m.contains("Enemy arc")));
     }
 
@@ -3001,7 +3001,7 @@ mod tests {
         tick_pending_impacts(&mut battle);
 
         assert!(battle.pending_impacts.is_empty());
-        assert!(battle.units[1].hp < 10);
+        assert_eq!(battle.units[1].hp, 5);
         assert!(battle.log.iter().any(|m| m.contains("Impact detonates")));
     }
 
@@ -3024,7 +3024,7 @@ mod tests {
 
         tick_pending_impacts(&mut battle);
 
-        assert!(battle.units[0].hp < 10);
+        assert_eq!(battle.units[0].hp, 6);
         assert!(battle.log.iter().any(|m| m.contains("hits you")));
     }
 
@@ -3048,8 +3048,8 @@ mod tests {
 
         tick_pending_impacts(&mut battle);
 
-        assert!(battle.units[1].hp < 10);
-        assert!(battle.units[2].hp < 10);
+        assert_eq!(battle.units[1].hp, 8);
+        assert_eq!(battle.units[2].hp, 8);
         assert!(battle.log.iter().any(|m| m.contains("targets")));
     }
 
@@ -3241,11 +3241,11 @@ mod tests {
         tick_projectiles(&mut battle);
 
         assert!(battle.projectiles.is_empty());
-        assert!(battle.units[1].hp < 10);
+        assert_eq!(battle.units[1].hp, 5);
     }
 
     #[test]
-    fn projectile_piercing_bypasses_armor() {
+    fn projectile_piercing_bypasses_armor(){
         let player = make_test_unit(UnitKind::Player, 0, 0);
         let mut enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
         enemy.radical_armor = 5;
@@ -3509,11 +3509,11 @@ mod tests {
 
         apply_projectile_spell(&mut battle, 3, 3, &SpellEffect::StrongHit(5));
 
-        assert!(battle.units[1].hp < 10);
+        assert_eq!(battle.units[1].hp, 5);
     }
 
     #[test]
-    fn spell_strong_hit_ignores_player() {
+    fn spell_strong_hit_ignores_player(){
         let player = make_test_unit(UnitKind::Player, 3, 3);
         let enemy = make_test_unit(UnitKind::Enemy(0), 6, 6);
         let mut battle = make_test_battle(vec![player, enemy]);
@@ -3532,8 +3532,8 @@ mod tests {
 
         apply_projectile_spell(&mut battle, 3, 3, &SpellEffect::Drain(4));
 
-        assert!(battle.units[1].hp < 10);
-        assert!(battle.units[0].hp > 5);
+        assert_eq!(battle.units[1].hp, 6);
+        assert_eq!(battle.units[0].hp, 9);
     }
 
     #[test]
@@ -3615,7 +3615,7 @@ mod tests {
 
         apply_projectile_spell(&mut battle, 3, 3, &SpellEffect::Pierce(4));
 
-        assert!(battle.units[1].hp < 10);
+        assert_eq!(battle.units[1].hp, 6);
     }
 
     #[test]
@@ -3626,7 +3626,7 @@ mod tests {
 
         apply_projectile_spell(&mut battle, 2, 0, &SpellEffect::KnockBack(3));
 
-        assert!(battle.units[1].hp < 10);
+        assert_eq!(battle.units[1].hp, 7);
         // Enemy should have been pushed away from player
         if battle.units[1].alive {
             assert!(battle.units[1].x > 2);

@@ -727,7 +727,7 @@ fn elite_phase_count_at_least_one() {
 // ── RadicalAction: comprehensive coverage for all match arms ─────────────────
 
 #[test]
-fn radical_action_radical_roundtrips_all_57_variants() {
+fn radical_action_radical_roundtrips_all_61_variants() {
     let all_actions = [
         RadicalAction::SpreadingWildfire,
         RadicalAction::ErosiveFlow,
