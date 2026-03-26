@@ -1659,11 +1659,17 @@ impl super::Renderer {
 
         let name_str = equip_name.unwrap_or("(empty)");
         let title = format!("⚒ {} Crucible — {} ⚒", label, name_str);
+        let xp_hint = match cruc.xp_to_next() {
+            Some(0) => " • Ready to unlock!".to_string(),
+            Some(n) => format!(" • {} XP to next", n),
+            None => " • Fully unlocked".to_string(),
+        };
         let subtitle = format!(
-            "{} • {} nodes • XP: {} • Tab: switch slot",
+            "{} • {} nodes • XP: {}{} • Tab: switch slot",
             rarity.label(),
             cruc.nodes.len(),
             cruc.xp,
+            xp_hint,
         );
 
         let data = TreeViewData {

@@ -78,8 +78,6 @@ pub struct MouseState {
     pub left_down: bool,
     /// Left button was just clicked this frame
     pub left_clicked: bool,
-    /// Scroll wheel delta (positive = zoom in)
-    pub wheel_delta: f64,
     /// Drag start position (canvas-space)
     pub drag_start: Option<(f64, f64)>,
 }
@@ -91,7 +89,6 @@ impl Default for MouseState {
             y: 0.0,
             left_down: false,
             left_clicked: false,
-            wheel_delta: 0.0,
             drag_start: None,
         }
     }
@@ -317,19 +314,17 @@ impl GameState {
         let node_radius = 14.0;
         if self.show_skill_tree {
             let tree = &crate::skill_tree::SKILL_TREE;
-            let cam = &self.skill_tree_camera;
+            let spacing = 50.0;
             let cw = self.renderer.canvas_w;
             let ch = self.renderer.canvas_h;
-            let spacing = 50.0;
+            let (wmx, wmy) = self.skill_tree_camera.screen_to_world(self.mouse.x, self.mouse.y, cw, ch);
             for (i, node) in tree.nodes.iter().enumerate() {
                 let wx = node.pos.0 as f64 * spacing;
                 let wy = node.pos.1 as f64 * spacing;
-                let (sx, sy) = cam.world_to_screen(wx, wy, cw, ch);
-                let dx = self.mouse.x - sx;
-                let dy = self.mouse.y - sy;
+                let dx = wx - wmx;
+                let dy = wy - wmy;
                 let r = if node.is_notable { node_radius * 1.4 } else { node_radius };
-                let r_scaled = r * cam.zoom;
-                if dx * dx + dy * dy <= r_scaled * r_scaled {
+                if dx * dx + dy * dy <= r * r {
                     if self.player.skill_tree.can_allocate(i) {
                         self.player.skill_tree.allocate(i);
                         if let Some(ref audio) = self.audio {
@@ -340,21 +335,21 @@ impl GameState {
                 }
             }
         } else if self.show_crucible {
-            let cam = &self.crucible_camera;
+            let spacing = 60.0;
             let cw = self.renderer.canvas_w;
             let ch = self.renderer.canvas_h;
+            let (wmx, wmy) = self.crucible_camera.screen_to_world(self.mouse.x, self.mouse.y, cw, ch);
             let cruc = match self.crucible_cursor {
                 0 => &self.player.weapon_crucible,
                 1 => &self.player.armor_crucible,
                 _ => &self.player.charm_crucible,
             };
-            let spacing = 60.0;
             for (i, node) in cruc.nodes.iter().enumerate() {
-                let (sx, sy) = cam.world_to_screen(node.pos.0 * spacing, node.pos.1 * spacing, cw, ch);
-                let dx = self.mouse.x - sx;
-                let dy = self.mouse.y - sy;
-                let r = node_radius * cam.zoom;
-                if dx * dx + dy * dy <= r * r {
+                let wx = node.pos.0 * spacing;
+                let wy = node.pos.1 * spacing;
+                let dx = wx - wmx;
+                let dy = wy - wmy;
+                if dx * dx + dy * dy <= node_radius * node_radius {
                     let cruc_mut = match self.crucible_cursor {
                         0 => &mut self.player.weapon_crucible,
                         1 => &mut self.player.armor_crucible,
@@ -377,41 +372,39 @@ impl GameState {
         let node_radius = 14.0;
         if self.show_skill_tree {
             let tree = &crate::skill_tree::SKILL_TREE;
-            let cam = &self.skill_tree_camera;
             let cw = self.renderer.canvas_w;
             let ch = self.renderer.canvas_h;
             let spacing = 50.0;
+            let (wmx, wmy) = self.skill_tree_camera.screen_to_world(self.mouse.x, self.mouse.y, cw, ch);
             self.skill_tree_hover = None;
             for (i, node) in tree.nodes.iter().enumerate() {
                 let wx = node.pos.0 as f64 * spacing;
                 let wy = node.pos.1 as f64 * spacing;
-                let (sx, sy) = cam.world_to_screen(wx, wy, cw, ch);
-                let dx = self.mouse.x - sx;
-                let dy = self.mouse.y - sy;
+                let dx = wx - wmx;
+                let dy = wy - wmy;
                 let r = if node.is_notable { node_radius * 1.4 } else { node_radius };
-                let r_scaled = r * cam.zoom;
-                if dx * dx + dy * dy <= r_scaled * r_scaled {
+                if dx * dx + dy * dy <= r * r {
                     self.skill_tree_hover = Some(i);
                     return;
                 }
             }
         } else if self.show_crucible {
-            let cam = &self.crucible_camera;
             let cw = self.renderer.canvas_w;
             let ch = self.renderer.canvas_h;
+            let spacing = 60.0;
+            let (wmx, wmy) = self.crucible_camera.screen_to_world(self.mouse.x, self.mouse.y, cw, ch);
             let cruc = match self.crucible_cursor {
                 0 => &self.player.weapon_crucible,
                 1 => &self.player.armor_crucible,
                 _ => &self.player.charm_crucible,
             };
-            let spacing = 60.0;
             self.crucible_hover = None;
             for (i, node) in cruc.nodes.iter().enumerate() {
-                let (sx, sy) = cam.world_to_screen(node.pos.0 * spacing, node.pos.1 * spacing, cw, ch);
-                let dx = self.mouse.x - sx;
-                let dy = self.mouse.y - sy;
-                let r = node_radius * cam.zoom;
-                if dx * dx + dy * dy <= r * r {
+                let wx = node.pos.0 * spacing;
+                let wy = node.pos.1 * spacing;
+                let dx = wx - wmx;
+                let dy = wy - wmy;
+                if dx * dx + dy * dy <= node_radius * node_radius {
                     self.crucible_hover = Some(i);
                     return;
                 }

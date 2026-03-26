@@ -172,16 +172,6 @@ impl CrucibleEffect {
     }
 }
 
-/// Standalone alias for `CrucibleEffect::effect_to_tag`.
-pub fn effect_tag(e: &CrucibleEffect) -> String {
-    e.effect_to_tag()
-}
-
-/// Standalone alias for `CrucibleEffect::effect_from_tag`.
-pub fn effect_from_tag(tag: &str) -> CrucibleEffect {
-    CrucibleEffect::effect_from_tag(tag)
-}
-
 // ── Dynamic Node ─────────────────────────────────────────────────────────────
 
 /// A dynamically generated crucible node with owned data.
@@ -698,15 +688,6 @@ impl CrucibleState {
         }
     }
 
-    /// Create a crucible state for a specific equipment piece (defaults to Normal rarity).
-    pub fn for_equipment(equipment: &crate::player::Equipment) -> Self {
-        let hash = equipment
-            .name
-            .bytes()
-            .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
-        Self::generate(equipment.slot, ItemRarity::Normal, hash)
-    }
-
     /// True if node `idx` can be allocated: exists, not yet allocated,
     /// player has enough XP, and at least one neighbor is already allocated.
     pub fn can_allocate(&self, idx: usize) -> bool {
@@ -781,14 +762,6 @@ impl CrucibleState {
         }
         cheapest
     }
-
-    /// Legacy method — always returns false in the dynamic tree system.
-    pub fn pending_branch(&self) -> bool {
-        false
-    }
-
-    /// Legacy method — no-op in the dynamic tree system.
-    pub fn choose_branch(&mut self, _left: bool) {}
 
     /// Serialize to a JSON string for localStorage.
     pub fn to_json(&self) -> String {
@@ -967,22 +940,6 @@ impl CrucibleState {
             kinetic_stored: 0,
         }
     }
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/// Deterministically hash equipment slot and name to a usize value.
-/// Kept for backwards compatibility; callers should prefer `CrucibleState::generate`.
-pub fn tree_for_equipment(slot: EquipSlot, name: &str) -> usize {
-    let offset: u32 = match slot {
-        EquipSlot::Weapon => 0,
-        EquipSlot::Armor => 3,
-        EquipSlot::Charm => 6,
-    };
-    let hash = name
-        .bytes()
-        .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
-    (offset + (hash % 3)) as usize
 }
 
 // ── Aggregate helpers (used by combat systems) ───────────────────────────────
@@ -1619,33 +1576,6 @@ mod tests {
         assert_eq!(s.xp_to_next(), None);
     }
 
-    // ── legacy methods ──
-
-    #[test]
-    fn pending_branch_always_false() {
-        let s = CrucibleState::generate(EquipSlot::Weapon, ItemRarity::Normal, 42);
-        assert!(!s.pending_branch());
-    }
-
-    // ── tree_for_equipment ──
-
-    #[test]
-    fn tree_for_equipment_deterministic() {
-        let t1 = tree_for_equipment(EquipSlot::Weapon, "Laser Pistol");
-        let t2 = tree_for_equipment(EquipSlot::Weapon, "Laser Pistol");
-        assert_eq!(t1, t2);
-    }
-
-    #[test]
-    fn tree_for_equipment_slot_ranges() {
-        let w = tree_for_equipment(EquipSlot::Weapon, "Test");
-        assert!(w < 3);
-        let a = tree_for_equipment(EquipSlot::Armor, "Test");
-        assert!((3..6).contains(&a));
-        let c = tree_for_equipment(EquipSlot::Charm, "Test");
-        assert!((6..9).contains(&c));
-    }
-
     // ── aggregate functions ──
 
     #[test]
@@ -1729,8 +1659,8 @@ mod tests {
             CrucibleEffect::TemporalFlux,
         ];
         for e in &effects {
-            let tag = effect_tag(e);
-            let recovered = effect_from_tag(&tag);
+            let tag = e.effect_to_tag();
+            let recovered = CrucibleEffect::effect_from_tag(&tag);
             assert_eq!(
                 recovered.short_label(),
                 e.short_label(),

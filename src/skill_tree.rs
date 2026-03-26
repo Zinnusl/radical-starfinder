@@ -684,26 +684,18 @@ impl SkillTreeState {
     /// Pre-allocates start node (0) plus the first node of the class's cluster.
     pub fn new_with_class(class: crate::player::PlayerClass) -> Self {
         use crate::player::PlayerClass;
-        let mut allocated = vec![false; SKILL_TREE.nodes.len()];
-        allocated[0] = true;
-        // Map class → cluster entry node
+        let mut s = Self::new();
         let cluster_start = match class {
-            PlayerClass::Soldier      => 1,  // Combat main
-            PlayerClass::Operative    => 1,  // Combat (same entry, branch later)
-            PlayerClass::Mystic       => 11, // Scholar main
-            PlayerClass::Technomancer => 11, // Scholar (same entry, branch later)
-            PlayerClass::Mechanic     => 21, // Survival main
-            PlayerClass::Solarian     => 21, // Survival (same entry, branch later)
-            PlayerClass::Envoy        => 31, // Fortune main
+            PlayerClass::Soldier      => 1,
+            PlayerClass::Operative    => 1,
+            PlayerClass::Mystic       => 11,
+            PlayerClass::Technomancer => 11,
+            PlayerClass::Mechanic     => 21,
+            PlayerClass::Solarian     => 21,
+            PlayerClass::Envoy        => 31,
         };
-        allocated[cluster_start] = true;
-        Self {
-            xp: 0,
-            level: 0,
-            skill_points: 0,
-            allocated,
-            undying_used: false,
-        }
+        s.allocated[cluster_start] = true;
+        s
     }
 
     // -- XP / leveling -----------------------------------------------------
