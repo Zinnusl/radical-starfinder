@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#00ccdd" />
+  <title>Radical Starfinder</title>
+  
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #060612;
+      color: #ccc;
+      font-family: 'Segoe UI', monospace;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+    }
+    h1 {
+      display: none;
+    }
+    #loading {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 1rem;
+      opacity: 0.7;
+      z-index: 10;
+    }
+    #game-canvas {
+      display: block;
+    }
+    .controls {
+      display: none;
+    }
+  </style>
+<link rel="modulepreload" href="/radical-starfinder-5457ccd9100a8fb0.js" crossorigin="anonymous" integrity="sha384-HM3upiCujzwZm6KE0jLTeZI2gZqtOCgDldt4ROpIpakiuTL6qSjmRstGI6+cvSg7"><link rel="preload" href="/radical-starfinder-5457ccd9100a8fb0_bg.wasm" crossorigin="anonymous" integrity="sha384-lPLzTJpxEUO/rHwxuu5gfGyvYyRmqa+uY6UNfZ/QryXv7gd7wkqVEMg9/6J0gNDq" as="fetch" type="application/wasm"></head>
+<body>
+  <h1>🚀 Radical Starfinder</h1>
+  <div id="loading">Initializing systems…</div>
+  <div class="controls">WASD/Arrows=move · Bump=fight · Type pinyin+Enter=attack · Q=cycle ability · Space=use · M=starmap · Tab=ship · C=codex</div>
+
+  <!-- Mobile touch controls -->
+  <div id="touch-controls">
+    <div id="dpad">
+      <button class="dpad-btn" id="btn-up" data-key="ArrowUp">▲</button>
+      <div class="dpad-row">
+        <button class="dpad-btn" id="btn-left" data-key="ArrowLeft">◀</button>
+        <button class="dpad-btn dpad-center" id="btn-wait">·</button>
+        <button class="dpad-btn" id="btn-right" data-key="ArrowRight">▶</button>
+      </div>
+      <button class="dpad-btn" id="btn-down" data-key="ArrowDown">▼</button>
+    </div>
+    <div id="action-btns">
+      <button class="action-btn" data-key="Enter">Enter</button>
+      <button class="action-btn" data-key="Escape">Esc</button>
+      <button class="action-btn" data-key=" ">Spell</button>
+      <button class="action-btn" data-key="q">Q</button>
+    </div>
+  </div>
+
+  <style>
+    #touch-controls {
+      display: none;
+      position: fixed;
+      bottom: 10px;
+      left: 0;
+      right: 0;
+      padding: 0 12px;
+      z-index: 100;
+      justify-content: space-between;
+      align-items: flex-end;
+      pointer-events: none;
+    }
+    @media (pointer: coarse), (max-width: 800px) {
+      #touch-controls { display: flex; }
+    }
+    #dpad {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      pointer-events: auto;
+    }
+    .dpad-row {
+      display: flex;
+      gap: 2px;
+    }
+    .dpad-btn {
+      width: 52px;
+      height: 52px;
+      font-size: 22px;
+      background: rgba(0,204,221,0.15);
+      border: 1px solid rgba(0,204,221,0.4);
+      border-radius: 8px;
+      color: #00ccdd;
+      cursor: pointer;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .dpad-btn:active { background: rgba(0,204,221,0.4); }
+    .dpad-center { background: rgba(100,100,100,0.1); border-color: #333; color: #555; }
+    #action-btns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      pointer-events: auto;
+    }
+    .action-btn {
+      width: 64px;
+      height: 44px;
+      font-size: 13px;
+      font-family: monospace;
+      background: rgba(100,150,255,0.15);
+      border: 1px solid rgba(100,150,255,0.4);
+      border-radius: 8px;
+      color: #88bbff;
+      cursor: pointer;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .action-btn:active { background: rgba(100,150,255,0.4); }
+  </style>
+
+  <script type="module">
+    // Wait for WASM to be loaded by the Trunk-injected script below
+    await new Promise((resolve) => {
+      if (window.wasmBindings) return resolve();
+      window.addEventListener('TrunkApplicationStarted', resolve, { once: true });
+    });
+    try {
+      window.wasmBindings.start_game();
+    } catch (err) {
+      console.error('Game init failed:', err);
+      const el = document.getElementById('loading');
+      if (el) el.textContent = 'Failed to load. See console.';
+    }
+
+    // Mobile touch controls — dispatch synthetic keyboard events
+    document.querySelectorAll('[data-key]').forEach(btn => {
+      const key = btn.dataset.key;
+      const fire = () => {
+        const canvas = document.getElementById('game-canvas');
+        if (canvas) {
+          canvas.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+        } else {
+          document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+        }
+      };
+      btn.addEventListener('touchstart', e => { e.preventDefault(); fire(); }, { passive: false });
+      btn.addEventListener('mousedown', e => { e.preventDefault(); fire(); });
+    });
+    // Register service worker for PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  </script>
+
+<script type="module">
+import init, * as bindings from '/radical-starfinder-5457ccd9100a8fb0.js';
+const wasm = await init({ module_or_path: '/radical-starfinder-5457ccd9100a8fb0_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script>
+</body>
+</html>
