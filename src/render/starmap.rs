@@ -6,7 +6,7 @@ use crate::game::{EnemyShip, GameSettings, SpaceCombatPhase, SubsystemTarget, Sh
 use crate::player::{Player, PlayerClass, Ship};
 use crate::world::LocationType;
 use crate::world::starmap::SectorMap;
-use crate::world::ship::{ShipLayout, ShipRoom, ShipTile, get_room_at};
+use crate::world::ship::{ShipLayout, ShipRoom, ShipTile, get_room_at, ship_tile_sprite_key};
 use crate::world::events::SpaceEvent;
 
 use super::COL_PLAYER;
@@ -849,11 +849,12 @@ impl super::Renderer {
         let offset_y = hud_top + (map_area_h - layout.height as f64 * tx_size) / 2.0;
 
         // ── Tile map ────────────────────────────────────────────────────
+        self.ctx.set_image_smoothing_enabled(false);
         for (i, tile) in layout.tiles.iter().enumerate() {
-            let x = (i as i32 % layout.width) as f64;
-            let y = (i as i32 / layout.width) as f64;
-            let screen_x = offset_x + x * tx_size;
-            let screen_y = offset_y + y * tx_size;
+            let tile_x = i as i32 % layout.width;
+            let tile_y = i as i32 / layout.width;
+            let screen_x = offset_x + tile_x as f64 * tx_size;
+            let screen_y = offset_y + tile_y as f64 * tx_size;
 
             let color = match tile {
                 ShipTile::Floor => "#1a1a2e",
@@ -867,6 +868,22 @@ impl super::Renderer {
 
             self.ctx.set_fill_style_str(color);
             self.ctx.fill_rect(screen_x, screen_y, tx_size, tx_size);
+
+            let room = get_room_at(layout, tile_x, tile_y);
+            let sprite_key = ship_tile_sprite_key(*tile, room);
+            if let Some(img) = self.sprites.get(sprite_key) {
+                if self.sprites.is_loaded(sprite_key) {
+                    self.ctx
+                        .draw_image_with_html_image_element_and_dw_and_dh(
+                            img,
+                            screen_x,
+                            screen_y,
+                            tx_size,
+                            tx_size,
+                        )
+                        .ok();
+                }
+            }
 
             // Grid lines
             self.ctx.set_stroke_style_str("#1a1a2a");

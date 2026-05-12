@@ -63,6 +63,84 @@ pub enum ShipTile {
     Empty,
 }
 
+/// Preconditions: `tile` comes from a generated `ShipLayout`; `room` is the
+/// room containing that tile coordinate.
+/// Postconditions: returns a SpriteCache key backed by the player-ship assets
+/// copied from the missing-assets pack.
+pub fn ship_tile_sprite_key(tile: ShipTile, room: ShipRoom) -> &'static str {
+    match tile {
+        ShipTile::Floor => ship_floor_sprite_key(room),
+        ShipTile::Wall => "loc_player_ship_wall",
+        ShipTile::Door => "loc_player_ship_door",
+        ShipTile::Console(console_room) => ship_console_sprite_key(console_room),
+        ShipTile::CrewStation(idx) => ship_crew_station_sprite_key(idx),
+        ShipTile::Decoration(variant) => ship_decoration_sprite_key(variant),
+        ShipTile::Empty => "loc_player_ship_floor",
+    }
+}
+
+/// Preconditions: `room` is a known player-ship room.
+/// Postconditions: returns the most specific floor tile key available for that
+/// room, falling back to the generic player-ship floor when needed.
+fn ship_floor_sprite_key(room: ShipRoom) -> &'static str {
+    match room {
+        ShipRoom::Bridge => "loc_player_ship_bridge_floor",
+        ShipRoom::EngineRoom => "loc_player_ship_engine_room_floor",
+        ShipRoom::QuantumForge => "loc_player_ship_reactor_floor",
+        ShipRoom::CrewQuarters => "loc_player_ship_crew_quarters_floor",
+        ShipRoom::CargoBay => "loc_player_ship_cargo_floor",
+        ShipRoom::Medbay => "loc_player_ship_medbay_floor",
+        ShipRoom::Airlock => "loc_player_ship_airlock",
+        ShipRoom::Corridor => "loc_player_ship_corridor",
+        ShipRoom::WeaponsBay => "loc_player_ship_floor",
+    }
+}
+
+/// Preconditions: `room` is the room encoded by a `ShipTile::Console`.
+/// Postconditions: returns a player-ship object sprite key suitable for that
+/// console's live render position.
+fn ship_console_sprite_key(room: ShipRoom) -> &'static str {
+    match room {
+        ShipRoom::Bridge => "obj_ship_nav_console",
+        ShipRoom::EngineRoom => "obj_ship_engineering_console",
+        ShipRoom::QuantumForge => "obj_ship_quantum_glyph_analyzer",
+        ShipRoom::CrewQuarters => "obj_ship_locker",
+        ShipRoom::CargoBay => "obj_ship_cargo_palette",
+        ShipRoom::Medbay => "obj_ship_med_scanner",
+        ShipRoom::WeaponsBay => "obj_ship_training_dummy",
+        ShipRoom::Airlock => "obj_ship_airlock_panel",
+        ShipRoom::Corridor => "obj_ship_starmap_projector",
+    }
+}
+
+/// Preconditions: `idx` is the crew station slot stored in the ship layout.
+/// Postconditions: returns a stable object sprite key for the station slot.
+fn ship_crew_station_sprite_key(idx: usize) -> &'static str {
+    match idx % 4 {
+        0 => "obj_ship_pilot_console",
+        1 => "obj_ship_repair_bot_dock",
+        2 => "obj_ship_oxygen_plant",
+        _ => "obj_ship_med_scanner",
+    }
+}
+
+/// Preconditions: `variant` is the decoration variant stored in the ship
+/// layout.
+/// Postconditions: returns a stable object sprite key, wrapping unknown
+/// decoration variants over the available ship objects.
+fn ship_decoration_sprite_key(variant: u8) -> &'static str {
+    match variant % 8 {
+        0 => "obj_ship_crew_bunk",
+        1 => "obj_ship_locker",
+        2 => "obj_ship_oxygen_plant",
+        3 => "obj_ship_galley_table",
+        4 => "obj_ship_fuel_tank",
+        5 => "obj_ship_reactor_console",
+        6 => "obj_ship_server_rack",
+        _ => "obj_ship_trophy_case",
+    }
+}
+
 // ── Ship layout ─────────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug)]
@@ -410,6 +488,48 @@ pub fn get_room_at(layout: &ShipLayout, x: i32, y: i32) -> ShipRoom {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::asset_catalog::generated_sprite_assets;
+
+    /// Preconditions: generated player-ship assets have been copied into the
+    /// repo and cataloged.
+    /// Postconditions: representative live ship tiles resolve to registered
+    /// SpriteCache keys from the missing-assets pack.
+    #[test]
+    fn player_ship_tiles_resolve_to_pack_sprite_keys() {
+        let asset_keys = generated_sprite_assets()
+            .into_iter()
+            .map(|asset| asset.key)
+            .collect::<Vec<_>>();
+        let cases = [
+            (ShipTile::Floor, ShipRoom::Bridge, "loc_player_ship_bridge_floor"),
+            (
+                ShipTile::Floor,
+                ShipRoom::EngineRoom,
+                "loc_player_ship_engine_room_floor",
+            ),
+            (ShipTile::Wall, ShipRoom::Corridor, "loc_player_ship_wall"),
+            (ShipTile::Door, ShipRoom::Corridor, "loc_player_ship_door"),
+            (
+                ShipTile::Console(ShipRoom::Bridge),
+                ShipRoom::Bridge,
+                "obj_ship_nav_console",
+            ),
+            (
+                ShipTile::Decoration(5),
+                ShipRoom::EngineRoom,
+                "obj_ship_reactor_console",
+            ),
+        ];
+
+        cases.into_iter().for_each(|(tile, room, expected)| {
+            let key = ship_tile_sprite_key(tile, room);
+            assert_eq!(key, expected);
+            assert!(
+                asset_keys.iter().any(|asset_key| asset_key == key),
+                "ship tile key {key} is not registered in generated assets"
+            );
+        });
+    }
 
     // ── ShipRoom::name() ──
 

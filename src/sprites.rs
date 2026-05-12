@@ -3,21 +3,21 @@ use std::collections::HashMap;
 use web_sys::HtmlImageElement;
 
 pub struct SpriteCache {
-    sprites: HashMap<&'static str, HtmlImageElement>,
+    sprites: HashMap<String, HtmlImageElement>,
 }
 
 impl SpriteCache {
     pub fn new() -> Self {
         let mut sprites = HashMap::new();
 
-        fn register(
-            sprites: &mut HashMap<&'static str, HtmlImageElement>,
-            key: &'static str,
-            path: &'static str,
-        ) {
+        /// Preconditions: `key` is the stable lookup key used by render code
+        /// and `path` is a repo-relative browser asset path.
+        /// Postconditions: inserts the image element when the browser can
+        /// allocate one, leaving the cache unchanged otherwise.
+        fn register(sprites: &mut HashMap<String, HtmlImageElement>, key: &str, path: &str) {
             if let Ok(img) = HtmlImageElement::new() {
                 img.set_src(path);
-                sprites.insert(key, img);
+                sprites.insert(key.to_string(), img);
             }
         }
 
@@ -708,6 +708,10 @@ impl SpriteCache {
             "spell_pacify",
             "assets/sprites/ui/spell_pacify.png",
         );
+
+        crate::asset_catalog::generated_sprite_assets()
+            .iter()
+            .for_each(|asset| register(&mut sprites, &asset.key, &asset.path));
 
         Self { sprites }
     }

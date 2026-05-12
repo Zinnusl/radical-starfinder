@@ -1,13 +1,60 @@
 //! Tactical grid, terrain, units, and projectile rendering.
 
 use crate::combat::{
-    ArenaBiome, BattleTile, Direction, EnemyIntent, Projectile, TacticalBattle,
-    TacticalPhase, TargetMode, WuxingElement,
+    BattleTile, Direction, EnemyIntent, Projectile, TacticalBattle, TacticalPhase, TargetMode,
+    WuxingElement,
 };
 use crate::player::Player;
 use crate::radical;
 
 use super::super::{COL_PLAYER, COL_HP_BG, hp_gradient_color};
+
+/// Preconditions: `tile` is a currently supported tactical battle tile.
+/// Postconditions: returns the SpriteCache key for the copied 32px combat tile
+/// PNG that represents `tile`.
+pub(super) fn combat_tile_sprite_key(tile: BattleTile) -> &'static str {
+    match tile {
+        BattleTile::MetalFloor => "combat_metal_floor",
+        BattleTile::CoverBarrier => "combat_cover_barrier",
+        BattleTile::WiringPanel => "combat_wiring_panel",
+        BattleTile::CoolantPool => "combat_coolant_pool",
+        BattleTile::FrozenCoolant => "combat_frozen_coolant",
+        BattleTile::BlastMark => "combat_blast_mark",
+        BattleTile::OilSlick => "combat_oil_slick",
+        BattleTile::DamagedPlating => "combat_damaged_plating",
+        BattleTile::VentSteam => "combat_vent_steam",
+        BattleTile::PlasmaPool => "combat_plasma_pool",
+        BattleTile::ElectrifiedWire => "combat_electrified_wire",
+        BattleTile::HoloTrap => "combat_holo_trap",
+        BattleTile::Debris => "combat_debris",
+        BattleTile::PipeTangle => "combat_pipe_tangle",
+        BattleTile::CryoZone => "combat_cryo_zone",
+        BattleTile::EnergyNode => "combat_energy_node",
+        BattleTile::PowerDrain => "combat_power_drain",
+        BattleTile::ChargingPad => "combat_charging_pad",
+        BattleTile::GravityTrap => "combat_gravity_trap",
+        BattleTile::CargoCrate => "combat_cargo_crate",
+        BattleTile::ConveyorN => "combat_conveyor_n",
+        BattleTile::ConveyorS => "combat_conveyor_s",
+        BattleTile::ConveyorE => "combat_conveyor_e",
+        BattleTile::ConveyorW => "combat_conveyor_w",
+        BattleTile::FuelCanister => "combat_fuel_canister",
+        BattleTile::WeakenedPlating => "combat_weakened_plating",
+        BattleTile::DamagedFloor => "combat_damaged_floor",
+        BattleTile::BreachedFloor => "combat_breached_floor",
+        BattleTile::MineTile => "combat_mine_tile",
+        BattleTile::MineTileRevealed => "combat_mine_tile_revealed",
+        BattleTile::Lubricant => "combat_lubricant",
+        BattleTile::ShieldZone => "combat_shield_zone",
+        BattleTile::ElevatedPlatform => "combat_elevated_platform",
+        BattleTile::GravityWell => "combat_gravity_well",
+        BattleTile::SteamVentActive => "combat_steam_vent_active",
+        BattleTile::SteamVentInactive => "combat_steam_vent_inactive",
+        BattleTile::EnergyVentDormant => "combat_energy_vent_dormant",
+        BattleTile::EnergyVentCharging => "combat_energy_vent_charging",
+        BattleTile::EnergyVentActive => "combat_energy_vent_active",
+    }
+}
 
 impl super::super::Renderer {
     #[allow(clippy::too_many_arguments)]
@@ -212,7 +259,6 @@ impl super::super::Renderer {
 
         // Grid tiles — sprite-based with flat color fallback
         self.ctx.set_image_smoothing_enabled(false);
-        let biome = &battle.arena.biome;
         for gy in 0..battle.arena.height {
             for gx in 0..battle.arena.width {
                 let tile = battle
@@ -222,81 +268,20 @@ impl super::super::Renderer {
                 let sx = grid_x + gx as f64 * cell;
                 let sy = grid_y + gy as f64 * cell;
 
-                let sprite_key = match tile {
-                    BattleTile::MetalFloor => match biome {
-                        ArenaBiome::StationInterior => "arena_floor_stone",
-                        ArenaBiome::DerelictShip => "arena_floor_dark",
-                        ArenaBiome::AlienRuins => "arena_floor_arcane",
-                        ArenaBiome::IrradiatedZone => "arena_floor_cursed",
-                        ArenaBiome::Hydroponics => "arena_floor_garden",
-                        ArenaBiome::CryoBay => "arena_floor_frozen",
-                        ArenaBiome::ReactorRoom => "arena_floor_infernal",
-                    },
-                    BattleTile::CoverBarrier => match biome {
-                        ArenaBiome::StationInterior => "arena_obstacle_stone",
-                        ArenaBiome::DerelictShip => "arena_obstacle_dark",
-                        ArenaBiome::AlienRuins => "arena_obstacle_arcane",
-                        ArenaBiome::IrradiatedZone => "arena_obstacle_cursed",
-                        ArenaBiome::Hydroponics => "arena_obstacle_garden",
-                        ArenaBiome::CryoBay => "arena_obstacle_frozen",
-                        ArenaBiome::ReactorRoom => "arena_obstacle_infernal",
-                    },
-                    BattleTile::WiringPanel => "arena_grass",
-                    BattleTile::CoolantPool => "arena_water",
-                    BattleTile::FrozenCoolant => "arena_ice",
-                    BattleTile::BlastMark => "arena_scorched",
-                    BattleTile::OilSlick => "arena_ink_pool",
-                    BattleTile::DamagedPlating => "arena_broken_ground",
-                    BattleTile::VentSteam => "arena_steam",
-                    BattleTile::PlasmaPool => "arena_lava",
-                    BattleTile::ElectrifiedWire => "arena_thorns",
-                    BattleTile::HoloTrap => "arena_arcane_glyph",
-                    BattleTile::Debris => "arena_sand",
-                    BattleTile::PipeTangle => "arena_bamboo_thicket",
-                    BattleTile::CryoZone => "arena_frozen_ground",
-                    BattleTile::EnergyNode => "arena_spirit_well",
-                    BattleTile::PowerDrain => "arena_spirit_drain",
-                    BattleTile::ChargingPad => "arena_meditation_stone",
-                    BattleTile::GravityTrap => "arena_soul_trap",
-                    BattleTile::CargoCrate => "arena_obstacle_stone",
-                    BattleTile::ConveyorN
-                    | BattleTile::ConveyorS
-                    | BattleTile::ConveyorE
-                    | BattleTile::ConveyorW => "arena_water",
-                    BattleTile::FuelCanister => "arena_obstacle_stone",
-                    BattleTile::WeakenedPlating => "arena_broken_ground",
-                    BattleTile::DamagedFloor => "arena_broken_ground",
-                    BattleTile::BreachedFloor => "arena_obstacle_dark",
-                    BattleTile::MineTile => match biome {
-                        ArenaBiome::StationInterior => "arena_floor_stone",
-                        ArenaBiome::DerelictShip => "arena_floor_dark",
-                        ArenaBiome::AlienRuins => "arena_floor_arcane",
-                        ArenaBiome::IrradiatedZone => "arena_floor_cursed",
-                        ArenaBiome::Hydroponics => "arena_floor_garden",
-                        ArenaBiome::CryoBay => "arena_floor_frozen",
-                        ArenaBiome::ReactorRoom => "arena_floor_infernal",
-                    },
-                    BattleTile::MineTileRevealed => "arena_thorns",
-                    BattleTile::Lubricant => "arena_water",
-                    BattleTile::ShieldZone => "arena_spirit_well",
-                    BattleTile::ElevatedPlatform => "arena_broken_ground",
-                    BattleTile::GravityWell => "arena_soul_trap",
-                    BattleTile::SteamVentActive => "arena_steam",
-                    BattleTile::SteamVentInactive => match biome {
-                        ArenaBiome::StationInterior => "arena_floor_stone",
-                        ArenaBiome::DerelictShip => "arena_floor_dark",
-                        ArenaBiome::AlienRuins => "arena_floor_arcane",
-                        ArenaBiome::IrradiatedZone => "arena_floor_cursed",
-                        ArenaBiome::Hydroponics => "arena_floor_garden",
-                        ArenaBiome::CryoBay => "arena_floor_frozen",
-                        ArenaBiome::ReactorRoom => "arena_floor_infernal",
-                    },
-                    BattleTile::EnergyVentDormant => "arena_meditation_stone",
-                    BattleTile::EnergyVentCharging => "arena_arcane_glyph",
-                    BattleTile::EnergyVentActive => "arena_lava",
+                let sprite_key = combat_tile_sprite_key(tile);
+                let sprite_drawn = if self.sprites.is_loaded(sprite_key) {
+                    self.sprites.get(sprite_key).is_some_and(|img| {
+                        self.ctx
+                            .draw_image_with_html_image_element_and_dw_and_dh(
+                                img, sx, sy, cell, cell,
+                            )
+                            .is_ok()
+                    })
+                } else {
+                    false
                 };
 
-                if !self.draw_tiling_sprite_key(sprite_key, gx, gy, sx, sy, cell) {
+                if !sprite_drawn {
                     let fill = match tile {
                         BattleTile::MetalFloor => "#3a3458",
                         BattleTile::CoverBarrier => "#1a1428",
@@ -1496,5 +1481,72 @@ impl super::super::Renderer {
                 self.ctx.fill_text("!", csx + 2.0, csy + 10.0).ok();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::asset_catalog::generated_sprite_assets;
+
+    /// Preconditions: the missing-assets catalog is available to tests.
+    /// Postconditions: every live `BattleTile` variant maps to a copied
+    /// combat sprite key that SpriteCache can register.
+    #[test]
+    fn combat_tile_sprite_keys_use_pack_assets_for_every_variant() {
+        let asset_keys = generated_sprite_assets()
+            .into_iter()
+            .map(|asset| asset.key)
+            .collect::<Vec<_>>();
+        let tiles = [
+            BattleTile::MetalFloor,
+            BattleTile::CoverBarrier,
+            BattleTile::WiringPanel,
+            BattleTile::CoolantPool,
+            BattleTile::FrozenCoolant,
+            BattleTile::BlastMark,
+            BattleTile::OilSlick,
+            BattleTile::DamagedPlating,
+            BattleTile::VentSteam,
+            BattleTile::PlasmaPool,
+            BattleTile::ElectrifiedWire,
+            BattleTile::HoloTrap,
+            BattleTile::Debris,
+            BattleTile::PipeTangle,
+            BattleTile::CryoZone,
+            BattleTile::EnergyNode,
+            BattleTile::PowerDrain,
+            BattleTile::ChargingPad,
+            BattleTile::GravityTrap,
+            BattleTile::CargoCrate,
+            BattleTile::ConveyorN,
+            BattleTile::ConveyorS,
+            BattleTile::ConveyorE,
+            BattleTile::ConveyorW,
+            BattleTile::FuelCanister,
+            BattleTile::WeakenedPlating,
+            BattleTile::DamagedFloor,
+            BattleTile::BreachedFloor,
+            BattleTile::MineTile,
+            BattleTile::MineTileRevealed,
+            BattleTile::Lubricant,
+            BattleTile::ShieldZone,
+            BattleTile::ElevatedPlatform,
+            BattleTile::GravityWell,
+            BattleTile::SteamVentActive,
+            BattleTile::SteamVentInactive,
+            BattleTile::EnergyVentDormant,
+            BattleTile::EnergyVentCharging,
+            BattleTile::EnergyVentActive,
+        ];
+
+        tiles.into_iter().for_each(|tile| {
+            let key = combat_tile_sprite_key(tile);
+            assert!(key.starts_with("combat_"), "unexpected combat key {key}");
+            assert!(
+                asset_keys.iter().any(|asset_key| asset_key == key),
+                "combat tile key {key} is not registered in generated assets"
+            );
+        });
     }
 }

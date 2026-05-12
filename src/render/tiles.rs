@@ -9,6 +9,7 @@ use super::{COL_CORRIDOR, COL_CORRIDOR_REVEALED, COL_STAIRS, COL_FORGE, COL_SHOP
 impl super::Renderer {
     /// Draw a sprite as a seamless tiling texture for arena-style grids,
     /// using grid coordinates to offset into the texture.
+    #[allow(dead_code)]
     pub(crate) fn draw_tiling_sprite_key(
         &self,
         key: &str,

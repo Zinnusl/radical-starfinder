@@ -6,6 +6,7 @@
 use wasm_bindgen::prelude::*;
 
 mod achievement;
+mod asset_catalog;
 mod audio;
 mod codex;
 mod combat;
